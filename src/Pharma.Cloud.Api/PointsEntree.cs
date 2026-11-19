@@ -151,6 +151,8 @@ public static class PointsEntree
             }
             catch (Npgsql.PostgresException p) when (p.SqlState == "22023")
             {
+                // Raison écrite au journal du central (époques, n° de lot ou fin de chaîne : aucune donnée de patient)
+                log.LogWarning("Officine {Officine} : déclaration d'époque {Nouvelle} refusée : {Raison}", appelant.Officine, d.NouvelleEpoque, p.MessageText);
                 return Results.Problem("Déclaration refusée par le serveur central (époques, n° de lot ou fins de chaîne).", statusCode: 400);
             }
         }).RequireRateLimiting("officine");

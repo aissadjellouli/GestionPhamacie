@@ -372,6 +372,17 @@ BEGIN
 END $$;
 
 -- ---- 5. Vérification par liens d'empreinte d'une chaîne (officine courante), toujours depuis le rang 1 ----
+-- Essai S6.5.5 (2026-11-19) : ligne d'une ancienne branche déjà reconnue (au-delà du rang commun, jusqu'à la fin de l'ancienne branche,
+-- reçue avant la nouvelle époque) alors que la suite vivante est celle de cette nouvelle époque ou d'une plus récente. Une nouvelle
+-- branche plus courte que l'ancienne (restauration suivie de peu de ventes) faisait noter l'ancienne ligne suivante en chaînage rompu.
+CREATE OR REPLACE FUNCTION cloud_integrite_ancienne_branche(p_journal text, p_cle text, p_rang bigint, p_epoque int, p_epoque_vivante int)
+RETURNS boolean LANGUAGE sql STABLE AS $$
+    SELECT EXISTS (SELECT 1 FROM cloud_integrite_bifurcation b
+                   WHERE b.officine_id = cloud_officine_courante() AND b.journal = p_journal AND b.cle_chaine = p_cle
+                     AND p_rang > b.rang_commun AND p_rang <= coalesce(b.fin_ancienne_rang, p_rang)
+                     AND p_epoque < b.nouvelle_epoque AND b.nouvelle_epoque <= coalesce(p_epoque_vivante, 0))
+$$;
+
 CREATE OR REPLACE FUNCTION cloud_integrite_verifier_branches(p_journal text, p_cle text, p_delai interval) RETURNS text
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -405,13 +416,15 @@ BEGIN
     WHILE v_statut = 'ok' LOOP
         SELECT count(*) INTO v_cands FROM cloud_noeud WHERE rang = v_rang + 1 AND hash_precedent = v_prec;
         IF v_cands = 0 THEN
-            SELECT * INTO l FROM cloud_noeud WHERE rang = v_rang + 1 ORDER BY epoque DESC LIMIT 1;
+            SELECT * INTO l FROM cloud_noeud x WHERE x.rang = v_rang + 1
+                AND NOT cloud_integrite_ancienne_branche(p_journal, p_cle, x.rang, x.epoque, v_ep) ORDER BY x.epoque DESC LIMIT 1;
             IF FOUND THEN
                 PERFORM cloud_integrite_noter(p_journal, p_cle, l.rang, l.id, 'chainage_rompu', 'empreinte précédente différente de celle de la ligne d''avant',
                     encode(v_prec, 'hex'), coalesce(encode(l.hash_precedent, 'hex'), 'vide'));
                 v_statut := 'rupture'; v_rupture := l.rang;
             ELSE
-                SELECT * INTO l FROM cloud_noeud WHERE rang > v_rang + 1 ORDER BY rang, recu_le LIMIT 1;
+                SELECT * INTO l FROM cloud_noeud x WHERE x.rang > v_rang + 1
+                    AND NOT cloud_integrite_ancienne_branche(p_journal, p_cle, x.rang, x.epoque, v_ep) ORDER BY x.rang, x.recu_le LIMIT 1;
                 IF FOUND THEN
                     IF l.recu_le < now() - p_delai THEN
                         PERFORM cloud_integrite_noter(p_journal, p_cle, v_rang + 1, NULL, 'ligne_manquante',

@@ -200,6 +200,9 @@ clair, 1 366 × 768 et 1 536 × 890, captures regardées) :
   rangée (`.champs-courts`) et le tableau des anomalies descend à 120 px au moins (`data-hauteur-min`). Mesurées avec un résumé de
   démonstration (copie jetable, supprimée) : 0 px, sans défilement horizontal, à 1 536 × 890 et 1 366 × 768, clair et sombre, captures
   regardées (avant correction : 187 et 428 px avec les trois panneaux empilés).
+- Administration › Synchronisation (2026-11-19, essai S6.5.5) : le message de réussite d'une rubrique est effacé au changement de
+  rubrique (après une prise d'acte, il faisait dépasser « Intégrité au central » de 52 px à 1 366 × 768) ; rubriques mesurées avec de
+  vraies données d'essai (restauration constatée, puis « Aucune anomalie ») : 0 px aux deux tailles, clair et sombre.
 - Caisse : un champ ne bouge plus pendant la frappe. Les listes de propositions ouvertes sont écartées du calcul des cadres
   (`pharma.tableaux`, `poste.js`) ; « Nouveau médecin » est à droite du libellé, comme « Nouveau patient » (plus de lien qui
   apparaît sous le champ). Règle : **rien n'apparaît ni ne disparaît dans le flux d'un formulaire pendant la frappe** ; ce qui dépend

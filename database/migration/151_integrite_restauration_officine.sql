@@ -139,7 +139,11 @@ CREATE OR REPLACE FUNCTION sync_fins_chaine() RETURNS jsonb
 LANGUAGE plpgsql STABLE AS $$
 DECLARE r record; v jsonb := '[]'; l record; n int;
 BEGIN
-    FOR r IN SELECT journal FROM chaine_integrite ORDER BY journal LOOP
+    -- Seulement les journaux envoyés au central (essai S6.5.5, 2026-11-19 : la table interne integrite_essai, jamais envoyée, faisait
+    -- refuser toute la déclaration par le central, qui ne connaît que les journaux reçus)
+    FOR r IN SELECT c.journal FROM chaine_integrite c
+             JOIN sync_table t ON t.nom_table = c.journal AND t.sens IN ('montante', 'bidirectionnelle')
+             ORDER BY c.journal LOOP
         IF to_regclass('public.' || quote_ident(r.journal)) IS NULL THEN CONTINUE; END IF;
         n := 0;
         FOR l IN EXECUTE format(

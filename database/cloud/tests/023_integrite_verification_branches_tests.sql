@@ -5,12 +5,14 @@
 --   A : restauration au rang 3, une vente en collision (n° 4 repris), deux nouvelles ventes → « remplacée après restauration »
 --   B : nouvelle suite datée AVANT la dernière réception de l'ancienne (réécriture du passé) → refusée, chainage_rompu
 --   C : restauration qui fait disparaître une ligne scellée → « restauration à justifier »
+--   D : nouvelle suite plus courte que l'ancienne (essai S6.5.5 : restauration suivie de peu de ventes) → aucune fausse rupture
 -- =====================================================================
 SET client_encoding = 'UTF8';
 BEGIN;
 
 INSERT INTO officine (id, libelle) VALUES ('aaaaaaaa-0000-0000-0000-000000000023', 'Essai 023 A'),
-    ('bbbbbbbb-0000-0000-0000-000000000023', 'Essai 023 B'), ('cccccccc-0000-0000-0000-000000000023', 'Essai 023 C');
+    ('bbbbbbbb-0000-0000-0000-000000000023', 'Essai 023 B'), ('cccccccc-0000-0000-0000-000000000023', 'Essai 023 C'),
+    ('dddddddd-0000-0000-0000-000000000023', 'Essai 023 D');
 
 -- Ligne du journal des ventes avec son empreinte (sha256 de la forme canonique || empreinte précédente)
 CREATE FUNCTION pg_temp.jv(p_id bigint, p_rang bigint, p_evt text, p_date timestamptz, p_montant numeric, p_prec bytea) RETURNS jsonb
@@ -156,6 +158,44 @@ BEGIN
     ASSERT EXISTS (SELECT 1 FROM cloud_anomalie_integrite WHERE nature = 'sceau_perdu_restauration'), 'C : sceau perdu noté';
     ASSERT (SELECT statut FROM cloud_integrite_sceau WHERE sceau_id = 1) = 'ok', 'C : le sceau reste ancré dans l''ancienne suite (n°, rang, empreinte)';
     ASSERT NOT EXISTS (SELECT 1 FROM cloud_anomalie_integrite WHERE nature = 'sceau_incoherent'), 'C : aucun faux sceau incohérent';
+END $$;
+
+-- ===================== Officine D (essai S6.5.5) =====================
+DO $$
+DECLARE z bytea := decode(repeat('00', 32), 'hex'); r1 jsonb; r2 jsonb; r3 jsonb; r4 jsonb; r5 jsonb; n4 jsonb; v jsonb;
+        b cloud_integrite_bifurcation; e cloud_integrite_etat;
+BEGIN
+    PERFORM set_config('app.officine_id', 'dddddddd-0000-0000-0000-000000000023', true);
+    r1 := pg_temp.jv(1, 1, 'ouverture', now() - interval '3 hours', 0, z);
+    r2 := pg_temp.jv(2, 2, 'vente', now() - interval '170 minutes', 10, pg_temp.h(r1));
+    r3 := pg_temp.jv(3, 3, 'vente', now() - interval '160 minutes', 20, pg_temp.h(r2));
+    r4 := pg_temp.jv(4, 4, 'vente', now() - interval '150 minutes', 30, pg_temp.h(r3));
+    r5 := pg_temp.jv(5, 5, 'vente', now() - interval '140 minutes', 40, pg_temp.h(r4));
+    PERFORM pg_temp.lot(1, 1, jsonb_build_array(pg_temp.l(1, 'creation', r1), pg_temp.l(2, 'creation', r2), pg_temp.l(3, 'creation', r3),
+                                                pg_temp.l(4, 'creation', r4), pg_temp.l(5, 'creation', r5)));
+    UPDATE journal_vente SET sync_recu_le = now() - interval '2 hours' WHERE officine_id = 'dddddddd-0000-0000-0000-000000000023';
+    -- Restauration au rang 3, une seule vente ensuite (rang 4) : la nouvelle suite s'arrête avant la fin de l'ancienne (rang 5)
+    PERFORM cloud_declarer_changement_epoque(1, 2, 0, 1, now() - interval '30 minutes', now() - interval '20 minutes', 7,
+        '[{"journal":"journal_vente","cle_chaine":"officine","rang":4}]');
+    n4 := pg_temp.jv(4, 4, 'vente', now() - interval '25 minutes', 99, pg_temp.h(r3));
+    PERFORM cloud_debut_chargement(1, 2, 1, 0, 'demande', ARRAY['journal_vente']);
+    PERFORM pg_temp.lot(2, 1, jsonb_build_array(pg_temp.l(1, 'instantane', r1), pg_temp.l(2, 'instantane', r2), pg_temp.l(3, 'instantane', r3),
+                                                pg_temp.l(4, 'instantane', n4)));
+    PERFORM cloud_fin_chargement(1, '{"journal_vente":4}');
+    v := cloud_verifier_integrite(true);
+    SELECT * INTO b FROM cloud_integrite_bifurcation WHERE officine_id = 'dddddddd-0000-0000-0000-000000000023';
+    ASSERT FOUND AND b.classe = 'restauration_constatee' AND b.rang_commun = 3 AND b.fin_ancienne_rang = 5, 'D : restauration constatée, rangs 4 et 5';
+    SELECT * INTO e FROM cloud_integrite_etat WHERE officine_id = 'dddddddd-0000-0000-0000-000000000023' AND journal = 'journal_vente';
+    ASSERT e.statut = 'ok' AND e.dernier_rang = 4 AND e.epoque_branche = 2, 'D : nouvelle suite vérifiée jusqu''au rang 4 : ' || e.statut || '/' || e.dernier_rang;
+    ASSERT NOT EXISTS (SELECT 1 FROM cloud_anomalie_integrite WHERE officine_id = 'dddddddd-0000-0000-0000-000000000023'
+                       AND nature IN ('chainage_rompu', 'ligne_manquante', 'modification_refusee')),
+        'D : l''ancienne ligne 5 n''est pas une rupture de la nouvelle suite';
+    ASSERT v ->> 'statut' = 'restauration', 'D : statut « restauration » : ' || (v ->> 'statut');
+    -- Vente suivante de la nouvelle époque au rang 5 (même rang que l'ancienne ligne 5) : suite vérifiée, toujours sans rupture
+    PERFORM pg_temp.lot(2, 2, jsonb_build_array(pg_temp.l(1, 'creation', pg_temp.jv(8, 5, 'vente', now() - interval '1 minute', 15, pg_temp.h(n4)))));
+    v := cloud_verifier_integrite(false);
+    SELECT * INTO e FROM cloud_integrite_etat WHERE officine_id = 'dddddddd-0000-0000-0000-000000000023' AND journal = 'journal_vente';
+    ASSERT e.statut = 'ok' AND e.dernier_rang = 5, 'D : vente suivante vérifiée au rang 5 : ' || e.statut || '/' || e.dernier_rang;
 END $$;
 
 -- Cloisonnement : A ne voit que sa restauration

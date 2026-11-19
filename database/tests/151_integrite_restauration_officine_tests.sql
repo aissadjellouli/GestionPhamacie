@@ -59,6 +59,10 @@ BEGIN
     ASSERT jsonb_typeof(d.fins_chaine) = 'array'
         AND EXISTS (SELECT 1 FROM jsonb_array_elements(d.fins_chaine) f WHERE f ->> 'journal' = 'journal_vente' AND (f ->> 'rang')::bigint >= 0),
         'fins de chaîne : ' || d.fins_chaine::text;
+    -- Essai S6.5.5 : seulement les journaux envoyés au central (integrite_essai, jamais envoyée, faisait refuser la déclaration)
+    ASSERT NOT EXISTS (SELECT 1 FROM jsonb_array_elements(d.fins_chaine) f
+                       WHERE NOT EXISTS (SELECT 1 FROM sync_table st WHERE st.nom_table = f ->> 'journal' AND st.sens IN ('montante', 'bidirectionnelle'))),
+        'fin de chaîne d''un journal non envoyé : ' || d.fins_chaine::text;
     -- Fin de chaîne du journal des ventes : son dernier rang
     ASSERT (SELECT (f ->> 'rang')::bigint FROM jsonb_array_elements(d.fins_chaine) f WHERE f ->> 'journal' = 'journal_vente' LIMIT 1)
          = coalesce((SELECT max(rang) FROM journal_vente), 0), 'rang de fin = dernier rang du journal';

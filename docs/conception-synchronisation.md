@@ -1914,3 +1914,52 @@ avis du juriste sur la présentation des lignes perdues lors d'un contrôle fisc
 **Essais** : copie jetable de `pharmacie_test` : `151` passé deux fois, tests `151` et `149` réussis, rejeu de `112` et `149` sans retour en arrière. `pharmacie_dev` et `pharmacie_test` : sauvegardes `*_avant_151_20261119_0042.dump`, `151` passé deux fois, tests réussis ; `database/init/schema.sql` régénéré (001 à 151) et `seed_referentiel.sql` (classement des trois tables). Central : `002` régénéré (`integrite_prise_acte`) et `024` passés sur une copie jetable puis sur `pharmacie_cloud_dev` (sauvegarde `pharmacie_cloud_dev_avant_024_20261119_0044.dump`) ; suite `database/cloud/tests` 001 à 024 réussie. Tests : `Pharma.Application.Tests` 1 646 (9 nouveaux : déclaration avant tout lot et jamais renvoyée, central injoignable, 404 et 409, époque dépassée, compteur avancé et réessayé, prise d'acte, lecture du résumé), `Pharma.Architecture.Tests` 243, `Pharma.Cloud.Tests` 78. Écran : rendu mesuré et regardé (charte-graphique.md), prise d'acte essayée dans le poste sur une copie jetable (refus de la cause courte, champ en rouge, enregistrement, journal).
 
 **Reste** : S6.5.5, essai de bout en bout avec le vrai serveur central (restauration simulée, ventes pendant la fenêtre, nouvelle époque, déclaration, chargement, vérification incrémentale puis complète, prise d'acte, tickets) ; S6.5.6, documentation finale. **[À VÉRIFIER]** : volume de la vérification par branches sur une vraie officine ; avis du comptable (plage de n° sautée) et du juriste (présentation des lignes perdues lors d'un contrôle).
+
+### 31.8 Lot S6.5.5 : essai de bout en bout (2026-11-19, « go S6.5.5 »)
+
+**Environnement** : `scripts/dev/essai_cloud_officine.ps1` avec un `TEMP` dédié (hors dépôt) et des ports à part (central 5196, API 5197),
+bases jetables `pharmacie_cloud_essai` (scripts centraux 001 à 024) et `pharmacie_essai_officine` (copie de `pharmacie_dev`). Ventes faites
+**par l'API de la caisse** (`/api/caisse/encaisser`, compte titulaire de démonstration, Paracétamol, espèces) : tickets, journal des ventes
+chaîné et envoi réels. Restauration simulée : API d'essai arrêtée par son PID, base recréée depuis un `pg_dump` pris avant les ventes
+perdues, API relancée, puis 2 ventes dans les 30 s qui précèdent le premier passage d'envoi (fenêtre avant la détection). Fin d'essai :
+`-Arreter` (bases, rôle, dossier supprimés ; aucun port 5196, 5197, 9223 ou 9333 en écoute) ; sauvegardes d'essai supprimées.
+
+**Premier passage : deux défauts trouvés**
+
+| N° | Constat | Cause | Correction |
+|---|---|---|---|
+| 1 | Déclaration de la nouvelle époque **refusée (400)** par le central ; lots envoyés sans elle (chemin de repli : rangs 5 et 6 notés `modification_refusee`, versions d'origine gardées, aucune restauration classée — comportement prévu sans déclaration) | `sync_fins_chaine()` (script 151) déclarait toutes les chaînes, y compris `integrite_essai` (table interne de la brique, jamais envoyée, présente dans toute base neuve) ; le central refuse toute déclaration qui cite un journal qu'il ne connaît pas. **Toute officine aurait été touchée.** | `151` : seulement les journaux envoyés au central (`sync_table` montante ou bidirectionnelle) ; test du `151` complété. Central (`PointsEntree.cs`) : raison d'un refus écrite au journal du central (rien n'était écrit). |
+| 2 | Restauration déclarée, nouvelle suite **plus courte** que l'ancienne (rangs 5 et 6 contre 5 à 7) : bifurcation bien classée, mais l'ancienne ligne 7 notée « chaînage rompu », chaîne en « rupture », statut « anomalie » (la prise d'acte n'aurait pas ramené « ok ») | `cloud_integrite_verifier_branches` (023) : au bout de la suite vivante, la ligne suivante de l'**ancienne** branche était prise pour la suite. Les tests du 023 n'avaient que des nouvelles suites au moins aussi longues que l'ancienne ; le cas réel (restauration suivie de peu de ventes) est l'inverse | `023` : `cloud_integrite_ancienne_branche()` écarte les lignes d'une ancienne branche reconnue (au-delà du rang commun, jusqu'à sa fin, reçues avant la nouvelle époque) ; cas **D** ajouté aux tests du 023 (suite plus courte, puis vente suivante au même rang que l'ancienne ligne). L'anomalie déjà notée à tort est reclassée (`cloud_anomalie_classement`) au passage suivant. |
+
+**Passage complet, après correction (nouvel environnement propre)**
+
+| N° | Étape | Constaté | Résultat |
+|---|---|---|---|
+| 1 | Activation, chargement, 3 ventes (T-017617 à 619) | lots 1 à 76 accusés ; vérification complète : ok, journal des ventes ok au rang 4 | OK |
+| 2 | Point de restauration, 3 ventes (T-017620 à 622) envoyées | lot 77 ; vérification incrémentale : ok au rang 7 | OK |
+| 3 | Restauration, 2 ventes dans la fenêtre | n° T-017620 et 621 **repris** (contenu différent) ; détection en 27 s (central au lot 77, base au lot 76) ; compteur avancé à 17622 (plus grand n° reçu par le central), plage 17622 notée (`compteur_ticket_saut`, époque 1) ; contrôle local : 0 n° manquant | OK |
+| 4 | Nouvelle époque (titulaire) | époque 2, chargement 53 ; déclaration **reçue par le central avant le premier lot** (fins de chaîne : psychotropes rang 1, ventes rang 6) | OK |
+| 5 | Vérification incrémentale puis complète | restauration constatée époque 1 → 2, rangs 5 à 7, 3 lignes, 360,00 DA TTC, 0 sceau perdu, classe « remplacée après restauration » ; 2 lignes divergentes gardées comme preuve ; chaîne ok au rang 6 ; statut **« restauration »** ; résumé reçu par l'officine | OK |
+| 6 | Écran (poste branché sur l'API d'essai) | rubriques « Intégrité au central » et « Restaurations constatées » à 0 px, clair et sombre, 1 536 × 890 et 1 366 × 768 ; captures regardées | OK |
+| 7 | Prise d'acte depuis le poste | cause saisie, enregistrée, envoyée (lot 77 accusé) ; vérification du central : statut **« ok »**, restauration toujours listée | OK |
+| 8 | Vente suivante | T-017623 (le 17622 n'est pas réattribué), rang 7 de la nouvelle suite (même rang que l'ancienne ligne perdue) : vérifiée ok au rang 7, aucune nouvelle anomalie ; écran « Aucune anomalie », tickets vérifiés jusqu'au n° 17623 | OK |
+
+**Correction d'écran** : après la prise d'acte, le message de réussite restait affiché en changeant de rubrique et faisait dépasser
+« Intégrité au central » de 52 px à 1 366 × 768 ; il est maintenant effacé au changement de rubrique (`AdminSynchronisation.razor`) :
+mesuré à 0 px ensuite.
+
+**Bases de développement** : `151` corrigé passé sur `pharmacie_dev` et `pharmacie_test` (sauvegardes `*_avant_151b_20261119_0210.dump`),
+tests réussis, `database/init/schema.sql` régénéré (seule la fonction change). `023` corrigé passé sur `pharmacie_cloud_dev` ;
+**la sauvegarde d'avant a échoué** (`pg_dump` sans `--enable-row-security` refusé par la RLS forcée) et le script est passé quand même :
+il ne fait que remplacer des fonctions (aucune donnée touchée) ; sauvegarde prise juste après
+(`pharmacie_cloud_dev_apres_023b_20261119_0211.dump`) ; suite centrale 022 à 024 réussie. Tests : Application 1 646, Architecture 243,
+Cloud 78, Domain 630.
+
+**Constats sans correction**
+- **N° de tickets repris dans la fenêtre** (avant la détection) : D6 (a) n'avance le compteur qu'à la détection ; les ventes faites
+  entre le redémarrage et le premier passage (30 s au moins, davantage si le central est injoignable) reprennent des n° déjà reçus par
+  le central. La nature `ticket_reattribue_restauration` est prévue (022) mais **aucune vérification ne la produit** : ces doublons ne
+  sont visibles qu'à travers les lignes divergentes. **[DÉCISION DU TITULAIRE : signaler les n° repris, et comment ?]**
+- Données de la page Synchronisation lues une fois : passer d'une rubrique à l'autre ne relit pas l'état (« Actualiser » le fait).
+- Opérations de l'ancienne époque restées dans la file (`sync_sortie`, 154 ici) : jamais envoyées (le chargement les remplace), purgées
+  comme prévu en S6.

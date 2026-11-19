@@ -24,7 +24,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict DXdI1zeaae1og5ZNqC3Pg9Gt8TRFsNjgKOf2c5HP8SuRHZA2roaV1Er15FZCSP2
+\restrict uwMJLkUGIty2dKSt0YQgeADYhjrt5TSXCcDub4AHLcSPRLuXsIVvO4zHgAkuk6D
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -3817,7 +3817,11 @@ CREATE FUNCTION public.sync_fins_chaine() RETURNS jsonb
     AS $$
 DECLARE r record; v jsonb := '[]'; l record; n int;
 BEGIN
-    FOR r IN SELECT journal FROM chaine_integrite ORDER BY journal LOOP
+    -- Seulement les journaux envoyés au central (essai S6.5.5, 2026-11-19 : la table interne integrite_essai, jamais envoyée, faisait
+    -- refuser toute la déclaration par le central, qui ne connaît que les journaux reçus)
+    FOR r IN SELECT c.journal FROM chaine_integrite c
+             JOIN sync_table t ON t.nom_table = c.journal AND t.sens IN ('montante', 'bidirectionnelle')
+             ORDER BY c.journal LOOP
         IF to_regclass('public.' || quote_ident(r.journal)) IS NULL THEN CONTINUE; END IF;
         n := 0;
         FOR l IN EXECUTE format(
@@ -19344,5 +19348,5 @@ ALTER TABLE ONLY public.zone_psychotrope_wilaya
 -- PostgreSQL database dump complete
 --
 
-\unrestrict DXdI1zeaae1og5ZNqC3Pg9Gt8TRFsNjgKOf2c5HP8SuRHZA2roaV1Er15FZCSP2
+\unrestrict uwMJLkUGIty2dKSt0YQgeADYhjrt5TSXCcDub4AHLcSPRLuXsIVvO4zHgAkuk6D
 

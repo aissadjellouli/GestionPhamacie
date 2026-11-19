@@ -499,8 +499,13 @@
     // Lu quand la sous-rubrique s'affiche (le lien du menu ne recrée pas l'écran), relu par « Actualiser »
     private string? reglagesCharges;
 
+    // Essai S6.5.5 (2026-11-19) : le message de réussite d'une rubrique ne suit pas dans la suivante (il faisait dépasser
+    // « Intégrité au central » de 52 px à 1366 × 768 après une prise d'acte)
+    private string? rubriqueAffichee;
+
     protected override async Task OnParametersSetAsync()
     {
+        if (rubrique != rubriqueAffichee) { rubriqueAffichee = rubrique; message = null; }
         if (rubrique != "ordres") ordresCharges = false;
         else if (!ordresCharges)
         {
