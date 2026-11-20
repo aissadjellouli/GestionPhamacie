@@ -217,46 +217,48 @@ public partial class DemoCloudConteneurTests
     }
 
     [Fact]
-    public void Script_d_init_suit_l_ordre_de_la_mise_en_production()
+    public void Script_d_init_suit_l_ordre_des_bases_de_developpement()
     {
+        // Choix A du titulaire (2026-11-20) : comme scripts/initialiser_base_locale.ps1 (migrations NNN_*.sql dans l'ordre, sans
+        // les scripts « b », puis toutes les données fictives), car la voie de la mise en production (init + référentiel) crée
+        // déjà le compte « titulaire » et 900_donnees_demo.sql ne chargeait alors rien
         var init = string.Join('\n', Instructions(File.ReadAllText(CheminInit)));
         var ordre = new[] { "CREATE ROLE pharma_app LOGIN CREATEDB", "CREATE DATABASE :\"base\" OWNER pharma_app ENCODING 'UTF8' TEMPLATE template0",
-            "psql_app -f \"$SCRIPTS/init/schema.sql\"", "psql_app -f \"$SCRIPT_FUSEAU\"", "psql_app -f \"$SCRIPTS/init/seed_referentiel.sql\"",
-            "for numero in \"${DONNEES_DEMO[@]}\"" };
+            "for fichier in \"${MIGRATIONS[@]}\"", "for fichier in \"${DONNEES[@]}\"" };
         var positions = ordre.Select(o => init.IndexOf(o, StringComparison.Ordinal)).ToList();
         for (var i = 0; i < ordre.Length; i++) Assert.True(positions[i] >= 0, $"Absent du script d'init : {ordre[i]}");
         for (var i = 1; i < ordre.Length; i++) Assert.True(positions[i - 1] < positions[i], $"Ordre : {ordre[i - 1]} avant {ordre[i]}");
-        // Le script du fuseau est le 083 de database/migration
-        Assert.Contains("SCRIPT_FUSEAU=\"$(script_numerote \"$SCRIPTS/migration\" 083)\"", init);
+        // Sélection : NNN_*.sql seulement (101b et 111b exclus), triés ; toutes les données de database/data
+        Assert.Contains("-regex '.*/[0-9]{3}_[^/]*[.]sql' | sort", init);
+        Assert.Contains("find \"$SCRIPTS/data\" -maxdepth 1 -type f -name '*.sql' | sort", init);
+        Assert.DoesNotContain("init/schema.sql", init);
+        Assert.DoesNotContain("seed_referentiel.sql", init);
 
-        // Même ordre dans le script de mise en production
-        var mep = Lire("scripts", "mep", "creer_base_officine.ps1");
-        var code = mep[mep.IndexOf("Invoke-Principal", StringComparison.Ordinal)..];
-        var schema = code.IndexOf("@(\"-f\", $schema)", StringComparison.Ordinal);
-        var fuseau = code.IndexOf("@(\"-f\", $scriptFuseau.FullName)", StringComparison.Ordinal);
-        var seed = code.IndexOf("@(\"-f\", $seed)", StringComparison.Ordinal);
-        Assert.True(schema > 0 && schema < fuseau && fuseau < seed, "scripts/mep : schema.sql, 083, seed_referentiel.sql.");
-        Assert.Contains("OWNER $RoleApp ENCODING 'UTF8' TEMPLATE template0", mep);
+        // Même sélection dans le script des bases de développement
+        var local = Lire("scripts", "initialiser_base_locale.ps1");
+        Assert.Contains(@"-match ""^\d{3}_""", local);
+        Assert.Contains(@"Get-ChildItem (Join-Path $racine ""database\data"") -Filter ""*.sql"" | Sort-Object Name", local);
+        // Les numéros restent sur trois chiffres (l'ordre alphabétique du script bash est alors l'ordre des numéros), sans doublon
+        var numeros = Directory.GetFiles(Chemin("database", "migration"), "*.sql").Select(Path.GetFileName)
+            .Where(n => System.Text.RegularExpressions.Regex.IsMatch(n!, @"^\d{3}_")).Select(n => n![..3]).ToList();
+        Assert.NotEmpty(numeros);
+        Assert.Equal(numeros.Count, numeros.Distinct().Count());
     }
 
     [Fact]
-    public void Script_d_init_compte_applicatif_marqueur_et_donnees_900_a_904_seulement()
+    public void Script_d_init_compte_applicatif_marqueur_et_controle_des_comptes_de_demonstration()
     {
         var texte = File.ReadAllText(CheminInit);
         Assert.Contains("export PGOPTIONS=\"-c client_min_messages=warning -c pharma.reglage_central=on\"", texte);
-        Assert.Contains("pharma.reglage_central=on", Lire("scripts", "mep", "outils_mep.ps1"));
+        Assert.Contains("pharma.reglage_central=on", Lire("scripts", "initialiser_base_locale.ps1"));
         Assert.Matches(@"psql_app\(\) \{ psql -X -q -v ON_ERROR_STOP=1 --username ""\$ROLE_APP""", texte);
         Assert.Contains("ROLE_APP=\"pharma_app\"", texte);
-        Assert.Contains("DONNEES_DEMO=(900 901 902 903 904)", texte);
-        // 905 et la nomenclature : étape 2 (jamais chargés ici)
+        // Les données fictives doivent être chargées (BL-DEMO-1) et les trois comptes présents, sinon l'init échoue
         var code = string.Join('\n', Instructions(texte));
-        Assert.DoesNotContain("905", code);
-        Assert.DoesNotContain("NOMENCLATURE", code, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("numero_bl = 'BL-DEMO-1'", code);
+        Assert.Contains("identifiant IN ('titulaire', 'assistant', 'vendeur')", code);
         Assert.DoesNotContain("111b", code);
-        // Chaque donnée fictive existe, une seule fois
-        foreach (var n in new[] { "900", "901", "902", "903", "904" })
-            Assert.Single(Directory.GetFiles(Chemin("database", "data"), $"{n}_*.sql"));
-        Assert.Single(Directory.GetFiles(Chemin("database", "migration"), "083_*.sql"));
+        Assert.DoesNotContain("NOMENCLATURE", code, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

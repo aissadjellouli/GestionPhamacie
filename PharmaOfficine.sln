@@ -54,6 +54,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Documents", "Documents", "{
 		docs\pharma-officine-differenciation.md = docs\pharma-officine-differenciation.md
 		docs\pharma-officine-differenciationV2.md = docs\pharma-officine-differenciationV2.md
 		docs\fonctionnalites-a-reprendre.md = docs\fonctionnalites-a-reprendre.md
+		README.md = README.md
+		docs\demo-cloud.md = docs\demo-cloud.md
+		docs\installation-docker.md = docs\installation-docker.md
+		docs\nouveau-poste-developpeur.md = docs\nouveau-poste-developpeur.md
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "adr", "adr", "{35D7AF71-198B-4464-B00C-B4E49C87A256}"
@@ -329,6 +333,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52
 		database\tests\154_parapharmacie_catalogue_tests.sql = database\tests\154_parapharmacie_catalogue_tests.sql
 		database\tests\117_registre_renforce_tests.sql = database\tests\117_registre_renforce_tests.sql
 		database\tests\101b_suppression_num_facture_chifa_tests.sql = database\tests\101b_suppression_num_facture_chifa_tests.sql
+		database\tests\rejeu_complet.ps1 = database\tests\rejeu_complet.ps1
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "init", "init", "{260B10C5-14E0-4E71-ACF8-F97E022B21BE}"
@@ -363,6 +368,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "scripts", "scripts", "{5C0D
 		scripts\second-serveur\autoriser-lecture-copie-ged.ps1 = scripts\second-serveur\autoriser-lecture-copie-ged.ps1
 		scripts\second-serveur\basculer-second-serveur.ps1 = scripts\second-serveur\basculer-second-serveur.ps1
 		scripts\second-serveur\remettre-en-second.ps1 = scripts\second-serveur\remettre-en-second.ps1
+		scripts\basculer-pc-secours.ps1 = scripts\basculer-pc-secours.ps1
+		scripts\creer_paquet_essai.ps1 = scripts\creer_paquet_essai.ps1
+		scripts\dev\preparer_central_vs.ps1 = scripts\dev\preparer_central_vs.ps1
+		scripts\paquet\installer.ps1 = scripts\paquet\installer.ps1
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pharma.Cloud.Api", "src\Pharma.Cloud.Api\Pharma.Cloud.Api.csproj", "{6D7EDF33-6E97-443F-9818-AD4EFFFCE50A}"

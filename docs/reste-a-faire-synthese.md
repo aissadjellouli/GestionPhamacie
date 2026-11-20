@@ -82,8 +82,9 @@ rôle `pharma_cloud_dev_vs`, variables d'utilisateur, autorité, officine « Dé
       ICU, `TZ=Africa/Algiers`) — **fichiers écrits le 2026-11-20** (`src/Pharma.Api/Dockerfile`, `.dockerignore`,
       `deploy/demo/` : compose, `.env.example`, script d'init ; tests `DemoCloudConteneurTests`, build et tests d'architecture
       réussis sous Windows) ; **reste : premier démarrage réel** après installation de Docker Desktop + WSL 2 (liste « À vérifier
-      au premier démarrage » de [demo-cloud.md](demo-cloud.md)) et **décision du titulaire** sur les comptes de démo
-      (`seed_referentiel.sql` crée `titulaire`, ce qui fait s'arrêter `900_donnees_demo.sql` : choix A, B ou C dans demo-cloud.md) ;
+      au premier démarrage » de [demo-cloud.md](demo-cloud.md)) ; comptes de démo : **choix A du titulaire le 2026-11-20**
+      (base de démo construite comme les bases de développement : migrations puis données fictives ; séquence validée sur une
+      base jetable, défaut du script 149 sur base neuve corrigé et repassé sur dev et test) ;
     - [ ] étape 2 : mode démo ;
     - [ ] étape 3 : tests (démarrage du conteneur, PDF, sauvegarde et restauration dans le conteneur) ;
     - [ ] étape 4 : documentation d'exploitation de la démo ;

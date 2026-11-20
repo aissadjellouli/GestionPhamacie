@@ -91,7 +91,9 @@ END $$;
 -- Version d'origine (sans colonne « erreur ») retirée : le type de retour change
 DO $retrait$ BEGIN
     IF to_regprocedure('sync_avancer_sequences(jsonb)') IS NOT NULL
-       AND pg_get_function_result('sync_avancer_sequences(jsonb)'::regprocedure) NOT LIKE '%erreur%' THEN
+       -- to_regprocedure et non ::regprocedure : la conversion d'un nom inconnu échoue même quand la première condition est fausse
+       -- (base neuve, rejeu de 001 à la fin : la fonction n'existe pas encore)
+       AND pg_get_function_result(to_regprocedure('sync_avancer_sequences(jsonb)')) NOT LIKE '%erreur%' THEN
         DROP FUNCTION sync_avancer_sequences(jsonb);
     END IF;
 END $retrait$;

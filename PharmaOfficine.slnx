@@ -31,6 +31,10 @@
     <File Path="docs/pharma-officine-differenciation.md" />
     <File Path="docs/pharma-officine-differenciationV2.md" />
     <File Path="docs/fonctionnalites-a-reprendre.md" />
+    <File Path="README.md" />
+    <File Path="docs/demo-cloud.md" />
+    <File Path="docs/installation-docker.md" />
+    <File Path="docs/nouveau-poste-developpeur.md" />
   </Folder>
   <Folder Name="/Documents/adr/">
     <File Path="docs/adr/0001-architecture-locale.md" />
@@ -281,6 +285,7 @@
     <File Path="database/tests/154_parapharmacie_catalogue_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
     <File Path="database/tests/101b_suppression_num_facture_chifa_tests.sql" />
+    <File Path="database/tests/rejeu_complet.ps1" />
   </Folder>
   <Folder Name="/database/cloud/">
     <File Path="database/cloud/README.md" />
@@ -359,6 +364,8 @@
     <File Path="scripts/initialiser_base_locale.ps1" />
     <File Path="scripts/restaurer_pharmacie.ps1" />
     <File Path="scripts/sauvegarde_pharmacie.ps1" />
+    <File Path="scripts/basculer-pc-secours.ps1" />
+    <File Path="scripts/creer_paquet_essai.ps1" />
   </Folder>
   <Folder Name="/scripts/mep/">
     <File Path="scripts/mep/outils_mep.ps1" />
@@ -368,6 +375,7 @@
   </Folder>
   <Folder Name="/scripts/dev/">
     <File Path="scripts/dev/essai_cloud_officine.ps1" />
+    <File Path="scripts/dev/preparer_central_vs.ps1" />
   </Folder>
   <Folder Name="/scripts/second-serveur/">
     <File Path="scripts/second-serveur/commun.ps1" />
@@ -428,5 +436,8 @@
   </Folder>
   <Folder Name="/Documents/EXEMPLE/aid/ordonnances-photos-2/">
     <File Path="docs/EXEMPLE/aid/ordonnances-photos-2/WhatsApp Image 2026-11-12 at 19.58.54.jpeg" />
+  </Folder>
+  <Folder Name="/scripts/paquet/">
+    <File Path="scripts/paquet/installer.ps1" />
   </Folder>
 </Solution>

@@ -167,29 +167,26 @@ Au premier démarrage (volume `db-donnees` vide), le script d'init, en superutil
 
 1. crée le rôle `pharma_app` (LOGIN, CREATEDB), mot de passe lu dans le secret `pharma_app_mdp` ;
 2. crée `pharmacie_demo` (OWNER `pharma_app`, UTF8, template0 : le propriétaire crée `pg_trgm` et `pgcrypto`) ;
-3. passe `database/init/schema.sql`, `database/migration/083_fuseau_horaire.sql`, `database/init/seed_referentiel.sql`
-   (même ordre que `scripts/mep/creer_base_officine.ps1`), avec `ON_ERROR_STOP` et `PGOPTIONS=-c pharma.reglage_central=on` ;
-4. passe les données **fictives** `900` à `904` (`database/data`) ;
-5. vérifie le fuseau de la base (`Africa/Algiers`) et signale si les données fictives n'ont pas été chargées.
+3. passe **toutes les migrations** `database/migration/NNN_*.sql`, dans l'ordre des numéros, sans les scripts « b »
+   (`101b`, `111b`), comme `scripts/initialiser_base_locale.ps1` pour les bases de développement, avec `ON_ERROR_STOP` et
+   `PGOPTIONS=-c pharma.reglage_central=on` ;
+4. passe **toutes les données fictives** `database/data/*.sql`, par ordre de nom (`905_jeu_de_test.sql` ne fait rien tant que
+   la nomenclature nationale n'est pas importée) ;
+5. vérifie le fuseau de la base (`Africa/Algiers`), la présence des données fictives (réception `BL-DEMO-1`) et des trois
+   comptes de démonstration ; sinon l'init **échoue** (rien n'est caché).
 
-**Non fait à cette étape** : `111b` (séparation des rôles : journaux **non protégés** dans cette base de démonstration),
-`905_jeu_de_test.sql` et la nomenclature nationale (étape 2).
+**Choix A du titulaire (2026-11-20)** : la base de démonstration est construite comme les bases de développement, et non par
+la voie de la mise en production (`database/init/schema.sql` + `seed_referentiel.sql`). Raison constatée : `seed_referentiel.sql`
+crée le compte `titulaire` (mot de passe provisoire) et `900_donnees_demo.sql` s'arrête alors sans rien faire, la base n'aurait
+eu aucune donnée fictive. Séquence validée le 2026-11-20 sur une base jetable locale (supprimée ensuite) : 152 migrations puis
+900 à 905, trois comptes présents, `BL-DEMO-1` présente, fuseau `Africa/Algiers`. Ce rejeu complet a révélé un défaut du
+script `149` sur une base **neuve** (garde `::regprocedure` évaluée sur une fonction encore absente), corrigé (`to_regprocedure`)
+et repassé sans effet sur `pharmacie_dev` et `pharmacie_test`.
 
-**Point à trancher (constaté dans le code, bloquant pour les comptes de démo)** : `seed_referentiel.sql` crée le compte
-`titulaire` (mot de passe provisoire `Provisoire-2026`, changement obligatoire à la première connexion), et
-`900_donnees_demo.sql` **s'arrête sans rien faire** quand un compte `titulaire` existe déjà ; 901 à 903 s'arrêtent à leur tour
-(réception `BL-DEMO-1` absente) et 904 ne fait que poser des coordonnées fictives. Avec l'ordre de la mise en production, la base
-de démonstration n'aura donc **que** le compte `titulaire` du référentiel ; le script d'init l'écrit au journal du conteneur
-(« ATTENTION, données fictives 900 à 904 NON chargées »). Choix possibles, à décider par le titulaire :
+**Non fait à cette étape** : `111b` (séparation des rôles : journaux **non protégés** dans cette base de démonstration) et
+l'import de la nomenclature nationale, donc le grand jeu de test `905` (étape 2).
 
-- A. base de démo construite comme par `scripts/initialiser_base_locale.ps1` (scripts `database/migration` 001 à 154 sans les
-  scripts « b », puis `database/data`) au lieu de `database/init` ;
-- B. condition de `900_donnees_demo.sql` changée (données de démo repérées par `BL-DEMO-1` plutôt que par le compte
-  `titulaire`) : touche aussi les bases de développement ;
-- C. étape propre à la démo, entre `seed_referentiel.sql` et 900, qui traite le compte `titulaire` provisoire.
-
-Comptes prévus par `900_donnees_demo.sql` **s'il est chargé** : `titulaire`, `assistant`, `vendeur`, mot de passe `demo`
-(données fictives, jamais en production).
+Comptes de démonstration : `titulaire`, `assistant`, `vendeur`, mot de passe `demo` (données fictives, jamais en production).
 
 ### Prérequis (poste Windows du titulaire)
 
@@ -249,7 +246,7 @@ l'API (proxy inverse déclaré dans `ProxysConnus`) et certificat pour les clés
 - Script d'init : lancé (exécutable) ou « sourcé » selon les droits du fichier monté depuis Windows ; connexion de `pharma_app`
   par le socket local pendant l'init ; `\restrict` de `schema.sql` et `\getenv` acceptés par le psql de l'image ; durée de
   l'init (`start_period` de 120 s pour `db`).
-- Données fictives : voir « Point à trancher » ci-dessus (attendu : non chargées avec l'ordre actuel).
+- Données fictives et comptes de démonstration chargés (l'init échoue sinon) : séquence déjà validée hors conteneur, à constater dans le conteneur.
 - `GET /api/healthcheck` en 200 depuis le PC ; connexion au poste ou au navigateur (`/mobile/`) sur `http://127.0.0.1:5080`.
 - DataProtection propre à `AddAuthentication` (clés dans le profil du compte `app`, non persistées) : avertissements possibles.
 - Sauvegarde automatique (`pg_dump` du conteneur) : disque de destination non réglé à cette étape.

@@ -5,14 +5,16 @@
 # Lancé par l'image postgres (dossier /docker-entrypoint-initdb.d) au PREMIER démarrage seulement,
 # quand le volume des données est vide. Compte superutilisateur, par le socket local du serveur temporaire.
 #
-# Même ordre que la mise en production (scripts/mep/creer_base_officine.ps1) :
+# Même ordre que les bases de développement (scripts/initialiser_base_locale.ps1 ; décision du titulaire du 2026-11-20,
+# choix A : la voie de la mise en production, init + référentiel, crée déjà le compte « titulaire » et 900_donnees_demo.sql
+# ne chargeait alors rien) :
 #   1. rôle applicatif pharma_app (LOGIN CREATEDB) ;
 #   2. base OWNER pharma_app, UTF8, template0 (propriétaire : il crée pg_trgm et pgcrypto) ;
-#   3. database/init/schema.sql, 4. database/migration/083_*.sql (fuseau), 5. database/init/seed_referentiel.sql,
-#      avec le compte pharma_app, ON_ERROR_STOP et PGOPTIONS « pharma.reglage_central=on » ;
-#   puis les données FICTIVES 900 à 904 (database/data).
-# Non fait à cette étape : 111b (séparation des rôles : journaux non protégés, base de démonstration seulement),
-# 905 (jeu de test) et la nomenclature nationale (étape 2).
+#   3. toutes les migrations database/migration/NNN_*.sql, dans l'ordre des numéros (les scripts « b », 101b et 111b,
+#      sont exclus comme en développement : ils se lancent à part, sur décision) ;
+#   4. toutes les données FICTIVES database/data/*.sql, par ordre de nom (905, le grand jeu de test, ne fait rien tant que
+#      la nomenclature nationale n'est pas importée : étape 2) ;
+#   avec le compte pharma_app, ON_ERROR_STOP et PGOPTIONS « pharma.reglage_central=on » (comme en développement).
 #
 # Mots de passe : lus dans les fichiers des secrets compose, jamais écrits dans un fichier ni sur une ligne de commande.
 # =====================================================================
@@ -29,8 +31,6 @@ set -euo pipefail
 BASE="${PHARMA_BASE:-pharmacie_demo}"
 SCRIPTS="${PHARMA_SCRIPTS:-/pharma/database}"
 ROLE_APP="pharma_app"
-# Données fictives chargées à cette étape (905 et la nomenclature : étape 2)
-DONNEES_DEMO=(900 901 902 903 904)
 
 erreur() { echo "init démo : $*" >&2; exit 1; }
 info() { echo "init démo : $*"; }
@@ -45,19 +45,18 @@ lire_secret() {
     printf '%s' "$valeur"
 }
 
-# Un seul fichier attendu par numéro (ex. 083_*.sql)
-script_numerote() {
-    local dossier="$1" numero="$2"
-    local trouves=("$dossier"/"$numero"_*.sql)
-    [[ ${#trouves[@]} -eq 1 && -f "${trouves[0]}" ]] || erreur "script $numero introuvable ou en double dans $dossier"
-    printf '%s' "${trouves[0]}"
-}
-
 [[ "$BASE" =~ ^[a-z_][a-z0-9_]*$ ]] || erreur "nom de base refusé : $BASE"
-for f in "$SCRIPTS/init/schema.sql" "$SCRIPTS/init/seed_referentiel.sql"; do
-    [[ -f "$f" ]] || erreur "fichier introuvable : $f (montage ../../database dans docker-compose.yml)"
-done
-SCRIPT_FUSEAU="$(script_numerote "$SCRIPTS/migration" 083)"
+
+# Migrations : NNN_*.sql seulement (les scripts « b » sont exclus), triées par numéro
+# Numéros toujours sur trois chiffres : l'ordre alphabétique est l'ordre des numéros
+mapfile -t MIGRATIONS < <(find "$SCRIPTS/migration" -maxdepth 1 -type f -regextype posix-extended -regex '.*/[0-9]{3}_[^/]*[.]sql' | sort)
+(( ${#MIGRATIONS[@]} > 0 )) || erreur "aucune migration dans $SCRIPTS/migration (montage ../../database dans docker-compose.yml)"
+# Un numéro en double arrêterait tout plutôt que de passer deux scripts dans un ordre incertain
+doublons="$(for m in "${MIGRATIONS[@]}"; do basename "$m" | cut -c1-3; done | sort | uniq -d)"
+[[ -z "$doublons" ]] || erreur "numéros de migration en double : $doublons"
+# Données fictives : tous les .sql de database/data, par ordre de nom
+mapfile -t DONNEES < <(find "$SCRIPTS/data" -maxdepth 1 -type f -name '*.sql' | sort)
+(( ${#DONNEES[@]} > 0 )) || erreur "aucune donnée fictive dans $SCRIPTS/data"
 
 MDP_APP="$(lire_secret "${PHARMA_APP_MDP_FILE:-}")"
 
@@ -82,15 +81,12 @@ export PGOPTIONS="-c client_min_messages=warning -c pharma.reglage_central=on"
 export PGPASSWORD="$MDP_APP"
 psql_app() { psql -X -q -v ON_ERROR_STOP=1 --username "$ROLE_APP" --dbname "$BASE" "$@"; }
 
-info "structure : init/schema.sql"
-psql_app -f "$SCRIPTS/init/schema.sql"
-info "fuseau horaire : $(basename "$SCRIPT_FUSEAU")"
-psql_app -f "$SCRIPT_FUSEAU"
-info "référentiel : init/seed_referentiel.sql"
-psql_app -f "$SCRIPTS/init/seed_referentiel.sql"
+info "migrations : ${#MIGRATIONS[@]} scripts, de $(basename "${MIGRATIONS[0]}") à $(basename "${MIGRATIONS[-1]}")"
+for fichier in "${MIGRATIONS[@]}"; do
+    psql_app -f "$fichier"
+done
 
-for numero in "${DONNEES_DEMO[@]}"; do
-    fichier="$(script_numerote "$SCRIPTS/data" "$numero")"
+for fichier in "${DONNEES[@]}"; do
     info "données fictives : $(basename "$fichier")"
     psql_app -f "$fichier"
 done
@@ -101,14 +97,10 @@ fuseau="$(psql_app -tA -c "SHOW timezone")"
 info "fuseau de la base : $fuseau"
 
 demo="$(psql_app -tA -c "SELECT count(*) FROM reception WHERE numero_bl = 'BL-DEMO-1'")"
-if [[ "$demo" == "0" ]]; then
-    # Constat du code : seed_referentiel.sql crée le compte « titulaire » (mot de passe provisoire), et 900_donnees_demo.sql
-    # s'arrête quand ce compte existe déjà. Décision du titulaire attendue (docs/demo-cloud.md, étape 1).
-    echo "init démo : ATTENTION, données fictives 900 à 904 NON chargées (compte « titulaire » déjà créé par seed_referentiel.sql)." >&2
-    echo "init démo : seul le compte « titulaire » du référentiel existe (mot de passe provisoire, à changer à la première connexion)." >&2
-else
-    info "données fictives chargées"
-fi
+[[ "$demo" != "0" ]] || erreur "données fictives non chargées (réception BL-DEMO-1 absente) : voir le journal ci-dessus"
+comptes="$(psql_app -tA -c "SELECT count(*) FROM utilisateur WHERE identifiant IN ('titulaire', 'assistant', 'vendeur')")"
+[[ "$comptes" == "3" ]] || erreur "comptes de démonstration incomplets ($comptes sur 3 : titulaire, assistant, vendeur)"
+info "données fictives chargées ; comptes titulaire, assistant, vendeur (mot de passe de démonstration : voir docs/demo-cloud.md)"
 
 unset PGPASSWORD MDP_APP
 info "terminé : base $BASE prête"

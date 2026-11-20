@@ -250,7 +250,9 @@ Règles qui reviennent tout le temps :
   et `deploy/demo/.env` restent locaux.
 - **Jamais dans git** : vidéos (exclues par `.gitignore`), dossier `docs/taches/` (échanges de travail), sauvegardes de bases,
   fichiers `.env`.
-- **Aucun nom de logiciel concurrent** dans le code, les docs, les scripts ou les messages de commit.
+- **Aucun nom de logiciel d'un autre éditeur** dans le code, les docs, les scripts ou les messages de commit (vérifié par le test `AucunNomTiersTests`).
+- **Nouveau fichier `.md` ou `.ps1`** : l'ajouter aux **deux** solutions Visual Studio (`PharmaOfficine.slnx` et
+  `PharmaOfficine.sln`, dossier correspondant) dans la même modification ; le test `SolutionFichiersTests` le vérifie.
 - **Paquets NuGet** : jamais publiés depuis un poste de développement ; une nouvelle dépendance seulement sous licence
   permissive, version gérée dans `Directory.Packages.props`.
 - **Port 5080** : c'est celui de l'API lancée dans Visual Studio ; pour un essai à côté, utiliser un autre port et arrêter
