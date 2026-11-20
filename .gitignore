@@ -39,3 +39,6 @@ docs/idees-pharma.md
 
 # Sorties d'essais et de tests locaux (jamais dans le dépôt)
 .essai-*/
+
+# Démo cloud : variables et secrets locaux (deploy/demo/.env), jamais dans git ; le modèle .env.example reste suivi
+.env

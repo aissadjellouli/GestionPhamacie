@@ -16,6 +16,12 @@ Le script est `scripts\dev\essai_cloud_officine.ps1`. Il :
 
 Ce qu'il ne fait jamais : toucher `pharmacie_dev` (sauf lecture), `pharmacie_test`, `pharmacie_cloud_dev`, le port 5080, `C:\ProgramData\PharmaOfficine` ; utiliser le compte `postgres` ; envoyer quoi que ce soit sur Internet (toutes les adresses sont `127.0.0.1`) ; toucher le magasin de certificats de Windows.
 
+Pour relier, au contraire, l'officine `pharmacie_dev` au serveur central de développement `pharmacie_cloud_dev` lancés en débogage
+depuis Visual Studio, c'est un autre outil : `scripts\dev\preparer_central_vs.ps1` (voir [poste-de-developpement.md](poste-de-developpement.md),
+« Lancer API + Poste + Central dans Visual Studio »). L'outil d'essai décrit ici, lui, ne touche jamais `pharmacie_cloud_dev` ; il
+donne à ses deux serveurs leurs propres variables (connexions, dossiers), qui l'emportent sur les variables d'utilisateur posées par
+`preparer_central_vs.ps1`.
+
 ## 2. Prérequis
 
 - PostgreSQL 18 installé, service démarré, et les bases de démonstration créées (voir [poste-de-developpement.md](poste-de-developpement.md)). `psql`, `pg_dump` et `pg_restore` sont cherchés dans `C:\Program Files\PostgreSQL`.

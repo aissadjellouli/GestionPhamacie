@@ -29,6 +29,7 @@ Logiciel de gestion d’officine pour les pharmacies algériennes : caisse, stoc
 - Visual Studio 2022 (`PharmaOfficine.sln`), ou Visual Studio 2022 17.14+ / VS Code avec C# Dev Kit (`PharmaOfficine.slnx`). Les deux solutions contiennent les mêmes projets : préciser le fichier dans les commandes `dotnet`.
 
 Procédure détaillée (installation de PostgreSQL, création des bases, lancement depuis Visual Studio, problèmes connus) : [docs/poste-de-developpement.md](docs/poste-de-developpement.md).
+Nouveau développeur sur un PC neuf (avec seulement Visual Studio et l'accès au dépôt) : liste complète [docs/nouveau-poste-developpeur.md](docs/nouveau-poste-developpeur.md).
 
 ## Démarrage rapide
 

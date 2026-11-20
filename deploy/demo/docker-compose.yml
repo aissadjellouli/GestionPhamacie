@@ -1,0 +1,88 @@
+# =====================================================================
+# Démo cloud, étape 1 : API + PostgreSQL en local (docs/demo-cloud.md)
+#
+#   copy deploy\demo\.env.example deploy\demo\.env      (puis remplacer TOUTES les valeurs A-REMPLACER)
+#   docker compose -f deploy/demo/docker-compose.yml --env-file deploy/demo/.env up -d --build
+#
+# Aucun mot de passe ni clé dans ce fichier : tout vient de deploy/demo/.env (jamais dans git).
+# Aucun service central à cette étape.
+# =====================================================================
+name: pharmaofficine-demo
+
+services:
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      # Mot de passe du superutilisateur : lu dans le fichier du secret (jamais en clair ici)
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_mdp
+      # Lus par le script d'init (deploy/demo/init/10_base_officine.sh)
+      PHARMA_APP_MDP_FILE: /run/secrets/pharma_app_mdp
+      PHARMA_BASE: pharmacie_demo
+      PHARMA_SCRIPTS: /pharma/database
+    secrets:
+      - postgres_mdp
+      - pharma_app_mdp
+    volumes:
+      # Image postgres 18 : volume monté sur /var/lib/postgresql (données dans un sous-dossier par version)
+      - db-donnees:/var/lib/postgresql
+      # Lancé une seule fois, au premier démarrage (volume db-donnees vide)
+      - ./init:/docker-entrypoint-initdb.d:ro
+      # Scripts du dépôt, en lecture seule : structure, fuseau, référentiel, données fictives
+      - ../../database/init:/pharma/database/init:ro
+      - ../../database/migration:/pharma/database/migration:ro
+      - ../../database/data:/pharma/database/data:ro
+    # Pas de port publié : la base n'est joignable que par l'API, sur le réseau interne du projet.
+    # Pour l'examiner depuis le PC (local seulement) : décommenter.
+    # ports:
+    #   - "127.0.0.1:5433:5432"
+    healthcheck:
+      # En TCP (-h 127.0.0.1) : pendant l'init, le serveur temporaire n'écoute que sur le socket local,
+      # la base n'est donc déclarée prête qu'une fois l'init terminée.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U postgres -d pharmacie_demo"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
+
+  api:
+    build:
+      context: ../..
+      dockerfile: src/Pharma.Api/Dockerfile
+    image: pharmaofficine-api:demo-local
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Pharmacie: "Host=db;Port=5432;Database=pharmacie_demo;Username=pharma_app;Password=${PHARMA_APP_MDP:?PHARMA_APP_MDP manquant dans deploy/demo/.env}"
+      Jwt__Cle: "${JWT_CLE:?JWT_CLE manquante dans deploy/demo/.env}"
+      # LOCAL SEULEMENT : HTTP sans chiffrement accepté, l'API n'étant joignable que depuis ce PC (port lié à 127.0.0.1).
+      # Démo publique : HTTPS devant l'API (proxy inverse qui termine TLS, déclaré dans ProxysConnus), jamais HTTP exposé.
+      AutoriserHttpReseau: "true"
+    ports:
+      # Lié à 127.0.0.1 : rien n'est ouvert sur le réseau. 5080 est aussi le port de l'API de développement : arrêter
+      # celle-ci avant, ou régler PORT_API_DEMO dans deploy/demo/.env.
+      - "127.0.0.1:${PORT_API_DEMO:-5080}:8080"
+    volumes:
+      # Données de l'API (Donnees:Racine) : clés DataProtection, clé de scellement, GED, archives fiscales, journaux
+      - api-donnees:/var/lib/pharmaofficine
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+secrets:
+  postgres_mdp:
+    environment: POSTGRES_MDP
+  pharma_app_mdp:
+    environment: PHARMA_APP_MDP
+
+volumes:
+  db-donnees:
+  api-donnees:

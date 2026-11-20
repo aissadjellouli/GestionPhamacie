@@ -1,0 +1,53 @@
+# Contexte de construction de l'image de l'API (src/Pharma.Api/Dockerfile) : seuls les projets de l'API et
+# database/migration y servent. Tout le reste est exclu (taille, secrets, données réelles).
+
+# Sorties de compilation et fichiers des éditeurs
+**/bin/
+**/obj/
+**/TestResults/
+.git/
+.vs/
+.vscode/
+.idea/
+**/*.user
+**/*.suo
+**/*_wpftmp.csproj
+
+# Projets hors API : poste Windows, serveur central, tests
+src/Pharma.Desktop/
+src/Pharma.Cloud.Api/
+tests/
+
+# Documentation (dont docs/taches et docs/EXEMPLE), scripts, déploiement, vidéos de démonstration
+docs/
+scripts/
+deploy/
+demo/
+
+# Base : seuls les scripts database/migration sont livrés avec l'API
+database/data/
+database/init/
+database/cloud/
+database/tests/
+
+# Secrets et réglages propres à un poste : jamais dans l'image
+**/.env
+**/.env.*
+**/appsettings.Development.json
+**/appsettings.Https.json
+**/autorite-pharmacie.crt
+**/*.pfx
+**/*.key
+
+# Sauvegardes, captures, essais
+**/*.dump
+**/*.backup
+**/captures/
+**/.essai-*/
+**/*.mp4
+**/*.MP4
+**/*.mov
+**/*.MOV
+**/*.avi
+**/*.mkv
+**/*.webm

@@ -14,7 +14,7 @@ recherche de `pg_dump.exe`, `pg_restore.exe` et `psql.exe`. Seule nouveauté vis
 | Étape | Contenu | État |
 |---|---|---|
 | 0 | API utilisable sous Linux (ce document) | **Faite le 2026-11-20** ; build et tests sous Windows ; **aucun essai réel sous Linux encore** |
-| 1 | Dockerfile de l'API + docker-compose local (API + PostgreSQL + volume des données) | À faire |
+| 1 | Dockerfile de l'API + docker-compose local (API + PostgreSQL + volume des données) | **Fichiers écrits le 2026-11-20** (tests de contenu) ; **jamais construit ni démarré** (Docker absent du poste) : voir [Étape 1](#étape-1--image-de-lapi-et-docker-compose-local) |
 | 2 | Mode démo (données de démonstration, comptes d'essai, remise à zéro) | À faire |
 | 3 | Tests (démarrage du conteneur, santé, PDF, sauvegarde/restauration dans le conteneur) | À faire |
 | 4 | Documentation d'exploitation de la démo | À faire |
@@ -131,3 +131,132 @@ un proxy sur la même machine se déclare `127.0.0.1`). L'adresse rétablie sert
   pas le client PostgreSQL.
 - `AddAuthentication` d'ASP.NET Core enregistre aussi sa propre DataProtection (clés par défaut dans le profil du compte ;
   comportement du framework, non vérifié sous Linux) ; elle n'est pas utilisée par les jetons JWT de l'API. Si elle l'était un jour, la régler sur le même volume (non nécessaire à ce jour).
+
+## Étape 1 : image de l'API et docker-compose local
+
+Fichiers écrits le 2026-11-20. **Docker n'est pas installé sur le poste de développement** : rien n'a été construit ni démarré.
+Seuls le contenu des fichiers (tests `DemoCloudConteneurTests`), le build et les tests de la solution sous Windows sont vérifiés.
+Tout ce qui dépend de l'exécution est listé dans « À vérifier au premier démarrage ».
+
+| Fichier | Rôle |
+|---|---|
+| `src/Pharma.Api/Dockerfile` | Image de l'API en deux étapes : compilation (`dotnet/sdk:10.0`), exécution (`dotnet/aspnet:10.0`, avec ICU) |
+| `.dockerignore` | Contexte de construction : seuls les projets de l'API et `database/migration` (ni poste, ni tests, ni docs, ni secrets) |
+| `deploy/demo/docker-compose.yml` | Services `db` (postgres:18) et `api` ; volumes `db-donnees` et `api-donnees` ; aucun service central |
+| `deploy/demo/.env.example` | Modèle des variables (valeurs factices `A-REMPLACER…`) ; à copier en `deploy/demo/.env` (ignoré par git) |
+| `deploy/demo/init/10_base_officine.sh` | Création de la base au **premier** démarrage de `db` (fins de ligne LF, `set -euo pipefail`) |
+
+### Image de l'API
+
+- Restauration NuGet d'abord (`NuGet.Config`, `global.json`, `Directory.*.props`, csproj de Domain, Shared, Application,
+  Infrastructure et Api), puis copie des sources, puis `dotnet publish -c Release`. `appsettings.Development.json` et
+  `appsettings.Https.json` : exclus du contexte et retirés de la publication.
+- Exécution : `tzdata`, `curl` (HEALTHCHECK), **client PostgreSQL 18** (`postgresql-client-18`) pris au dépôt apt officiel
+  PostgreSQL (PGDG, `apt.postgresql.org`, clé `ACCC4CF8.asc`), la distribution de l'image ne le fournissant pas forcément ;
+  la version majeure se règle par `--build-arg PG_MAJEURE=…` et doit rester **supérieure ou égale à celle du serveur**.
+- Réglages posés : `TZ=Africa/Algiers`, `ASPNETCORE_URLS` et `Urls` = `http://+:8080` (le second, lu après `appsettings.json`,
+  doit l'emporter sur son `Urls`), `Donnees__Racine=/var/lib/pharmaofficine`,
+  `Sauvegardes__PgDump=/usr/lib/postgresql/18/bin/pg_dump`.
+- Compte `app` (non administrateur, fourni par les images .NET) ; `/var/lib/pharmaofficine` créé et attribué à `app`.
+- `HEALTHCHECK` : `curl -fsS http://localhost:8080/api/healthcheck` ; `EXPOSE 8080`.
+- Aucun secret dans l'image : `ConnectionStrings__Pharmacie` et `Jwt__Cle` sont donnés au lancement.
+
+### Base de démonstration (`db`)
+
+Au premier démarrage (volume `db-donnees` vide), le script d'init, en superutilisateur puis avec le compte `pharma_app` :
+
+1. crée le rôle `pharma_app` (LOGIN, CREATEDB), mot de passe lu dans le secret `pharma_app_mdp` ;
+2. crée `pharmacie_demo` (OWNER `pharma_app`, UTF8, template0 : le propriétaire crée `pg_trgm` et `pgcrypto`) ;
+3. passe `database/init/schema.sql`, `database/migration/083_fuseau_horaire.sql`, `database/init/seed_referentiel.sql`
+   (même ordre que `scripts/mep/creer_base_officine.ps1`), avec `ON_ERROR_STOP` et `PGOPTIONS=-c pharma.reglage_central=on` ;
+4. passe les données **fictives** `900` à `904` (`database/data`) ;
+5. vérifie le fuseau de la base (`Africa/Algiers`) et signale si les données fictives n'ont pas été chargées.
+
+**Non fait à cette étape** : `111b` (séparation des rôles : journaux **non protégés** dans cette base de démonstration),
+`905_jeu_de_test.sql` et la nomenclature nationale (étape 2).
+
+**Point à trancher (constaté dans le code, bloquant pour les comptes de démo)** : `seed_referentiel.sql` crée le compte
+`titulaire` (mot de passe provisoire `Provisoire-2026`, changement obligatoire à la première connexion), et
+`900_donnees_demo.sql` **s'arrête sans rien faire** quand un compte `titulaire` existe déjà ; 901 à 903 s'arrêtent à leur tour
+(réception `BL-DEMO-1` absente) et 904 ne fait que poser des coordonnées fictives. Avec l'ordre de la mise en production, la base
+de démonstration n'aura donc **que** le compte `titulaire` du référentiel ; le script d'init l'écrit au journal du conteneur
+(« ATTENTION, données fictives 900 à 904 NON chargées »). Choix possibles, à décider par le titulaire :
+
+- A. base de démo construite comme par `scripts/initialiser_base_locale.ps1` (scripts `database/migration` 001 à 154 sans les
+  scripts « b », puis `database/data`) au lieu de `database/init` ;
+- B. condition de `900_donnees_demo.sql` changée (données de démo repérées par `BL-DEMO-1` plutôt que par le compte
+  `titulaire`) : touche aussi les bases de développement ;
+- C. étape propre à la démo, entre `seed_referentiel.sql` et 900, qui traite le compte `titulaire` provisoire.
+
+Comptes prévus par `900_donnees_demo.sql` **s'il est chargé** : `titulaire`, `assistant`, `vendeur`, mot de passe `demo`
+(données fictives, jamais en production).
+
+### Prérequis (poste Windows du titulaire)
+
+Manuel détaillé pas à pas (virtualisation, WSL 2, Docker Desktop, licence, réglages, problèmes fréquents, désinstallation) :
+[installation-docker.md](installation-docker.md).
+
+1. Windows 10/11 64 bits avec la virtualisation activée (BIOS/UEFI).
+2. **WSL 2** : dans un PowerShell administrateur, `wsl --install`, puis redémarrer.
+3. **Docker Desktop** pour Windows (site officiel de Docker), moteur WSL 2 (« Use the WSL 2 based engine ») ; démarrer Docker Desktop.
+4. Vérifier : `docker version` et `docker compose version` (Compose v2 ; la source de secret `environment:` du fichier compose
+   demande une version récente de Compose, à constater).
+
+### Lancement
+
+Depuis la racine du dépôt (PowerShell) :
+
+```powershell
+# 1. Variables : copier le modèle, puis remplacer CHAQUE valeur A-REMPLACER (générateur indiqué dans le fichier)
+Copy-Item deploy\demo\.env.example deploy\demo\.env
+notepad deploy\demo\.env
+
+# 2. Port 5080 : c'est aussi celui de l'API de développement ; l'arrêter avant, ou régler PORT_API_DEMO dans deploy\demo\.env
+netstat -ano | findstr :5080
+
+# 3. Construction et démarrage
+docker compose -f deploy/demo/docker-compose.yml --env-file deploy/demo/.env up -d --build
+
+# 4. Suivi
+docker compose -f deploy/demo/docker-compose.yml --env-file deploy/demo/.env ps
+docker compose -f deploy/demo/docker-compose.yml --env-file deploy/demo/.env logs db
+docker compose -f deploy/demo/docker-compose.yml --env-file deploy/demo/.env logs api
+curl.exe http://127.0.0.1:5080/api/healthcheck
+
+# Arrêt (les volumes, donc la base et les données de l'API, sont gardés)
+docker compose -f deploy/demo/docker-compose.yml --env-file deploy/demo/.env down
+```
+
+`docker compose … down -v` **supprime les volumes** (base de démonstration et données de l'API, dont les clés) : c'est le seul
+moyen de relancer le script d'init ; à ne faire qu'en connaissance de cause.
+
+Sécurité de cette étape : l'API écoute en HTTP dans le conteneur ; `AutoriserHttpReseau=true` n'est réglé que parce que le port
+est **lié à 127.0.0.1** (rien n'est ouvert sur le réseau). La base n'a aucun port publié. Pour une démo publique : HTTPS devant
+l'API (proxy inverse déclaré dans `ProxysConnus`) et certificat pour les clés DataProtection (`Protection:CertificatFichier`).
+
+### À vérifier au premier démarrage
+
+- Distribution de l'étiquette `mcr.microsoft.com/dotnet/aspnet:10.0` (Debian ou Ubuntu : `cat /etc/os-release` dans le
+  conteneur) et présence d'ICU (culture fr-FR : formats des montants et des dates dans l'API et les PDF).
+- Dépôt PGDG : disponibilité de `<distribution>-pgdg` et du paquet `postgresql-client-18` ; chemin
+  `/usr/lib/postgresql/18/bin/pg_dump` (le build s'arrête s'il manque) ; empreinte de la clé PGDG non contrôlée par le build.
+- Paquet `tzdata` et `TZ=Africa/Algiers` : heure affichée et avertissement de fuseau au journal de l'API.
+- Compte `app` présent dans l'image (`install -d -o app` échoue sinon) ; droits du volume `api-donnees` (Docker recopie les droits
+  du dossier de l'image dans un volume nommé neuf) ; écriture des clés DataProtection dans `cles-protection/`.
+- Port réellement écouté (8080) : `Urls` en variable d'environnement doit l'emporter sur le `Urls` d'`appsettings.json`.
+- Image `postgres:18` : volume monté sur `/var/lib/postgresql` (emplacement des données propre à la version 18 de l'image).
+- Secrets compose tirés de `environment:` et lus par l'image postgres (`POSTGRES_PASSWORD_FILE`) et par le script d'init.
+- Script d'init : lancé (exécutable) ou « sourcé » selon les droits du fichier monté depuis Windows ; connexion de `pharma_app`
+  par le socket local pendant l'init ; `\restrict` de `schema.sql` et `\getenv` acceptés par le psql de l'image ; durée de
+  l'init (`start_period` de 120 s pour `db`).
+- Données fictives : voir « Point à trancher » ci-dessus (attendu : non chargées avec l'ordre actuel).
+- `GET /api/healthcheck` en 200 depuis le PC ; connexion au poste ou au navigateur (`/mobile/`) sur `http://127.0.0.1:5080`.
+- DataProtection propre à `AddAuthentication` (clés dans le profil du compte `app`, non persistées) : avertissements possibles.
+- Sauvegarde automatique (`pg_dump` du conteneur) : disque de destination non réglé à cette étape.
+
+### Reste pour l'étape 2
+
+- Trancher le point des comptes de démo (A, B ou C ci-dessus) ; charger `905_jeu_de_test.sql` et la nomenclature nationale.
+- Mode démo : comptes d'essai, remise à zéro de la base.
+- Super admin de la démo (`dotnet Pharma.Api.dll --super-admin` dans le conteneur, interactif : à essayer).
+- Étape 3 : tests de démarrage du conteneur, santé, PDF (Liberation Sans, texte arabe), sauvegarde et restauration dans le conteneur.

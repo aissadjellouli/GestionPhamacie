@@ -1,5 +1,7 @@
 # Installer un poste de développement
 
+> Nouveau développeur sur un PC neuf : suivre d'abord la liste complète [nouveau-poste-developpeur.md](nouveau-poste-developpeur.md) (accès, logiciels, git, bases, Visual Studio, central, Docker, règles du projet).
+
 Procédure suivie pour installer PostgreSQL, créer les bases locales et lancer l’API et le poste client depuis Visual Studio. Temps total : environ 20 minutes.
 
 ## 1. Prérequis
@@ -105,6 +107,64 @@ Contenu attendu avec les données fictives : 30 tables, 8 vues, extensions `pg_t
 3. **F5**. L’API écoute sur http://localhost:5080 (contrôle : http://localhost:5080/api/healthcheck), puis la fenêtre du poste s’ouvre.
 
 Sans ce profil : clic droit sur la solution > **Configurer les projets de démarrage** > **Plusieurs projets de démarrage** > `Pharma.Api` puis `Pharma.Desktop` sur **Démarrer**.
+
+### Lancer API + Poste + Central dans Visual Studio
+
+Outil de développement, jamais de production : `scripts\dev\preparer_central_vs.ps1`. Il relie l'officine `pharmacie_dev` au serveur
+central de développement `pharmacie_cloud_dev`, tous deux lancés en débogage par Visual Studio (profil **« API + Poste + Central »**
+de `PharmaOfficine.slnLaunch` : `Pharma.Cloud.Api`, `Pharma.Api`, `Pharma.Desktop`). Aucune base n'est créée, supprimée ni restaurée,
+aucun compte de l'application n'est créé ; toute autre base est refusée.
+
+**1. Préparer (une fois)** — dans une fenêtre PowerShell, à la racine du dépôt, avec le mot de passe de `pharma_app` (section 3) dans
+`PGPASSWORD`, effacé ensuite (`Remove-Item Env:\PGPASSWORD`) ; sans `PGPASSWORD`, il est demandé en saisie masquée :
+```powershell
+.\scripts\dev\preparer_central_vs.ps1 -Preparer -WhatIf     # voir ce qui serait fait
+.\scripts\dev\preparer_central_vs.ps1 -Preparer             # idempotent : le relancer reprend ce qui manque
+```
+Ce que fait `-Preparer` :
+- contrôles : `psql`, `dotnet`, droits de `pharma_app` (pas superutilisateur, `CREATEROLE`, option ADMIN sur `pharma_cloud_api`),
+  `pharmacie_cloud_dev` à jour (témoin du script central 028), port 5090 libre ;
+- dossier `%LOCALAPPDATA%\PharmaOfficine\central-dev` (hors dépôt) : `autorite` (autorité et certificat HTTPS du central) et
+  `sync-pharmacie_dev` (clé et certificat de synchronisation de l'officine, propres à cette base), réservés au compte courant, à SYSTEM
+  et aux Administrateurs ; `outil` (outil d'administration du central, compilé hors des dossiers `bin` que Visual Studio verrouille) ;
+  `etat.json` (code provisoire de l'officine au central, sans secret) ;
+- rôle de connexion **`pharma_cloud_dev_vs`** (membre de `pharma_cloud_api`, mot de passe tiré au sort) ; le rôle `pharma_cloud_api`
+  lui-même n'est pas modifié ;
+- variables d'environnement **de l'utilisateur Windows** (mots de passe tirés au sort, réutilisés s'ils existent, jamais affichés) :
+  `PHARMA_CLOUD_DOSSIER`, `PHARMA_CLOUD_MOT_DE_PASSE`, `PHARMA_CLOUD_CONNEXION` (rôle `pharma_cloud_dev_vs`),
+  `ConnectionStrings__Pharmacie` (`pharmacie_dev`), `Synchronisation__Dossier` (`sync-pharmacie_dev`). Une variable déjà présente avec
+  une autre valeur n'est jamais écrasée : le script s'arrête. `PHARMA_CLOUD_ADMIN_CONNEXION` (propriétaire de la base centrale) n'est
+  **jamais** posée au niveau utilisateur : elle n'est passée qu'au processus de l'outil d'administration ;
+- officine **« Développement (pharmacie_dev) »** créée au central si elle manque, sinon code neuf. Le **code d'activation** (usage
+  unique, 24 h) est affiché, jamais écrit.
+
+**2. Redémarrer Visual Studio** : fermer toutes ses fenêtres puis le rouvrir (il lit les variables d'utilisateur à son démarrage).
+
+**3. Profil « API + Poste + Central », F5.** Le central écoute sur `https://127.0.0.1:5090/` (réglages `Cloud:Adresse` et `Cloud:Port`
+de son `appsettings.json` ; son `launchSettings.json` n'a pas d'`applicationUrl`, elle serait ignorée), l'API sur http://localhost:5080.
+
+**4. Activer par l'écran** (compte `titulaire`) :
+```powershell
+.\scripts\dev\preparer_central_vs.ps1 -Activer      # vérifie 5080 et 5090, rappelle la marche à suivre, donne un code neuf si besoin
+```
+Administration > Synchronisation > onglet **Réglages** : adresse du serveur central `https://127.0.0.1:5090/`, cocher
+**Synchronisation activée**, **Enregistrer** ; onglet **Activation** : coller le code, **Activer**. Le chargement complet part en
+arrière-plan. Suivi : `.\scripts\dev\preparer_central_vs.ps1 -Etat` (lecture seule) ou l'onglet **État**.
+
+**5. Retirer** (central arrêté) : `.\scripts\dev\preparer_central_vs.ps1 -Retirer -WhatIf`, puis sans `-WhatIf`. Retire les variables
+posées par le script, le rôle `pharma_cloud_dev_vs` et le dossier `%LOCALAPPDATA%\PharmaOfficine\central-dev` ; rien n'est supprimé en
+base (l'officine reste au central, les réglages de synchronisation restent dans `pharmacie_dev` : décocher **Synchronisation activée**
+à l'écran avant). Redémarrer ensuite Visual Studio.
+
+À savoir :
+- **Toute API lancée par ce compte Windows** (profil « API + Poste client », `dotnet run`) prend alors `pharmacie_dev` et ce dossier de
+  synchronisation : les variables d'environnement l'emportent sur `appsettings.Development.json` (ordre des sources d'ASP.NET Core :
+  `appsettings.json`, `appsettings.Development.json`, variables d'environnement, ligne de commande ; seul `appsettings.Https.json`,
+  chargé après, l'emporte encore, et il ne contient que les adresses d'écoute). Pour revenir à `pharmacie_test` : `-Retirer`.
+- Les tests ne lisent pas `ConnectionStrings__Pharmacie` : ils lisent `PHARMA_TEST_CNX` ou `appsettings.Development.json`.
+- Premier chargement complet : durée non mesurée sur ce poste (6 à 10 minutes supposées pour les données de démonstration, au
+  rythme de 60 lots par minute). **Maj+F5** coupe l'envoi en cours : il reprend au F5 suivant.
+- L'outil d'essai [essai-cloud-officine.md](essai-cloud-officine.md) est indépendant : il ne touche ni `pharmacie_cloud_dev` ni ces variables.
 
 ### Comptes de démonstration
 

@@ -20,8 +20,19 @@ le 2026-11-20 (Caisse avec psychotrope, `pharmacie_test`, 1366 × 768 : case du 
 aucune bulle ; F12 → bulle sur le patient d'abord, puis, patient et médecin choisis, sur le nom du porteur ; aide de la caisse
 entièrement au-dessus de l'écran, clair et sombre).
 
+Puis, le 2026-11-20 (non commité) : lancement **API + Poste + Central** depuis Visual Studio — profil « API + Poste + Central »
+(`PharmaOfficine.slnLaunch`), `launchSettings.json` du central sans `applicationUrl` ni navigateur, outil
+`scripts\dev\preparer_central_vs.ps1` (-Preparer, -Activer, -Etat, -Retirer), tests `CentralVisualStudioTests`, docs
+(poste-de-developpement.md, essai-cloud-officine.md). Préparation faite sur ce poste après sauvegardes
+(`C:\MesAtlassian\sauvegardes-bd\pharmacie_cloud_dev_avant_central_vs_20261120.dump`, `…\pharmacie_dev_avant_central_vs_20261120.dump`) :
+rôle `pharma_cloud_dev_vs`, variables d'utilisateur, autorité, officine « Développement (pharmacie_dev) » créée au central.
+
 ## 3. Ensuite
 
+- [ ] **Activation de `pharmacie_dev` par l'écran** (titulaire) : redémarrer Visual Studio, profil « API + Poste + Central », F5,
+      `.\scripts\dev\preparer_central_vs.ps1 -Activer`, puis Administration > Synchronisation (voir poste-de-developpement.md).
+      Conséquence à connaître : tant que les variables sont posées, toute API lancée par ce compte Windows vise `pharmacie_dev`
+      (`-Retirer` pour revenir à `pharmacie_test`).
 - [ ] **Push** des commits locaux par le titulaire (branche `develop` : 50 commits d'avance sur `origin/develop` après le commit du 2026-11-20).
 - [ ] **Port 5432 du poste de développement** (par le titulaire, PowerShell administrateur) : `listen_addresses = 'localhost'` dans
       `C:\Program Files\PostgreSQL\18\data\postgresql.conf` (copie `postgresql.conf.avant-localhost` gardée), puis `Restart-Service postgresql-x64-18`,
@@ -68,7 +79,11 @@ entièrement au-dessus de l'écran, clair et sombre).
       Liberation Sans embarquées hors Windows, licence OFL ; en-têtes de proxy seulement pour `ProxysConnus` ; build et tests
       réussis sous Windows, tests `ApiSousLinuxTests` ; **aucun démarrage réel sous Linux encore**) ;
     - [ ] étape 1 : Dockerfile de l'API et docker-compose local (API + PostgreSQL + volume des données, client PostgreSQL,
-      ICU, `TZ=Africa/Algiers`) ;
+      ICU, `TZ=Africa/Algiers`) — **fichiers écrits le 2026-11-20** (`src/Pharma.Api/Dockerfile`, `.dockerignore`,
+      `deploy/demo/` : compose, `.env.example`, script d'init ; tests `DemoCloudConteneurTests`, build et tests d'architecture
+      réussis sous Windows) ; **reste : premier démarrage réel** après installation de Docker Desktop + WSL 2 (liste « À vérifier
+      au premier démarrage » de [demo-cloud.md](demo-cloud.md)) et **décision du titulaire** sur les comptes de démo
+      (`seed_referentiel.sql` crée `titulaire`, ce qui fait s'arrêter `900_donnees_demo.sql` : choix A, B ou C dans demo-cloud.md) ;
     - [ ] étape 2 : mode démo ;
     - [ ] étape 3 : tests (démarrage du conteneur, PDF, sauvegarde et restauration dans le conteneur) ;
     - [ ] étape 4 : documentation d'exploitation de la démo ;

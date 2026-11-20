@@ -12,5 +12,24 @@
         "Action": "Start"
       }
     ]
+  },
+  {
+    "Name": "API + Poste + Central",
+    "Projects": [
+      {
+        "Path": "src\\Pharma.Cloud.Api\\Pharma.Cloud.Api.csproj",
+        "Action": "Start",
+        "DebugTarget": "Pharma.Cloud.Api"
+      },
+      {
+        "Path": "src\\Pharma.Api\\Pharma.Api.csproj",
+        "Action": "Start",
+        "DebugTarget": "Pharma.Api"
+      },
+      {
+        "Path": "src\\Pharma.Desktop\\Pharma.Desktop.csproj",
+        "Action": "Start"
+      }
+    ]
   }
 ]

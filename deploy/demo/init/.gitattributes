@@ -1,0 +1,2 @@
+# Scripts lus par bash dans le conteneur : fins de ligne LF, même avec core.autocrlf=true sous Windows
+*.sh text eol=lf
