@@ -1,6 +1,6 @@
 # Reste à faire : synthèse
 
-Point d'avancement du 2026-11-19 (après le commit `48d8818` : lots S6.5.4, S6.5.5 et S6.5.6 commités en `610939a`, `c80fd28` et `48d8818`). Vue d'ensemble courte ; le détail de chaque point est dans
+Point d'avancement du 2026-11-20 (lots « alertes psychotropes » (script 153) et « décisions du central » (scripts centraux 026 à 028) commités ensemble le 2026-11-20, après `0939f88`). Vue d'ensemble courte ; le détail de chaque point est dans
 [a-faire.md](a-faire.md), [fonctionnalites.md](fonctionnalites.md) (inventaire complet) et dans les documents cités. À mettre à jour à chaque
 point d'avancement.
 
@@ -10,19 +10,57 @@ Rien. Commits locaux (branche `develop`, non poussée) : jusqu'à `f404e6f` le 2
 1366 × 768 (Caisse, contrôle interne, emplacements, Pertes et vigilance), logo et couleurs Tracodex, thème sombre « encre », nom
 Tracodex Officine / Tracodex Réseau, « Pertes et vigilance », rendu en bronze, S6.5 côté central (scripts 022, 023), route `/api/healthcheck`.
 Puis `610939a` (S6.5.4), `c80fd28` (S6.5.5) et `48d8818` (S6.5.6 et n° de tickets après une restauration, choix « A + B » :
-scripts officine `152` et central `025`, conception § 31.10).
+scripts officine `152` et central `025`, conception § 31.10), `0939f88` (essai rejoué du § 31.10), puis le commit du 2026-11-20
+(alertes psychotropes, script 153 ; décisions du central, scripts 026 à 028 ; seed de l'init ; Caisse à 1366 × 768).
 
 ## 2. Fait, à commiter
 
-- **Conception § 31.10, essai rejoué** (2026-11-19) : `docs/conception-synchronisation.md`, essai neuf de l'attente du serveur
-  central au démarrage (vente refusée pendant l'attente, puis acceptée ; nouvel essai d'envoi au bout de 2 min au lieu de 30) ; RAF.
+Rien.
 
 ## 3. Ensuite
 
-- [ ] **Push** des commits locaux par le titulaire (branche `develop` : 48 commits d'avance sur `origin/develop` constatés le 2026-11-19).
+- [ ] **Push** des commits locaux par le titulaire (branche `develop` : 50 commits d'avance sur `origin/develop` après le commit du 2026-11-20).
 - [ ] **Port 5432 du poste de développement** (par le titulaire, PowerShell administrateur) : `listen_addresses = 'localhost'` dans
       `C:\Program Files\PostgreSQL\18\data\postgresql.conf` (copie `postgresql.conf.avant-localhost` gardée), puis `Restart-Service postgresql-x64-18`,
       Visual Studio arrêté avant. Constat du 2026-11-18 : écoute sur toutes les adresses, `pg_hba.conf` limité à 127.0.0.1 et ::1, aucune règle de pare-feu.
+- [ ] **Décisions du titulaire du 2026-11-19, à réaliser** (sur « go ») :
+  - nouvelle époque de synchronisation : **ressaisie du mot de passe du titulaire seule**, pas de code SMS ni e-mail (vérifier
+    que l'existant s'y tient, sinon l'aligner) ;
+  - archive du central (`ligne_remplacee`) : **exclure** `alerte` et `alerte_surveillance` (tables recalculées au démarrage) ;
+  - rejeu des scripts du central : **protéger** `cloud_descendants` (010 → 011) et `cloud_creer_ordre` (013 → 018) comme les autres fonctions ;
+  - **Patients en attente dans le menu** pour un employé qui n'a que `caisse.vendre` (en plus de la fenêtre de la Caisse) ;
+  - départ d'une officine : **effacer aussi les éléments techniques** (époques, chargements, éléments descendants, ordres,
+    anomalies d'intégrité), dans le même effacement que les données, donc **jamais avant la fin de la conservation de 6 ans**
+    après le départ (étape 7.8 : 6 ans minimum, refus en dessous ; précision du titulaire du 2026-11-19) ; **garder** la fiche,
+    les certificats révoqués et les journaux (preuves) ;
+  - `cloud_effacer_famille` **étendu à `ligne_remplacee`** (famille décochée retirée aussi des lignes archivées) ;
+  - remise de l'archive de départ **au choix du titulaire** : clé USB en main propre, ou lien de téléchargement à durée limitée
+    avec mot de passe envoyé par un autre canal ; **accusé de réception portant l'empreinte SHA-256** dans les deux cas
+    (`mise-en-production.md` F8 à mettre à jour) ;
+  - suggestions de saisie : **ne plus proposer les libellés de trésorerie saisis à la main** (risque de nom de client) ;
+  - **parapharmacie distinguée dans le catalogue dès maintenant** (V1) ;
+  - démo : **démonstration cloud** (Dockerfile, docker-compose local, mode démo) ;
+  - majorations Chifa : **« Garde » seule** pour l'instant ;
+  - [x] **fait le 2026-11-20 (script 153 et seed de l'init : les six règles semées pour une base neuve ; commité le 2026-11-20 ; captures
+    faites le 2026-11-20 : Administration › Psychotropes 0 px à 1536 × 890 et 1366 × 768, clair et sombre ; Caisse avec
+    psychotrope 0 px à 1536 × 890 et à 1366 × 768, clair et sombre, bloc « Client et ordonnance » replié de lui-même ; corrigé :
+    la bulle de la durée ne vient plus qu'à F12 (elle plaçait le curseur dans le bloc et empêchait le repli), durée listée dans
+    « à compléter »)** — alertes psychotropes : règle 1 remplacée (patient servi alors qu'un psychotrope est encore en cours de traitement ; durée
+    prescrite obligatoire), ordonnance réutilisée 1 fois sans limite de durée, plus de 2 boîtes ou plus de 28 jours,
+    prescripteur inhabituel désactivé au départ (détail : [a-faire.md](a-faire.md), « Écrans de vente ») ; précisions du
+    2026-11-20 : règle 1 sous un **nouveau code** `traitement_en_cours` (ancienne règle `patient_repete` gardée, désactivée),
+    **valideur exigé** ; règle 2 : période réglable **ou « sans limite »** (valeur de départ : sans limite) ; bases existantes :
+    nouvelles valeurs posées **seulement sur les règles jamais modifiées** par le titulaire ;
+  - [x] **fait le 2026-11-20 (scripts centraux 026 à 028, gardes de rejeu de 004 à 022, F8 ; passés deux fois sur
+    `pharmacie_cloud_dev` après sauvegarde vérifiée ; commité le 2026-11-20 ; zip chiffré restant à faire)** — central, précisions du 2026-11-20 : tables sans archive par une colonne réglable
+    `cloud_table_miroir.archive_remplacee` ; alertes déjà archivées **gardées** ; au départ, `ordre_central_journal` **gardé**
+    (lien technique vers les ordres retiré) ; effacés aussi : volume journalier, état et sceaux d'intégrité ; gardés : familles
+    envoyées et codes d'activation ; archive de départ remise par lien : **zip chiffré** par mot de passe ;
+  - suggestions de saisie (2026-11-20) : **proposer aussi** les libellés de versement d'organisme, transferts et versements de
+    caisse ; **tous les rayons** proposés dès l'entrée dans le champ ; écran **Seuils par produit à revoir** (8 à 10 lignes
+    visibles à 1366 × 768) ;
+  - bases : **supprimer les bases jetables seules** (`pharmacie_cloud_jetable_m11_1d7bbebb`, `pharmacie_jetable_m4_*`,
+    `pharmacie_jetable_rejeu_*`), liste exacte montrée et validée avant suppression ; bases de recette gardées.
 - [x] **S6.5, intégrité après restauration** : **terminé** le 2026-11-19 (S6.5.0 à S6.5.6 ; essai de bout en bout réussi). Restent
       hors lot : avis du comptable (§ 6) ; n° repris avant la détection : traité le 2026-11-19 (§ 31.10). Synthèse :
       [conception-synchronisation.md](conception-synchronisation.md) § 31.9.
@@ -42,19 +80,8 @@ scripts officine `152` et central `025`, conception § 31.10).
 
 ## 5. Décisions attendues du titulaire
 
-- [ ] **Nouvelle époque de synchronisation** : la ressaisie du mot de passe du titulaire suffit-elle, ou faut-il un code reçu par SMS ou e-mail (à créer pour le titulaire) ?
-- [ ] **Archive du central** (`ligne_remplacee`) : exclure les tables recalculées au démarrage (`alerte`, `alerte_surveillance` ; 111 lignes archivées à l'essai) ?
-- [ ] **Rejeu des scripts du central** : protéger aussi `cloud_descendants` (010 → 011) et `cloud_creer_ordre` (013 → 018) ?
-- [ ] **Départ d'une officine** : effacer aussi la fiche, les journaux et les éléments techniques ? étendre `cloud_effacer_famille` à `ligne_remplacee` ? mode de remise de l'archive au titulaire ?
-- [ ] **Patients en attente** : visible dans le menu pour un employé qui n'a que `caisse.vendre` (avant : seulement en fenêtre depuis la Caisse) ?
-- [ ] **Suggestions** : libellés de trésorerie saisis à la main proposés (un libellé peut contenir un nom de client) ; libellés de versement d'organisme exclus ; plus de 10 rayons (seuls les 10 premiers proposés sans saisie) ; Seuils par produit à 1366 × 768 (environ 2,5 lignes visibles).
-- [ ] **Inventaire** ([fonctionnalites.md](fonctionnalites.md)) : parapharmacie distinguée ? sorties de stock et multi-grossistes à confirmer.
 - [ ] **Compte `postgres`** : fichier `pgpass.conf` (hors dépôt) pour essayer le script 111b et la méthode `SET ROLE` sur une copie.
-- [ ] **Écrans de vente** : seuils d'alerte des psychotropes, liste des DCI d'antibiotiques, format de l'export pour les impôts et taux de TVA.
-- [ ] **Majorations Chifa** : quels types en plus de « Garde ».
-- [ ] **Démo** : page de démonstration, démo interactive ou démonstration cloud.
-- [ ] **Bases** : bases de recette gardées (recette 1 à 4, `…_avant_restauration`) ; bases jetables restantes (`pharmacie_cloud_jetable_m11_1d7bbebb`,
-      `pharmacie_jetable_m4_*`, `pharmacie_jetable_rejeu_*`) : suppression sur accord.
+- [ ] **Écrans de vente** : liste des DCI d'antibiotiques, format de l'export pour les impôts et taux de TVA.
 - [ ] Autres points ouverts : voir [a-faire.md](a-faire.md), « Décisions en attente du titulaire » et « Mise en production : à décider ».
 
 ## 6. Démarches du titulaire

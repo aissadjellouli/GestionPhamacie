@@ -30,11 +30,15 @@ Vue d'ensemble courte (point d'avancement) : [reste-a-faire-synthese.md](reste-a
 - [ ] **GED : protection des documents** (recommandation validée le 2026-11-18 ; **alerte à 7 jours codée et rotation de deux disques écrite dans mise-en-production.md le 2026-11-18**, script 148 ; reste la sauvegarde chiffrée au central avec le lot 9 ; le script planifié `sauvegarde_pharmacie.ps1` inscrit désormais ses passages au journal des sauvegardes) : GED consultable au central ou non, sauvegarde chiffrée hors de l'officine (après le lot 9), rotation de deux disques pour une officine à un seul serveur, alerte « pas de sauvegarde sur disque externe ». Détail et recommandation : [ged-protection-a-decider.md](ged-protection-a-decider.md).
 
 - [ ] **Écrans de vente** :
-  - seuils d'alerte des psychotropes (valeurs de départ proposées : 2 fois en 30 jours, 1 fois par ordonnance et par an, plus de 3 boîtes ou plus de 28 jours, prescripteur à moins d'une délivrance par an) ;
+  - [x] seuils d'alerte des psychotropes : **tranché le 2026-11-19, réalisé le 2026-11-20 (script 153)** (valeurs de départ, toujours réglables par le titulaire) :
+    - règle 1 **remplacée** : alerte quand le patient revient alors qu'un psychotrope quelconque est encore en cours de traitement (date de la délivrance précédente + durée prescrite sur son ordonnance) ; **durée prescrite obligatoire** à la délivrance d'un psychotrope (remplace « 2 fois en 30 jours ») ;
+    - règle 2 : même n° d'ordonnance du même prescripteur déjà utilisé **1 fois, sans limite de durée** (au lieu de 365 jours) ;
+    - règle 3 : **plus de 2 boîtes** d'un produit par délivrance, ou durée de traitement au-delà de 28 jours ;
+    - règle 4 (prescripteur inhabituel) : **désactivée au départ**.
   - liste des 214 DCI d'antibiotiques ;
   - format de l'export pour les impôts et taux de TVA.
-- [ ] **Majorations Chifa** : quels types en plus de « Garde » ? (question posée le 15/11, sans réponse ; voir `docs/chifa.md`).
-- [ ] **Démo** : « page démo », « démo interactive » ou « préparation démo cloud » (Dockerfile, docker-compose local, mode démo).
+- [x] **Majorations Chifa** : quels types en plus de « Garde » ? (Tranché le 2026-11-19 : « Garde » seule pour l'instant ; voir `docs/chifa.md`.)
+- [ ] **Démo** : tranché le 2026-11-19 : « préparation démo cloud » (Dockerfile, docker-compose local, mode démo) ; à réaliser sur « go ».
 - [ ] **Script 111b** (séparation des rôles PostgreSQL) : à passer par le titulaire avec un superutilisateur ; sans lui, une falsification est détectée mais pas empêchée (voir `docs/securite-et-droits.md`).
 - [x] **Réglages communs aux officines** : tranché le 2026-11-16 : « imposé » ou « proposé » est décidé par l'administrateur du serveur central, rien n'est figé dans le logiciel ; précisé le même jour : choix par table, changement tracé au central et dans l'officine, valeur imposée qui remplace la valeur locale (ancienne valeur au journal, titulaire prévenu). Reste à réaliser (fin du lot S3, `docs/conception-synchronisation.md` § 16).
 - [ ] **Ancienne colonne `num_facture_chifa`** : le script `101b` est **écrit et testé sur copies jetables** (`database/migration/101b_suppression_num_facture_chifa.sql`) ; la **décision d'exécution reste en attente** du titulaire (destructif, sauvegarde obligatoire, procédure : `docs/mise-en-production.md`, étape 8). Le jour de l'exécution : retirer la colonne de `database/init/schema.sql` (colonne et son commentaire dans `vente`) et régénérer `database/cloud/002_tables_miroir.sql`.
@@ -95,7 +99,7 @@ Vue d'ensemble courte (point d'avancement) : [reste-a-faire-synthese.md](reste-a
 
 - [ ] **Comparaison des tarifs des grossistes** : importer les tarifs de chaque grossiste et comparer les prix produit par produit (aide au choix du grossiste à la commande).
   - À fournir par le titulaire : un exemple de fichier de tarifs de chaque grossiste (Excel, PDF ou autre) pour connaître le format.
-- [ ] **Parapharmacie** : distinguer les produits de parapharmacie dans le catalogue (préalable à la fidélisation parapharmacie de la V2).
+- [ ] **Parapharmacie** : distinguer les produits de parapharmacie dans le catalogue (préalable à la fidélisation parapharmacie de la V2). Tranché le 2026-11-19 : dès la V1, à réaliser sur « go ».
   - À préciser par le titulaire : comment les reconnaître (classe du catalogue, liste fournie, autre).
 
 ## Scanner mobile : suites

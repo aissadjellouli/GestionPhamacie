@@ -290,6 +290,13 @@ BEGIN
 END $$;
 
 -- ---- 9. Effacement d'une officine partie (remplace la version de 021) : nouvelles tables comprises ----
+-- Garde de rejeu (2026-11-20) : définition remplacée par le script 027 ; rejouer ce script après 027 ne la
+-- ramène pas en arrière (marqueur : fonction cloud_effacement_tables_techniques(), posée par 027).
+DO $rejeu$ BEGIN
+    IF to_regprocedure('cloud_effacement_tables_techniques()') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_effacer_officine : définition plus récente (script 027) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_effacer_officine(p_officine uuid, p_confirmer boolean DEFAULT false, p_operateur text DEFAULT NULL)
 RETURNS TABLE (nom_table text, lignes bigint)
 LANGUAGE plpgsql AS $$
@@ -346,6 +353,9 @@ BEGIN
                                                       to_char(o.resiliee_le, 'YYYY-MM-DD'), v_total, v_ans));
     END IF;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 COMMENT ON TABLE cloud_epoque_changement IS 'Changements d''époque déclarés par les officines (restauration, bascule), date de réception du central ; ajout seul (script 022, § 31).';
 COMMENT ON TABLE cloud_ligne_divergente IS 'Version reçue d''une ligne de journal chaîné après un changement d''époque déclaré, l''original restant en place ; ajout seul (script 022).';

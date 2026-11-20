@@ -99,8 +99,18 @@ ALTER TABLE cloud_anomalie_integrite ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cloud_anomalie_integrite FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON cloud_anomalie_integrite;
 CREATE POLICY cloisonnement ON cloud_anomalie_integrite USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
-DROP TRIGGER IF EXISTS trg_cloud_anomalie_integrite_ajout_seul ON cloud_anomalie_integrite;
-CREATE TRIGGER trg_cloud_anomalie_integrite_ajout_seul BEFORE UPDATE OR DELETE ON cloud_anomalie_integrite FOR EACH ROW EXECUTE FUNCTION cloud_ajout_seul();
+-- Garde de rejeu (2026-11-20) : le script 027 rebranche ce déclencheur sur cloud_integrite_restauration_garde() (effacement
+-- d'une officine partie permis) ; rejouer ce script après 027 ne le ramène pas en arrière.
+DO $rejeu$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'public.cloud_anomalie_integrite'::regclass
+                  AND tgname = 'trg_cloud_anomalie_integrite_ajout_seul'
+                  AND tgfoid = to_regprocedure('cloud_integrite_restauration_garde()')) THEN
+        RAISE NOTICE 'trg_cloud_anomalie_integrite_ajout_seul : déclencheur plus récent (script 027) gardé';
+    ELSE
+        DROP TRIGGER IF EXISTS trg_cloud_anomalie_integrite_ajout_seul ON cloud_anomalie_integrite;
+        CREATE TRIGGER trg_cloud_anomalie_integrite_ajout_seul BEFORE UPDATE OR DELETE ON cloud_anomalie_integrite FOR EACH ROW EXECUTE FUNCTION cloud_ajout_seul();
+    END IF;
+END $rejeu$;
 DROP TRIGGER IF EXISTS trg_cloud_anomalie_integrite_non_vidable ON cloud_anomalie_integrite;
 CREATE TRIGGER trg_cloud_anomalie_integrite_non_vidable BEFORE TRUNCATE ON cloud_anomalie_integrite FOR EACH STATEMENT EXECUTE FUNCTION cloud_ajout_seul();
 

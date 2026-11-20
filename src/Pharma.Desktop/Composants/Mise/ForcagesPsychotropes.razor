@@ -19,6 +19,7 @@
         <div class="champ" style="flex: 0 0 300px"><label for="f-code">Alerte</label>
             <select id="f-code" @bind="code" @bind:after="PremierePageAsync">
                 <option value="">Toutes</option>
+                <option value="traitement_en_cours">Patient encore sous traitement</option>
                 <option value="patient_repete">Même patient servi plusieurs fois</option>
                 <option value="ordonnance_reutilisee">Ordonnance déjà utilisée</option>
                 <option value="quantite_anormale">Quantité anormale</option>

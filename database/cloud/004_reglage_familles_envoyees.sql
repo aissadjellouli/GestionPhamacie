@@ -423,6 +423,13 @@ END $$;
 -- Effacement de ce qui a déjà été reçu pour une famille NON autorisée (tables miroir et lots bruts), pour une officine ou
 -- pour toutes celles où la famille est décochée. SUPPRESSION DE DONNÉES : simulation (compte) tant que p_confirmer est faux.
 -- Refusé pour une officine où la famille est encore envoyée (elle reviendrait au prochain envoi).
+-- Garde de rejeu (2026-11-20) : définition remplacée par le script 028 ; rejouer ce script après 028 ne la
+-- ramène pas en arrière (marqueur : colonne ligne_remplacee.colonnes_effacees, posée par 028).
+DO $rejeu$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = to_regclass('public.ligne_remplacee') AND attname = 'colonnes_effacees' AND NOT attisdropped) THEN
+        RAISE NOTICE 'cloud_effacer_famille : définition plus récente (script 028) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_effacer_famille(p_famille text, p_officine uuid DEFAULT NULL, p_confirmer boolean DEFAULT false)
 RETURNS TABLE (officine_id uuid, nom_table text, colonne text, lignes bigint, lots bigint)
 LANGUAGE plpgsql AS $$
@@ -473,6 +480,9 @@ BEGIN
     END LOOP;
     PERFORM set_config('app.officine_id', '', true);
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 REVOKE EXECUTE ON FUNCTION cloud_regler_famille(text, boolean, uuid), cloud_regler_conservation(int, uuid), cloud_regler_purge(boolean),
     cloud_purger_lots(boolean), cloud_effacer_famille(text, uuid, boolean), cloud_conservation_ans(uuid) FROM PUBLIC;

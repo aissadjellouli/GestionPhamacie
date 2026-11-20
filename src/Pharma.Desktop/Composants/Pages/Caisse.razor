@@ -1014,13 +1014,13 @@
                                 <input type="text" aria-label="Pièce d’identité du porteur" placeholder="Pièce d’identité (type et n°) *" @bind="porteurPiece" @bind:event="oninput"
                                        class="@Obligatoire.Classe(PorteurPieceManque)" aria-invalid="@Obligatoire.Aria(PorteurPieceManque)" />
                             }
-                            @* Durée du traitement (2026-11-16) : psychotrope ou stupéfiant seulement, facultative (bulle « à renseigner », ne bloque pas) ;
-                               inscrite au registre, comparée à la quantité délivrée (alerte « quantité anormale ») *@
-                            <div class="champ champ-ligne" title="@(dureeTraitement is null ? "Durée du traitement à renseigner (facultative) : inscrite au registre et comparée à la quantité délivrée" : "Durée du traitement, inscrite au registre")">
-                                <label for="duree-traitement">Durée du traitement (jours)</label>
+                            @* Durée du traitement (2026-11-16) : psychotrope ou stupéfiant seulement, OBLIGATOIRE depuis le 2026-11-19 (script 153) ;
+                               inscrite au registre, comparée à la quantité délivrée (« quantité anormale ») et base de « patient encore sous traitement » *@
+                            <div class="champ champ-ligne" title="@(DureeManquante ? "Durée du traitement prescrite, obligatoire : inscrite au registre, comparée à la quantité délivrée et aux traitements en cours du patient" : "Durée du traitement, inscrite au registre")">
+                                <label for="duree-traitement" class="etiquette-champ requis">Durée du traitement (jours, obligatoire)</label>
                                 <input id="duree-traitement" type="number" min="1" max="3650" step="1" style="width: 80px" data-champ="duree_traitement"
-                                       @bind="dureeTraitement" @bind:event="oninput" />
-                                @if (dureeTraitement is null) { <span class="detail">à renseigner</span> }
+                                       class="@Obligatoire.Classe(DureeManquante)" aria-invalid="@Obligatoire.Aria(DureeManquante && alerterDuree)"
+                                       @onfocus="() => alerterDuree = false" @bind="dureeTraitement" @bind:event="oninput" />
                                 @if (medecin is { Wilaya: null })
                                 {
                                     <span class="detail" title="Wilaya du médecin à renseigner (Factures › Médecins) : sans elle, pas de contrôle « hors zone »">· wilaya du médecin à renseigner</span>
@@ -1457,6 +1457,7 @@
         : apercu?.OrdonnanceRequise == true && medecin is null ? "Indiquez le médecin prescripteur"
         : MedecinParLeTaux && medecin is null ? "Tiers payant : l’organisme paie une partie, indiquez le médecin prescripteur"
         : PorteurIncomplet ? "Porteur de l’ordonnance : nom, adresse et pièce d’identité obligatoires"
+        : DureeManquante ? "Psychotrope ou stupéfiant : indiquez la durée du traitement prescrite (1 à 3650 jours)"
         : lignes.FirstOrDefault(l => l.Lot is not null && l.Situation is { Situation: not "aucune" } && l.RaisonLot is null) is { } sansRaison
             ? $"{sansRaison.Nom} : un lot plus ancien est en stock, indiquez ou validez la raison sous la ligne"
         : apercu?.ProduitsBloques is { Count: > 0 } && !accordBlocage.Complet(Session.A("produits.bloquer"))
@@ -1481,9 +1482,12 @@
     private bool porteurAutre;
     private string? porteurNom, porteurAdresse, porteurPiece;
     private bool PorteurDemande => porteurAutre && apercu?.OrdonnanceRequise == true;
-    // Durée du traitement (jours), facultative, envoyée seulement pour une vente sous registre (2026-11-16)
+    // Durée du traitement (jours), envoyée seulement pour une vente sous registre (2026-11-16) ; obligatoire depuis le 2026-11-19 (script 153)
     private int? dureeTraitement;
     private int? DureeEnvoyee => apercu?.OrdonnanceRequise == true && dureeTraitement is > 0 ? dureeTraitement : null;
+    private bool DureeManquante => apercu?.OrdonnanceRequise == true && dureeTraitement is null or < 1 or > 3650;
+    /// <summary>Comme le patient et le médecin : rouge tout de suite, bulle « À renseigner » (et curseur) seulement à F12.</summary>
+    private bool alerterDuree;
     private bool PorteurIncomplet => PorteurDemande
         && (string.IsNullOrWhiteSpace(porteurNom) || string.IsNullOrWhiteSpace(porteurAdresse) || string.IsNullOrWhiteSpace(porteurPiece));
     private bool PorteurNomManque => PorteurDemande && string.IsNullOrWhiteSpace(porteurNom);
@@ -1512,7 +1516,7 @@
     private bool clientDeplie;
     /// <summary>Tout ce que le panier exige du client est saisi (patient, médecin si attendu, organisme), sans saisie en cours.</summary>
     private bool ClientComplet => patient is not null && !nouveauPatient && nouveauMedecin is null && !PsychotropeInterdit && !PorteurDemande
-        && (!MedecinObligatoire || medecin is not null) && (!tiersPayant || organismeId > 0);
+        && (!MedecinObligatoire || medecin is not null) && (!tiersPayant || organismeId > 0) && !DureeManquante;
     /// <summary>Le bloc est en cours de saisie : il reste ouvert jusqu'au produit suivant ou à « Réduire ».</summary>
     private bool clientEdition;
     /// <summary>« Réduire » demandé : le bloc se résume même incomplet (ce qui manque est signalé) jusqu'à « Modifier ».</summary>
@@ -1549,7 +1553,8 @@
     {
         PatientObligatoire && patient is null ? "patient" : null,
         MedecinObligatoire && medecin is null ? "médecin" : AfficherMedecin && medecin is null && jetonScan is null ? "médecin (attendu)" : null,
-        tiersPayant && organismeId <= 0 ? "organisme" : null
+        tiersPayant && organismeId <= 0 ? "organisme" : null,
+        DureeManquante ? "durée du traitement" : null   // psychotrope (script 153)
     }.Where(m => m is not null)) is { Length: > 0 } m2 ? m2 : null;
     private string OrganismeCode => organismes.FirstOrDefault(o => o.Id == organismeId)?.Code ?? "organisme";
     /// <summary>Fin de droits Chifa dépassée du patient, en tiers payant CNAS/CASNOS (script 102, D-4 : avertissement seul).</summary>
@@ -1795,8 +1800,9 @@
         {
             if (PatientManquant) alerterPatient = true;   // la bulle « À renseigner » s'ouvre seulement maintenant
             if (MedecinManquant && !PatientManquant) alerterMedecin = true;          // une bulle à la fois : le patient d’abord
+            if (DureeManquante && !PatientManquant && !MedecinManquant) alerterDuree = true;   // puis la durée (script 153)
             // Bloc client replié (écran court, 2026-11-18) : il se rouvre pour que la bulle s'affiche sur le champ à renseigner
-            if ((alerterPatient || alerterMedecin) && ClientResume) ModifierClient();
+            if ((alerterPatient || alerterMedecin || alerterDuree) && ClientResume) ModifierClient();
         }
         StateHasChanged();
     }
@@ -3161,7 +3167,7 @@
         lectureAjouts.Clear();
         (motifSaisieManuelle, lectureSansResultat) = (null, null);
         (porteurAutre, porteurNom, porteurAdresse, porteurPiece) = (false, null, null, null);
-        dureeTraitement = null;
+        (dureeTraitement, alerterDuree) = (null, false);
         (remiseProcheId, remiseProcheNom, remiseAutre, remiseNom) = (null, null, false, null);
     }
 

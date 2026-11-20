@@ -61,11 +61,14 @@ public sealed record MutuRegleAlertePsychotropeDto(
     [property: JsonPropertyName("code")] string Code,
     [property: JsonPropertyName("active")] bool Active,
     [property: JsonPropertyName("seuil")] int Seuil,
-    [property: JsonPropertyName("periode_jours")] int PeriodeJours,
+    [property: JsonPropertyName("periode_jours")] int? PeriodeJours,   // vide (script 153) : sans limite ou sans objet
     [property: JsonPropertyName("exiger_valideur")] bool ExigerValideur,
     [property: JsonPropertyName("unites_par_jour")] int? UnitesParJour);
 
-/// <summary>Les 5 règles à code fixe (ni libellé ni ordre : affichage local).</summary>
+/// <summary>
+/// Les règles à code fixe (ni libellé ni ordre : affichage local) : 5 obligatoires, plus « traitement_en_cours » (script 153), facultative
+/// dans un modèle (absente : la règle de l'officine est gardée).
+/// </summary>
 public sealed record MutuAlertesPsychotropesDto(
     [property: JsonPropertyName("regles")] IReadOnlyList<MutuRegleAlertePsychotropeDto> Regles) : ValeurMutuDto;
 

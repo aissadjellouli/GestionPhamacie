@@ -15,13 +15,13 @@ VALUES (repeat('1', 64), 'aaaaaaaa-0000-0000-0000-000000000021', 'principal', 'S
 SET LOCAL ROLE pharma_cloud_api;
 SELECT set_config('app.officine_id', 'aaaaaaaa-0000-0000-0000-000000000021', true) \g /dev/null
 SELECT cloud_appliquer_lot(1, 1, repeat('a', 64), 'sync-v1', convert_to(
-    '{"lignes":[{"n":1,"table":"alerte","id":"1","op":"creation","donnees":{"id":1,"message":"a"}},'
-    '{"n":2,"table":"alerte","id":"2","op":"creation","donnees":{"id":2,"message":"b"}}]}', 'UTF8')) \g /dev/null
+    '{"lignes":[{"n":1,"table":"produit","id":"1","op":"creation","donnees":{"id":1,"nom_commercial":"a"}},'
+    '{"n":2,"table":"produit","id":"2","op":"creation","donnees":{"id":2,"nom_commercial":"b"}}]}', 'UTF8')) \g /dev/null
 SELECT cloud_appliquer_lot(2, 1, repeat('b', 64), 'sync-v1', convert_to(
-    '{"lignes":[{"n":1,"table":"alerte","id":"1","op":"creation","donnees":{"id":1,"message":"autre"}}]}', 'UTF8')) \g /dev/null
+    '{"lignes":[{"n":1,"table":"produit","id":"1","op":"creation","donnees":{"id":1,"nom_commercial":"autre"}}]}', 'UTF8')) \g /dev/null
 SELECT set_config('app.officine_id', 'bbbbbbbb-0000-0000-0000-000000000021', true) \g /dev/null
 SELECT cloud_appliquer_lot(1, 1, repeat('c', 64), 'sync-v1', convert_to(
-    '{"lignes":[{"n":1,"table":"alerte","id":"7","op":"creation","donnees":{"id":7,"message":"B"}}]}', 'UTF8')) \g /dev/null
+    '{"lignes":[{"n":1,"table":"produit","id":"7","op":"creation","donnees":{"id":7,"nom_commercial":"B"}}]}', 'UTF8')) \g /dev/null
 -- L'API n'a aucune fonction d'administration du départ
 DO $$ BEGIN
     BEGIN PERFORM cloud_depart_officine('aaaaaaaa-0000-0000-0000-000000000021', 'x'); RAISE EXCEPTION 'départ permis à l''API';
@@ -99,27 +99,29 @@ UPDATE officine SET resiliee_le = now() - interval '7 years' WHERE id = 'aaaaaaa
 DO $$
 DECLARE v jsonb;
 BEGIN
-    SELECT jsonb_object_agg(nom_table, lignes) INTO v FROM cloud_effacer_officine('aaaaaaaa-0000-0000-0000-000000000021');
-    ASSERT v = '{"alerte": 2, "journal_vente": 1, "ligne_remplacee": 1, "lot_recu": 2}'::jsonb, 'simulation : ' || v::text;
+    SELECT jsonb_object_agg(nom_table, lignes) INTO v FROM cloud_effacer_officine('aaaaaaaa-0000-0000-0000-000000000021')
+    WHERE nom_table IN ('produit', 'journal_vente', 'ligne_remplacee', 'lot_recu');   -- éléments techniques (script 027) : voir 027_tests
+    ASSERT v = '{"produit": 2, "journal_vente": 1, "ligne_remplacee": 1, "lot_recu": 2}'::jsonb, 'simulation : ' || v::text;
     ASSERT NOT EXISTS (SELECT 1 FROM journal_depart_officine WHERE action = 'effacement'), 'simulation : pas de procès-verbal';
     BEGIN PERFORM * FROM cloud_effacer_officine('aaaaaaaa-0000-0000-0000-000000000021', true); RAISE EXCEPTION 'effacement sans opérateur';
     EXCEPTION WHEN raise_exception THEN IF SQLERRM NOT LIKE '%Opérateur%' THEN RAISE; END IF; END;
-    SELECT jsonb_object_agg(nom_table, lignes) INTO v FROM cloud_effacer_officine('aaaaaaaa-0000-0000-0000-000000000021', true, 'Administrateur essai');
-    ASSERT v = '{"alerte": 2, "journal_vente": 1, "ligne_remplacee": 1, "lot_recu": 2}'::jsonb, 'effacement : ' || v::text;
+    SELECT jsonb_object_agg(nom_table, lignes) INTO v FROM cloud_effacer_officine('aaaaaaaa-0000-0000-0000-000000000021', true, 'Administrateur essai')
+    WHERE nom_table IN ('produit', 'journal_vente', 'ligne_remplacee', 'lot_recu');
+    ASSERT v = '{"produit": 2, "journal_vente": 1, "ligne_remplacee": 1, "lot_recu": 2}'::jsonb, 'effacement : ' || v::text;
     ASSERT (SELECT detail -> 'lignes_par_table' FROM journal_depart_officine WHERE action = 'effacement'
-            AND officine_id = 'aaaaaaaa-0000-0000-0000-000000000021' AND operateur = 'Administrateur essai') = v, 'procès-verbal';
+            AND officine_id = 'aaaaaaaa-0000-0000-0000-000000000021' AND operateur = 'Administrateur essai') @> v, 'procès-verbal';
     ASSERT EXISTS (SELECT 1 FROM journal_securite WHERE officine_id = 'aaaaaaaa-0000-0000-0000-000000000021' AND evenement = 'officine_effacee'), 'journal de sécurité';
     ASSERT coalesce(current_setting('cloud.effacement_officine', true), '') = '', 'opération retirée après l''effacement';
 END $$;
 SELECT set_config('app.officine_id', 'aaaaaaaa-0000-0000-0000-000000000021', true) \g /dev/null
 DO $$ BEGIN
-    ASSERT (SELECT count(*) FROM alerte) + (SELECT count(*) FROM journal_vente) + (SELECT count(*) FROM ligne_remplacee) + (SELECT count(*) FROM lot_recu) = 0,
+    ASSERT (SELECT count(*) FROM produit) + (SELECT count(*) FROM journal_vente) + (SELECT count(*) FROM ligne_remplacee) + (SELECT count(*) FROM lot_recu) = 0,
         'A : plus rien';
-    ASSERT (SELECT count(*) FROM cloud_anomalie_integrite) = 1, 'seule l''anomalie de l''essai avant le délai (4), aucune notée par l''effacement';
+    ASSERT (SELECT count(*) FROM cloud_anomalie_integrite) = 0, 'anomalie de l''essai effacée avec l''officine (script 027), aucune notée par l''effacement';
 END $$;
 SELECT set_config('app.officine_id', 'bbbbbbbb-0000-0000-0000-000000000021', true) \g /dev/null
 DO $$ BEGIN
-    ASSERT (SELECT count(*) FROM alerte) = 1 AND (SELECT count(*) FROM lot_recu) = 1, 'B intacte';
+    ASSERT (SELECT count(*) FROM produit) = 1 AND (SELECT count(*) FROM lot_recu) = 1, 'B intacte';
     BEGIN UPDATE journal_depart_officine SET operateur = 'x'; RAISE EXCEPTION 'procès-verbal modifiable'; EXCEPTION WHEN raise_exception THEN
         IF SQLERRM NOT LIKE '%ajout seul%' THEN RAISE; END IF; END;
 END $$;

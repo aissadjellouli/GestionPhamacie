@@ -15,12 +15,12 @@ Légende des états :
 
 | État | Nombre de fonctions |
 | --- | --- |
-| Fait | 164 |
+| Fait | 167 |
 | En cours | 0 |
-| En attente | 45 |
+| En attente | 47 |
 | Bloqué | 8 |
-| À vérifier | 1 |
-| **Total** | **218** |
+| À vérifier | 0 |
+| **Total** | **222** |
 
 ## Caisse et ventes
 
@@ -119,7 +119,7 @@ Légende des états :
 | Saisie en lot de la contenance manquante (écran « Contenance manquante ») et règle des « B/N FL », « B/N SERINGUE » | En attente (à décider) | a-faire.md « À vérifier » |
 | Substitution : équivalent exact seulement (activé par défaut), liste blanche, génériques fabriqués en Algérie en tête | Fait | Caisse ; Administration |
 | Prix public dans la nomenclature et barème des marges (décret 98-44) avant tout calcul automatique | En attente (à confirmer) | a-faire.md « Prochaines demandes » |
-| Parapharmacie distinguée dans le catalogue (préalable à la fidélisation de la V2) | À vérifier | a-faire.md « Prochaines demandes » |
+| Parapharmacie distinguée dans le catalogue (préalable à la fidélisation de la V2) | En attente (dès la V1, décision du titulaire du 2026-11-19) | a-faire.md « Prochaines demandes » |
 
 ## Traçabilité
 
@@ -140,6 +140,7 @@ Légende des états :
 | Porteur de l’ordonnance quand ce n’est pas le patient : nom, adresse et pièce d’identité obligatoires, inscrits au registre | Fait | Caisse |
 | Psychotrope au panier d’un employé sans le droit de délivrer : la caisse nomme les employés qui l’ont pour reprendre la vente ; encaissement bloqué, même refus côté serveur | Fait | Caisse |
 | Alertes à la délivrance (même patient, même ordonnance, quantité, prescripteur hors zone, durée × contenance), « Forcer » avec motif, liste des alertes forcées | Fait | Caisse ; Administration › Psychotropes |
+| Alerte « patient encore sous traitement » (tout psychotrope, valideur exigé), durée du traitement obligatoire à la caisse, ordonnance réutilisée « sans limite », nouvelles valeurs de départ (script 153, décision du titulaire du 2026-11-19) | Fait | Caisse ; Administration › Psychotropes ; regles-metier.md « Alertes à la délivrance » |
 | Valeurs de départ des seuils d’alerte des psychotropes | En attente (décision du titulaire) | reste-a-faire-synthese.md § 4 |
 | Répertoire national des ordonnances (loi 23-05) | Bloqué (adaptateur factice, API officielle inconnue) | regles-metier.md « Alertes à la délivrance » |
 | Suivi des antibiotiques : liste des DCI suivies, rapport par molécule et par mois | Fait | Rapports ; Administration › Psychotropes |
@@ -323,6 +324,8 @@ Légende des états :
 | Reclassement de deux tables liées aux produits (montantes) | Fait | § 29 |
 | S6, fin : restauration ou bascule de la base d’une officine (retour en arrière détecté, envoi suspendu, avance des n°, alerte, « Repartir sur une nouvelle époque » par le titulaire, puis chargement complet) | Fait (essai de bout en bout avec le serveur central à faire, lot S6.4) | Synchronisation › État ; conception-synchronisation.md § 30 |
 | S6, fin : départ d’une officine (console du central : révocation des certificats, export zip avec empreintes, conservation après départ réglable, 6 ans par défaut, effacement en simulation puis sur confirmation après le délai, procès-verbal) ; archive au central des lignes remplacées par une époque plus récente | Fait (durée à confirmer par le juriste) | conception-synchronisation.md § 30.5 ; mise-en-production.md F8 |
+| Départ d’une officine, décisions du 2026-11-20 : effacement aussi des éléments techniques (anomalies et états d’intégrité, ordres, éléments descendants, chargements, volumes, époques ; journal des ordres gardé) ; alertes recalculées non archivées (réglable par table) ; effacement d’une famille nominative aussi dans les lignes archivées ; rejeu des scripts centraux protégé | Fait (scripts centraux 026 à 028) | conception-synchronisation.md § 30.9 ; mise-en-production.md F8 |
+| Remise de l’export de départ par lien (zip chiffré, mot de passe par un autre canal) | En attente (à réaliser plus tard ; remise en main propre sur clé USB d’ici là) | mise-en-production.md F8 |
 | S6.5 : intégrité après restauration (époque déclarée au central, version divergente gardée à part, vérification par branches, classement « remplacée après restauration » sous conditions, alerte et export) | En attente (décisions D1 à D9 validées, code sur « go S6.5 ») | conception-synchronisation.md § 31 |
 | S7 : écrans du central, accès à distance du titulaire, multi-officines | En attente (après l’hébergeur) | conception-synchronisation.md § 10 |
 | Découpage par officine des grandes tables du central | En attente | reste-a-faire-synthese.md § 7 |

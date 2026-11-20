@@ -145,7 +145,7 @@ public class RegistreTests
 
     private static CommandeVente Commande(long produit, long lot, PorteurOrdonnance? porteur) =>
         new([new LigneCommande(produit, lot, 1)], false, null, null, PatientId: 3,
-            new OrdonnanceSaisie(1, Jour, "ORD-1", Porteur: porteur), 0, ModePaiement.Especes, null);
+            new OrdonnanceSaisie(1, Jour, "ORD-1", Porteur: porteur, DureeTraitementJours: 30), 0, ModePaiement.Especes, null);
 
     [Fact]
     public async Task Porteur_complet_transmis_au_registre()

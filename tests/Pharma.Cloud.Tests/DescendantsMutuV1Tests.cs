@@ -131,7 +131,14 @@ public class DescendantsMutuV1Tests
         private readonly string nom;
         public string Connexion { get; }
 
-        private BaseCentraleJetable(string administration, string nom, string connexion) => (this.administration, this.nom, Connexion) = (administration, nom, connexion);
+        private readonly string psql;
+        private readonly NpgsqlConnectionStringBuilder modele;
+
+        private BaseCentraleJetable(string administration, string nom, string connexion, string psql, NpgsqlConnectionStringBuilder modele)
+            => (this.administration, this.nom, Connexion, this.psql, this.modele) = (administration, nom, connexion, psql, modele);
+
+        /// <summary>Passe un script SQL sur cette base jetable (psql, ON_ERROR_STOP), comme à la création.</summary>
+        public void Rejouer(string script) => Psql(psql, modele, nom, script);
 
         public static BaseCentraleJetable? Creer()
         {
@@ -149,7 +156,7 @@ public class DescendantsMutuV1Tests
                 creer.ExecuteNonQuery();
             }
             catch (NpgsqlException) { return null; }
-            var base_ = new BaseCentraleJetable(administration, nom, new NpgsqlConnectionStringBuilder(modele.ConnectionString) { Database = nom }.ConnectionString);
+            var base_ = new BaseCentraleJetable(administration, nom, new NpgsqlConnectionStringBuilder(modele.ConnectionString) { Database = nom }.ConnectionString, psql, modele);
             try
             {
                 foreach (var script in Directory.GetFiles(Path.Combine(racine, "database", "cloud"), "0*.sql").Order(StringComparer.Ordinal))

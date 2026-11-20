@@ -98,6 +98,13 @@ REVOKE ALL ON ligne_remplacee FROM pharma_cloud_api;
 GRANT INSERT ON ligne_remplacee TO pharma_cloud_api;
 
 -- ---- 2. Dépôt d'un lot (remplace la version de 009) : archive avant remplacement par une époque plus récente ----
+-- Garde de rejeu (2026-11-20) : définition remplacée par le script 026 ; rejouer ce script après 026 ne la
+-- ramène pas en arrière (marqueur : colonne cloud_table_miroir.archive_remplacee, posée par 026).
+DO $rejeu$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = 'public.cloud_table_miroir'::regclass AND attname = 'archive_remplacee' AND NOT attisdropped) THEN
+        RAISE NOTICE 'cloud_appliquer_lot : définition plus récente (script 026) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_appliquer_lot(p_epoque int, p_numero bigint, p_empreinte text, p_version text, p_contenu bytea)
 RETURNS TABLE (statut text, dernier bigint)
 LANGUAGE plpgsql AS $$
@@ -262,6 +269,9 @@ BEGIN
     UPDATE officine_epoque SET dernier_lot = p_numero, dernier_recu_le = now() WHERE officine_id = v_off AND epoque = p_epoque;
     RETURN QUERY SELECT 'accepte'::text, p_numero;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 GRANT EXECUTE ON FUNCTION cloud_appliquer_lot(int, bigint, text, text, bytea) TO pharma_cloud_api;
 
 -- ---- 3. Maximums des identifiants (route GET /api/v1/maximums) ----

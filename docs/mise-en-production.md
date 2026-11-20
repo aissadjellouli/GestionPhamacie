@@ -169,7 +169,7 @@ Côté serveur central (outils d'administration) : voir parcours E, étape 3.2.
 
 | Chemin | Où | Contenu | À sauvegarder |
 | --- | --- | --- | --- |
-| `C:\Program Files\PharmaOfficine\Api` | PC serveur | Programme de l'API, `appsettings.Https.json`, `database\` (scripts 001 à 152, sans `111b`) | Non (republié à chaque mise à jour) |
+| `C:\Program Files\PharmaOfficine\Api` | PC serveur | Programme de l'API, `appsettings.Https.json`, `database\` (scripts 001 à 153, sans `111b`) | Non (republié à chaque mise à jour) |
 | `C:\ProgramData\PharmaOfficine\super-admin.dat` | PC serveur | Compte super admin, chiffré pour ce PC | **Oui**, sur le disque externe |
 | `C:\ProgramData\PharmaOfficine\cle-integrite.dat` | PC serveur | Clé de scellement des journaux, chiffrée pour ce PC | **Oui**, sur le disque externe |
 | `C:\ProgramData\PharmaOfficine\archives-fiscales\AAAA\MM` | PC serveur | Rapports scellés, à conserver 6 ans au moins | **Oui** |
@@ -1011,12 +1011,12 @@ Les scripts de la base centrale sont dans `database\cloud\` (001 à 019). Ils ne
 
 ### 2. Base centrale
 
-- [ ] **2.1** Créer la base centrale et passer les scripts `database\cloud\001` à `019` **dans l'ordre**. **Où** : serveur central. **Compte** : superutilisateur `postgres` pour créer la base (mot de passe saisi à l'écran), puis le compte propriétaire `<propriétaire>` pour les scripts (mot de passe saisi à l'écran). Aucun mot de passe n'est écrit dans une commande. Référence : [scripts-base-de-donnees.md](scripts-base-de-donnees.md).
+- [ ] **2.1** Créer la base centrale et passer les scripts `database\cloud\001` à `028` (tous, **dans l'ordre**). **Où** : serveur central. **Compte** : superutilisateur `postgres` pour créer la base (mot de passe saisi à l'écran), puis le compte propriétaire `<propriétaire>` pour les scripts (mot de passe saisi à l'écran). Aucun mot de passe n'est écrit dans une commande. Référence : [scripts-base-de-donnees.md](scripts-base-de-donnees.md).
   ```powershell
   .\scripts\mep\creer_base_centrale.ps1 -Base <base centrale> -Proprietaire <propriétaire>
   ```
   - Le compte `<propriétaire>` doit exister (étape 1.3) ; le script ne le crée pas. Pour voir le plan sans rien créer : ajouter `-WhatIf`. Si le serveur est distant : `-Hote <hôte>`.
-  - Le script : vérifie la suite des scripts cloud (sans trou) ; refuse une base qui contient déjà des tables centrales (jamais de suppression) ; crée la base (propriétaire `<propriétaire>`, UTF8) si elle n'existe pas ; passe `001` à `023` (tous les scripts numérotés du dossier) ; vérifie les tables centrales, la sécurité au niveau des lignes sur les tables miroir, le rôle `pharma_cloud_api`. Il n'y a pas de `schema.sql` central : les scripts `cloud` sont la seule source.
+  - Le script : vérifie la suite des scripts cloud (sans trou) ; refuse une base qui contient déjà des tables centrales (jamais de suppression) ; crée la base (propriétaire `<propriétaire>`, UTF8) si elle n'existe pas ; passe `001` à `028` (tous les scripts numérotés du dossier) ; vérifie les tables centrales, la sécurité au niveau des lignes sur les tables miroir, le rôle `pharma_cloud_api`. Il n'y a pas de `schema.sql` central : les scripts `cloud` sont la seule source.
   - `001` crée le rôle applicatif `pharma_cloud_api` **sans connexion** et non propriétaire des tables.
   - **Attendu** : « Terminé », code de sortie 0 (`$LASTEXITCODE`).
   - **Si échec** : le script s'arrête au premier script en erreur et le nomme. « Le compte propriétaire n'existe pas » : l'étape 1.3 n'est pas faite. « contient déjà des tables centrales » : base déjà installée ; pour une mise à jour du central, voir l'étape 10.
@@ -1223,7 +1223,7 @@ Le serveur central peut proposer ou imposer aux officines la valeur de 11 régla
 ### 10. Mise à jour du serveur central
 
 - [ ] **10.1** Sauvegarder la base centrale. **Où** : serveur central. **Compte** : propriétaire.
-- [ ] **10.2** Repasser `002` (colonnes `sync_chargement`, `sync_absente_le`, etc.), puis `003` à `025`, **dans cet ordre** (le `025` **avant** le script `152` des officines : n° de tickets réattribués signalés ; le `022` à `024` **avant** le script `151` des officines : tables des restaurations, route `POST /api/v1/epoque`, table miroir `integrite_prise_acte` du `002` régénéré, n° de ticket dans `/maximums` ; le `019` **avant** le script `147` des officines : sinon leurs lots sont refusés ; le `020` **avant** le script `149` des officines : route `GET /api/v1/maximums` et archive des lignes remplacées ; `020` et `021` demandent PostgreSQL 18 et le refusent clairement en tête sinon ; depuis le 2026-11-18 rejouer un ancien script (`001` à `012`) ne ramène plus en arrière une fonction redéfinie par un script plus récent ; `002` régénéré **avant** le script `148` des officines : colonnes d'alerte de `parametre_sauvegarde`), avec le compte propriétaire, un par un : `& $psql -h <hôte> -U <propriétaire> -d <base centrale> -v ON_ERROR_STOP=1 -q -f "database\cloud\<script>.sql"` (le script `creer_base_centrale.ps1` de l'étape 2.1 ne sert que pour une base neuve et refuse une base déjà installée). Scripts idempotents.
+- [ ] **10.2** Repasser `002` (colonnes `sync_chargement`, `sync_absente_le`, etc.), puis `003` à `028`, **dans cet ordre** (`026` à `028` : tables sans archive réglables, effacement d'une officine partie avec ses éléments techniques, effacement d'une famille nominative aussi dans les lignes archivées ; `027` et `028` demandent le `022` ; le `025` **avant** le script `152` des officines : n° de tickets réattribués signalés ; le `022` à `024` **avant** le script `151` des officines : tables des restaurations, route `POST /api/v1/epoque`, table miroir `integrite_prise_acte` du `002` régénéré, n° de ticket dans `/maximums` ; le `019` **avant** le script `147` des officines : sinon leurs lots sont refusés ; le `020` **avant** le script `149` des officines : route `GET /api/v1/maximums` et archive des lignes remplacées ; `020` et `021` demandent PostgreSQL 18 et le refusent clairement en tête sinon ; depuis le 2026-11-18 rejouer un ancien script ne ramène plus en arrière une fonction redéfinie par un script plus récent (gardes étendues le 2026-11-20 à `004`, `010`, `012`, `013` à `017`, `020`, `021`, `022`) ; `002` régénéré **avant** le script `148` des officines : colonnes d'alerte de `parametre_sauvegarde`), avec le compte propriétaire, un par un : `& $psql -h <hôte> -U <propriétaire> -d <base centrale> -v ON_ERROR_STOP=1 -q -f "database\cloud\<script>.sql"` (le script `creer_base_centrale.ps1` de l'étape 2.1 ne sert que pour une base neuve et refuse une base déjà installée). Scripts idempotents.
 - [ ] **10.3** Relancer les tests de l'étape 2.3 sur la copie.
 - [ ] **10.4** Redémarrer le serveur central. **Avant** toute mise à jour des officines.
 
@@ -1437,7 +1437,7 @@ La première version du script créait une autorité « `PharmaOfficine Autorite
 
 ### F8. Départ d'une officine (fin de contrat)
 
-**Où** : serveur central. **Compte** : compte d'administration (`PHARMA_CLOUD_ADMIN_CONNEXION`, propriétaire de la base centrale). Script `021` passé.
+**Où** : serveur central. **Compte** : compte d'administration (`PHARMA_CLOUD_ADMIN_CONNEXION`, propriétaire de la base centrale). Scripts `021` et `027` passés.
 
 - [ ] **1.** Enregistrer le départ et écrire l'export complet remis au titulaire :
   ```powershell
@@ -1446,7 +1446,8 @@ La première version du script créait une autorité « `PharmaOfficine Autorite
   - Tous les certificats de l'officine sont révoqués, la date de départ est posée (gardée si la commande est rejouée) : la synchronisation de l'officine est refusée dès son appel suivant. Rien d'autre à faire dans l'officine.
   - L'archive contient un fichier CSV par table copiée au central et `ligne_remplacee.csv` (UTF-8, séparateur « ; », en-tête), et `empreintes.txt` (SHA-256 de chaque CSV, contrôle : `Get-FileHash -Algorithm SHA256 <fichier>`). Un fichier existant n'est jamais écrasé. Patients sous code, comme au central.
   - Le départ, l'export et l'empreinte SHA-256 de l'archive (affichée) sont notés au journal des départs (`journal_depart_officine`, ajout seul) et au journal de sécurité.
-  - Remettre l'archive au titulaire **par un canal sûr** ; noter son empreinte. **[À VÉRIFIER : mode de remise et accusé de réception du titulaire.]**
+  - Remettre l'archive au titulaire, **au choix du titulaire** : soit **en main propre sur une clé USB** ; soit par **un lien à durée limitée**, le mot de passe étant transmis **par un autre canal** que le lien. L'archive protégée par un **zip chiffré** pour la remise par lien est **à réaliser plus tard** (fonction séparée, hors du présent lot) : tant qu'elle n'existe pas, la remise se fait en main propre.
+  - **Accusé de réception** (à faire signer avant toute étape d'effacement), à garder avec le procès-verbal : date de remise, nom du titulaire, mode de remise (clé USB ou lien), nom du fichier, empreinte SHA-256 de l'archive (celle affichée par la commande et notée au journal des départs), contrôle par le titulaire avec `Get-FileHash -Algorithm SHA256 <fichier>` (l'empreinte calculée doit être identique), signature du titulaire.
 - [ ] **2.** Ne rien effacer : l'effacement n'est **jamais automatique**. Il est refusé (même en simulation) tant que la durée de conservation après départ (étape 7.8) n'est pas écoulée.
 - [ ] **3.** Après la durée de conservation : simulation (nombre de lignes par table, rien n'est effacé) :
   ```powershell
@@ -1456,8 +1457,8 @@ La première version du script créait une autorité « `PharmaOfficine Autorite
   ```powershell
   & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --effacer-officine <code officine> --confirmer <code officine> --operateur "<nom de l'opérateur>"
   ```
-  - Efface les tables copiées, `ligne_remplacee` et les lots bruts de l'officine, en une seule transaction ; procès-verbal (date, officine, opérateur, lignes par table) dans `journal_depart_officine` et `officine_effacee` au journal de sécurité.
-  - Restent : la fiche de l'officine, ses certificats révoqués, les journaux, et ses éléments techniques (époques, chargements, éléments descendants, ordres, anomalies d'intégrité). **[À VÉRIFIER avec le titulaire : faut-il aussi les effacer ?]** Les sauvegardes de la base centrale gardent les données jusqu'à leur propre expiration. **[À VÉRIFIER : durée de conservation des sauvegardes du central.]**
+  - Efface les tables copiées, `ligne_remplacee` et les lots bruts de l'officine, **et ses éléments techniques** (script `027`), en une seule transaction : les quatre tables d'intégrité du script `022` (`cloud_ligne_divergente`, `cloud_anomalie_classement`, `cloud_integrite_bifurcation`, `cloud_epoque_changement`), puis `cloud_anomalie_integrite`, `cloud_integrite_sceau`, `cloud_integrite_etat`, `cloud_integrite_officine`, les ordres (`ordre_central`), les éléments descendants (`descendant`, `officine_descendant`), les chargements, les volumes du jour (`officine_volume_jour`) et les époques (`officine_epoque`, en dernier). Procès-verbal (date, officine, opérateur, lignes par table, **sous-total des éléments techniques**, script `027`) dans `journal_depart_officine` et `officine_effacee` au journal de sécurité.
+  - Restent (décision du titulaire du 2026-11-20) : la fiche de l'officine, ses certificats révoqués, le code d'activation, les réglages de familles de l'officine, le journal de sécurité, le journal des départs, le journal des réglages et le journal des ordres (`ordre_central_journal`, gardé sans clé étrangère vers les ordres). Les sauvegardes de la base centrale gardent les données jusqu'à leur propre expiration. **[À VÉRIFIER : durée de conservation des sauvegardes du central.]**
 ---
 
 ## Annexes

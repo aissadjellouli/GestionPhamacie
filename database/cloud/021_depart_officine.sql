@@ -246,6 +246,13 @@ BEGIN
 END $$;
 
 -- ligne_remplacee (remplace la version de 020)
+-- Garde de rejeu (2026-11-20) : définition remplacée par le script 028 ; rejouer ce script après 028 ne la
+-- ramène pas en arrière (marqueur : colonne ligne_remplacee.colonnes_effacees, posée par 028).
+DO $rejeu$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_attribute WHERE attrelid = to_regclass('public.ligne_remplacee') AND attname = 'colonnes_effacees' AND NOT attisdropped) THEN
+        RAISE NOTICE 'cloud_ligne_remplacee_garde : définition plus récente (script 028) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_ligne_remplacee_garde() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -254,6 +261,9 @@ BEGIN
     END IF;
     RAISE EXCEPTION '% : ajout seul', TG_TABLE_NAME;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 -- Journaux chaînés (remplace la version de 012, identique sauf la première condition)
 -- Garde de rejeu (2026-11-18, lot S6.5) : définition remplacée par le script 022 ; rejouer ce script après 022 ne la

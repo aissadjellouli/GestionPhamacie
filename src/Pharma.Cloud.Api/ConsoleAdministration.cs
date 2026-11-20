@@ -261,6 +261,8 @@ public static class ConsoleAdministration
                         var lignes = await Depart.DepartOfficine.EffacerAsync(db, officine, confirmee, operateur, arret.Token);
                         foreach (var (table, n) in lignes) Console.WriteLine($"  {table} : {n} ligne(s)");
                         var total = lignes.Sum(l => l.Lignes);
+                        Console.WriteLine("Éléments techniques compris (anomalies et états d'intégrité, ordres, éléments descendants, chargements, volumes, époques) ; sous-total au procès-verbal.");
+                        Console.WriteLine("Gardés : fiche de l'officine, certificats, code d'activation, réglages des familles, journaux (sécurité, départs, réglages, ordres).");
                         Console.WriteLine(confirmee
                             ? $"{total} ligne(s) effacée(s) ; procès-verbal écrit (journal_depart_officine, officine_effacee au journal de sécurité)."
                             : $"SIMULATION : {total} ligne(s) seraient effacées, rien n'a été effacé. Pour effacer (définitif) : ajoutez --confirmer {officine} --operateur <nom>.");

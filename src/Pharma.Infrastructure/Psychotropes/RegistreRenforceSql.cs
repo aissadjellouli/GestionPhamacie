@@ -64,7 +64,7 @@ public sealed class RegistreRenforceSql(NpgsqlDataSource db) : IRegistreRenforce
         await using var r = await cmd.ExecuteReaderAsync(ct);
         var liste = new List<RegleAlertePsychotrope>();
         while (await r.ReadAsync(ct))
-            liste.Add(new RegleAlertePsychotrope(r.GetString(0), r.GetString(1), r.GetBoolean(2), r.GetInt32(3), r.GetInt32(4), r.GetBoolean(5),
+            liste.Add(new RegleAlertePsychotrope(r.GetString(0), r.GetString(1), r.GetBoolean(2), r.GetInt32(3), r.IsDBNull(4) ? null : r.GetInt32(4), r.GetBoolean(5),
                 r.IsDBNull(6) ? null : r.GetInt32(6)));
         return liste;
     }
@@ -83,7 +83,7 @@ public sealed class RegistreRenforceSql(NpgsqlDataSource db) : IRegistreRenforce
             cmd.Parameters.AddWithValue(g.Code);
             cmd.Parameters.AddWithValue(g.Active);
             cmd.Parameters.AddWithValue(g.Seuil);
-            cmd.Parameters.AddWithValue(g.PeriodeJours);
+            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)g.PeriodeJours ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Integer });
             cmd.Parameters.AddWithValue(g.ExigerValideur);
             cmd.Parameters.AddWithValue(auteurId);
             cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)g.UnitesParJour ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Integer });
@@ -104,18 +104,19 @@ public sealed class RegistreRenforceSql(NpgsqlDataSource db) : IRegistreRenforce
 
     public async Task<HistoriquePsychotrope> HistoriqueAsync(DelivrancePsychotrope d, IReadOnlyList<RegleAlertePsychotrope> regles, CancellationToken ct = default)
     {
-        int Periode(string code) => regles.FirstOrDefault(g => g.Code == code)?.PeriodeJours ?? 30;
+        // Période vide (« sans limite », script 153) : toute la durée du registre ; règle absente : 30 jours (comme avant)
+        int? Periode(string code) => regles.FirstOrDefault(g => g.Code == code) is { } g ? g.PeriodeJours : 30;
         // Une délivrance = une vente (plusieurs lignes du registre pour plusieurs lots), sinon la ligne elle-même
         await using var cmd = db.CreateCommand($"""
             SELECT
               (SELECT count(DISTINCT COALESCE(lv.vente_id, -r.id)) {Sorties}
-                 AND $1::bigint IS NOT NULL AND r.patient_id = $1 AND r.cree_le >= now() - make_interval(days => $4))::int,
+                 AND $1::bigint IS NOT NULL AND r.patient_id = $1 AND ($4::int IS NULL OR r.cree_le >= now() - make_interval(days => $4)))::int,
               (SELECT count(DISTINCT COALESCE(lv.vente_id, -r.id)) {Sorties}
                  AND $3::text IS NOT NULL AND r.medecin_id = $2
                  AND EXISTS (SELECT 1 FROM ordonnance o WHERE o.id = r.ordonnance_id AND lower(btrim(o.numero)) = lower($3))
-                 AND r.cree_le >= now() - make_interval(days => $5))::int,
+                 AND ($5::int IS NULL OR r.cree_le >= now() - make_interval(days => $5)))::int,
               (SELECT count(DISTINCT COALESCE(lv.vente_id, -r.id)) {Sorties}
-                 AND $2::bigint IS NOT NULL AND r.medecin_id = $2 AND r.cree_le >= now() - make_interval(days => $6))::int,
+                 AND $2::bigint IS NOT NULL AND r.medecin_id = $2 AND ($6::int IS NULL OR r.cree_le >= now() - make_interval(days => $6)))::int,
               (SELECT m.wilaya FROM medecin m WHERE m.id = $2),
               ARRAY(SELECT z.wilaya FROM zone_psychotrope_wilaya z),
               ARRAY(SELECT p.id FROM produit p WHERE p.id = ANY($7) ORDER BY p.id),
@@ -124,14 +125,19 @@ public sealed class RegistreRenforceSql(NpgsqlDataSource db) : IRegistreRenforce
                                      WHERE n.num_enregistrement = p.num_enregistrement
                                        AND n.version_id = (SELECT max(x.version_id) FROM nomenclature_produit x
                                                            WHERE x.num_enregistrement = p.num_enregistrement)), '')
-                    FROM produit p WHERE p.id = ANY($7) ORDER BY p.id)
+                    FROM produit p WHERE p.id = ANY($7) ORDER BY p.id),
+              -- Script 153 : traitement encore en cours (jour de délivrance + durée prescrite après aujourd'hui), le plus tardif à finir ;
+              -- délivrances sans durée (avant le script 153) ignorées
+              (SELECT ARRAY[r.cree_le::date - DATE '2000-01-01', r.duree_traitement_jours] {Sorties}
+                 AND $1::bigint IS NOT NULL AND r.patient_id = $1 AND r.duree_traitement_jours IS NOT NULL
+                 AND r.cree_le::date + r.duree_traitement_jours > current_date
+               ORDER BY r.cree_le::date + r.duree_traitement_jours DESC, r.cree_le DESC LIMIT 1)
             """);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)d.PatientId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)d.MedecinId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)d.NumeroOrdonnance ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
-        cmd.Parameters.AddWithValue(Periode(CodesAlertePsychotrope.PatientRepete));
-        cmd.Parameters.AddWithValue(Periode(CodesAlertePsychotrope.OrdonnanceReutilisee));
-        cmd.Parameters.AddWithValue(Periode(CodesAlertePsychotrope.PrescripteurInhabituel));
+        foreach (var code in new[] { CodesAlertePsychotrope.PatientRepete, CodesAlertePsychotrope.OrdonnanceReutilisee, CodesAlertePsychotrope.PrescripteurInhabituel })
+            cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)Periode(code) ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Integer });
         cmd.Parameters.AddWithValue(d.Lignes.Select(l => l.ProduitId).Distinct().ToArray());
         await using var r = await cmd.ExecuteReaderAsync(ct);
         await r.ReadAsync(ct);
@@ -145,8 +151,14 @@ public sealed class RegistreRenforceSql(NpgsqlDataSource db) : IRegistreRenforce
             var nom = nomenclature[i].Length == 0 ? null : ContenanceProduit.DepuisNomenclature(nomenclature[i].Split('\n'));
             if (ContenanceProduit.Retenue(saisies[i] > 0 ? saisies[i] : null, nom) is { } c) contenances[ids[i]] = c;
         }
+        TraitementPsychotropeEnCours? enCours = null;
+        if (!r.IsDBNull(8) && r.GetFieldValue<int[]>(8) is [var jour, var duree])
+        {
+            var delivree = new DateOnly(2000, 1, 1).AddDays(jour);
+            enCours = new TraitementPsychotropeEnCours(delivree, duree, delivree.AddDays(duree));
+        }
         return new HistoriquePsychotrope(r.GetInt32(0), r.GetInt32(1), r.GetInt32(2), r.IsDBNull(3) ? null : r.GetString(3),
-            r.GetFieldValue<string[]>(4).ToHashSet(StringComparer.Ordinal), contenances);
+            r.GetFieldValue<string[]>(4).ToHashSet(StringComparer.Ordinal), contenances, enCours);
     }
 
     public async Task<long> EnregistrerForcageAsync(NouveauForcage f, CancellationToken ct = default)

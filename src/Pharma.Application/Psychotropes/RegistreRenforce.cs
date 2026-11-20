@@ -20,16 +20,21 @@ public static class CodesAlertePsychotrope
     public const string PrescripteurInhabituel = Pharma.Domain.Reglages.RegleAlertesPsychotropes.PrescripteurInhabituel;
     /// <summary>Wilaya du médecin connue et hors de la zone de l'officine (script 118).</summary>
     public const string PrescripteurHorsZone = Pharma.Domain.Reglages.RegleAlertesPsychotropes.PrescripteurHorsZone;
+    /// <summary>Patient encore sous traitement par un psychotrope délivré avant (script 153).</summary>
+    public const string TraitementEnCours = Pharma.Domain.Reglages.RegleAlertesPsychotropes.TraitementEnCours;
     public static readonly IReadOnlySet<string> Tous = Pharma.Domain.Reglages.RegleAlertesPsychotropes.Codes;
 }
 
 /// <summary>
 /// Règle d'alerte (regle_alerte_psychotrope) : seuil et période en données, réglés par le titulaire.
 /// UnitesParJour (quantité anormale, script 118) : unités par jour de traitement au-delà desquelles boîtes × contenance alerte ;
-/// vide : contrôle inactif.
+/// vide : contrôle inactif. PeriodeJours vide (script 153) : « sans limite » (ordonnance réutilisée) ou sans objet (traitement en cours).
 /// </summary>
-public sealed record RegleAlertePsychotrope(string Code, string Libelle, bool Active, int Seuil, int PeriodeJours, bool ExigerValideur,
+public sealed record RegleAlertePsychotrope(string Code, string Libelle, bool Active, int Seuil, int? PeriodeJours, bool ExigerValideur,
     int? UnitesParJour = null);
+
+/// <summary>Traitement psychotrope encore en cours pour le patient : délivrance la plus tardive à finir (date + durée prescrite).</summary>
+public sealed record TraitementPsychotropeEnCours(DateOnly Delivree, int DureeJours, DateOnly Fin);
 
 public sealed record LignePsychotrope(long ProduitId, int Quantite);
 
@@ -42,7 +47,8 @@ public sealed record DelivrancePsychotrope(long? PatientId, long? MedecinId, str
 /// l'officine (vide : pas de contrôle hors zone), contenance des produits (unités par boîte, seulement celles qui sont connues).
 /// </summary>
 public sealed record HistoriquePsychotrope(int DelivrancesPatient, int UsagesOrdonnance, int DelivrancesPrescripteur,
-    string? WilayaMedecin = null, IReadOnlySet<string>? Zone = null, IReadOnlyDictionary<long, int>? Contenances = null);
+    string? WilayaMedecin = null, IReadOnlySet<string>? Zone = null, IReadOnlyDictionary<long, int>? Contenances = null,
+    TraitementPsychotropeEnCours? EnCours = null);   // script 153 : traitement du patient encore en cours (null : aucun, ou durées non saisies)
 
 public sealed record AlertePsychotrope(string Code, string Libelle, string Message, bool ExigeValideur);
 
@@ -67,7 +73,11 @@ public static class EvaluationAlertesPsychotropes
                     $"Patient déjà servi {h.DelivrancesPatient} fois en psychotropes sur {r.PeriodeJours} jours (seuil {r.Seuil}).",
                 CodesAlertePsychotrope.OrdonnanceReutilisee when !string.IsNullOrWhiteSpace(d.NumeroOrdonnance) && d.MedecinId is not null
                                                                 && h.UsagesOrdonnance >= r.Seuil =>
-                    $"Ordonnance n° {d.NumeroOrdonnance.Trim()} du même prescripteur déjà utilisée {h.UsagesOrdonnance} fois sur {r.PeriodeJours} jours.",
+                    r.PeriodeJours is { } jours
+                        ? $"Ordonnance n° {d.NumeroOrdonnance.Trim()} du même prescripteur déjà utilisée {h.UsagesOrdonnance} fois sur {jours} jours."
+                        : $"Ordonnance n° {d.NumeroOrdonnance.Trim()} du même prescripteur déjà utilisée {h.UsagesOrdonnance} fois.",
+                CodesAlertePsychotrope.TraitementEnCours when d.PatientId is not null && h.EnCours is { } t =>
+                    $"Patient encore sous traitement psychotrope jusqu’au {t.Fin.AddDays(-1):dd/MM/yyyy} (délivrance du {t.Delivree:dd/MM/yyyy}, {t.DureeJours} jours).",
                 CodesAlertePsychotrope.QuantiteAnormale => Quantite(r, d, produits, h),
                 CodesAlertePsychotrope.PrescripteurInhabituel when d.MedecinId is not null && h.DelivrancesPrescripteur < r.Seuil =>
                     h.DelivrancesPrescripteur == 0
@@ -317,8 +327,7 @@ public sealed class ParametrerAlertesPsychotropes(IRegistreRenforceDepot depot, 
         await depot.EnregistrerReglesAsync(regles, utilisateurId, ct);
         if (journal is not null)
         {
-            var details = regles.ToDictionary(r => r.Code, r => (object?)new { r.Active, r.Seuil, r.PeriodeJours, r.ExigerValideur });
-            // Valeurs avant et après (D13)
+            var details = regles.ToDictionary(r => r.Code, r => (object?)new { r.Active, r.Seuil, r.PeriodeJours, r.ExigerValideur });            // Valeurs avant et après (D13)
             details["avant"] = avant!.ToDictionary(r => r.Code, r => (object?)new { r.Active, r.Seuil, r.PeriodeJours, r.ExigerValideur, r.UnitesParJour });
             details["apres"] = regles.ToDictionary(r => r.Code, r => (object?)new { r.Active, r.Seuil, r.PeriodeJours, r.ExigerValideur, r.UnitesParJour });
             await journal.EcrireAsync(utilisateurId, "reglages_alertes_psychotropes", "regle_alerte_psychotrope", null, details, null, ct);

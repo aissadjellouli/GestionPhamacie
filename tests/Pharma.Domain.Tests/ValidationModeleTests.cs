@@ -28,6 +28,10 @@ public class ValidationModeleTests
     [
         [TablesMutualisables.Fiscal, """{"conservation_annees":10,"format_export_dgi":"csv-v1","separateur_csv":";","fuseau":"Africa/Algiers"}"""],
         [TablesMutualisables.AlertesPsychotropes, Regles],
+        // Script 153 : « traitement_en_cours » présente (période vide) et ordonnance réutilisée sans limite ; absente : modèle plus ancien, valable
+        [TablesMutualisables.AlertesPsychotropes, Regles
+            .Replace("\"seuil\":2,\"periode_jours\":30", "\"seuil\":2,\"periode_jours\":null")
+            .Replace("\"unites_par_jour\":null}]}", "\"unites_par_jour\":null},\n  {\"code\":\"traitement_en_cours\",\"active\":true,\"seuil\":1,\"periode_jours\":null,\"exiger_valideur\":true,\"unites_par_jour\":null}]}")],
         [TablesMutualisables.Tracabilite, """{"boite_obligatoire":true,"patient_obligatoire":"psychotrope"}"""],
         [TablesMutualisables.Serialisation, """{"actif":true,"factice_hors_ligne":false}"""],
         [TablesMutualisables.Substitution, """{"equivalent_exact_seulement":true}"""],
@@ -79,6 +83,7 @@ public class ValidationModeleTests
         [TablesMutualisables.Fiscal, """{"conservation_annees":10,"format_export_dgi":"xml","separateur_csv":"|","fuseau":""}""", "csv-v1"],
         [TablesMutualisables.AlertesPsychotropes, Regles.Replace("\"seuil\":3", "\"seuil\":0"), "seuil entre 1 et 1000"],
         [TablesMutualisables.AlertesPsychotropes, """{"regles":[]}""", "absente"],
+        [TablesMutualisables.AlertesPsychotropes, Regles.Replace("\"seuil\":3,\"periode_jours\":30", "\"seuil\":3,\"periode_jours\":null"), "période obligatoire"],
         [TablesMutualisables.Tracabilite, """{"boite_obligatoire":true,"patient_obligatoire":"souvent"}""", "Patient obligatoire"],
         [TablesMutualisables.Serialisation, """{"actif":true,"factice_hors_ligne":false,"connecteur":"factice"}""", "champ inconnu « connecteur »"],
         [TablesMutualisables.Substitution, """{"equivalent_exact_seulement":"oui"}""", "vrai ou faux"],

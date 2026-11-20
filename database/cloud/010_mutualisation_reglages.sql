@@ -262,11 +262,14 @@ GRANT EXECUTE ON FUNCTION cloud_reglage_tables() TO pharma_cloud_api;
 -- Défaut D-M8-1 corrigé par le script 011 (ajouts_locaux seulement pour motifs et remises) ; la garde ci-dessous conserve la version 011.
 -- Garde de rejeu : si la fonction en place est déjà celle du script 011 (ajouts_locaux limité aux motifs et aux remises),
 -- on ne la remplace pas (un rejeu de 010 après 011 ramènerait le défaut D-M8-1).
+-- Marqueur complémentaire (2026-11-20) : la table cloud_chaine_reference (script 012) prouve que 011 est passé ; la garde par contenu reste
+-- le premier critère, le marqueur couvre le cas où une définition ultérieure ne contiendrait plus ce texte.
 DO $garde$
 BEGIN
-    IF to_regprocedure('cloud_descendants(bigint)') IS NOT NULL
-       AND pg_get_functiondef(to_regprocedure('cloud_descendants(bigint)')) LIKE '%m.nom_table IN (%' THEN
-        RAISE NOTICE 'cloud_descendants : version du script 011 déjà en place, conservée.';
+    IF (to_regprocedure('cloud_descendants(bigint)') IS NOT NULL
+        AND pg_get_functiondef(to_regprocedure('cloud_descendants(bigint)')) LIKE '%m.nom_table IN (%')
+       OR to_regclass('public.cloud_chaine_reference') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_descendants : version du script 011 (ou plus récente) déjà en place, conservée.';
     ELSE
         EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_descendants(p_apres bigint)

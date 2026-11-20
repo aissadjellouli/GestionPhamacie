@@ -416,9 +416,10 @@ public sealed class Encaisser(
                 throw new RegleMetierException("La date de prescription ne peut pas être dans le futur.");
             // Porteur différent du patient : nom, adresse et pièce d'identité au registre (psychotropes seulement)
             commande = commande with { Ordonnance = o with { Porteur = vente.ContientSousRegistre && o.Porteur is { } p ? VerifierPorteur(p) : null } };
-            // Durée du traitement : facultative (jamais bloquante si absente), gardée seulement pour un psychotrope ou stupéfiant
-            if (vente.ContientSousRegistre && o.DureeTraitementJours is < 1 or > OrdonnanceSaisie.DureeMax)
-                throw new RegleMetierException($"Durée du traitement : de 1 à {OrdonnanceSaisie.DureeMax} jours (ou laissez vide).", "duree_traitement");
+            // Durée du traitement : obligatoire pour un psychotrope ou stupéfiant (décision du titulaire du 2026-11-19, script 153 : base
+            // de l'alerte « patient encore sous traitement »), gardée seulement dans ce cas
+            if (vente.ContientSousRegistre && o.DureeTraitementJours is null or < 1 or > OrdonnanceSaisie.DureeMax)
+                throw new RegleMetierException($"Psychotrope ou stupéfiant : indiquez la durée du traitement prescrite (1 à {OrdonnanceSaisie.DureeMax} jours).", "duree_traitement");
             if (!vente.ContientSousRegistre && commande.Ordonnance!.DureeTraitementJours is not null)
                 commande = commande with { Ordonnance = commande.Ordonnance with { DureeTraitementJours = null } };
         }

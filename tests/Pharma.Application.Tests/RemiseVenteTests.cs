@@ -24,7 +24,7 @@ public class RemiseVenteTests
 
     private static CommandeVente AvecOrdonnance(long patientId, PersonneVente? remisA = null, PersonneVente? pour = null,
         ModePaiement mode = ModePaiement.Especes, long produit = 2, long lot = 20, PorteurOrdonnance? porteur = null) =>
-        new([new LigneCommande(produit, lot, 1)], false, null, null, patientId, new OrdonnanceSaisie(1, Jour, "ORD-1", Porteur: porteur), 0, mode, null,
+        new([new LigneCommande(produit, lot, 1)], false, null, null, patientId, new OrdonnanceSaisie(1, Jour, "ORD-1", Porteur: porteur, DureeTraitementJours: 30), 0, mode, null,
             RemisA: remisA, Pour: pour);
 
     private static CommandeVente SansOrdonnance(long? patientId, PersonneVente? remisA = null, PersonneVente? pour = null,

@@ -10,7 +10,7 @@ using BaseCentraleJetable = Pharma.Cloud.Tests.DescendantsMutuV1Tests.BaseCentra
 namespace Pharma.Cloud.Tests;
 
 /// <summary>
-/// Lots S6.1 et S6.3 (scripts centraux 020 et 021) : maximums lus par la route GET /api/v1/maximums, export complet au départ d'une
+/// Lots S6.1 et S6.3 (scripts centraux 020 et 021, effacement complet du script 027) : maximums lus par la route GET /api/v1/maximums, export complet au départ d'une
 /// officine (contenu, empreintes) et refus de l'effacement avant la fin de la durée de conservation. Base centrale JETABLE créée avec
 /// les scripts database/cloud, supprimée à la fin ; sans serveur PostgreSQL joignable, sans psql ou sans droit CREATEDB, les tests de
 /// base ne font rien (comme DescendantsMutuV1Tests). SQL complet : database/cloud/tests/020 et 021.
@@ -66,15 +66,15 @@ public class DepartOfficineTests
         await Executer(db, "INSERT INTO officine (id, libelle) VALUES ($1, 'Essai départ A'), ($2, 'Essai départ B')", ct, A, B);
         await Executer(db, "INSERT INTO certificat (empreinte, officine_id, serveur, numero_serie, echeance) VALUES ($1, $2, 'principal', 'S1', now() + interval '1 year')",
             ct, new string('e', 64), A);
-        // Officine A : deux alertes (texte avec « ; », guillemet, retour à la ligne et accents), puis l'id 1 repris par l'époque 2 (archivé)
-        await Lot(db, A, 1, 1, """{"lignes":[{"n":1,"table":"alerte","id":"1","op":"creation","donnees":{"id":1,"message":"première version"}},{"n":2,"table":"alerte","id":"40","op":"creation","donnees":{"id":40,"message":"Périmé ; \"lot\"\nà retirer"}}]}""", ct);
-        await Lot(db, A, 2, 1, """{"lignes":[{"n":1,"table":"alerte","id":"1","op":"creation","donnees":{"id":1,"message":"nouvelle"}}]}""", ct);
-        await Lot(db, B, 1, 1, """{"lignes":[{"n":1,"table":"alerte","id":"900","op":"creation","donnees":{"id":900,"message":"B"}}]}""", ct);
+        // Officine A : deux produits (texte avec « ; », guillemet, retour à la ligne et accents), puis l'id 1 repris par l'époque 2 (archivé)
+        await Lot(db, A, 1, 1, """{"lignes":[{"n":1,"table":"produit","id":"1","op":"creation","donnees":{"id":1,"nom_commercial":"première version"}},{"n":2,"table":"produit","id":"40","op":"creation","donnees":{"id":40,"nom_commercial":"Périmé ; \"lot\"\nà retirer"}}]}""", ct);
+        await Lot(db, A, 2, 1, """{"lignes":[{"n":1,"table":"produit","id":"1","op":"creation","donnees":{"id":1,"nom_commercial":"nouvelle"}}]}""", ct);
+        await Lot(db, B, 1, 1, """{"lignes":[{"n":1,"table":"produit","id":"900","op":"creation","donnees":{"id":900,"nom_commercial":"B"}}]}""", ct);
 
         // Route maximums : réservée à l'officine appelante
         var depot = new DepotCentral(db);
-        Assert.Equal(40, (await depot.MaximumsAsync(A, ct))["alerte"]);
-        Assert.Equal(900, (await depot.MaximumsAsync(B, ct))["alerte"]);
+        Assert.Equal(40, (await depot.MaximumsAsync(A, ct))["produit"]);
+        Assert.Equal(900, (await depot.MaximumsAsync(B, ct))["produit"]);
 
         // Lot S6.5.3 (script 022) : déclaration d'époque ; renvoi identique accepté, autre contenu pour la même époque refusé (23505)
         var decl = new DeclarationEpoqueDto(2, 3, 1, 1, null, new DateTimeOffset(2026, 11, 18, 10, 0, 0, TimeSpan.Zero), 7,
@@ -107,7 +107,7 @@ public class DepartOfficineTests
             Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(export.Chemin))), export.EmpreinteArchive);
             using var zip = ZipFile.OpenRead(export.Chemin);
             var noms = zip.Entries.Select(e => e.FullName).ToHashSet(StringComparer.Ordinal);
-            Assert.Contains("alerte.csv", noms);
+            Assert.Contains("produit.csv", noms);
             Assert.Contains("ligne_remplacee.csv", noms);
             Assert.Contains("cloud_epoque_changement.csv", noms);   // lot S6.5.3 : déclarations d'époque dans l'export
             Assert.Contains(DepartOfficine.FichierEmpreintes, noms);
@@ -119,14 +119,14 @@ public class DepartOfficineTests
                 var (empreinte, fichier) = (ligne[..64], ligne[66..]);
                 Assert.Equal(empreinte, Convert.ToHexStringLower(SHA256.HashData(Octets(zip, fichier))));
             }
-            Assert.Equal(2, export.Fichiers.Single(f => f.Fichier == "alerte.csv").Lignes);
+            Assert.Equal(2, export.Fichiers.Single(f => f.Fichier == "produit.csv").Lignes);
             Assert.Equal(1, export.Fichiers.Single(f => f.Fichier == "ligne_remplacee.csv").Lignes);
-            var alerte = Lire(zip, "alerte.csv");
-            Assert.False(Octets(zip, "alerte.csv").AsSpan().StartsWith(Encoding.UTF8.Preamble), "UTF-8 sans BOM");
-            Assert.StartsWith("officine_id;id;", alerte);
-            Assert.Contains("\"Périmé ; \"\"lot\"\"\nà retirer\"", alerte);
-            Assert.Contains(";nouvelle;", alerte);
-            Assert.DoesNotContain("900", alerte);
+            var produit = Lire(zip, "produit.csv");
+            Assert.False(Octets(zip, "produit.csv").AsSpan().StartsWith(Encoding.UTF8.Preamble), "UTF-8 sans BOM");
+            Assert.StartsWith("officine_id;id;", produit);
+            Assert.Contains("\"Périmé ; \"\"lot\"\"\nà retirer\"", produit);
+            Assert.Contains(";nouvelle;", produit);
+            Assert.DoesNotContain("900", produit);
             Assert.Contains("première version", Lire(zip, "ligne_remplacee.csv"));
             await Assert.ThrowsAsync<ArgumentException>(() => DepartOfficine.ExporterAsync(db, A, export.Chemin, ct));   // jamais écrasé
         }
@@ -139,17 +139,17 @@ public class DepartOfficineTests
             Assert.Equal("P0001", refus.SqlState);
             Assert.Contains("non écoulée", refus.MessageText);
         }
-        Assert.Equal(40, (await depot.MaximumsAsync(A, ct))["alerte"]);   // rien n'a été effacé
+        Assert.Equal(40, (await depot.MaximumsAsync(A, ct))["produit"]);   // rien n'a été effacé
 
         // Après le délai (départ reculé pour l'essai) : simulation sans effet, puis effacement confirmé
         await Executer(db, "UPDATE officine SET resiliee_le = now() - interval '7 years' WHERE id = $1", ct, A);
         var simulation = await DepartOfficine.EffacerAsync(db, A, false, null, ct);
-        Assert.Equal(2, simulation.Single(l => l.Table == "alerte").Lignes);
-        Assert.Equal(40, (await depot.MaximumsAsync(A, ct))["alerte"]);
+        Assert.Equal(2, simulation.Single(l => l.Table == "produit").Lignes);
+        Assert.Equal(40, (await depot.MaximumsAsync(A, ct))["produit"]);
         var effacement = await DepartOfficine.EffacerAsync(db, A, true, "Administrateur essai", ct);
         Assert.Equal(simulation, effacement);
         Assert.Empty(await depot.MaximumsAsync(A, ct));
-        Assert.Equal(900, (await depot.MaximumsAsync(B, ct))["alerte"]);
+        Assert.Equal(900, (await depot.MaximumsAsync(B, ct))["produit"]);
         await using var pv = db.CreateCommand("SELECT count(*) FROM journal_depart_officine WHERE officine_id = $1 AND action IN ('depart', 'export', 'effacement')");
         pv.Parameters.AddWithValue(A);
         Assert.Equal(3L, await pv.ExecuteScalarAsync(ct));

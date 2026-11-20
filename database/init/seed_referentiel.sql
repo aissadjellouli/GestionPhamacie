@@ -23,7 +23,9 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 152 (152 n'ajoute aucune donnée de référence ; 151 : classement sync_table de integrite_prise_acte (montante), compteur_ticket_saut et sync_declaration_epoque (jamais) ; 095, 098, 099, 132, 134, 137, 138, 139, 142, 143, 148, 149 et 150 n'ajoutent aucune donnée de référence ; 141 : les 11 lignes de reglage_mutualise (mode local, aucun modèle) et le classement sync_table de reglage_mutualise ; 144 : classement sync_table de compteur_ticket (montante) ; 145 : classement de sync_ordre_recu (jamais) et sync_ordre_resultat (montante) ; 146 : classement de commande_ordre_central (jamais) ; 147 : chifa_code_produit et produit_indication passées montantes ; 140 : droit « sync.suivre » (titulaire) ; 096 : motifs du tiroir avec effet
+-- Valeurs identiques à celles posées par les scripts 001 à 153 (153 : règle d'alerte « traitement_en_cours » ; valeurs de départ
+-- des autres règles changées seulement sur une base où elles existent et n'ont jamais été modifiées, l'init n'en sème pas ;
+-- 152 n'ajoute aucune donnée de référence ; 151 : classement sync_table de integrite_prise_acte (montante), compteur_ticket_saut et sync_declaration_epoque (jamais) ; 095, 098, 099, 132, 134, 137, 138, 139, 142, 143, 148, 149 et 150 n'ajoutent aucune donnée de référence ; 141 : les 11 lignes de reglage_mutualise (mode local, aucun modèle) et le classement sync_table de reglage_mutualise ; 144 : classement sync_table de compteur_ticket (montante) ; 145 : classement de sync_ordre_recu (jamais) et sync_ordre_resultat (montante) ; 146 : classement de commande_ordre_central (jamais) ; 147 : chifa_code_produit et produit_indication passées montantes ; 140 : droit « sync.suivre » (titulaire) ; 096 : motifs du tiroir avec effet
 -- et détail, « Dépôt ou retrait d'espèces » désactivé ; 097 : motifs de la liste
 -- « volet_absent », vente Chifa sans n° de facture ; vérifié : permissions, rôles,
 -- droits de départ, substances, organismes, coffre, catégories de produits, motifs réglables). Règle : tout script numéroté qui ajoute
@@ -350,9 +352,23 @@ INSERT INTO wilaya (code, nom, wilaya_origine) VALUES
     ('67', 'Ksar El Boukhari', '26'), ('68', 'Bou Saâda', '28'), ('69', 'El Abiodh Sidi Cheikh', '32')
 ON CONFLICT (code) DO NOTHING;
 
+-- Alertes du registre des psychotropes (117), avec les valeurs de départ du script 153 (décision du titulaire du 2026-11-19) :
+-- même patient désactivée, ordonnance réutilisée sans limite, plus de 2 boîtes ou 28 jours, prescripteur inhabituel désactivée.
+-- Avant le 2026-11-20, l'init ne les semait pas (base neuve sans ces quatre règles tant qu'aucun modèle central n'était appliqué).
+INSERT INTO regle_alerte_psychotrope (code, libelle, active, seuil, periode_jours, ordre) VALUES
+    ('patient_repete', 'Même patient servi plusieurs fois', false, 2, 30, 1),
+    ('ordonnance_reutilisee', 'Même n° d''ordonnance et même prescripteur déjà utilisés', true, 1, NULL, 2),
+    ('quantite_anormale', 'Quantité anormale (boîtes par délivrance, durée de traitement)', true, 2, 28, 3),
+    ('prescripteur_inhabituel', 'Prescripteur inhabituel', false, 1, 365, 4)
+ON CONFLICT (code) DO NOTHING;
+
 -- Alerte « prescripteur hors zone » du registre des psychotropes (118) : sans effet tant que la zone n'est pas réglée
 INSERT INTO regle_alerte_psychotrope (code, libelle, seuil, periode_jours, ordre) VALUES
     ('prescripteur_hors_zone', 'Prescripteur hors zone (wilaya du médecin hors de la zone de l''officine)', 1, 1, 5)
+ON CONFLICT (code) DO NOTHING;
+-- Alerte « patient encore sous traitement » (153) : active, valideur exigé, période sans objet
+INSERT INTO regle_alerte_psychotrope (code, libelle, active, seuil, periode_jours, exiger_valideur, ordre) VALUES
+    ('traitement_en_cours', 'Patient encore sous traitement (psychotrope déjà délivré, durée prescrite non écoulée)', true, 1, NULL, true, 6)
 ON CONFLICT (code) DO NOTHING;
 
 -- Synchronisation (126 à 131) : ligne de réglage (désactivée, code officine tiré au sort une fois) et classement de chaque

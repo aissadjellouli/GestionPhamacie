@@ -395,7 +395,7 @@ public class CaisseApplicationTests
     public async Task Psychotrope_avec_droit_inscrit_au_registre()
     {
         var ventes = new VentesEspion();
-        var ordonnance = new OrdonnanceSaisie(1, CatalogueEnMemoire.Aujourdhui, "ORD-1");
+        var ordonnance = new OrdonnanceSaisie(1, CatalogueEnMemoire.Aujourdhui, "ORD-1", DureeTraitementJours: 30);
         await Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre", "psychotropes.delivrer"), ventes)
             .ExecuterAsync(Commande(7, 70, patientId: 3, ordonnance: ordonnance), 5, "Caisse 1");
         Assert.Contains(7L, ventes.Recu!.ProduitsSousRegistre);

@@ -130,7 +130,7 @@ public static class ModeleDepuisOfficine
                 ["code"] = Convertir(l["code"], Genre.Texte, "code"),
                 ["active"] = Convertir(l["active"], Genre.Booleen, "active"),
                 ["seuil"] = Convertir(l["seuil"], Genre.Entier, "seuil"),
-                ["periode_jours"] = Convertir(l["periode_jours"], Genre.Entier, "periode_jours"),
+                ["periode_jours"] = l["periode_jours"] is null ? null : Convertir(l["periode_jours"], Genre.Entier, "periode_jours"),
                 ["exiger_valideur"] = Convertir(l["exiger_valideur"], Genre.Booleen, "exiger_valideur"),
                 ["unites_par_jour"] = l["unites_par_jour"] is null ? null : Convertir(l["unites_par_jour"], Genre.Entier, "unites_par_jour")
             });

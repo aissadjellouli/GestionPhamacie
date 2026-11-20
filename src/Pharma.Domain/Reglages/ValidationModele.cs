@@ -238,16 +238,18 @@ public static partial class ValidationModele
             var code = r.Texte("code");
             r.Booleen("active");
             var seuil = r.Entier("seuil");
-            var periode = r.Entier("periode_jours");
+            var periode = r.EntierOuNull("periode_jours");
             r.Booleen("exiger_valideur");
             var unites = r.EntierOuNull("unites_par_jour");
             r.Fin(erreurs);
             if (erreurs.Count != avant || code is null) continue;
             if (!vus.Add(code)) erreurs.Add($"Règle « {code} » en double.");
-            Essayer(erreurs, () => RegleAlertesPsychotropes.VerifierRegle(code, RegleAlertesPsychotropes.Nom(code), seuil ?? 0, periode ?? 0, unites));
+            Essayer(erreurs, () => RegleAlertesPsychotropes.VerifierRegle(code, RegleAlertesPsychotropes.Nom(code), seuil ?? 0, periode, unites));
         }
-        foreach (var manquant in RegleAlertesPsychotropes.Codes.Where(c => !vus.Contains(c)).Order(StringComparer.Ordinal))
-            erreurs.Add($"Règle « {manquant} » absente : les {RegleAlertesPsychotropes.Codes.Count} règles sont obligatoires.");
+        // Règle ajoutée après le format (traitement en cours, script 153) : absente d'un modèle plus ancien, elle reste réglée dans l'officine
+        var obligatoires = RegleAlertesPsychotropes.Codes.Where(c => !RegleAlertesPsychotropes.AjouteesApresFormat.Contains(c)).ToList();
+        foreach (var manquant in obligatoires.Where(c => !vus.Contains(c)).Order(StringComparer.Ordinal))
+            erreurs.Add($"Règle « {manquant} » absente : les {obligatoires.Count} règles sont obligatoires.");
         o.Fin(erreurs);
     }
 

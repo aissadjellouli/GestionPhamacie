@@ -27,6 +27,13 @@ BEGIN
 END $garde$;
 
 -- Création d'un ordre : contrôles, valeur attendue lue dans les tables miroir, journal, publication
+-- Garde de rejeu (2026-11-20) : définition remplacée par le script 017 ; rejouer ce script après 017 ne la
+-- ramène pas en arrière (marqueur : contrainte ck_ordre_central_type contenant 'organismes', posée par 017).
+DO $rejeu$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_ordre_central_type' AND pg_get_constraintdef(oid) LIKE '%''organismes''%') THEN
+        RAISE NOTICE 'cloud_creer_ordre : définition plus récente (script 017) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_creer_ordre(p_officine uuid, p_type text, p_cible text, p_donnees jsonb, p_auteur text) RETURNS uuid
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -163,5 +170,8 @@ BEGIN
     PERFORM cloud_ordre_publier(v_id);
     RETURN v_id;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 REVOKE EXECUTE ON FUNCTION cloud_creer_ordre(uuid, text, text, jsonb, text) FROM PUBLIC;

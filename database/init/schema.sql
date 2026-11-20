@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 152 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 153 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 152 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 153 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -9965,18 +9965,26 @@ CREATE TABLE public.regle_alerte_psychotrope (
     libelle text NOT NULL,
     active boolean DEFAULT true NOT NULL,
     seuil integer NOT NULL,
-    periode_jours integer NOT NULL,
+    periode_jours integer,
     exiger_valideur boolean DEFAULT false NOT NULL,
     ordre smallint DEFAULT 0 NOT NULL,
     modifie_le timestamp with time zone,
     modifie_par bigint,
     unites_par_jour integer,
     officine_id uuid DEFAULT public.officine_courante() NOT NULL,
-    CONSTRAINT ck_regle_alerte_psy_code CHECK ((code = ANY (ARRAY['patient_repete'::text, 'ordonnance_reutilisee'::text, 'quantite_anormale'::text, 'prescripteur_inhabituel'::text, 'prescripteur_hors_zone'::text]))),
+    CONSTRAINT ck_regle_alerte_psy_code CHECK ((code = ANY (ARRAY['patient_repete'::text, 'ordonnance_reutilisee'::text, 'quantite_anormale'::text, 'prescripteur_inhabituel'::text, 'prescripteur_hors_zone'::text, 'traitement_en_cours'::text]))),
     CONSTRAINT ck_regle_alerte_psy_periode CHECK (((periode_jours >= 1) AND (periode_jours <= 3650))),
+    CONSTRAINT ck_regle_alerte_psy_periode_vide CHECK (((periode_jours IS NOT NULL) OR (code = ANY (ARRAY['ordonnance_reutilisee'::text, 'traitement_en_cours'::text])))),
     CONSTRAINT ck_regle_alerte_psy_seuil CHECK (((seuil >= 1) AND (seuil <= 1000))),
     CONSTRAINT ck_regle_alerte_psy_unites CHECK (((unites_par_jour IS NULL) OR ((unites_par_jour >= 1) AND (unites_par_jour <= 100))))
 );
+
+
+--
+-- Name: COLUMN regle_alerte_psychotrope.periode_jours; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.regle_alerte_psychotrope.periode_jours IS 'Période en jours (1 à 3650) ; vide : sans limite (ordonnance_reutilisee) ou sans objet (traitement_en_cours), script 153.';
 
 
 --

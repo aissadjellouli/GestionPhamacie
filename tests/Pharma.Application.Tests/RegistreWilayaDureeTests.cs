@@ -85,7 +85,7 @@ public class RegistreWilayaDureeTests
         Assert.Empty(EvaluationAlertesPsychotropes.Evaluer(Regles, Delivrance(boites: 2, duree: null), Faits("16", contenance: 30), Produits));
     }
 
-    // ---- Caisse : durée facultative, jamais bloquante ----
+    // ---- Caisse : durée obligatoire pour un psychotrope (script 153, décision du titulaire du 2026-11-19) ----
 
     private static (Encaisser Cas, VentesEspion Ventes) Caisse()
     {
@@ -99,10 +99,14 @@ public class RegistreWilayaDureeTests
             new OrdonnanceSaisie(1, Jour, "ORD-1", DureeTraitementJours: duree), 0, ModePaiement.Especes, null);
 
     [Fact]
-    public async Task Duree_absente_ne_bloque_pas_l_encaissement()
+    public async Task Duree_absente_refusee_pour_un_psychotrope_acceptee_hors_psychotrope()
     {
         var (cas, ventes) = Caisse();
-        await cas.ExecuterAsync(Commande(7, 70, null), 5, "Caisse 1");
+        var ex = await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(Commande(7, 70, null), 5, "Caisse 1"));
+        Assert.Equal("duree_traitement", ex.Champ);
+        Assert.Contains("durée du traitement", ex.Message);
+        Assert.Null(ventes.Recu);
+        await cas.ExecuterAsync(Commande(2, 20, null), 5, "Caisse 1");
         Assert.Null(ventes.Recu!.Ordonnance!.DureeTraitementJours);
     }
 
@@ -122,6 +126,40 @@ public class RegistreWilayaDureeTests
         Assert.Equal("duree_traitement", ex.Champ);
         await cas.ExecuterAsync(Commande(2, 20, 30), 5, "Caisse 1");
         Assert.Null(ventes.Recu!.Ordonnance!.DureeTraitementJours);
+    }
+
+    // ---- Script 153 : patient encore sous traitement, ordonnance réutilisée sans limite ----
+
+    private static readonly RegleAlertePsychotrope EnCours = new(CodesAlertePsychotrope.TraitementEnCours, "En cours", true, 1, null, true);
+
+    [Fact]
+    public void Patient_encore_sous_traitement_declenche_l_alerte_avec_valideur_et_sans_nom()
+    {
+        // Délivré le 10/11 pour 14 jours : traitement jusqu'au 23/11 inclus
+        var faits = Faits("16") with { EnCours = new TraitementPsychotropeEnCours(new DateOnly(2026, 11, 10), 14, new DateOnly(2026, 11, 24)) };
+        var a = Assert.Single(EvaluationAlertesPsychotropes.Evaluer([EnCours], Delivrance(duree: 10), faits, Produits));
+        Assert.Equal(CodesAlertePsychotrope.TraitementEnCours, a.Code);
+        Assert.True(a.ExigeValideur);
+        Assert.Equal("Patient encore sous traitement psychotrope jusqu’au 23/11/2026 (délivrance du 10/11/2026, 14 jours).", a.Message);
+    }
+
+    [Fact]
+    public void Aucun_traitement_en_cours_ou_regle_inactive_ou_sans_patient_pas_d_alerte()
+    {
+        var faits = Faits("16") with { EnCours = new TraitementPsychotropeEnCours(Jour, 7, Jour.AddDays(7)) };
+        Assert.Empty(EvaluationAlertesPsychotropes.Evaluer([EnCours], Delivrance(duree: 10), Faits("16"), Produits));
+        Assert.Empty(EvaluationAlertesPsychotropes.Evaluer([EnCours with { Active = false }], Delivrance(duree: 10), faits, Produits));
+        Assert.Empty(EvaluationAlertesPsychotropes.Evaluer([EnCours], Delivrance(duree: 10) with { PatientId = null }, faits, Produits));
+    }
+
+    [Fact]
+    public void Ordonnance_reutilisee_sans_limite_de_duree()
+    {
+        var regle = new RegleAlertePsychotrope(CodesAlertePsychotrope.OrdonnanceReutilisee, "Ordonnance", true, 1, null, false);
+        var a = Assert.Single(EvaluationAlertesPsychotropes.Evaluer([regle], Delivrance(), new HistoriquePsychotrope(0, 1, 5), Produits));
+        Assert.Equal("Ordonnance n° A12 du même prescripteur déjà utilisée 1 fois.", a.Message);
+        Assert.Contains("sur 365 jours", Assert.Single(EvaluationAlertesPsychotropes.Evaluer([regle with { PeriodeJours = 365 }], Delivrance(),
+            new HistoriquePsychotrope(0, 1, 5), Produits)).Message);
     }
 
     // ---- Wilaya : saisie du médecin et zone ----

@@ -148,7 +148,9 @@ public static partial class DepartOfficine
     }
 
     /// <summary>
-    /// Effacement des données de l'officine (tables miroir, ligne_remplacee, lots bruts) : simulation (compte) si non confirmé.
+    /// Effacement des données de l'officine (tables miroir, ligne_remplacee, lots bruts, tables d'intégrité, ordres, éléments descendants,
+    /// chargements, volumes du jour et époques ; script 027) : simulation (compte) si non confirmé. Sont gardés : la fiche de l'officine, ses
+    /// certificats, le code d'activation, les réglages de familles, les journaux (sécurité, départs, réglages, ordres).
     /// Refusé par la base (PostgresException P0001) si l'officine n'est pas partie ou si la durée de conservation n'est pas écoulée.
     /// </summary>
     public static async Task<IReadOnlyList<(string Table, long Lignes)>> EffacerAsync(NpgsqlDataSource db, Guid officine, bool confirmer,

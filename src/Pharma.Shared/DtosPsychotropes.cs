@@ -15,8 +15,11 @@ public sealed record ControleDelivranceDto(IReadOnlyList<AlertePsychotropeDto> A
 
 public sealed record ForcageRequete(DelivrancePsychotropeDto Delivrance, string? Motif);
 
-/// <summary>UnitesParJour : quantité anormale, unités par jour de traitement (vide : contrôle boîtes × contenance inactif).</summary>
-public sealed record RegleAlertePsychotropeDto(string Code, string Libelle, bool Active, int Seuil, int PeriodeJours, bool ExigerValideur,
+/// <summary>
+/// UnitesParJour : quantité anormale, unités par jour de traitement (vide : contrôle boîtes × contenance inactif).
+/// PeriodeJours vide (script 153) : « sans limite » (ordonnance réutilisée) ou sans objet (traitement en cours).
+/// </summary>
+public sealed record RegleAlertePsychotropeDto(string Code, string Libelle, bool Active, int Seuil, int? PeriodeJours, bool ExigerValideur,
     int? UnitesParJour = null);
 
 // ---- Wilayas et zone de l'officine (script 118) ----

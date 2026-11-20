@@ -76,7 +76,18 @@ public class ReglesReglagesTests
     {
         RegleAlertesPsychotropes.VerifierRegle("patient_repete", "Patient", 3, 30, null);
         RegleAlertesPsychotropes.VerifierRegle("quantite_anormale", "Quantité", 1000, 3650, 100);
+        // Script 153 : période vide (« sans limite » ou sans objet) pour ces deux règles seulement
+        RegleAlertesPsychotropes.VerifierRegle("ordonnance_reutilisee", "Ordonnance", 1, null, null);
+        RegleAlertesPsychotropes.VerifierRegle("traitement_en_cours", "En cours", 1, null, null);
     }
+
+    [Theory]
+    [InlineData("patient_repete")]
+    [InlineData("quantite_anormale")]
+    [InlineData("prescripteur_inhabituel")]
+    [InlineData("prescripteur_hors_zone")]
+    public void Psychotropes_periode_vide_refusee_hors_ordonnance_et_traitement_en_cours(string code) =>
+        Assert.Equal("L : période obligatoire (1 à 3650 jours).", Message(() => RegleAlertesPsychotropes.VerifierRegle(code, "L", 1, null, null)));
 
     [Theory]
     [InlineData("inconnue", 3, 30, null, "Règle inconnue : inconnue.")]

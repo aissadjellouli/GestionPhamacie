@@ -185,7 +185,7 @@ public sealed class ReglagesMutualisesSql(NpgsqlDataSource db) : IReglagesMutual
             while (await r.ReadAsync(ct))
                 regles.Add(new JsonObject
                 {
-                    ["code"] = r.GetString(0), ["active"] = r.GetBoolean(1), ["seuil"] = r.GetInt32(2), ["periode_jours"] = r.GetInt32(3),
+                    ["code"] = r.GetString(0), ["active"] = r.GetBoolean(1), ["seuil"] = r.GetInt32(2), ["periode_jours"] = r.IsDBNull(3) ? null : r.GetInt32(3),
                     ["exiger_valideur"] = r.GetBoolean(4), ["unites_par_jour"] = r.IsDBNull(5) ? null : r.GetInt32(5)
                 });
             return new JsonObject { ["regles"] = regles };
@@ -356,7 +356,7 @@ public sealed class ReglagesMutualisesSql(NpgsqlDataSource db) : IReglagesMutual
                 """);
             cmd.Parameters.Add(Jsonb(valeur));
             await cmd.ExecuteNonQueryAsync(ct);
-            // Règle absente de la base (installation neuve depuis database/init, qui n'en sème qu'une) : créée avec son libellé et son rang d'affichage
+            // Règle absente de la base (installation neuve depuis un init antérieur au 2026-11-20, qui n'en semait qu'une) : créée avec son libellé et son rang d'affichage
             using var doc = JsonDocument.Parse(valeur);
             foreach (var r in doc.RootElement.GetProperty("regles").EnumerateArray())
             {
@@ -369,7 +369,7 @@ public sealed class ReglagesMutualisesSql(NpgsqlDataSource db) : IReglagesMutual
                 ajout.Parameters.AddWithValue(RegleAlertesPsychotropes.Nom(code));
                 ajout.Parameters.AddWithValue(r.GetProperty("active").GetBoolean());
                 ajout.Parameters.AddWithValue(r.GetProperty("seuil").GetInt32());
-                ajout.Parameters.AddWithValue(r.GetProperty("periode_jours").GetInt32());
+                ajout.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Integer, Value = r.GetProperty("periode_jours").ValueKind == JsonValueKind.Null ? DBNull.Value : r.GetProperty("periode_jours").GetInt32() });
                 ajout.Parameters.AddWithValue(r.GetProperty("exiger_valideur").GetBoolean());
                 ajout.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Integer, Value = r.GetProperty("unites_par_jour").ValueKind == JsonValueKind.Null ? DBNull.Value : r.GetProperty("unites_par_jour").GetInt32() });
                 ajout.Parameters.AddWithValue((short)(Array.IndexOf(OrdreRegles, code) + 1));
@@ -377,8 +377,8 @@ public sealed class ReglagesMutualisesSql(NpgsqlDataSource db) : IReglagesMutual
             }
         }
 
-        /// <summary>Rang d'affichage des 5 règles (comme le script 024 puis 118).</summary>
-        private static readonly string[] OrdreRegles = ["patient_repete", "ordonnance_reutilisee", "quantite_anormale", "prescripteur_inhabituel", "prescripteur_hors_zone"];
+        /// <summary>Rang d'affichage des 6 règles (comme les scripts 117, 118 puis 153).</summary>
+        private static readonly string[] OrdreRegles = ["patient_repete", "ordonnance_reutilisee", "quantite_anormale", "prescripteur_inhabituel", "prescripteur_hors_zone", "traitement_en_cours"];
 
         private const string RecordsetMotifs = "jsonb_to_recordset($1::jsonb -> 'motifs') AS x(liste text, code text, libelle text, actif boolean, ordre int, effet text, detail text)";
 
