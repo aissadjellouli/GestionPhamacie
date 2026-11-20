@@ -86,9 +86,10 @@
                     @if (!v.Concorde)
                     {
                         <div class="champ">
+                            @* Champ en rouge tant qu'il est vide, sans bulle « À renseigner » : le bouton « Rattacher » reste grisé jusqu'au motif (2026-11-20) *@
                             <label for="r-motif" class="requis">Motif du rattachement malgré les différences</label>
                             <textarea id="r-motif" data-champ="motif" rows="2" maxlength="500" @bind="motif" @bind:event="oninput"
-                                      class="@Obligatoire.Classe(string.IsNullOrWhiteSpace(motif))" aria-invalid="@Obligatoire.Aria(string.IsNullOrWhiteSpace(motif))"
+                                      class="@Obligatoire.Classe(string.IsNullOrWhiteSpace(motif))"
                                       placeholder="Ex. : boîte remplacée par un générique, quantité corrigée par Chifa"></textarea>
                             <p class="detail" style="margin: 0">
                                 La vente n’est pas modifiée (stock et argent inchangés) ; le volet est rattaché avec ce motif, journalisé, et la vente apparaît dans « Volets avec écart ».

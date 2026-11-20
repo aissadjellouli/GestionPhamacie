@@ -1004,15 +1004,16 @@
                         @if (apercu?.OrdonnanceRequise == true)
                         {
                             <!-- Porteur différent du patient : inscrit au registre (arrêté du 29 juin 2013, art. 7) -->
-                            <label class="case"><input type="checkbox" @bind="porteurAutre" /><span>Le porteur de l’ordonnance n’est pas le patient</span></label>
+                            @* Case cochée : curseur dans le nom ; champs en rouge tout de suite, bulle « À renseigner » seulement à F12 (2026-11-20) *@
+                            <label class="case"><input type="checkbox" @bind="porteurAutre" @bind:after="() => focaliserPorteur = porteurAutre" /><span>Le porteur de l’ordonnance n’est pas le patient</span></label>
                             @if (porteurAutre)
                             {
-                                <input type="text" aria-label="Nom et prénom du porteur" placeholder="Nom et prénom du porteur *" @bind="porteurNom" @bind:event="oninput"
-                                       class="@Obligatoire.Classe(PorteurNomManque)" aria-invalid="@Obligatoire.Aria(PorteurNomManque)" />
+                                <input type="text" aria-label="Nom et prénom du porteur" placeholder="Nom et prénom du porteur *" @bind="porteurNom" @bind:event="oninput" @ref="champPorteurNom"
+                                       class="@Obligatoire.Classe(PorteurNomManque)" aria-invalid="@Obligatoire.Aria(PorteurNomManque && alerterPorteur)" @onfocus="() => alerterPorteur = false" />
                                 <input type="text" aria-label="Adresse du porteur" placeholder="Adresse du porteur *" @bind="porteurAdresse" @bind:event="oninput"
-                                       class="@Obligatoire.Classe(PorteurAdresseManque)" aria-invalid="@Obligatoire.Aria(PorteurAdresseManque)" />
+                                       class="@Obligatoire.Classe(PorteurAdresseManque)" aria-invalid="@Obligatoire.Aria(PorteurAdresseManque && alerterPorteur)" @onfocus="() => alerterPorteur = false" />
                                 <input type="text" aria-label="Pièce d’identité du porteur" placeholder="Pièce d’identité (type et n°) *" @bind="porteurPiece" @bind:event="oninput"
-                                       class="@Obligatoire.Classe(PorteurPieceManque)" aria-invalid="@Obligatoire.Aria(PorteurPieceManque)" />
+                                       class="@Obligatoire.Classe(PorteurPieceManque)" aria-invalid="@Obligatoire.Aria(PorteurPieceManque && alerterPorteur)" @onfocus="() => alerterPorteur = false" />
                             }
                             @* Durée du traitement (2026-11-16) : psychotrope ou stupéfiant seulement, OBLIGATOIRE depuis le 2026-11-19 (script 153) ;
                                inscrite au registre, comparée à la quantité délivrée (« quantité anormale ») et base de « patient encore sous traitement » *@
@@ -1096,7 +1097,8 @@
                                 <div class="champ champ-ligne">
                                     <label for="facture-chifa">N° de facture Chifa</label>
                                     <input id="facture-chifa" data-champ="facture_chifa" type="text" inputmode="numeric" maxlength="8" placeholder="8 chiffres · vide : volet à scanner ensuite"
-                                           class="@Obligatoire.Classe(FactureChifaInvalide)" aria-invalid="@Obligatoire.Aria(FactureChifaInvalide)"
+                                           class="@Obligatoire.Classe(FactureChifaInvalide)" @onfocus="() => alerterChifa = false"
+                                           aria-invalid="@Obligatoire.Aria(FactureChifaInvalide && (alerterChifa || numeroFactureChifa!.Any(c => !char.IsAsciiDigit(c))))"
                                            @bind="numeroFactureChifa" @bind:event="oninput" />
                                 </div>
                                 @if (FactureChifaEnAttente)
@@ -1104,7 +1106,8 @@
                                     <div class="champ champ-ligne">
                                         <label for="motif-sans-volet" class="requis">Motif sans n°</label>
                                         <select id="motif-sans-volet" data-champ="motif_sans_volet" @bind="motifSansVolet"
-                                                class="@Obligatoire.Classe(string.IsNullOrEmpty(motifSansVolet))" aria-invalid="@Obligatoire.Aria(string.IsNullOrEmpty(motifSansVolet))">
+                                                class="@Obligatoire.Classe(string.IsNullOrEmpty(motifSansVolet))" @onfocus="() => alerterChifa = false"
+                                                aria-invalid="@Obligatoire.Aria(string.IsNullOrEmpty(motifSansVolet) && alerterChifa)">
                                             <option value="">— Choisir —</option>
                                             @foreach (var m in motifsSansVolet) { <option value="@m.Code">@m.Libelle</option> }
                                         </select>
@@ -1482,6 +1485,13 @@
     private bool porteurAutre;
     private string? porteurNom, porteurAdresse, porteurPiece;
     private bool PorteurDemande => porteurAutre && apercu?.OrdonnanceRequise == true;
+    /// <summary>Bulle « À renseigner » des champs du porteur : seulement à F12 (comme le patient, le médecin et la durée).</summary>
+    private bool alerterPorteur;
+    /// <summary>Bulle du n° de facture Chifa et du « motif sans n° » : à F12 (ou caractère non chiffre tapé), pas pendant la saisie.</summary>
+    private bool alerterChifa;
+    /// <summary>Case « porteur » cochée : le curseur va dans le nom après l'affichage des champs.</summary>
+    private bool focaliserPorteur;
+    private ElementReference champPorteurNom;
     // Durée du traitement (jours), envoyée seulement pour une vente sous registre (2026-11-16) ; obligatoire depuis le 2026-11-19 (script 153)
     private int? dureeTraitement;
     private int? DureeEnvoyee => apercu?.OrdonnanceRequise == true && dureeTraitement is > 0 ? dureeTraitement : null;
@@ -1800,9 +1810,11 @@
         {
             if (PatientManquant) alerterPatient = true;   // la bulle « À renseigner » s'ouvre seulement maintenant
             if (MedecinManquant && !PatientManquant) alerterMedecin = true;          // une bulle à la fois : le patient d’abord
-            if (DureeManquante && !PatientManquant && !MedecinManquant) alerterDuree = true;   // puis la durée (script 153)
+            if (PorteurIncomplet && !PatientManquant && !MedecinManquant) alerterPorteur = true;   // puis le porteur
+            if ((FactureChifaInvalide || MotifSansVoletManquant) && !PatientManquant && !MedecinManquant) alerterChifa = true;   // n° ou motif Chifa
+            if (DureeManquante && !PatientManquant && !MedecinManquant && !PorteurIncomplet) alerterDuree = true;   // puis la durée (script 153)
             // Bloc client replié (écran court, 2026-11-18) : il se rouvre pour que la bulle s'affiche sur le champ à renseigner
-            if ((alerterPatient || alerterMedecin || alerterDuree) && ClientResume) ModifierClient();
+            if ((alerterPatient || alerterMedecin || alerterPorteur || alerterDuree || alerterChifa) && ClientResume) ModifierClient();
         }
         StateHasChanged();
     }
@@ -2223,6 +2235,13 @@
 
     protected override async Task OnAfterRenderAsync(bool premierAffichage)
     {
+        // Case « porteur » cochée : curseur dans le nom du porteur, une fois les champs affichés
+        if (focaliserPorteur && porteurAutre)
+        {
+            focaliserPorteur = false;
+            try { await champPorteurNom.FocusAsync(); }
+            catch (Exception e) when (e is InvalidOperationException or Microsoft.JSInterop.JSException) { }   // champ retiré entre-temps
+        }
         // Patient choisi ou changé : membres de sa famille (script 090) chargés pour « Remis à » / « Pour »
         if (patient?.Id != prochesDe)
         {
@@ -3159,14 +3178,14 @@
         if (mode == "credit") mode = "especes";
         (datePrescription, erreurScan, taux, organismeId) = (DateOnly.FromDateTime(DateTime.Today), null, TauxParDefaut, OrganismeParDefaut);
         (volet, voletBrut, codesAAssocier, choixChifa) = (null, null, [], []);
-        (factureeChifa, numeroFactureChifa, patientExistant) = (false, null, null);
+        (factureeChifa, numeroFactureChifa, patientExistant, alerterChifa) = (false, null, null, false);
         (motifSansVolet, texteSansVolet) = (null, null);
         (utiliserAvoir, montantAvoirSaisi, soldeAvoirPatient, avoirPatientId) = (false, null, 0, null);
         accordBlocage.Effacer();
         (image, jetonScan, texteReconnu, lignesOrdonnance, lignesIgnorees, imageAgrandie) = (null, null, null, [], 0, false);
         lectureAjouts.Clear();
         (motifSaisieManuelle, lectureSansResultat) = (null, null);
-        (porteurAutre, porteurNom, porteurAdresse, porteurPiece) = (false, null, null, null);
+        (porteurAutre, porteurNom, porteurAdresse, porteurPiece, alerterPorteur, focaliserPorteur) = (false, null, null, null, false, false);
         (dureeTraitement, alerterDuree) = (null, false);
         (remiseProcheId, remiseProcheNom, remiseAutre, remiseNom) = (null, null, false, null);
     }

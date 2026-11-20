@@ -15,7 +15,8 @@ scripts officine `152` et central `025`, conception § 31.10), `0939f88` (essai 
 
 ## 2. Fait, à commiter
 
-Rien.
+- Bulles « À renseigner » posées seulement après une tentative (Caisse, volet Chifa, Synchronisation) et aide de la caisse
+  au-dessus de l'écran (2026-11-20, section 4) ; charte graphique et règles métier.
 
 ## 3. Ensuite
 
@@ -65,7 +66,22 @@ Rien.
       hors lot : avis du comptable (§ 6) ; n° repris avant la détection : traité le 2026-11-19 (§ 31.10). Synthèse :
       [conception-synchronisation.md](conception-synchronisation.md) § 31.9.
 
-## 4. Défauts d'écran constatés le 2026-11-18
+## 4. Défauts d'écran
+
+- [x] **Écrans qui défilent à 1 366 × 768** (mesure du 2026-11-20 : 17 écrans de 1 à 195 px) : **corrigé le 2026-11-20, à
+      commiter**, remesuré à 0 px à 1 366 × 768 (tous les écrans, toutes rubriques) et à 1 536 × 890, captures clair et sombre.
+      Détail des corrections : charte graphique, « Campagne 1 366 × 768 du 2026-11-20 ». Nouvelles rubriques : Caisse et contrôle
+      › « Chifa : délais et seuils », Notifications › « E-mail » et « SMS ».
+- [ ] **Décision : fiche d'un prêt ouvert** (Financements › Prêts bancaires) : défile de 77 à 226 px à 1 366 × 768 ; formulaire
+      ouvert à la demande, toléré par la règle. À corriger quand même ?
+- [ ] Non mesurés à 1 366 × 768 : Reprise de données et profils de reprise (super admin).
+- [x] **Bulle « À renseigner » trop tôt** (2026-11-20, corrigé, à commiter) : porteur de l'ordonnance (curseur dans le nom à la coche),
+      n° de facture et « motif sans n° » Chifa, motif du rattachement d'un volet, confirmation du mot de passe (Synchronisation) ;
+      règle ajoutée à la charte graphique (« Bulle seulement après une tentative »).
+- [x] **Aide de la caisse recouverte par l'écran** (2026-11-20, corrigé, à commiter) : `app.css`, colonne du menu au-dessus du
+      contenu quand l'aide est ouverte. Seul cas : les autres aides sont dans le titre de l'écran.
+
+### Défauts d'écran constatés le 2026-11-18
 
 - [x] Caisse en tiers payant, avec produit et bandeau de lot, à 1366 × 768 : défilait de 164 px → 0 (bloc client replié de lui-même).
 - [x] Liste de recherche de la caisse à 1366 × 768 : barre horizontale → liste sur toute la largeur de la ligne.

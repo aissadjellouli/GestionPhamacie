@@ -50,7 +50,7 @@
                 </select></div>
             @if (FiltreAttentesActif) { <button type="button" class="btn" @onclick="EffacerFiltresAttentes">Tout afficher</button> }
         </div>
-        <div class="tableau-cadre">
+        <div class="tableau-cadre" data-hauteur-min="140">
             <table class="tableau" style="min-width: 0">
                 <thead><tr><th scope="col">Réception</th><th scope="col" class="nombre">Lignes</th><th scope="col">Mise en attente par</th><th scope="col">Le</th><th scope="col"></th></tr></thead>
                 <tbody>
@@ -116,7 +116,7 @@
                 </select></div>
             @if (fcTexte.Trim() != "" || fcEtat != "") { <button type="button" class="btn" @onclick="() => (fcTexte, fcEtat, pageComptages) = (string.Empty, string.Empty, 1)">Tout afficher</button> }
         </div>
-        <div class="tableau-cadre">
+        <div class="tableau-cadre" data-hauteur-min="140">
             <table class="tableau" style="min-width: 0">
                 <thead><tr><th scope="col">Grossiste</th><th scope="col">BL</th><th scope="col">Comptée par</th><th scope="col">État</th><th scope="col"></th></tr></thead>
                 <tbody>

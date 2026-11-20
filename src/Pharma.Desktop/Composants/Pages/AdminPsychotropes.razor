@@ -103,7 +103,7 @@
         }
         else
         {
-            <div class="titre-page">
+            <div class="titre-page titre-actions-cote">
                 <div>
                     <h1>Psychotropes · Suivi des antibiotiques</h1>
                     <p class="sous-titre">Boîtes délivrées par molécule et par mois (ventes validées). La liste des molécules suivies est en données : à confirmer avec la nomenclature.</p>
@@ -122,7 +122,7 @@
                                           OnChoisi="t => AjouterAsync(t)" />
                         <div class="champ" style="flex: 1 1 160px"><label for="ab-filtre">Filtrer la liste</label><input id="ab-filtre" type="text" @bind="filtreDci" @bind:event="oninput" @bind:after="() => pageDci = 1" /></div>
                     </div>
-                    <div class="tableau-cadre">
+                    <div class="tableau-cadre" data-hauteur-min="140">
                         <table class="tableau" style="min-width: 0">
                             <thead><tr><th scope="col">DCI</th><th scope="col"></th></tr></thead>
                             <tbody>
@@ -141,7 +141,7 @@
                         <div class="champ" style="flex: 0 0 170px"><label for="ab-du">Du</label><input id="ab-du" type="date" @bind="du" @bind:after="ChargerSuiviAsync" /></div>
                         <div class="champ" style="flex: 0 0 170px"><label for="ab-au">Au</label><input id="ab-au" type="date" @bind="au" @bind:after="ChargerSuiviAsync" /></div>
                     </div>
-                    <div class="tableau-cadre">
+                    <div class="tableau-cadre" data-hauteur-min="140">
                         <table class="tableau" style="min-width: 0">
                             <thead><tr><th scope="col">Molécule</th><th scope="col">Mois</th><th scope="col" class="nombre">Boîtes</th><th scope="col" class="nombre">Ventes</th></tr></thead>
                             <tbody>

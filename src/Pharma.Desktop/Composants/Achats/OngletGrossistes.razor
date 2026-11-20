@@ -48,7 +48,7 @@
     <label class="case" style="align-self: center"><input type="checkbox" @bind="fEmailManquant" @bind:after="() => page = 1" /><span>E-mail à compléter</span></label>
     @if (FiltreActif) { <button type="button" class="btn" @onclick="EffacerFiltres">Tout afficher</button> }
 </div>
-<section class="tableau-cadre" aria-label="Grossistes">
+<section class="tableau-cadre" data-hauteur-min="140" aria-label="Grossistes">
     <table class="tableau" style="min-width: 0">
         <thead><tr><th scope="col">Grossiste</th><th scope="col">Téléphone</th><th scope="col">E-mail</th>@if (VoitDette) { <th scope="col">Dette (solde)</th> }<th scope="col">Délai de reprise</th><th scope="col">État</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
         <tbody>

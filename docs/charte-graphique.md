@@ -107,6 +107,14 @@ le filtre avec propositions : le tableau restait à son minimum de 240 px sous l
 (`.colonnes` : « Produit à régler » et la carte du produit à gauche, 340 px ; filtres, tableau et pagination à droite). Mesuré
 (titulaire, clair et sombre, 1 536 × 890 et 1 366 × 768) : 0 px liste fermée, liste du produit ouverte, liste du filtre ouverte,
 carte d'un produit affichée (seuil automatique ou saisi).
+**Campagne 1 366 × 768 du 2026-11-20** (poste compilé à part, titulaire, toutes rubriques des écrans de la liste ci-dessus) :
+17 écrans défilaient de 1 à 195 px, corrigés puis remesurés à 0 px à 1 366 × 768 et à 1 536 × 890, captures clair et sombre
+regardées. Corrections : rubriques à gauche (Caisse et contrôle : « Chifa : délais et seuils » séparé des « Règles » ;
+Notifications : « E-mail » et « SMS » séparés) ; cadres de tableau acceptant 140 px (`data-hauteur-min="140"` : Achats › À
+commander, En attente, Grossistes, Notifications › File d'attente, Suivi des antibiotiques) ; titre et boutons sur une ligne
+(`titre-actions-cote` : Nomenclature, Sauvegardes, Suivi des antibiotiques) ; histogramme de la Synthèse financière à 90 px
+en fenêtre basse (≤ 800 px) ; marge du bas des pages à menu ramenée de 36 à 20 px en fenêtre basse. Reste : la fiche d'un prêt
+ouvert (Financements, formulaire ouvert à la demande, toléré) défile de 77 à 226 px.
 **Écran ajouté le 2026-11-16 (lot 10, sérialisation), conçu fixe (seul le tableau défile, paginé et filtré par statut) ; mesure
 à 1 536 × 890 à faire à l'écran** : `/admin/serialisation`.
 **Écran ajouté le 2026-11-16 (lot 5, 2e serveur), conçu fixe 1 536 × 890 (trois sous-rubriques à gauche : État de la réplication,
@@ -481,6 +489,14 @@ Seule exception de taille : « Encaisser » à la caisse (`.btn-large`, 52 px).
   jusqu'au premier champ en rouge, y place le curseur et affiche le message dans une bulle à côté ; sans champ en rouge, il
   défile jusqu'au message, qui clignote. Un écran n'a rien à ajouter pour en profiter : il lui suffit de marquer ses champs
   avec `aria-invalid` et d'afficher ses messages avec la classe `.erreur`.
+- **Bulle seulement après une tentative (2026-11-20)** : `aria-invalid="true"` déclenche la bulle **et place le curseur** ; il ne
+  se pose donc qu'après une tentative de validation (clic sur le bouton, F12 à la caisse : drapeau `controle` / `alerter…`), ou sur
+  une saisie déjà fausse (caractère interdit, confirmation complète différente), jamais à l'apparition d'un champ ni pendant la
+  frappe. Le champ obligatoire vide est en rouge tout de suite (`Obligatoire.Classe`), sans bulle. Un champ dont le bouton reste
+  grisé tant qu'il est vide n'a pas de bulle du tout. Le curseur dans un bloc empêche aussi son repli automatique (caisse à
+  1 366 × 768).
+- **Panneau flottant ouvert depuis le menu de gauche** (aide de la caisse) : la colonne du menu passe au-dessus du contenu
+  (`app.css`, `:has(.panneau-aide)`), comme pour une fenêtre `.voile` ; sinon le contenu le recouvre.
 - **Erreurs du serveur** : une règle qui vise un champ le désigne (`throw new RegleMetierException(message, "montant")`) ; la réponse
   d'erreur porte ce nom (`ErreurDto.Champ`) et le poste met en rouge le champ qui porte `data-champ="montant"` (dans la fenêtre
   ouverte au premier plan, sinon dans la page). Un contrôle fait sur le poste sans aller au serveur passe par le même chemin :

@@ -35,7 +35,7 @@
                            disabled="@(parametres.DeconnexionMinutes <= 0)" @bind="parametres.DeconnexionMinutes" />
                     <span>minutes d’inactivité</span>
                 </div>
-                <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))">
+                <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr))">@* 180 px (2026-11-20) : les cinq champs sur une ligne, l’écran tient à 1366 × 768 *@
                     <div class="champ"><label for="fond">Fond de caisse (DA)</label><input id="fond" data-champ="fond_caisse" type="number" min="0" @bind="parametres.FondCaisseDefaut" /></div>
                     <div class="champ"><label for="seuil">Alerte si écart supérieur à (DA)</label><input id="seuil" type="number" min="0" @bind="parametres.SeuilEcart" /></div>
                     <div class="champ" title="Proposé à la création d’un patient ; 0 : pas de crédit tant qu’il n’est pas accordé">
@@ -46,6 +46,26 @@
                         <label for="annul">Alerte au-delà de N annulations par session</label>
                         <input id="annul" data-champ="seuil_annulations" type="number" min="0" max="100" @bind="parametres.SeuilAnnulations" />
                     </div>
+                    <div class="champ" title="F8 : une sortie d’argent par le tiroir au-delà de ce montant est validée par un employé qui a le droit de faire la relève et de clôturer (son code comptoir). 0 : toute sortie est validée.">
+                        <label for="seuil-sortie">Sortie du tiroir validée au-delà de (DA)</label>
+                        <input id="seuil-sortie" data-champ="seuil_sortie_tiroir" type="number" min="0" step="0.01" @bind="parametres.SeuilSortieTiroir" />
+                    </div>
+                </div>
+                <fieldset class="champ" style="border: 0; padding: 0; margin: 0">
+                    <legend class="etiquette-champ">À la clôture d’une caisse, l’argent compté part au coffre :</legend>
+                    <label class="case"><input type="radio" name="versement" checked="@(parametres.VersementCloture == "manuel")" @onchange="@(() => parametres.VersementCloture = "manuel")" />
+                        <span>À la main : le versement se saisit dans Trésorerie (caisses à verser)</span></label>
+                    <label class="case"><input type="radio" name="versement" checked="@(parametres.VersementCloture == "automatique")" @onchange="@(() => parametres.VersementCloture = "automatique")" />
+                        <span>Automatiquement : le compté moins le fond de caisse (@Libelles.Dinars(parametres.FondCaisseDefaut)), qui reste dans le tiroir ; pas à la relève d’équipe</span></label>
+                </fieldset>
+            </section>
+            }
+            @if (rubrique == "chifa")
+            {
+            @* Délais et seuils Chifa : rubrique à part pour que l'écran tienne sans défilement à 1366 × 768 (2026-11-20) *@
+            <section class="panneau" aria-labelledby="t-chifa">
+                <h2 id="t-chifa">Chifa : délais et seuils</h2>
+                <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))">
                     <div class="champ" title="Volet Chifa : sous cet écart par boîte, la ligne est alignée d’office sur le prix Chifa ; au-delà, un employé qui peut modifier les prix choisit (sinon le plus élevé des deux s’applique).">
                         <label for="seuil-chifa">Écart de prix Chifa aligné d’office sous (DA par boîte)</label>
                         <input id="seuil-chifa" data-champ="seuil_ecart_chifa" type="number" min="0" step="0.01" @bind="parametres.SeuilEcartChifa" />
@@ -66,18 +86,7 @@
                         <label for="jours-fin-droit">Prévenir la fin des droits Chifa (jours avant)</label>
                         <input id="jours-fin-droit" data-champ="jours_alerte_fin_droit" type="number" min="0" max="365" @bind="parametres.JoursAlerteFinDroit" />
                     </div>
-                    <div class="champ" title="F8 : une sortie d’argent par le tiroir au-delà de ce montant est validée par un employé qui a le droit de faire la relève et de clôturer (son code comptoir). 0 : toute sortie est validée.">
-                        <label for="seuil-sortie">Sortie du tiroir validée au-delà de (DA)</label>
-                        <input id="seuil-sortie" data-champ="seuil_sortie_tiroir" type="number" min="0" step="0.01" @bind="parametres.SeuilSortieTiroir" />
-                    </div>
                 </div>
-                <fieldset class="champ" style="border: 0; padding: 0; margin: 0">
-                    <legend class="etiquette-champ">À la clôture d’une caisse, l’argent compté part au coffre :</legend>
-                    <label class="case"><input type="radio" name="versement" checked="@(parametres.VersementCloture == "manuel")" @onchange="@(() => parametres.VersementCloture = "manuel")" />
-                        <span>À la main : le versement se saisit dans Trésorerie (caisses à verser)</span></label>
-                    <label class="case"><input type="radio" name="versement" checked="@(parametres.VersementCloture == "automatique")" @onchange="@(() => parametres.VersementCloture = "automatique")" />
-                        <span>Automatiquement : le compté moins le fond de caisse (@Libelles.Dinars(parametres.FondCaisseDefaut)), qui reste dans le tiroir ; pas à la relève d’équipe</span></label>
-                </fieldset>
             </section>
             }
         }

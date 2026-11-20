@@ -1,4 +1,4 @@
-@page "/pilotage-financier"
+﻿@page "/pilotage-financier"
 @inject ApiClient Api
 @inject SessionPoste Session
 @inject HistoriqueNavigation Historique
@@ -105,7 +105,7 @@
                     var max = Math.Max(1m, t.ParJour.Max(j => j.ChiffreAffaires));
                     <section class="panneau" aria-labelledby="pf-jours">
                         <h2 id="pf-jours">Chiffre d’affaires par jour</h2>
-                        <div class="histogramme" style="height: 200px" role="img" aria-label="@($"Chiffre d’affaires par jour, maximum {Libelles.Dinars(max)}")">
+                        <div class="histogramme histogramme-synthese" role="img" aria-label="@($"Chiffre d’affaires par jour, maximum {Libelles.Dinars(max)}")">
                             <div class="histogramme-echelle" aria-hidden="true"><span>@Libelles.Dinars(max)</span><span>0</span></div>
                             <div class="histogramme-barres" style="--colonnes: @t.ParJour.Count">
                                 @foreach (var j in t.ParJour)
@@ -119,7 +119,8 @@
                         </div>
                     </section>
                 }
-                <p class="pied-page">Chiffre d’affaires et marge : mêmes calculs que les rapports (ventes validées, remises et retours déduits). Période en cours comparée à la même durée écoulée de la période précédente.</p>
+                @* Note sur une ligne (2026-11-20) : la synthèse tient à 1366 × 768 *@
+                <p class="pied-page">Chiffre d’affaires et marge : mêmes calculs que les rapports (ventes validées, remises et retours déduits), comparés à la même durée de la période précédente.</p>
                 break;
 
             case "creances":

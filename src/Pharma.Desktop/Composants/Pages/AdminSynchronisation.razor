@@ -392,7 +392,7 @@
                         <div class="champ"><label for="or-mdp" class="requis">Mot de passe provisoire du nouvel employé</label>
                             <input id="or-mdp" data-champ="mot_de_passe" type="password" autocomplete="new-password" @bind="motDePasse" @bind:event="oninput" /></div>
                         <div class="champ"><label for="or-mdp2" class="requis">Mot de passe provisoire (confirmation)</label>
-                            <input id="or-mdp2" type="password" autocomplete="new-password" aria-invalid="@(motDePasse2 != "" && motDePasse != motDePasse2 ? "true" : null)" @bind="motDePasse2" @bind:event="oninput" /></div>
+                            <input id="or-mdp2" type="password" autocomplete="new-password" aria-invalid="@(motDePasse2.Length >= motDePasse.Length && motDePasse2 != "" && motDePasse != motDePasse2 ? "true" : null)" @bind="motDePasse2" @bind:event="oninput" /></div>
                         <p class="detail" style="margin: 0">L’employé devra le changer à sa première connexion. Il n’est jamais envoyé au serveur central.</p>
                     }
                     @if (action == "refuser")

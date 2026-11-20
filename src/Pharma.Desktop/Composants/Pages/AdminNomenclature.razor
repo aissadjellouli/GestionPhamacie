@@ -1,4 +1,4 @@
-@page "/admin/nomenclature"
+﻿@page "/admin/nomenclature"
 @inject ApiClient Api
 @inject HistoriqueNavigation Historique
 
@@ -6,10 +6,11 @@
     <NavAdmin Actif="admin/nomenclature" Rubrique="@Rubrique" />
 
     <div class="admin-contenu">
-        <div class="titre-page">
+        <div class="titre-page titre-actions-cote">
             <div>
                 <h1>Nomenclature nationale · @NavAdmin.Libelle("admin/nomenclature", Rubrique)</h1>
-                <p class="sous-titre">Liste officielle des médicaments enregistrés en Algérie (ministère de l’Industrie pharmaceutique), pour créer les produits et repérer les psychotropes.</p>
+                @* Sous-titre sur une ligne (2026-11-20) : l’écran tient à 1366 × 768 ; le site du ministère est indiqué tant qu’aucune nomenclature n’est importée *@
+                <p class="sous-titre">Liste officielle des médicaments enregistrés en Algérie, pour créer les produits et repérer les psychotropes.</p>
             </div>
             <div class="actions">
                 <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ImporterAsync">@(enCours ? "Import en cours…" : "Importer le fichier Excel…")</button>

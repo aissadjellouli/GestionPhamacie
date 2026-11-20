@@ -400,6 +400,8 @@ select.selection { height: 44px; padding: 0 12px; border-radius: 8px; border: 1p
 /* Menu collé au bord gauche de la fenêtre (demandé le 2026-11-13) : la page n'est plus centrée ni limitée à 1 280 px,
    le contenu prend toute la largeur restante. Écran fixe : juste la place de la barre d'état (32 px) sous le contenu. */
 .page.admin, .page.avec-menu { --largeur-menu: 240px; max-width: none; margin: 0; padding: 28px 24px 36px 0; column-gap: 32px; }
+/* Fenêtre basse (1366 × 768, 2026-11-20) : marge du bas resserrée ; plusieurs écrans dépassaient de 1 à 9 px (Trésorerie, Grossistes…) */
+@media (max-height: 800px) { .page.admin, .page.avec-menu { padding-bottom: 20px; } }
 /* Colonne du menu sur toute la hauteur, de l'en-tête (qui la recouvre en haut, quelle que soit sa hauteur) à la barre d'état */
 .page.admin::before, .page.avec-menu::before { content: ""; position: fixed; z-index: 0; top: 0; bottom: 32px; left: 0; width: var(--largeur-menu);
   background: var(--menu-fond); border-right: 1px solid var(--menu-filet); }
@@ -412,6 +414,8 @@ select.selection { height: 44px; padding: 0 12px; border-radius: 8px; border: 1p
 /* Fenêtre (voile) ouverte depuis le menu ou le contenu (ex. « Ouvrir le tiroir », F8) : la colonne qui la contient passe devant l'autre,
    sinon la fenêtre reste enfermée sous la caisse (même niveau 1) et s'affiche derrière la recherche de produit (2026-11-16) */
 .page.admin > *:has(.voile), .page.avec-menu > *:has(.voile) { z-index: 41; }
+/* Aide ouverte depuis le menu de gauche (Caisse, 2026-11-20) : le menu passe au-dessus du contenu (z-index 1), sous l'en-tête (20) */
+.page.admin > *:has(.panneau-aide), .page.avec-menu > *:has(.panneau-aide) { z-index: 2; }
 .admin-nav, .nav-laterale { flex: 0 0 var(--largeur-menu, 220px); box-sizing: border-box; padding: 0 12px; display: flex; flex-direction: column; gap: 2px; }
 .admin-nav a, .admin-nav .nav-inactif, .nav-laterale a { padding: 10px 12px; border-radius: 6px; font-size: 14px; color: var(--texte-3); text-decoration: none; }
 .admin-nav a.active, .nav-laterale a.active { color: var(--accent-texte); background: var(--menu-actif); font-weight: 600; box-shadow: inset 3px 0 0 var(--ambre); }
@@ -530,6 +534,9 @@ label.requis::after, .etiquette-champ.requis::after { content: " *"; color: var(
 .tuile-pied { font-size: 13px; color: var(--texte-2); }
 /* Histogramme : colonnes fines, extrémité arrondie, une seule ligne de base, grille discrète */
 .histogramme { display: flex; gap: 8px; height: 240px; }
+/* Synthèse du tableau de bord financier : histogramme abaissé en fenêtre basse (1366 × 768, 2026-11-20), l’écran ne défile pas */
+.histogramme-synthese { height: 200px; }
+@media (max-height: 800px) { .histogramme-synthese { height: 90px; } }
 .histogramme-echelle { display: flex; flex-direction: column; justify-content: space-between; font-size: 12px; color: var(--texte-2); padding-bottom: 22px; text-align: right; white-space: nowrap; }
 .histogramme-barres { flex: 1; display: grid; grid-template-columns: repeat(var(--colonnes), minmax(0, 1fr)); gap: 2px; min-width: 0; }
 .histogramme-colonne { display: flex; flex-direction: column; align-items: center; min-width: 0; cursor: default; }

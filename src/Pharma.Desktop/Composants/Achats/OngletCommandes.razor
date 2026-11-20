@@ -79,7 +79,7 @@
                     </select></div>
                 @if (FiltreSuggestionsActif) { <button type="button" class="btn" @onclick="EffacerFiltresSuggestionsAsync">Tout afficher</button> }
             </div>
-            <section class="tableau-cadre" aria-labelledby="t-sugg">
+            <section class="tableau-cadre" data-hauteur-min="140" aria-labelledby="t-sugg">
                 <table class="tableau" style="min-width: 0">
                     <thead><tr><th scope="col">Produit</th><th scope="col">État</th><th scope="col">Stock</th><th scope="col">Suggéré</th><th scope="col">Dernier achat</th><th scope="col"></th></tr></thead>
                     <tbody>
