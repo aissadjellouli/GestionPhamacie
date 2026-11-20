@@ -9,25 +9,21 @@ using Pharma.Application.Notifications;
 namespace Pharma.Infrastructure.Notifications;
 
 /// <summary>
-/// Chiffrement DPAPI, portée machine : seul le PC serveur qui a enregistré le mot de passe peut le relire.
+/// Mot de passe SMTP chiffré pour la base : DPAPI en portée machine sous Windows (seul le PC serveur qui l'a enregistré peut le
+/// relire), DataProtection ailleurs (seul un serveur qui a le même dossier de clés peut le relire) : IProtectionDonnees.
 /// Après restauration de la base sur un autre PC, le mot de passe SMTP est à ressaisir.
 /// </summary>
-public sealed class ProtectionDpapi : IProtectionSecret
+public sealed class ProtectionSecretSmtp(Securite.IProtectionDonnees protection) : IProtectionSecret
 {
-    private static readonly byte[] Entropie = "PharmaOfficine.Notifications.Smtp"u8.ToArray();
+    private const string Usage = "PharmaOfficine.Notifications.Smtp";
 
-    public byte[] Chiffrer(string secret)
-    {
-        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Chiffrement DPAPI disponible sous Windows seulement.");
-        return ProtectedData.Protect(Encoding.UTF8.GetBytes(secret), Entropie, DataProtectionScope.LocalMachine);
-    }
+    public byte[] Chiffrer(string secret) => protection.Proteger(Encoding.UTF8.GetBytes(secret), Usage);
 
     public string Dechiffrer(byte[] chiffre)
     {
-        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Chiffrement DPAPI disponible sous Windows seulement.");
         try
         {
-            return Encoding.UTF8.GetString(ProtectedData.Unprotect(chiffre, Entropie, DataProtectionScope.LocalMachine));
+            return Encoding.UTF8.GetString(protection.Deproteger(chiffre, Usage));
         }
         catch (CryptographicException)
         {

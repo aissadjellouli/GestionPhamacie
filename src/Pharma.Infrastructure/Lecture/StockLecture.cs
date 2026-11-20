@@ -44,9 +44,11 @@ public sealed class StockLecture(NpgsqlDataSource db) : IStockLecture
                    e.couverture_jours::int, lots.premiere, COALESCE(lots.nb_lots, 0),
                    COALESCE(lots.grossistes, '{}'), COALESCE(lots.numeros, '{}'),
                    e.statut, proche.produit_id IS NOT NULL,
-                   p.emplacement_id, ev.code, p.reserve_id, er.code
+                   p.emplacement_id, ev.code, p.reserve_id, er.code,
+                   p.categorie, cat.libelle, NOT COALESCE(cat.medicament, true)
             FROM v_etat_stock e
             JOIN produit p       ON p.id = e.produit_id
+            LEFT JOIN categorie_produit cat ON cat.code = p.categorie
             LEFT JOIN dci d      ON d.id = p.dci_id
             LEFT JOIN lots       ON lots.produit_id = e.produit_id
             LEFT JOIN proche     ON proche.produit_id = e.produit_id
@@ -66,7 +68,8 @@ public sealed class StockLecture(NpgsqlDataSource db) : IStockLecture
                 r.GetFieldValue<string[]>(9), r.GetFieldValue<string[]>(10),
                 r.GetString(11), r.GetBoolean(12),
                 r.IsDBNull(13) ? null : r.GetInt64(13), r.IsDBNull(14) ? null : r.GetString(14),
-                r.IsDBNull(15) ? null : r.GetInt64(15), r.IsDBNull(16) ? null : r.GetString(16)));
+                r.IsDBNull(15) ? null : r.GetInt64(15), r.IsDBNull(16) ? null : r.GetString(16),
+                r.GetString(17), r.IsDBNull(18) ? null : r.GetString(18), r.GetBoolean(19)));
         return liste;
     }
 }

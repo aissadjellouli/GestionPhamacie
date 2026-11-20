@@ -7,6 +7,10 @@
     <PackageReference Include="Npgsql" />
     <!-- Jetons ES256 (création et vérification) -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <!-- Archive de départ d'une officine : zip chiffré AES-256 (WinZip AE-2) -->
+    <PackageReference Include="SharpZipLib" />
+    <!-- Mot de passe de l'archive de départ envoyé au titulaire par le compte SMTP de l'éditeur (TLS obligatoire) -->
+    <PackageReference Include="MailKit" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Pharma.Shared\Pharma.Shared.csproj" />

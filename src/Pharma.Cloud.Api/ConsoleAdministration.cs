@@ -227,22 +227,38 @@ public static class ConsoleAdministration
                     }
                 case "--depart-officine":
                     {
-                        // Lot S6.3 : --depart-officine <code> --sortie <fichier.zip> --operateur <nom>
+                        // Lot S6.3 : --depart-officine <code> --sortie <fichier.zip> --operateur <nom> [--email <adresse du titulaire>]
                         var officine = args.Length > 1 && Guid.TryParse(args[1], out var g) ? g
-                            : throw new ArgumentException("Attendu : --depart-officine <code officine> --sortie <fichier.zip> --operateur <nom>.");
+                            : throw new ArgumentException("Attendu : --depart-officine <code officine> --sortie <fichier.zip> --operateur <nom> [--email <adresse>].");
                         var operateur = Option(args, "--operateur") ?? throw new ArgumentException("Opérateur attendu : --operateur <nom>.");
                         var chemin = Depart.DepartOfficine.VerifierChemin(Option(args, "--sortie"));
+                        // 2026-11-20 : mot de passe envoyé par e-mail au titulaire si --email ; adresse contrôlée AVANT tout départ ou export
+                        var email = args.Contains("--email")
+                            ? Depart.AdresseCourriel.Valider(Option(args, "--email") ?? throw new ArgumentException("Adresse attendue après --email."))
+                            : null;
+                        Depart.IEnvoiCourriel? envoiCourriel = null;
+                        string? reglagesManquants = null;
+                        if (email is not null)
+                        {
+                            var (smtp, manque) = Depart.ReglagesSmtpCentral.Lire(Environment.GetEnvironmentVariable);
+                            if (smtp is not null) envoiCourriel = new Depart.EnvoiCourrielSmtp(smtp);
+                            else
+                            {
+                                reglagesManquants = manque;
+                                Console.WriteLine($"Attention : {manque} ; le mot de passe ne sera pas envoyé par e-mail, seulement affiché.");
+                            }
+                        }
                         using var arret = AnnulationConsole();
                         await using var db = Admin();
                         var depart = await Depart.DepartOfficine.PartirAsync(db, officine, operateur, arret.Token);
                         Console.WriteLine(depart.DejaPartie
                             ? $"Départ déjà enregistré le {depart.ResilieeLe:yyyy-MM-dd} (date gardée) ; certificats révoqués maintenant : {depart.CertificatsRevoques}."
                             : $"Départ enregistré le {depart.ResilieeLe:yyyy-MM-dd} : {depart.CertificatsRevoques} certificat(s) révoqué(s), synchronisation refusée dès le prochain appel.");
-                        var export = await Depart.DepartOfficine.ExporterAsync(db, officine, chemin, arret.Token);
-                        await Depart.DepartOfficine.NoterExportAsync(db, officine, operateur, export, arret.Token);
-                        foreach (var f in export.Fichiers.Where(f => f.Lignes > 0)) Console.WriteLine($"  {f.Fichier} : {f.Lignes} ligne(s)");
-                        Console.WriteLine($"Export complet écrit : {export.Chemin} ({export.Fichiers.Count} fichier(s) CSV, {export.Fichiers.Sum(f => f.Lignes)} ligne(s)) ;"
-                            + $" SHA-256 de l'archive : {export.EmpreinteArchive} (noté au journal des départs).");
+                        var libelle = await Depart.DepartOfficine.LibelleAsync(db, officine, arret.Token);
+                        var (export, envoi) = await Depart.DepartOfficine.ExporterPuisEnvoyerAsync(
+                            t => Depart.DepartOfficine.ExporterAsync(db, officine, chemin, t), email, envoiCourriel, reglagesManquants, libelle, arret.Token);
+                        await Depart.DepartOfficine.NoterExportAsync(db, officine, operateur, export, envoi, arret.Token);
+                        Depart.DepartOfficine.EcrireCompteRendu(Console.Out, export, envoi);   // mot de passe de l'archive affiché ici une seule fois
                         Console.WriteLine("Effacement : jamais automatique ; --effacer-officine après la durée de conservation après départ (--reglages).");
                         return 0;
                     }

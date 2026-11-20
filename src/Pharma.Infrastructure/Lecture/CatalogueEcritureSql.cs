@@ -62,17 +62,39 @@ public sealed class CatalogueEcritureSql(NpgsqlDataSource db) : ICatalogueEcritu
         return await cmd.ExecuteScalarAsync(ct) as string;
     }
 
+    public Task<bool?> CategorieMedicamentAsync(string code, CancellationToken ct = default) => CategorieMedicamentAsync(db, code, ct);
+
+    /// <summary>Catégorie active : vrai si médicament, faux si parapharmacie, null si le code est inconnu ou désactivé.</summary>
+    internal static async Task<bool?> CategorieMedicamentAsync(NpgsqlDataSource db, string code, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("SELECT medicament FROM categorie_produit WHERE code = $1 AND actif");
+        cmd.Parameters.AddWithValue(code);
+        return await cmd.ExecuteScalarAsync(ct) is bool b ? b : null;
+    }
+
+    public Task<bool> DansNomenclatureAsync(string numEnregistrement, CancellationToken ct = default) => DansNomenclatureAsync(db, numEnregistrement, ct);
+
+    /// <summary>N° d'enregistrement présent dans la nomenclature nationale, toutes versions (même test que parapharmacie_certaine, 154).</summary>
+    internal static async Task<bool> DansNomenclatureAsync(NpgsqlDataSource db, string numEnregistrement, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("SELECT EXISTS (SELECT 1 FROM nomenclature_produit WHERE num_enregistrement = $1)");
+        cmd.Parameters.AddWithValue(numEnregistrement.Trim());
+        return await cmd.ExecuteScalarAsync(ct) is true;
+    }
+
     public async Task<long> CreerAsync(FicheProduit f, bool aVerifier, CancellationToken ct = default, long? classeConfirmeePar = null)
     {
         await using var cnx = await db.OpenConnectionAsync(ct);
         await using var tx = await cnx.BeginTransactionAsync(ct);
-        long dciId;
-        await using (var dci = new NpgsqlCommand("""
-            WITH existante AS (SELECT id FROM dci WHERE lower(nom) = lower($1)),
-                 creee AS (INSERT INTO dci (nom) SELECT $1 WHERE NOT EXISTS (SELECT 1 FROM existante) RETURNING id)
-            SELECT id FROM existante UNION ALL SELECT id FROM creee
-            """, cnx, tx))
+        // DCI vide (parapharmacie, 2026-11-20) : produit sans DCI
+        long? dciId = null;
+        if (!string.IsNullOrWhiteSpace(f.Dci))
         {
+            await using var dci = new NpgsqlCommand("""
+                WITH existante AS (SELECT id FROM dci WHERE lower(nom) = lower($1)),
+                     creee AS (INSERT INTO dci (nom) SELECT $1 WHERE NOT EXISTS (SELECT 1 FROM existante) RETURNING id)
+                SELECT id FROM existante UNION ALL SELECT id FROM creee
+                """, cnx, tx);
             dci.Parameters.AddWithValue(f.Dci);
             dciId = (long)(await dci.ExecuteScalarAsync(ct))!;
         }
@@ -85,9 +107,9 @@ public sealed class CatalogueEcritureSql(NpgsqlDataSource db) : ICatalogueEcritu
             """, cnx, tx);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)f.CodeBarre ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         cmd.Parameters.AddWithValue(f.NomCommercial);
-        cmd.Parameters.AddWithValue(dciId);
-        cmd.Parameters.AddWithValue(f.Dosage);
-        cmd.Parameters.AddWithValue(f.Forme);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)dciId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = string.IsNullOrWhiteSpace(f.Dosage) ? DBNull.Value : f.Dosage, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = string.IsNullOrWhiteSpace(f.Forme) ? DBNull.Value : f.Forme, NpgsqlDbType = NpgsqlDbType.Text });
         cmd.Parameters.AddWithValue(f.PrixPublic);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)f.TarifReference ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Numeric });
         cmd.Parameters.AddWithValue(f.Remboursable);

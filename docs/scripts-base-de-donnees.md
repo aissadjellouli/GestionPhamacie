@@ -138,6 +138,10 @@ Pour une mise à jour qui a échoué ou qu'on abandonne : la sauvegarde `.dump` 
 
 Un ancien script rejoué seul peut ramener une **fonction ou une vue à une ancienne version** (exemple : rejouer `136` ou `137` après `139` remet l'ancienne définition). Toujours rejouer **toute la suite** depuis le script 001, c'est ce que fait `mettre_a_jour_base_officine.ps1`. Chaque script est écrit pour que ce rejeu ne change rien sur une base à jour (règle 2 ci-dessous).
 
+### 3.5 `154` : rattrapage de la catégorie (données modifiées)
+
+`154_parapharmacie_catalogue.sql` ne change pas de structure de table, mais **modifie des données** au premier passage : les produits encore en catégorie `medicament` qui remplissent la règle stricte (`parapharmacie_certaine` : hors nomenclature, sans DCI, classe libre, non remboursable, sans tarif de référence, aucune substance surveillée dans le nom) passent en `parapharmacie`. Le nombre s'affiche (`NOTICE : 154 : N produit(s) passé(s) …`) : le noter. Les rapports lisant la catégorie actuelle du produit, les ventes passées de ces produits passent de « médicaments » à « parapharmacie ». Rejoué, il ne trouve plus rien (0 produit). Les autres produits hors nomenclature se classent à la main (Administration › Nomenclature nationale, « Produits à classer »).
+
 ## 4. Règles pour écrire un nouveau script
 
 1. **Nom parlant** : `NNN_ce_que_fait_le_script.sql` (le numéro suivant le dernier ; pas de nom du genre `corrections` ou `complement`).

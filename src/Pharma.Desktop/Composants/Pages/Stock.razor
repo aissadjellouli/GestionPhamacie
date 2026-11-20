@@ -272,7 +272,7 @@
     }
 
     private static readonly (string, string)[] Filtres =
-        [("tous", "Tous"), ("commander", "À commander"), ("peremption", "Péremption proche"), ("psychotropes", "Psychotropes")];
+        [("tous", "Tous"), ("commander", "À commander"), ("peremption", "Péremption proche"), ("psychotropes", "Psychotropes"), ("parapharmacie", "Parapharmacie")];
 
     /// <summary>Recherche à appliquer à l'ouverture (produit choisi dans la recherche globale).</summary>
     [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
@@ -305,7 +305,10 @@
     {
         var lots = l.NombreLots switch { 0 => "aucun lot", 1 => "1 lot", var n => $"{n} lots" };
         var registre = Libelles.EstSousRegistre(l.Classe) ? " · registre" : "";
-        return $"{l.Dci ?? "DCI non renseignée"} · {lots}{registre}";
+        // Parapharmacie (catégorie non médicament, 2026-11-20) : sa catégorie à la place de « DCI non renseignée », sans nouvelle colonne
+        var produit = l.Parapharmacie ? (l.Dci is { } d ? $"{l.CategorieLibelle ?? "Parapharmacie"} · {d}" : l.CategorieLibelle ?? "Parapharmacie")
+            : l.Dci ?? "DCI non renseignée";
+        return $"{produit} · {lots}{registre}";
     }
 
     private static string Couverture(LigneStockDto l) =>

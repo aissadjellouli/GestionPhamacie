@@ -1,9 +1,13 @@
 @inject ApiClient Api
+@inject SessionPoste Session
 
 @* Saisie assistée d'un produit du catalogue : liste sous le champ dès la première lettre (nom, DCI ou code-barres),
    flèches haut et bas pour se déplacer, Entrée pour choisir, Échap pour fermer.
    PremierSurEntree (vrai par défaut) : Entrée pendant une recherche en attente prend le premier résultat (douchette au comptoir ou
-   à la réception) ; faux : Entrée lance la recherche et affiche la liste, sans rien choisir (jamais un produit non vu). *@
+   à la réception) ; faux : Entrée lance la recherche et affiche la liste, sans rien choisir (jamais un produit non vu).
+   Source selon le droit de l'employé (même règle que FiltreProduit, décision du 2026-11-20) : GET /api/produits (stock.consulter),
+   sinon GET /api/caisse/produits (caisse.vendre, ex. Patients en attente), sinon aucun produit. InclureInactifs : toujours
+   GET /api/produits (la recherche du comptoir ne propose pas les produits désactivés). *@
 
 <div class="champ recherche" style="@Style">
     <label for="@Id" class="@(Requis ? "requis" : null)">@Libelle</label>
@@ -103,10 +107,27 @@
 
     private async Task RechercherMaintenantAsync(int n)
     {
-        var (trouves, _) = await Api.RechercherProduitsAsync(texte.Trim(), InclureInactifs);
+        var trouves = await RechercherAsync(texte.Trim());
         if (n != requete) return;
         (resultats, chargement) = (trouves, false);
         actif = resultats.Count > 0 ? 0 : -1;
+    }
+
+    /// <summary>Produits permis à l'employé : catalogue (stock.consulter), sinon recherche du comptoir (caisse.vendre), sinon rien.</summary>
+    private async Task<List<ProduitDto>> RechercherAsync(string q)
+    {
+        if (InclureInactifs) return (await Api.RechercherProduitsAsync(q, true)).Item1;
+        switch (FiltreProduit.Source(Session.A))
+        {
+            case "produits":
+                var (produits, _) = await Api.RechercherProduitsAsync(q);
+                return produits;
+            case "caisse":
+                var (comptoir, _) = await Api.RechercherAuComptoirAsync(q);
+                return comptoir.Select(c => c.Produit).ToList();
+            default:
+                return [];
+        }
     }
 
     private async Task ToucheAsync(KeyboardEventArgs e)

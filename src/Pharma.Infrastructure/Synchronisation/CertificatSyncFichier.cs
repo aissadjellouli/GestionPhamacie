@@ -10,11 +10,12 @@ namespace Pharma.Infrastructure.Synchronisation;
 /// serveur (par défaut C:\ProgramData\PharmaOfficine\Synchronisation, réglage Synchronisation:Dossier), clé ECDSA P-256 générée
 /// ici, chiffrée par DPAPI en portée machine (illisible sur un autre PC), fichier accessible au système, aux administrateurs et au
 /// compte de l'API seulement. Jamais en base (le 2e serveur, qui reçoit la base par réplication, a son propre certificat),
-/// jamais envoyée : le serveur central ne reçoit que la demande (CSR).
+/// jamais envoyée : le serveur central ne reçoit que la demande (CSR). Hors Windows : chiffrée par DataProtection (IProtectionDonnees),
+/// dossier et fichiers réservés au compte de l'API.
 /// </summary>
-public sealed class CertificatSyncFichier(string dossier) : ICertificatSync
+public sealed class CertificatSyncFichier(string dossier, IProtectionDonnees protection) : ICertificatSync
 {
-    private static readonly byte[] Entropie = "PharmaOfficine.Synchronisation"u8.ToArray();
+    private const string Usage = "PharmaOfficine.Synchronisation";
     public const string FichierCle = "sync-cle.dat";
     public const string FichierCleAttente = "sync-cle-attente.dat";
     public const string FichierCertificat = "sync-certificat.pem";
@@ -102,14 +103,13 @@ public sealed class CertificatSyncFichier(string dossier) : ICertificatSync
 
     private void Ecrire(string nom, byte[] clair)
     {
-        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Clé de synchronisation : Windows seulement (DPAPI).");
         Directory.CreateDirectory(dossier);
-        RestreindreDossier(dossier);
+        FichiersProteges.RestreindreDossier(dossier);
         var chemin = Path.Combine(dossier, nom);
         var temporaire = chemin + ".partiel";
-        File.WriteAllBytes(temporaire, ProtectedData.Protect(clair, Entropie, DataProtectionScope.LocalMachine));
+        File.WriteAllBytes(temporaire, protection.Proteger(clair, Usage));
         CryptographicOperations.ZeroMemory(clair);
-        CompteSuperAdminFichier.Restreindre(temporaire);
+        FichiersProteges.Restreindre(temporaire);
         File.Move(temporaire, chemin, overwrite: true);
     }
 
@@ -133,10 +133,9 @@ public sealed class CertificatSyncFichier(string dossier) : ICertificatSync
 
     private byte[]? Lire(string nom)
     {
-        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Clé de synchronisation : Windows seulement (DPAPI).");
         var chemin = Path.Combine(dossier, nom);
         if (!File.Exists(chemin)) return null;
-        try { return ProtectedData.Unprotect(File.ReadAllBytes(chemin), Entropie, DataProtectionScope.LocalMachine); }
+        try { return protection.Deproteger(File.ReadAllBytes(chemin), Usage); }
         catch (CryptographicException) { throw new InvalidOperationException($"Clé de synchronisation illisible sur ce PC ({chemin}) : nouvelle activation nécessaire."); }
     }
 }

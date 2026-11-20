@@ -15,8 +15,10 @@ scripts officine `152` et central `025`, conception § 31.10), `0939f88` (essai 
 
 ## 2. Fait, à commiter
 
-- Bulles « À renseigner » posées seulement après une tentative (Caisse, volet Chifa, Synchronisation) et aide de la caisse
-  au-dessus de l'écran (2026-11-20, section 4) ; charte graphique et règles métier.
+Rien : bulles « À renseigner », aide de la caisse et écrans à 1366 × 768 commités le 2026-11-20 (`d4dbe40`), vérifiés à l'écran
+le 2026-11-20 (Caisse avec psychotrope, `pharmacie_test`, 1366 × 768 : case du porteur cochée → curseur dans le nom, champ rouge,
+aucune bulle ; F12 → bulle sur le patient d'abord, puis, patient et médecin choisis, sur le nom du porteur ; aide de la caisse
+entièrement au-dessus de l'écran, clair et sombre).
 
 ## 3. Ensuite
 
@@ -25,22 +27,51 @@ scripts officine `152` et central `025`, conception § 31.10), `0939f88` (essai 
       `C:\Program Files\PostgreSQL\18\data\postgresql.conf` (copie `postgresql.conf.avant-localhost` gardée), puis `Restart-Service postgresql-x64-18`,
       Visual Studio arrêté avant. Constat du 2026-11-18 : écoute sur toutes les adresses, `pg_hba.conf` limité à 127.0.0.1 et ::1, aucune règle de pare-feu.
 - [ ] **Décisions du titulaire du 2026-11-19, à réaliser** (sur « go ») :
-  - nouvelle époque de synchronisation : **ressaisie du mot de passe du titulaire seule**, pas de code SMS ni e-mail (vérifier
-    que l'existant s'y tient, sinon l'aligner) ;
-  - archive du central (`ligne_remplacee`) : **exclure** `alerte` et `alerte_surveillance` (tables recalculées au démarrage) ;
-  - rejeu des scripts du central : **protéger** `cloud_descendants` (010 → 011) et `cloud_creer_ordre` (013 → 018) comme les autres fonctions ;
-  - **Patients en attente dans le menu** pour un employé qui n'a que `caisse.vendre` (en plus de la fenêtre de la Caisse) ;
-  - départ d'une officine : **effacer aussi les éléments techniques** (époques, chargements, éléments descendants, ordres,
+  - [x] **vérifié le 2026-11-20 : conforme (mot de passe seul), doc alignée** — nouvelle époque de synchronisation : **ressaisie du
+    mot de passe du titulaire seule**, pas de code SMS ni e-mail ;
+  - [x] **fait le 2026-11-20 (script central 026 : `cloud_table_miroir.archive_remplacee` faux pour les deux tables)** — archive du central (`ligne_remplacee`) : **exclure** `alerte` et `alerte_surveillance` (tables recalculées au démarrage) ;
+  - [x] **fait le 2026-11-20 (gardes dans 010 et 013 à 017 ; test `RejeuScriptsCentrauxTests`)** — rejeu des scripts du central : **protéger** `cloud_descendants` (010 → 011) et `cloud_creer_ordre` (013 → 018) comme les autres fonctions ;
+  - [x] **fait le 2026-11-20 (produit choisi par la recherche du comptoir sans `stock.consulter`, lien dans la colonne de la Caisse ;
+    captures de la Caisse faites le 2026-11-20 : 0 px à 1 366 × 768 et 1 536 × 890, clair et sombre ; essai dans le poste le 2026-11-20 avec un compte qui n'a que `caisse.vendre`,
+    sur une copie jetable supprimée ensuite : menu Patients et lien de la Caisse visibles, produit trouvé, `GET /api/produits` refusé)** — **Patients en attente dans le menu** pour un employé qui n'a que `caisse.vendre` (en plus de la fenêtre de la Caisse) ;
+  - [x] **fait le 2026-11-20 (script central 027, F8 étape 4)** — départ d'une officine : **effacer aussi les éléments techniques** (époques, chargements, éléments descendants, ordres,
     anomalies d'intégrité), dans le même effacement que les données, donc **jamais avant la fin de la conservation de 6 ans**
     après le départ (étape 7.8 : 6 ans minimum, refus en dessous ; précision du titulaire du 2026-11-19) ; **garder** la fiche,
     les certificats révoqués et les journaux (preuves) ;
-  - `cloud_effacer_famille` **étendu à `ligne_remplacee`** (famille décochée retirée aussi des lignes archivées) ;
-  - remise de l'archive de départ **au choix du titulaire** : clé USB en main propre, ou lien de téléchargement à durée limitée
-    avec mot de passe envoyé par un autre canal ; **accusé de réception portant l'empreinte SHA-256** dans les deux cas
-    (`mise-en-production.md` F8 à mettre à jour) ;
-  - suggestions de saisie : **ne plus proposer les libellés de trésorerie saisis à la main** (risque de nom de client) ;
-  - **parapharmacie distinguée dans le catalogue dès maintenant** (V1) ;
-  - démo : **démonstration cloud** (Dockerfile, docker-compose local, mode démo) ;
+  - [x] **fait le 2026-11-20 (script central 028)** — `cloud_effacer_famille` **étendu à `ligne_remplacee`** (famille décochée retirée aussi des lignes archivées) ;
+  - [x] **fait le 2026-11-20 (zip chiffré AES-256 au format WinZip AE-2 par la bibliothèque SharpZipLib 1.4.2, licence MIT ;
+    mot de passe de 24 caractères tiré au sort, affiché une seule fois, écrit nulle part ; aucune copie en clair sur le disque ;
+    empreinte SHA-256 de l'archive chiffrée au journal des départs et sur l'accusé de réception ; F8 à jour ; tests
+    `DepartArchiveChiffreeTests` ; ouverture avec 7-Zip sur un poste réel à constater)** — zip chiffré de l'archive de départ ;
+  - [x] **fait le 2026-11-20 (option `--email` de `--depart-officine`, compte SMTP de l'éditeur en variables `PHARMA_CLOUD_SMTP_*`,
+    TLS obligatoire, MailKit ; adresse non enregistrée, masquée au journal des départs ; échec non bloquant ; affichage unique gardé ;
+    tests `DepartEnvoiMotDePasseTests` ; compte SMTP de l'éditeur à créer et premier envoi réel à essayer)** — mot de passe de
+    l'archive de départ envoyé par e-mail au titulaire ; règle des deux canaux : si un jour l'archive part par un lien envoyé par
+    e-mail, le mot de passe ne part plus par e-mail ;
+  - [ ] **restant : mot de passe de l'archive de départ par SMS** (aucun fournisseur SMS choisi pour le serveur central) ;
+  - [ ] **restant : lien de téléchargement à durée limitée** (dans aucun lot ; d'ici là, remise en main propre sur clé USB) —
+    remise de l'archive de départ **au choix du titulaire** : clé USB en main propre (possible) ou lien à durée limitée
+    avec mot de passe envoyé par un autre canal ; **accusé de réception portant l'empreinte SHA-256** dans les deux cas (fait, F8) ;
+  - [x] **fait le 2026-11-20 (voir la ligne « suggestions de saisie (2026-11-20) »)** — suggestions de saisie : **ne plus proposer les libellés de trésorerie saisis à la main** (risque de nom de client) ;
+  - [x] **fait le 2026-11-20 (script 154 et init ; règle stricte et rattrapage, reprise, « Produits à classer » avec reclassement groupé,
+    catégorie dans « Modifier un produit », DCI/dosage/forme facultatifs, TVA 19 % proposée (confirmée le 2026-11-20 ; reprise gardée telle quelle, confirmé le 2026-11-20), pastille Stock, rapports
+    parapharmacie / prestations ; script 154 passé deux fois sur `pharmacie_dev` et `pharmacie_test` après sauvegarde
+    vérifiée (0 produit rattrapé : la parapharmacie de démo était déjà classée), tests SQL 154 réussis sur les deux ; règle stricte
+    corrigée pour une classe NULL ; mesures 0 px à 1 366 × 768 et 1 536 × 890, clair et sombre, captures regardées : Produits à
+    classer, Version et catégories, Stock › Produits (pastille), Nouveau produit (catégorie parapharmacie), Rapports Jour, Semaine
+    et Mois (répartition et retours clients passés dans leurs propres tuiles : la vue Mois défilait de 102 px à 1 366 × 768) ;
+    Modifier un produit, fiche ouverte : 127 px à 1 366 × 768 (formulaire ouvert, toléré ; la catégorie partage la ligne de la
+    contenance), 0 px à 1 536 × 890)** — parapharmacie distinguée dans le catalogue (V1) ;
+  - démo : **démonstration cloud** (Dockerfile, docker-compose local, mode démo) — détail : [demo-cloud.md](demo-cloud.md) ;
+    - [x] **étape 0 faite le 2026-11-20 : API utilisable sous Linux** (secrets locaux : DPAPI inchangé sous Windows, DataProtection
+      ailleurs ; outils PostgreSQL sans `.exe` et cherchés dans le PATH ; racine des données `Donnees:Racine` ; polices PDF
+      Liberation Sans embarquées hors Windows, licence OFL ; en-têtes de proxy seulement pour `ProxysConnus` ; build et tests
+      réussis sous Windows, tests `ApiSousLinuxTests` ; **aucun démarrage réel sous Linux encore**) ;
+    - [ ] étape 1 : Dockerfile de l'API et docker-compose local (API + PostgreSQL + volume des données, client PostgreSQL,
+      ICU, `TZ=Africa/Algiers`) ;
+    - [ ] étape 2 : mode démo ;
+    - [ ] étape 3 : tests (démarrage du conteneur, PDF, sauvegarde et restauration dans le conteneur) ;
+    - [ ] étape 4 : documentation d'exploitation de la démo ;
   - majorations Chifa : **« Garde » seule** pour l'instant ;
   - [x] **fait le 2026-11-20 (script 153 et seed de l'init : les six règles semées pour une base neuve ; commité le 2026-11-20 ; captures
     faites le 2026-11-20 : Administration › Psychotropes 0 px à 1536 × 890 et 1366 × 768, clair et sombre ; Caisse avec
@@ -53,14 +84,18 @@ scripts officine `152` et central `025`, conception § 31.10), `0939f88` (essai 
     **valideur exigé** ; règle 2 : période réglable **ou « sans limite »** (valeur de départ : sans limite) ; bases existantes :
     nouvelles valeurs posées **seulement sur les règles jamais modifiées** par le titulaire ;
   - [x] **fait le 2026-11-20 (scripts centraux 026 à 028, gardes de rejeu de 004 à 022, F8 ; passés deux fois sur
-    `pharmacie_cloud_dev` après sauvegarde vérifiée ; commité le 2026-11-20 ; zip chiffré restant à faire)** — central, précisions du 2026-11-20 : tables sans archive par une colonne réglable
+    `pharmacie_cloud_dev` après sauvegarde vérifiée ; commité le 2026-11-20 ; zip chiffré fait le 2026-11-20, voir plus haut)** — central, précisions du 2026-11-20 : tables sans archive par une colonne réglable
     `cloud_table_miroir.archive_remplacee` ; alertes déjà archivées **gardées** ; au départ, `ordre_central_journal` **gardé**
     (lien technique vers les ordres retiré) ; effacés aussi : volume journalier, état et sceaux d'intégrité ; gardés : familles
     envoyées et codes d'activation ; archive de départ remise par lien : **zip chiffré** par mot de passe ;
-  - suggestions de saisie (2026-11-20) : **proposer aussi** les libellés de versement d'organisme, transferts et versements de
+  - [x] **fait le 2026-11-20 (Trésorerie : versement d'organisme seul proposé, libellés mis par le logiciel ; dépense et encaissement
+    sans propositions ; transferts et versements de caisse sans libellé à taper ; rayons : 30 au plus ; Seuils par produit : 8 lignes
+    à 1 366 × 768, 10 à 1 536 × 890, filtres à gauche, écart noté dans la charte ; 0 px, clair et sombre, captures regardées)** —
+    suggestions de saisie (2026-11-20) : **proposer aussi** les libellés de versement d'organisme, transferts et versements de
     caisse ; **tous les rayons** proposés dès l'entrée dans le champ ; écran **Seuils par produit à revoir** (8 à 10 lignes
     visibles à 1366 × 768) ;
-  - bases : **supprimer les bases jetables seules** (`pharmacie_cloud_jetable_m11_1d7bbebb`, `pharmacie_jetable_m4_*`,
+  - [x] **fait le 2026-11-20 (26 bases supprimées, aucune connexion ouverte ; `pharmacie_jetable_sugg_7086638f`, reste d'un essai des
+    tests de suggestions, gardée : hors de la liste validée)** — bases : **supprimer les bases jetables seules** (`pharmacie_cloud_jetable_m11_1d7bbebb`, `pharmacie_jetable_m4_*`,
     `pharmacie_jetable_rejeu_*`), liste exacte montrée et validée avant suppression ; bases de recette gardées.
 - [x] **S6.5, intégrité après restauration** : **terminé** le 2026-11-19 (S6.5.0 à S6.5.6 ; essai de bout en bout réussi). Restent
       hors lot : avis du comptable (§ 6) ; n° repris avant la détection : traité le 2026-11-19 (§ 31.10). Synthèse :
@@ -68,17 +103,17 @@ scripts officine `152` et central `025`, conception § 31.10), `0939f88` (essai 
 
 ## 4. Défauts d'écran
 
-- [x] **Écrans qui défilent à 1 366 × 768** (mesure du 2026-11-20 : 17 écrans de 1 à 195 px) : **corrigé le 2026-11-20, à
-      commiter**, remesuré à 0 px à 1 366 × 768 (tous les écrans, toutes rubriques) et à 1 536 × 890, captures clair et sombre.
+- [x] **Écrans qui défilent à 1 366 × 768** (mesure du 2026-11-20 : 17 écrans de 1 à 195 px) : **corrigé le 2026-11-20, commité
+      `d4dbe40`**, remesuré à 0 px à 1 366 × 768 (tous les écrans, toutes rubriques) et à 1 536 × 890, captures clair et sombre.
       Détail des corrections : charte graphique, « Campagne 1 366 × 768 du 2026-11-20 ». Nouvelles rubriques : Caisse et contrôle
       › « Chifa : délais et seuils », Notifications › « E-mail » et « SMS ».
 - [ ] **Décision : fiche d'un prêt ouvert** (Financements › Prêts bancaires) : défile de 77 à 226 px à 1 366 × 768 ; formulaire
       ouvert à la demande, toléré par la règle. À corriger quand même ?
 - [ ] Non mesurés à 1 366 × 768 : Reprise de données et profils de reprise (super admin).
-- [x] **Bulle « À renseigner » trop tôt** (2026-11-20, corrigé, à commiter) : porteur de l'ordonnance (curseur dans le nom à la coche),
+- [x] **Bulle « À renseigner » trop tôt** (2026-11-20, corrigé, commité `d4dbe40`, vérifié à l'écran) : porteur de l'ordonnance (curseur dans le nom à la coche),
       n° de facture et « motif sans n° » Chifa, motif du rattachement d'un volet, confirmation du mot de passe (Synchronisation) ;
       règle ajoutée à la charte graphique (« Bulle seulement après une tentative »).
-- [x] **Aide de la caisse recouverte par l'écran** (2026-11-20, corrigé, à commiter) : `app.css`, colonne du menu au-dessus du
+- [x] **Aide de la caisse recouverte par l'écran** (2026-11-20, corrigé, commité `d4dbe40`, vérifié à l'écran) : `app.css`, colonne du menu au-dessus du
       contenu quand l'aide est ouverte. Seul cas : les autres aides sont dans le titre de l'écran.
 
 ### Défauts d'écran constatés le 2026-11-18

@@ -42,7 +42,7 @@ public sealed class RestaurationPostgres(string chaineConnexion, string? cheminP
 
     public async Task VerifierAsync(string fichier, CancellationToken ct = default)
     {
-        var (code, erreurs) = await LancerAsync("pg_restore.exe", ["--list", fichier], ct);
+        var (code, erreurs) = await LancerAsync("pg_restore", ["--list", fichier], ct);
         if (code != 0) throw new RegleMetierException($"Sauvegarde illisible ou incomplète ({erreurs}) : choisissez-en une autre.");
     }
 
@@ -57,7 +57,7 @@ public sealed class RestaurationPostgres(string chaineConnexion, string? cheminP
         try
         {
             etape("Restauration du contenu (pg_restore), quelques minutes");
-            var (code, erreurs) = await LancerAsync("pg_restore.exe",
+            var (code, erreurs) = await LancerAsync("pg_restore",
                 ["--no-password", ..Hote(), $"--dbname={neuve}", "--no-owner", "--no-privileges", "--exit-on-error", fichier], ct);
             if (code != 0) throw new RegleMetierException($"pg_restore a échoué : {erreurs}");
 
@@ -114,7 +114,7 @@ public sealed class RestaurationPostgres(string chaineConnexion, string? cheminP
         await AdministrerAsync($"CREATE DATABASE {Nom(essai)} ENCODING 'UTF8' TEMPLATE template0", ct);
         try
         {
-            var (code, erreurs) = await LancerAsync("pg_restore.exe",
+            var (code, erreurs) = await LancerAsync("pg_restore",
                 ["--no-password", ..Hote(), $"--dbname={essai}", "--no-owner", "--no-privileges", "--exit-on-error", fichier], ct);
             if (code != 0) throw new RegleMetierException($"pg_restore a échoué : {erreurs}");
             await using var cx = new NpgsqlConnection(new NpgsqlConnectionStringBuilder(chaineConnexion) { Database = essai, Pooling = false }.ConnectionString);
@@ -205,7 +205,7 @@ public sealed class RestaurationPostgres(string chaineConnexion, string? cheminP
                 var lignes = fichiers.Select(f => $"\\i '{f.Replace('\\', '/').Replace("'", "''")}'").ToList();
                 if (transaction) { lignes.Insert(0, "BEGIN;"); lignes.Add("COMMIT;"); }
                 await File.WriteAllLinesAsync(temporaire, lignes, ct);
-                var (code, erreurs) = await LancerAsync("psql.exe",
+                var (code, erreurs) = await LancerAsync("psql",
                     ["--no-password", ..Hote(), $"--dbname={baseCible}", "-v", "ON_ERROR_STOP=1", "-q", "-f", temporaire], ct, scripts: true);
                 if (code != 0) throw new RegleMetierException($"Mise à la version du logiciel impossible : {erreurs}");
             }
@@ -234,7 +234,7 @@ public sealed class RestaurationPostgres(string chaineConnexion, string? cheminP
         info.Environment["PGPASSWORD"] = connexion.Password ?? "";   // jamais sur la ligne de commande
         info.Environment["PGCLIENTENCODING"] = "UTF8";
         if (scripts) info.Environment["PGOPTIONS"] = OptionsScripts;
-        using var p = Process.Start(info) ?? throw new InvalidOperationException($"{outil} n'a pas pu démarrer.");
+        using var p = Process.Start(info) ?? throw new InvalidOperationException($"{OutilsPostgres.NomExecutable(outil, OperatingSystem.IsWindows())} n'a pas pu démarrer.");
         var sortie = p.StandardOutput.ReadToEndAsync(ct);
         var erreurs = p.StandardError.ReadToEndAsync(ct);
         await p.WaitForExitAsync(ct);
@@ -243,17 +243,11 @@ public sealed class RestaurationPostgres(string chaineConnexion, string? cheminP
         return (p.ExitCode, texte.Length > 600 ? texte[..600] + "…" : texte);
     }
 
-    /// <summary>Outil PostgreSQL : à côté de pg_dump (réglage Sauvegardes:PgDump), sinon dans la dernière version installée.</summary>
-    private string Outil(string nom)
-    {
-        if (!string.IsNullOrWhiteSpace(cheminPgDump) && Path.GetDirectoryName(cheminPgDump) is { } bin && File.Exists(Path.Combine(bin, nom)))
-            return Path.Combine(bin, nom);
-        var racine = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "PostgreSQL");
-        var trouve = Directory.Exists(racine)
-            ? Directory.GetDirectories(racine).Select(d => Path.Combine(d, "bin", nom)).Where(File.Exists)
-                .OrderByDescending(f => int.TryParse(Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(f))), out var v) ? v : 0)
-                .FirstOrDefault()
-            : null;
-        return trouve ?? throw new InvalidOperationException($"{nom} introuvable : renseignez Sauvegardes:PgDump dans appsettings.json.");
-    }
+    /// <summary>
+    /// Outil PostgreSQL : à côté de pg_dump (réglage Sauvegardes:PgDump), sinon dans la dernière version installée ; hors Windows,
+    /// sans « .exe » et aussi dans le PATH (OutilsPostgres).
+    /// </summary>
+    private string Outil(string nom) =>
+        OutilsPostgres.Trouver(nom, cheminPgDump)
+        ?? throw new InvalidOperationException($"{OutilsPostgres.NomExecutable(nom, OperatingSystem.IsWindows())} introuvable : renseignez Sauvegardes:PgDump dans appsettings.json.");
 }

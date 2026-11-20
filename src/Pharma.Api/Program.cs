@@ -23,23 +23,29 @@ JetonService.VerifierCle(builder.Configuration, builder.Environment.IsDevelopmen
 if (ReseauSecurise.RefusDemarrage(builder.Configuration, builder.Environment.IsDevelopment()) is { } refusHttp)
     throw new InvalidOperationException(refusHttp);
 
-// Exécution en service Windows sur le PC serveur de l'officine
+// Exécution en service Windows sur le PC serveur de l'officine (sans effet hors service Windows, donc hors Windows)
 builder.Host.UseWindowsService(o => o.ServiceName = "PharmaOfficine API");
+
+// Racine des données du serveur (Donnees:Racine) : C:\ProgramData\PharmaOfficine sous Windows sans réglage (inchangé),
+// /var/lib/pharmaofficine ailleurs. Hors Windows, un chemin Windows réglé (ex. appsettings.json) est ignoré : défaut sous la racine.
+var dossierPharma = Pharma.Infrastructure.Systeme.DossiersDonnees.Racine(builder.Configuration["Donnees:Racine"]);
+static string? Chemin(string? valeur) => Pharma.Infrastructure.Systeme.DossiersDonnees.CheminUtilisable(valeur);
 
 // Journal du serveur en fichiers (un par jour, taille et durée de conservation réglables : section « Journaux »)
 var optionsJournal = builder.Configuration.GetSection("Journaux").Get<Pharma.Api.Journalisation.OptionsJournalFichier>()
                      ?? new Pharma.Api.Journalisation.OptionsJournalFichier();
+if (builder.Configuration["Journaux:Dossier"] is not { } reglageJournal || (reglageJournal.Length > 0 && Chemin(reglageJournal) is null))
+    optionsJournal.Dossier = Path.Combine(dossierPharma, "Journaux");
 builder.Logging.AddProvider(new Pharma.Api.Journalisation.JournalFichierProvider(optionsJournal));
 
 // GED : un dossier du serveur pour tous les documents (réglage Ged:Dossier). Les ordonnances y vont par défaut, et celles de
 // l'ancien dossier par défaut y sont déplacées au démarrage (sans rien écraser). Chifa : les fichiers sont lus dans le dossier
 // d'export du logiciel de la CNAS (Chifa:DossierExport) et archivés dans GED\Chifa
-var dossierPharma = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine");
 var ged = new Pharma.Application.Ged.ReglagesGed(
-    builder.Configuration["Ged:Dossier"] is { Length: > 0 } g ? g : Path.Combine(dossierPharma, "GED"),
+    Chemin(builder.Configuration["Ged:Dossier"]) is { Length: > 0 } g ? g : Path.Combine(dossierPharma, "GED"),
     builder.Configuration.GetValue("Ged:RetentionSauvegardesJours", 7));
-var dossierOrdonnances = builder.Configuration["Ordonnances:Dossier"] is { Length: > 0 } o ? o : ged.Dossier(Pharma.Application.Ged.TypesGed.Ordonnances);
-var dossierChifa = builder.Configuration["Chifa:DossierExport"] is { Length: > 0 } c ? c : ged.Dossier(Pharma.Application.Ged.TypesGed.Chifa);
+var dossierOrdonnances = Chemin(builder.Configuration["Ordonnances:Dossier"]) is { Length: > 0 } o ? o : ged.Dossier(Pharma.Application.Ged.TypesGed.Ordonnances);
+var dossierChifa = Chemin(builder.Configuration["Chifa:DossierExport"]) is { Length: > 0 } c ? c : ged.Dossier(Pharma.Application.Ged.TypesGed.Chifa);
 // 2e serveur (script 122) : rôle de la base de ce serveur, dossiers propres à ce serveur (Chifa, MDN : sa ligne de serveur_officine
 // l'emporte sur appsettings), autre serveur de l'officine (SecondServeur:AutreServeur) pour ne jamais avoir deux API qui écrivent
 var demarrage = await Pharma.Infrastructure.SecondServeur.DemarrageServeur.LireAsync(
@@ -74,7 +80,13 @@ builder.Services.AddInfrastructure(new InfrastructureOptions(
     ged.Dossier(Pharma.Application.Ged.TypesGed.Chifa),
     builder.Configuration["SuperAdmin:Fichier"],
     builder.Configuration["Integrite:FichierCle"],
-    builder.Configuration["Synchronisation:Dossier"]));
+    builder.Configuration["Synchronisation:Dossier"],
+    dossierPharma,
+    // Secrets locaux : DPAPI machine sous Windows sans réglage (inchangé), DataProtection ailleurs (section « Protection »)
+    ProtectionDataProtection.Choisir(builder.Configuration.GetSection("Protection").Get<Pharma.Infrastructure.Securite.ReglagesProtection>()
+                                     ?? new Pharma.Infrastructure.Securite.ReglagesProtection(), dossierPharma, OperatingSystem.IsWindows()),
+    builder.Configuration["Fiscal:DossierArchives"],
+    builder.Configuration["CopieSecours:Fichier"]));
 builder.Services.AddSingleton<JetonService>();
 builder.Services.AddSingleton<IGenerateurJeton>(sp => sp.GetRequiredService<JetonService>());
 // Connexion par code comptoir : droits limités au comptoir (enveloppe le service de droits)
@@ -146,6 +158,16 @@ if (Pharma.Application.SecondServeur.ReplicationOfficine.RefusDemarrage(demarrag
 // Fuseau horaire : l'officine est en UTC+1 toute l'année (Africa/Algiers) ; la base est réglée par la migration 083
 if (ReseauSecurise.AvertissementFuseau(TimeZoneInfo.Local, DateTime.UtcNow) is { } fuseau)
     app.Logger.LogWarning("{Avertissement}", fuseau);
+app.Logger.LogInformation("Secrets locaux protégés par {Protection}",
+    app.Services.GetRequiredService<Pharma.Infrastructure.Securite.IProtectionDonnees>().Description);
+
+// Proxy inverse déclaré (ProxysConnus) : adresse et schéma du client relus dans X-Forwarded-For / X-Forwarded-Proto ; sinon rien
+if (ProxysInverses.Options(app.Configuration) is { } proxys)
+{
+    app.UseForwardedHeaders(proxys);
+    app.Logger.LogInformation("En-têtes de proxy acceptés de {Proxys}", string.Join(", ",
+        proxys.KnownProxies.Select(p => p.ToString()).Concat(proxys.KnownIPNetworks.Select(r => r.ToString()))));
+}
 
 // Règles métier et refus de la base (déclencheurs) renvoyés au poste avec un message clair
 app.UseExceptionHandler(erreur => erreur.Run(async ctx =>

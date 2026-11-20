@@ -18,5 +18,7 @@
   <ItemGroup>
     <!-- Logo imprimé en tête des documents PDF -->
     <EmbeddedResource Include="Impression\Ressources\logo.png" LogicalName="Pharma.Logo.png" />
+    <!-- Polices des PDF hors Windows : Liberation Sans 2.1.5, licence SIL OFL 1.1 (Impression\Ressources\Polices\OFL-LiberationSans.txt) -->
+    <EmbeddedResource Include="Impression\Ressources\Polices\*.ttf" LogicalName="Pharma.Polices.%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

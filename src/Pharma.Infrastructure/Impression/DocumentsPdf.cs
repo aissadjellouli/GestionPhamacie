@@ -9,7 +9,7 @@ using Pharma.Domain.Commun;
 
 namespace Pharma.Infrastructure.Impression;
 
-/// <summary>Documents PDF produits avec PDFsharp-MigraDoc (licence MIT), polices Windows du serveur.</summary>
+/// <summary>Documents PDF produits avec PDFsharp-MigraDoc (licence MIT), polices Windows du serveur (Liberation Sans embarquée hors Windows : PolicesPdf).</summary>
 public sealed partial class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rapports.IDocumentsRapports, Pharma.Application.Stock.IDocumentsRegistre,
     Pharma.Application.Factures.IDocumentsFactures, Pharma.Application.Stock.IDocumentsInventaire, Pharma.Application.Caisse.IDocumentsCredit, Pharma.Application.Caisse.IDocumentsTicket,
     Pharma.Application.Caisse.IDocumentsBonSortie, Pharma.Application.Chifa.IDocumentsBordereau, Pharma.Application.Fiscal.IDocumentsFiscaux,
@@ -17,11 +17,8 @@ public sealed partial class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rap
 {
     private static readonly CultureInfo Fr = CultureInfo.GetCultureInfo("fr-FR");
 
-    static DocumentsPdf()
-    {
-        if (OperatingSystem.IsWindows())
-            GlobalFontSettings.UseWindowsFontsUnderWindows = true;
-    }
+    // Polices : celles de Windows sous Windows (inchangé), Liberation Sans embarquée ailleurs
+    static DocumentsPdf() => PolicesPdf.Configurer();
 
     public byte[] RapportCloture(DetailSession s, bool avecEcart, decimal seuilEcart, string? pharmacie)
     {
@@ -167,10 +164,11 @@ public sealed partial class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rap
         Ligne(synthese, "Remises accordées (produits hors médicaments)", Da(r.Synthese.Remises));
         if (r.Synthese.DonsPartiels > 0) Ligne(synthese, "Dons partiels du reste à charge (médicaments)", Da(r.Synthese.DonsPartiels));
         if (r.Synthese.RemisesAutomatiques > 0) Ligne(synthese, "dont remises automatiques", Da(r.Synthese.RemisesAutomatiques));
-        if (r.Synthese.VentesAutres > 0)
+        if (r.Synthese.VentesParapharmacie > 0 || r.Synthese.VentesPrestations > 0)
         {
             Ligne(synthese, "Ventes de médicaments (avant remises et retours)", Da(r.Synthese.VentesMedicaments));
-            Ligne(synthese, "Ventes d’autres produits (avant remises et retours)", Da(r.Synthese.VentesAutres));
+            if (r.Synthese.VentesParapharmacie > 0) Ligne(synthese, "Ventes de parapharmacie (avant remises et retours)", Da(r.Synthese.VentesParapharmacie));
+            if (r.Synthese.VentesPrestations > 0) Ligne(synthese, "Ventes de prestations (avant remises et retours)", Da(r.Synthese.VentesPrestations));
         }
         if (r.Synthese.Shp > 0) Ligne(synthese, "dont SHP (honoraire du pharmacien)", Da(r.Synthese.Shp));
         Ligne(synthese, "Ventes annulées", r.Synthese.Annulations.ToString(Fr));

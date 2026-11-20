@@ -20,8 +20,12 @@ public interface ICatalogueEcriture
     /// seulement si elle est sous registre (psychotrope ou stupefiant, la plus stricte s'il y a plusieurs lignes) ; null sinon.
     /// </summary>
     Task<string?> ClasseNomenclatureAsync(string numEnregistrement, CancellationToken ct = default);
+    /// <summary>Catégorie active de ce code : vrai si médicament, faux si parapharmacie (categorie_produit.medicament), null si inconnue.</summary>
+    Task<bool?> CategorieMedicamentAsync(string code, CancellationToken ct = default);
+    /// <summary>Vrai si ce n° d'enregistrement figure dans la nomenclature nationale (toutes versions confondues).</summary>
+    Task<bool> DansNomenclatureAsync(string numEnregistrement, CancellationToken ct = default);
     /// <summary>
-    /// Crée le produit ; la DCI est créée si elle n'existe pas encore. <paramref name="aVerifier"/> : produit invendable jusqu'à la
+    /// Crée le produit ; DCI vide (parapharmacie) : produit sans DCI ; sinon la DCI est créée si elle n'existe pas encore. <paramref name="aVerifier"/> : produit invendable jusqu'à la
     /// confirmation de sa classe par le titulaire. <paramref name="classeConfirmeePar"/> : le titulaire a choisi une classe moins stricte
     /// que celle de la substance ou de la nomenclature ; sa confirmation est mémorisée (produit.classe_confirmee_par, _le).
     /// </summary>
@@ -37,6 +41,8 @@ public sealed record ProduitCree(long Id, string? Information = null);
 /// une DCI de substance surveillée, ou un n° d'enregistrement que la nomenclature nationale classe sous registre, et une classe moins
 /// stricte (hors registre, ou psychotrope pour un stupéfiant) : classe imposée (psychotrope ou stupéfiant, la plus stricte des deux
 /// sources), produit « à vérifier ». Créé ainsi par le titulaire : sa classe est gardée et sa confirmation mémorisée.
+/// Parapharmacie (catégorie non médicament, 2026-11-20) : DCI, dosage et forme facultatifs ; refusée pour un n° de la nomenclature
+/// nationale, une classe autre que « libre » ou une DCI de substance surveillée (RegleProduit.ControlerCategorie).
 /// </summary>
 public sealed class CreerProduit(ICatalogueEcriture catalogue, IPermissionService droits, IJournal journal)
 {
@@ -49,7 +55,12 @@ public sealed class CreerProduit(ICatalogueEcriture catalogue, IPermissionServic
         var sansPrix = saisie.PrixPublic == 0 && saisie.TarifReference is null && !saisie.Remboursable;
         if (!sansPrix)
             await droits.ExigerAsync(utilisateurId, Permissions.PrixModifier, "saisir le prix, le tarif de référence ou le remboursement d’un produit", ct);
-        var f = RegleProduit.Normaliser(saisie, prixFacultatif: sansPrix);
+        var codeCategorie = string.IsNullOrWhiteSpace(saisie.Categorie) ? "medicament" : saisie.Categorie.Trim();
+        var medicament = await catalogue.CategorieMedicamentAsync(codeCategorie, ct)
+            ?? throw new RegleMetierException("Catégorie inconnue : choisissez-en une de la liste.", "categorie");
+        var f = RegleProduit.Normaliser(saisie with { Categorie = codeCategorie }, prixFacultatif: sansPrix, categorieMedicament: medicament);
+        if (!medicament)
+            RegleProduit.ControlerCategorie(false, f.Classe.Code(), f.NumEnregistrement is { } numero && await catalogue.DansNomenclatureAsync(numero, ct));
 
         if (f.CodeBarre is { } code && await catalogue.CodeBarreExisteAsync(code, ct))
             throw new RegleMetierException($"Le code-barres {code} est déjà utilisé par un produit du catalogue.");
@@ -65,9 +76,13 @@ public sealed class CreerProduit(ICatalogueEcriture catalogue, IPermissionServic
         if (f.Classe != ClasseReglementaire.Stupefiant)
         {
             // DCI saisie, et classe que propose la nomenclature nationale pour le n° d'enregistrement : la plus stricte
-            var parDci = await catalogue.ClasseSurveilleeAsync(f.Dci, ct);
+            var parDci = f.Dci.Length > 0 ? await catalogue.ClasseSurveilleeAsync(f.Dci, ct) : null;
             var parNomenclature = f.NumEnregistrement is { } num ? await catalogue.ClasseNomenclatureAsync(num, ct) : null;
             var retenue = RegleProduit.ClasseSurveilleeRetenue(parDci, parNomenclature);
+            // Substance surveillée : c'est un médicament sous registre, jamais de la parapharmacie (titulaire compris)
+            if (!medicament && retenue is not null)
+                throw new RegleMetierException($"La DCI « {f.Dci} » correspond à une substance surveillée : ce produit est un médicament, "
+                    + "choisissez la catégorie « Médicament ».", "categorie");
             if (RegleProduit.MoinsStricteQueSurveillee(f.Classe, retenue))
             {
                 if (await droits.EstTitulaireAsync(utilisateurId, ct))
@@ -85,7 +100,7 @@ public sealed class CreerProduit(ICatalogueEcriture catalogue, IPermissionServic
         var id = await catalogue.CreerAsync(f, aVerifier, ct, confirmeeContre is null ? null : utilisateurId);
         var details = new Dictionary<string, object?>
         {
-            ["nom"] = f.NomCommercial, ["dci"] = f.Dci, ["dosage"] = f.Dosage, ["forme"] = f.Forme,
+            ["nom"] = f.NomCommercial, ["dci"] = NullSiVide(f.Dci), ["dosage"] = NullSiVide(f.Dosage), ["forme"] = NullSiVide(f.Forme),
             ["prix_public"] = f.PrixPublic, ["classe"] = f.Classe.Code(), ["code_barre"] = f.CodeBarre,
             ["categorie"] = f.Categorie, ["liste_psychotrope"] = f.ListePsychotrope
         };
@@ -94,6 +109,8 @@ public sealed class CreerProduit(ICatalogueEcriture catalogue, IPermissionServic
         await journal.EcrireAsync(utilisateurId, "produit_cree", "produit", id, details, Permissions.CatalogueCreer, ct);
         return new ProduitCree(id, information);
     }
+
+    private static string? NullSiVide(string s) => s.Length == 0 ? null : s;
 }
 
 public sealed class RechercherDci(ICatalogueEcriture catalogue)

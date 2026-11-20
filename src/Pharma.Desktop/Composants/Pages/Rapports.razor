@@ -77,19 +77,29 @@
                 <span class="tuile-libelle">Chiffre d’affaires</span>
                 <span class="tuile-valeur">@Libelles.Dinars(r.Synthese.ChiffreAffaires)</span>
                 <span class="tuile-pied">@r.Synthese.NombreVentes vente(s) · remises @Libelles.Dinars(r.Synthese.Remises)@(r.Synthese.DonsPartiels > 0 ? $" · dons partiels {Libelles.Dinars(r.Synthese.DonsPartiels)}" : "")@(r.Synthese.RemisesAutomatiques > 0 ? $" (dont automatiques {Libelles.Dinars(r.Synthese.RemisesAutomatiques)})" : "")</span>
-                @if (r.Synthese.VentesAutres > 0)
-                {
-                    <span class="tuile-pied">médicaments @Libelles.Dinars(r.Synthese.VentesMedicaments) · autres produits @Libelles.Dinars(r.Synthese.VentesAutres)</span>
-                }
                 @if (r.Synthese.Shp > 0)
                 {
                     <span class="tuile-pied">dont SHP @Libelles.Dinars(r.Synthese.Shp, 2)</span>
                 }
-                @if (r.Synthese.Retours > 0)
-                {
-                    <span class="tuile-pied" title="Un retour client diminue le chiffre du jour où il est enregistré">dont @r.Synthese.Retours retour(s) client : − @Libelles.Dinars(r.Synthese.MontantRetours, 2)</span>
-                }
             </div>
+            @* Répartition et retours dans leurs propres tuiles (2026-11-20) : dans la tuile du chiffre d'affaires, ils la faisaient
+               passer à dix lignes et la vue Mois défilait de 102 px à 1 366 × 768 *@
+            @if (r.Synthese.VentesParapharmacie > 0 || r.Synthese.VentesPrestations > 0)
+            {
+                <div class="tuile" title="Parapharmacie : produits d’une catégorie non médicament ; prestations : lignes sans produit">
+                    <span class="tuile-libelle">Parapharmacie</span>
+                    <span class="tuile-valeur">@Libelles.Dinars(r.Synthese.VentesParapharmacie)</span>
+                    <span class="tuile-pied">médicaments @Libelles.Dinars(r.Synthese.VentesMedicaments)@(r.Synthese.VentesPrestations > 0 ? $" · prestations {Libelles.Dinars(r.Synthese.VentesPrestations)}" : "")</span>
+                </div>
+            }
+            @if (r.Synthese.Retours > 0)
+            {
+                <div class="tuile" title="Un retour client diminue le chiffre du jour où il est enregistré">
+                    <span class="tuile-libelle">Retours clients</span>
+                    <span class="tuile-valeur">− @Libelles.Dinars(r.Synthese.MontantRetours, 2)</span>
+                    <span class="tuile-pied">@r.Synthese.Retours retour(s), déduits du chiffre d’affaires</span>
+                </div>
+            }
             <div class="tuile">
                 <span class="tuile-libelle">Part Chifa à recevoir</span>
                 <span class="tuile-valeur">@Libelles.Dinars(r.Synthese.PartOrganismes)</span>

@@ -115,6 +115,21 @@ commander, En attente, Grossistes, Notifications › File d'attente, Suivi des a
 (`titre-actions-cote` : Nomenclature, Sauvegardes, Suivi des antibiotiques) ; histogramme de la Synthèse financière à 90 px
 en fenêtre basse (≤ 800 px) ; marge du bas des pages à menu ramenée de 36 à 20 px en fenêtre basse. Reste : la fiche d'un prêt
 ouvert (Financements, formulaire ouvert à la demande, toléré) défile de 77 à 226 px.
+**Rapports › Synthèse revu le 2026-11-20** : la vue Mois défilait de 102 px à 1 366 × 768 (tuile Chiffre d'affaires sur dix
+lignes : répartition médicaments · parapharmacie · prestations et retours clients dans son pied) ; tuiles « Parapharmacie »
+(répartition) et « Retours clients » à part, affichées seulement quand elles ont une valeur. Mesuré 0 px en Jour, Semaine et Mois,
+1 366 × 768 et 1 536 × 890, clair et sombre. Écrans de la parapharmacie (Nomenclature › Produits à classer et Version et
+catégories, Stock › Produits avec la pastille Parapharmacie, Nouveau produit) : 0 px aux deux tailles, clair et sombre.
+**Seuils par produit revu le 2026-11-20** (Administration › Alertes et seuils › Seuils par produit, demande du titulaire : 8 à 10
+lignes visibles à 1 366 × 768 ; avant : 2 lignes entières, lignes de 70 px) : titre du panneau retiré (il répétait celui de la
+page), explication en `.detail` dans la colonne de gauche (masquée quand un produit est choisi), tableau `tableau-serre`, cellules
+sur une ligne sauf le nom du produit, action de ligne « Automatique » (bulle et nom accessible « Revenir au seuil automatique »).
+**Écart à la règle « filtres au-dessus du tableau », imposé par la demande** : les filtres du tableau (Produit, État, Tout afficher)
+sont dans la colonne de gauche, sous le choix du produit, avec sa carte, dans un `.cadre-defilant` ; le tableau prend toute la
+hauteur de la colonne de droite. Mesuré (poste à part, titulaire, clair et sombre, captures regardées) : 0 px de défilement de la
+page et 0 px horizontal, 8 lignes visibles à 1 366 × 768, 10 à 1 536 × 890 ; produit choisi et filtre actif : 0 px, la colonne
+de gauche défile dans son cadre. Caisse avec le lien « Patients en attente » (colonne Comptoir) : 0 px à 1 366 × 768 et
+1 536 × 890, clair et sombre.
 **Écran ajouté le 2026-11-16 (lot 10, sérialisation), conçu fixe (seul le tableau défile, paginé et filtré par statut) ; mesure
 à 1 536 × 890 à faire à l'écran** : `/admin/serialisation`.
 **Écran ajouté le 2026-11-16 (lot 5, 2e serveur), conçu fixe 1 536 × 890 (trois sous-rubriques à gauche : État de la réplication,
@@ -465,6 +480,7 @@ Seule exception de taille : « Encaisser » à la caisse (`.btn-large`, 52 px).
 - **Tout tableau paginé a des filtres au-dessus** (`.filtres-liste` : grossiste ou tiers, statut ou type, période « Du » / « Au »,
   recherche selon le tableau), appliqués par le serveur pour que le total et les pages les suivent, avec un bouton
   « Tout afficher » dès qu'un filtre est actif et un message « Aucun … pour ces filtres » quand rien ne répond.
+  Seul écart : Seuils par produit, filtres dans la colonne de gauche (demande du titulaire du 2026-11-20, voir « Seuils par produit revu »).
 - **Retour à l'écran précédent** (`docs/navigation.md`) : tout écran avec des filtres ou une pagination déclare son état à
   l'historique (`Historique.Suivre` et `Historique.Restaurer`) ; tout nouvel onglet passe par l'adresse (`?onglet=…`).
 - **Bouton mis en évidence au survol et au clavier** (`.btn`, `.puce`, automatique) : bord et texte verts, fond vert clair et

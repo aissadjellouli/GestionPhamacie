@@ -64,12 +64,13 @@ public sealed record AlertesPageDto(PageDto<AlerteDto> Page, Dictionary<string, 
 
 public sealed record IndicateursStockDto(int ReferencesEnStock, decimal? ValeurAchat, int LotsDateAVerifier);
 
-/// <summary>Statut : ok, rupture, critique, dormant ou surstock.</summary>
+/// <summary>Statut : ok, rupture, critique, dormant ou surstock. Parapharmacie : catégorie non médicament (CategorieLibelle : son libellé).</summary>
 public sealed record LigneStockDto(
     long ProduitId, string NomCommercial, string? Dci, string? CodeBarre, string Classe,
     int Stock, int? CouvertureJours, DateOnly? PremierePeremption, int NombreLots,
     IReadOnlyList<string> Grossistes, IReadOnlyList<string> NumerosLots,
-    string Statut, bool PeremptionProche, long? EmplacementId = null, string? Emplacement = null, long? ReserveId = null, string? Reserve = null);
+    string Statut, bool PeremptionProche, long? EmplacementId = null, string? Emplacement = null, long? ReserveId = null, string? Reserve = null,
+    string Categorie = "medicament", string? CategorieLibelle = null, bool Parapharmacie = false);
 
 public sealed record EtatStockDto(IndicateursStockDto Indicateurs, IReadOnlyList<LigneStockDto> Lignes);
 
@@ -359,8 +360,9 @@ public sealed record ReceptionRequete(
     ValidationBlocageDto? Blocage = null, DateOnly? DateFacture = null);
 
 /// <summary>Liste du médicament, prix public du catalogue, TVA et SHP proposé par boîte.</summary>
+/// <summary>LibelleClasseShp : classe telle qu'écrite dans le contrôle du SHP (RegleShp.LibelleClasse du serveur : « liste I », « hors liste »…).</summary>
 public sealed record InfoAchatProduitDto(long ProduitId, string Classe, decimal PrixPublic, decimal TauxTva, decimal ShpParBoite,
-    bool BloqueAchat = false, string? MotifBlocage = null);
+    bool BloqueAchat = false, string? MotifBlocage = null, string? LibelleClasseShp = null);
 
 public sealed record LotRecuDto(long LotId, string Produit, string NumeroLot, DateOnly DatePeremption, int Quantite, int Etiquettes, bool LotExistant);
 /// <summary>EcartsShp : lignes dont le SHP facturé diffère du SHP de la classe du produit (signalées, non bloquantes).</summary>
@@ -514,9 +516,10 @@ public sealed record ProduitEnregistreDto(long Id, string? Information = null);
 /// Fiche modifiable d'un produit (Classe en lecture seule). Contenance : unités par boîte saisies (facultatif, 1 à 10000) ;
 /// ContenanceNomenclature et ConditionnementNomenclature : lecture seule, utilisées seulement si la saisie est vide.
 /// </summary>
+/// <summary>Categorie : code de categorie_produit (null à l'envoi : inchangée).</summary>
 public sealed record FicheProduitModifiableDto(long Id, string NomCommercial, string? Dci, string? Dosage, string? Forme, string? CodeBarre,
     decimal PrixPublic, decimal? TarifReference, bool Remboursable, decimal TauxTva, bool Actif, string Classe = "libre",
-    int? Contenance = null, int? ContenanceNomenclature = null, string? ConditionnementNomenclature = null);
+    int? Contenance = null, int? ContenanceNomenclature = null, string? ConditionnementNomenclature = null, string? Categorie = null);
 
 /// <summary>Lot en stock proposé à la sortie (périmé ou cassé).</summary>
 public sealed record LotEnStockDto(long LotId, long ProduitId, string Produit, string NumeroLot, DateOnly DatePeremption, int Quantite, bool Bloque, bool SousRegistre);
@@ -528,6 +531,12 @@ public sealed record BlocageProduitDto(long ProduitId, string Nom, bool BloqueAc
 public sealed record BlocageProduitRequete(bool BloqueAchat, bool BloqueVente, string? Motif);
 
 public sealed record CategorieProduitDto(string Code, string Libelle, bool Medicament);
+
+/// <summary>Produit à classer (hors nomenclature, encore médicament, classe libre, non classé d'office par la règle stricte).</summary>
+public sealed record ProduitAClasserDto(long ProduitId, string Nom, string? Dci, string? Dosage, string? Forme, string? NumEnregistrement,
+    bool Remboursable, decimal? TarifReference, decimal PrixPublic, int Stock);
+/// <summary>Reclassement groupé : produits cochés et catégorie choisie.</summary>
+public sealed record ReclassementProduitsRequete(List<long>? Produits, string? Categorie);
 
 /// <summary>Remise automatique (produit OU catégorie) ; Etat : en_cours, a_venir, terminee ou arretee.</summary>
 public sealed record RemiseAutomatiqueDto(long Id, long? ProduitId, string? Produit, string? Categorie, string? CategorieLibelle, decimal Pourcentage,
@@ -599,9 +608,10 @@ public sealed record ConflitReceptionDto(int Index, string Type, string Message,
 // ---- Rapports ---------------------------------------------------------------------
 
 /// <summary>ChiffreAffaires : net des retours clients de la période (Retours, MontantRetours).</summary>
+/// <summary>VentesParapharmacie : produits de catégorie non médicament ; VentesPrestations : lignes sans produit (prestations, 105).</summary>
 public sealed record SyntheseVentesDto(int NombreVentes, decimal ChiffreAffaires, decimal PartOrganismes, decimal CreditsAccordes, decimal Remises, int Annulations,
-    int Retours = 0, decimal MontantRetours = 0, decimal VentesMedicaments = 0, decimal VentesAutres = 0, decimal Shp = 0,
-    decimal DonsPartiels = 0, decimal RemisesAutomatiques = 0);
+    int Retours = 0, decimal MontantRetours = 0, decimal VentesMedicaments = 0, decimal VentesParapharmacie = 0, decimal Shp = 0,
+    decimal DonsPartiels = 0, decimal RemisesAutomatiques = 0, decimal VentesPrestations = 0);
 /// <summary>
 /// Ventes du jour de l'accueil (droits rapports.ventes et caisse.voir_ecart) et même jour de la semaine précédente arrêté à la même heure
 /// (Heure, heure du serveur). Marge : null sans rapports.marges.

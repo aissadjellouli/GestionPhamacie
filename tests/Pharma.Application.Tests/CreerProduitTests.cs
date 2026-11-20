@@ -27,6 +27,11 @@ internal sealed class CatalogueEcritureEnMemoire : ICatalogueEcriture
     /// <summary>Nomenclature : n° 12/34/A (psychotrope), 56/78/B (stupéfiant).</summary>
     public Task<string?> ClasseNomenclatureAsync(string num, CancellationToken ct = default) =>
         Task.FromResult<string?>(num switch { "12/34/A" => "psychotrope", "56/78/B" => "stupefiant", _ => null });
+    /// <summary>Catégories : medicament (médicament), parapharmacie et hygiene (non médicament) ; tout autre code est inconnu.</summary>
+    public Task<bool?> CategorieMedicamentAsync(string code, CancellationToken ct = default) =>
+        Task.FromResult<bool?>(code switch { "medicament" => true, "parapharmacie" or "hygiene" => false, _ => null });
+    /// <summary>Nomenclature : 12/34/A, 56/78/B et 99/00/C (ce dernier hors registre).</summary>
+    public Task<bool> DansNomenclatureAsync(string num, CancellationToken ct = default) => Task.FromResult(num is "12/34/A" or "56/78/B" or "99/00/C");
 }
 
 public class CreerProduitTests

@@ -1,0 +1,155 @@
+@inject ApiClient Api
+@inject SessionPoste Session
+@inject HistoriqueNavigation Historique
+
+@* Produits à classer (décision du titulaire du 2026-11-20) : produits hors nomenclature (n° vide ou absent), encore en catégorie
+   « Médicament », classe libre, que la règle stricte du script 154 n'a pas classés d'office. Le titulaire coche ceux qui sont de la
+   parapharmacie et les reclasse en une fois (une ligne de journal par produit) ; jamais de reclassement de masse sans ce regard.
+   Liste filtrée et paginée par le serveur ; droit de créer un produit. *@
+<section class="panneau" aria-labelledby="t-a-classer">
+    <div>
+        <h2 id="t-a-classer">Produits à classer</h2>
+        <p class="sous-titre">
+            Produits absents de la nomenclature, encore en « Médicament » : cochez ceux qui relèvent de la parapharmacie et choisissez leur catégorie.
+            Changer la catégorie change la caisse : remise sur la parapharmacie, don partiel sur un médicament.
+        </p>
+    </div>
+    @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+    @if (message is not null) { <div class="succes" role="status">@message</div> }
+    @if (!Session.A("catalogue.creer"))
+    {
+        <p class="detail">Le classement des produits demande le droit de créer un produit.</p>
+    }
+    else
+    {
+        <div class="filtres-liste" role="search" aria-label="Filtrer les produits à classer">
+            <div class="champ" style="flex: 1 1 240px"><label for="ac-texte">Produit, DCI ou n° d’enregistrement</label>
+                <input id="ac-texte" type="search" autocomplete="off" placeholder="Ex. crème" @bind="fTexte" @bind:event="oninput" @bind:after="FiltrerAsync" /></div>
+            @if (FiltreActif) { <button type="button" class="btn" @onclick="ToutAfficherAsync">Tout afficher</button> }
+            <div class="champ" style="flex: 0 1 280px; margin-left: auto"><label for="ac-cat">Nouvelle catégorie des produits cochés</label>
+                <select id="ac-cat" data-champ="categorie" @bind="cible">
+                    <option value="">Choisir…</option>
+                    @foreach (var c in categories.Where(c => !c.Medicament)) { <option value="@c.Code">@c.Libelle</option> }
+                </select></div>
+            <button type="button" class="btn btn-principal" disabled="@(enCours || coches.Count == 0 || cible == "")" @onclick="ReclasserAsync">
+                Classer @(coches.Count == 0 ? "les produits cochés" : coches.Count == 1 ? "1 produit" : $"{coches.Count} produits")
+            </button>
+        </div>
+        @if (lignes is null)
+        {
+            <Chargement />
+        }
+        else
+        {
+            <div class="tableau-cadre" data-champ="produits">
+                <table class="tableau">
+                    <thead>
+                        <tr>
+                            <th scope="col"><input type="checkbox" aria-label="Cocher ou décocher les produits de la page" checked="@PageCochee" disabled="@(lignes.Count == 0)" @onchange="CocherPage" /></th>
+                            <th scope="col">Produit</th>
+                            <th scope="col">N° d’enregistrement</th>
+                            <th scope="col">Prix public</th>
+                            <th scope="col">Remboursement</th>
+                            <th scope="col">Stock</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var p in lignes)
+                        {
+                            <tr>
+                                <td><input type="checkbox" aria-label="Cocher @p.Nom" checked="@coches.Contains(p.ProduitId)" @onchange="e => Cocher(p.ProduitId, e.Value is true)" /></td>
+                                <td><span class="nom">@p.Nom</span> <span class="detail">@p.Dosage @p.Forme</span><br /><span class="detail">@(p.Dci ?? "DCI non renseignée")</span></td>
+                                <td>@(p.NumEnregistrement ?? "—")</td>
+                                <td>@(p.PrixPublic > 0 ? Libelles.Dinars(p.PrixPublic, 2) : "—")</td>
+                                <td>@(p.Remboursable ? "Remboursable" : p.TarifReference is { } t ? $"Tarif {Libelles.Dinars(t, 2)}" : "—")</td>
+                                <td>@p.Stock</td>
+                            </tr>
+                        }
+                        @if (lignes.Count == 0)
+                        {
+                            <tr><td colspan="6" class="vide">@(FiltreActif ? "Aucun produit à classer pour ces filtres." : "Aucun produit à classer : tous les produits hors nomenclature ont leur catégorie.")</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        <Pagination Total="total" Numero="page" Taille="taille" Occupe="enCours" Libelle="Pages des produits à classer" OnChange="ChangerPageAsync" />
+    }
+</section>
+
+@code {
+    private List<CategorieProduitDto> categories = [];
+    private List<ProduitAClasserDto>? lignes;
+    private readonly HashSet<long> coches = [];
+    private string fTexte = "", cible = "";
+    private int page = 1, taille = Pagination.TailleParDefaut, total;
+    private bool enCours;
+    private string? erreur, message;
+
+    private bool FiltreActif => fTexte.Trim() != "";
+    private bool PageCochee => lignes is { Count: > 0 } l && l.All(p => coches.Contains(p.ProduitId));
+
+    protected override async Task OnInitializedAsync()
+    {
+        // « ← Retour » : recherche et page retrouvées
+        Historique.Suivre("produits-a-classer", e => { e.Mettre("texte", fTexte); e.Mettre("page", page); e.Mettre("taille", taille); });
+        if (Historique.Restaurer("produits-a-classer") is { } h)
+            (fTexte, page, taille) = (h.Texte("texte") ?? "", h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+        if (!Session.A("catalogue.creer")) return;
+        string? e;
+        (categories, e) = await Api.CategoriesProduitsAsync();
+        erreur = e;
+        await ChargerAsync();
+    }
+
+    private async Task ChargerAsync()
+    {
+        var (p, e) = await Api.ProduitsAClasserAsync(fTexte, page, taille);
+        if (e is not null) { erreur = e; lignes ??= []; return; }
+        (lignes, total, page, taille) = (p!.Lignes.ToList(), p.Total, p.Numero, p.Taille);
+    }
+
+    private async Task FiltrerAsync()
+    {
+        page = 1;
+        await ChargerAsync();
+    }
+
+    private async Task ToutAfficherAsync()
+    {
+        fTexte = "";
+        await FiltrerAsync();
+    }
+
+    private async Task ChangerPageAsync((int Numero, int Taille) p)
+    {
+        (page, taille) = p;
+        await ChargerAsync();
+    }
+
+    private void Cocher(long id, bool coche)
+    {
+        if (coche) coches.Add(id); else coches.Remove(id);
+    }
+
+    private void CocherPage(ChangeEventArgs e)
+    {
+        foreach (var p in lignes ?? []) Cocher(p.ProduitId, e.Value is true);
+    }
+
+    private async Task ReclasserAsync()
+    {
+        if (coches.Count == 0 || cible == "") return;
+        (enCours, erreur, message) = (true, null, null);
+        try
+        {
+            var (n, e) = await Api.ReclasserProduitsAsync(coches.ToList(), cible);
+            if (e is not null) { erreur = e; return; }
+            var libelle = categories.FirstOrDefault(c => c.Code == cible)?.Libelle ?? cible;
+            message = $"{n!.Nombre} produit(s) classé(s) en « {libelle} ».";
+            coches.Clear();
+            await ChargerAsync();
+        }
+        finally { enCours = false; }
+    }
+}

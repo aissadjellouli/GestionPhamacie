@@ -6,14 +6,14 @@ namespace Pharma.Infrastructure.Securite;
 /// <summary>
 /// Adaptateur local du scellement : clé secrète de 32 octets aléatoires dans un fichier du PC serveur (par défaut
 /// C:\ProgramData\PharmaOfficine\cle-integrite.dat), chiffrée par DPAPI en portée machine (illisible sur un autre PC) et accessible
-/// seulement au système, aux administrateurs et au compte de l'API. Créée au premier usage si elle n'existe pas. Jamais en base,
+/// seulement au système, aux administrateurs et au compte de l'API ; hors Windows, chiffrée par DataProtection (IProtectionDonnees). Créée au premier usage si elle n'existe pas. Jamais en base,
 /// jamais dans appsettings, jamais journalisée : seule son empreinte (EmpreinteCle) est montrée.
 /// Si le fichier est perdu, une nouvelle clé est créée : les anciens sceaux sont alors signalés « faits avec une autre clé »
 /// (la clé se sauvegarde avec le PC serveur, docs/securite-et-droits.md).
 /// </summary>
-public sealed class ScelleurIntegriteLocal(string chemin) : IScelleurIntegrite, Application.SecondServeur.ICleIntegriteStockee
+public sealed class ScelleurIntegriteLocal(string chemin, IProtectionDonnees protection) : IScelleurIntegrite, Application.SecondServeur.ICleIntegriteStockee
 {
-    private static readonly byte[] Entropie = "PharmaOfficine.Integrite"u8.ToArray();
+    private const string Usage = "PharmaOfficine.Integrite";
     private const int TailleCle = 32;
     private readonly Lock verrou = new();
     private byte[]? cle;
@@ -32,18 +32,17 @@ public sealed class ScelleurIntegriteLocal(string chemin) : IScelleurIntegrite, 
     /// <summary>Copie de la clé, à effacer par l'appelant.</summary>
     public byte[] Lire() => (byte[])Cle().Clone();
 
-    /// <summary>Clé importée, rechiffrée DPAPI machine ; une clé existante n'est remplacée que si remplacer (ancienne gardée à côté, datée).</summary>
+    /// <summary>Clé importée, rechiffrée (DPAPI machine sous Windows) ; une clé existante n'est remplacée que si remplacer (ancienne gardée à côté, datée).</summary>
     public void Ecrire(byte[] nouvelle, bool remplacer)
     {
-        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Clé de scellement : Windows seulement (DPAPI).");
         if (nouvelle.Length != TailleCle) throw new ArgumentException("Clé de scellement invalide.", nameof(nouvelle));
         lock (verrou)
         {
             if (File.Exists(chemin) && !remplacer) throw new InvalidOperationException($"Une clé de scellement existe déjà ({chemin}).");
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(chemin))!);
             var temporaire = chemin + ".partiel";
-            File.WriteAllBytes(temporaire, ProtectedData.Protect(nouvelle, Entropie, DataProtectionScope.LocalMachine));
-            CompteSuperAdminFichier.Restreindre(temporaire);
+            File.WriteAllBytes(temporaire, protection.Proteger(nouvelle, Usage));
+            FichiersProteges.Restreindre(temporaire);
             if (File.Exists(chemin)) File.Copy(chemin, $"{chemin}.avant-import-{DateTime.Now:yyyyMMdd-HHmmss}", overwrite: false);
             File.Move(temporaire, chemin, overwrite: true);
             if (cle is not null) CryptographicOperations.ZeroMemory(cle);
@@ -53,7 +52,6 @@ public sealed class ScelleurIntegriteLocal(string chemin) : IScelleurIntegrite, 
 
     private byte[] Cle()
     {
-        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Clé de scellement : Windows seulement (DPAPI).");
         lock (verrou)
         {
             if (cle is not null) return cle;
@@ -61,7 +59,7 @@ public sealed class ScelleurIntegriteLocal(string chemin) : IScelleurIntegrite, 
             {
                 try
                 {
-                    cle = ProtectedData.Unprotect(File.ReadAllBytes(chemin), Entropie, DataProtectionScope.LocalMachine);
+                    cle = protection.Deproteger(File.ReadAllBytes(chemin), Usage);
                 }
                 catch (CryptographicException)
                 {
@@ -75,8 +73,8 @@ public sealed class ScelleurIntegriteLocal(string chemin) : IScelleurIntegrite, 
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(chemin))!);
             // Écrit à côté puis renomme : jamais de fichier à moitié écrit ; sans écraser une clé créée entre-temps
             var temporaire = chemin + ".partiel";
-            File.WriteAllBytes(temporaire, ProtectedData.Protect(nouvelle, Entropie, DataProtectionScope.LocalMachine));
-            CompteSuperAdminFichier.Restreindre(temporaire);
+            File.WriteAllBytes(temporaire, protection.Proteger(nouvelle, Usage));
+            FichiersProteges.Restreindre(temporaire);
             File.Move(temporaire, chemin, overwrite: false);
             cle = nouvelle;
             return cle;

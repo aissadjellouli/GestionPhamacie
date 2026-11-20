@@ -13,10 +13,11 @@ namespace Pharma.Infrastructure.Securite;
 /// Compte du super admin dans un fichier du PC serveur (par défaut C:\ProgramData\PharmaOfficine\super-admin.dat), chiffré par
 /// DPAPI en portée machine : illisible sur un autre PC, et indépendant de la base (il sert aussi quand elle est détruite).
 /// Le fichier n'est lisible que par le système, les administrateurs et le compte qui l'a créé.
+/// Hors Windows : chiffré par DataProtection (IProtectionDonnees), fichier en lecture et écriture pour le seul compte de l'API.
 /// </summary>
-public sealed class CompteSuperAdminFichier(string chemin) : ICompteSuperAdmin
+public sealed class CompteSuperAdminFichier(string chemin, IProtectionDonnees protection) : ICompteSuperAdmin
 {
-    private static readonly byte[] Entropie = "PharmaOfficine.SuperAdmin"u8.ToArray();
+    private const string Usage = "PharmaOfficine.SuperAdmin";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private readonly object verrou = new();
 
@@ -24,13 +25,12 @@ public sealed class CompteSuperAdminFichier(string chemin) : ICompteSuperAdmin
 
     public CompteSuperAdmin? Lire()
     {
-        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Compte super admin : Windows seulement (DPAPI).");
         lock (verrou)
         {
             if (!File.Exists(chemin)) return null;
             try
             {
-                var clair = ProtectedData.Unprotect(File.ReadAllBytes(chemin), Entropie, DataProtectionScope.LocalMachine);
+                var clair = protection.Deproteger(File.ReadAllBytes(chemin), Usage);
                 return JsonSerializer.Deserialize<CompteSuperAdmin>(Encoding.UTF8.GetString(clair), Json);
             }
             catch (CryptographicException)
@@ -42,15 +42,14 @@ public sealed class CompteSuperAdminFichier(string chemin) : ICompteSuperAdmin
 
     public void Enregistrer(CompteSuperAdmin compte)
     {
-        if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Compte super admin : Windows seulement (DPAPI).");
-        var chiffre = ProtectedData.Protect(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(compte, Json)), Entropie, DataProtectionScope.LocalMachine);
+        var chiffre = protection.Proteger(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(compte, Json)), Usage);
         lock (verrou)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(chemin)!);
             // Écrit à côté puis remplace : jamais de fichier à moitié écrit
             var temporaire = chemin + ".partiel";
             File.WriteAllBytes(temporaire, chiffre);
-            Restreindre(temporaire);
+            FichiersProteges.Restreindre(temporaire);
             File.Move(temporaire, chemin, overwrite: true);
         }
     }

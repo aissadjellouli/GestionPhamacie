@@ -70,23 +70,26 @@ public sealed class RapportsSql(NpgsqlDataSource db) : IRapports
                     FROM ligne_vente l JOIN vente v ON v.id = l.vente_id JOIN produit p ON p.id = l.produit_id
                     LEFT JOIN categorie_produit cat ON cat.code = p.categorie
                     WHERE v.statut = 'validee' AND {Periode}),
-                   -- Hors médicaments : prestations comprises (script 105, ligne sans produit)
-                   (SELECT COALESCE(SUM(l.prix_unitaire * l.quantite) FILTER (WHERE l.produit_id IS NULL OR NOT COALESCE(cat.medicament, true)), 0)
-                    FROM ligne_vente l JOIN vente v ON v.id = l.vente_id LEFT JOIN produit p ON p.id = l.produit_id
+                   -- Parapharmacie : produits d'une catégorie non médicament (2026-11-20 : prestations à part, colonne 13)
+                   (SELECT COALESCE(SUM(l.prix_unitaire * l.quantite) FILTER (WHERE NOT COALESCE(cat.medicament, true)), 0)
+                    FROM ligne_vente l JOIN vente v ON v.id = l.vente_id JOIN produit p ON p.id = l.produit_id
                     LEFT JOIN categorie_produit cat ON cat.code = p.categorie
                     WHERE v.statut = 'validee' AND {Periode}),
                    (SELECT COALESCE(SUM(l.shp * l.quantite), 0) FROM ligne_vente l JOIN vente v ON v.id = l.vente_id
                     WHERE v.statut = 'validee' AND {Periode}),
                    COALESCE(SUM(v.montant_don) FILTER (WHERE v.statut = 'validee'), 0),
                    (SELECT COALESCE(SUM(l.reduction_auto), 0) FROM ligne_vente l JOIN vente v ON v.id = l.vente_id
-                    WHERE v.statut = 'validee' AND {Periode})
+                    WHERE v.statut = 'validee' AND {Periode}),
+                   -- Prestations : lignes sans produit (script 105)
+                   (SELECT COALESCE(SUM(l.prix_unitaire * l.quantite), 0) FROM ligne_vente l JOIN vente v ON v.id = l.vente_id
+                    WHERE l.produit_id IS NULL AND v.statut = 'validee' AND {Periode})
             FROM vente v WHERE {Periode}
             """, du, au);
         if (heure is { } h) cmd.Parameters.AddWithValue(h);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         await r.ReadAsync(ct);
         return new SyntheseVentes(r.GetInt32(0), r.GetDecimal(1), r.GetDecimal(2), r.GetDecimal(5), r.GetDecimal(3), r.GetInt32(4),
-            r.GetInt32(6), r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(9), r.GetDecimal(10), r.GetDecimal(11), r.GetDecimal(12));
+            r.GetInt32(6), r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(9), r.GetDecimal(10), r.GetDecimal(11), r.GetDecimal(12), r.GetDecimal(13));
     }
 
     public async Task<IReadOnlyList<VentesJour>> ParJourAsync(DateOnly du, DateOnly au, CancellationToken ct = default)

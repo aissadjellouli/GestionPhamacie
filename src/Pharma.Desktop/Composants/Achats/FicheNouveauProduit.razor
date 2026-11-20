@@ -15,10 +15,19 @@
     @* Écran fixe (charte) : le formulaire défile dans son cadre, « Créer le produit » reste visible en dessous *@
     <div class="cadre-defilant fiche-produit-champs">
 
+    @* Catégorie en premier (2026-11-20) : parapharmacie (catégorie non médicament) = DCI, dosage et forme facultatifs, classe libre, TVA 19 % proposée.
+       Sur la même ligne que la recherche dans la nomenclature : la fiche ne grandit pas *@
+    <div class="achats-ligne">
+    <div class="champ" style="flex: 0 1 260px">
+        <label for="p-cat">Catégorie</label>
+        <select id="p-cat" data-champ="categorie" @bind="categorie" @bind:after="CategorieChangee">
+            @foreach (var cat in categories) { <option value="@cat.Code">@cat.Libelle@(cat.Medicament ? "" : " (parapharmacie)")</option> }
+        </select>
+    </div>
     @* Nomenclature nationale : propositions pendant la frappe (composant commun), au clavier ; un médicament déjà au catalogue est signalé *@
     <ChampSuggestions TItem="MedicamentNomenclatureDto" @ref="champNomenclature" Id="p-nomenclature" Rechercher="RechercherNomenclatureAsync"
                       TexteDe="TexteNomenclature" DetailDe="DetailNomenclature" LibelleAucun="médicament"
-                      ComplementAucun="@AucunMedicament"
+                      ComplementAucun="@AucunMedicament" Style="flex: 1 1 360px"
                       LibelleListe="Médicaments de la nomenclature" Libelle="Chercher dans la nomenclature nationale (nom, DCI ou n° d’enregistrement)"
                       OnChoisi="Choisir" placeholder="ex. lyrica, prégabaline, 595/15 A 068/06/22">
         <Complement Context="m">
@@ -29,6 +38,11 @@
             </span>
         </Complement>
     </ChampSuggestions>
+    </div>
+    @if (!Medicament)
+    {
+        <div class="info-bandeau" role="status">Parapharmacie : DCI, dosage et forme facultatifs, classe « Libre » ; TVA proposée @TvaParapharmacie % (modifiable). À la caisse, une remise (et non un don).</div>
+    }
     @if (choisi is not null)
     {
         <div class="@(choisi.Situation == "en_vigueur" ? "info-bandeau" : "erreur")" role="status">
@@ -42,20 +56,20 @@
         <div class="champ" style="flex: 2 1 240px"><label for="p-nom" class="requis">Nom commercial</label><input id="p-nom" data-champ="nom_commercial" type="text" @ref="champNom" @bind="nom" @bind:event="oninput" placeholder="ex. Sintrom 4 mg cp"
             class="@Obligatoire.Classe(NomManque)" aria-invalid="@Obligatoire.Aria(NomManque)" /></div>
         <ChampSuggestions TItem="string" @ref="champDci" Id="p-dci" Mode="ModeSuggestions.ValeurLibre" Rechercher="Api.DciAsync" TexteDe="d => d"
-                          Libelle="DCI" Requis="true" Invalide="DciManque" LibelleListe="DCI existantes" Style="flex: 2 1 220px" @bind-Valeur="dci"
+                          Libelle="DCI" Requis="Medicament" Invalide="DciManque" LibelleListe="DCI existantes" Style="flex: 2 1 220px" @bind-Valeur="dci"
                           placeholder="ex. acénocoumarol" class="@Obligatoire.Classe(DciManque)" />
     </div>
     <div class="achats-ligne">
-        <div class="champ" style="flex: 1 1 120px"><label for="p-dosage" class="requis">Dosage</label><input id="p-dosage" type="text" @ref="champDosage" @bind="dosage" @bind:event="oninput" placeholder="ex. 4 mg"
+        <div class="champ" style="flex: 1 1 120px"><label for="p-dosage" class="@(Medicament ? "requis" : null)">Dosage</label><input id="p-dosage" type="text" @ref="champDosage" @bind="dosage" @bind:event="oninput" placeholder="ex. 4 mg"
             class="@Obligatoire.Classe(DosageManque)" aria-invalid="@Obligatoire.Aria(DosageManque)" /></div>
         @* Forme : formes déjà saisies au catalogue, puis les formes usuelles (fusion sans doublon) ; texte libre accepté *@
-        <ValeursSaisies @ref="champForme" Id="p-forme" Champ="forme_produit" Libelle="Forme" Requis="true" Invalide="FormeManque" Style="flex: 1 1 140px"
+        <ValeursSaisies @ref="champForme" Id="p-forme" Champ="forme_produit" Libelle="Forme" Requis="Medicament" Invalide="FormeManque" Style="flex: 1 1 140px"
                         ValeursDeDepart="FormesUsuelles" @bind-Valeur="forme" placeholder="ex. comprimé" class="@Obligatoire.Classe(FormeManque)" />
         <div class="champ" style="flex: 1 1 140px@(PrixDebloque ? null : "; opacity: .6")" title="@(PrixDebloque ? null : MentionPrix)"><label for="p-prix" class="@(PeutPrix ? "requis" : null)">Prix public (DA)@(PrixDebloque ? null : " : à faire valider par un ayant droit")</label><input id="p-prix" disabled="@(!PrixDebloque)" data-champ="prix_public" type="number" min="0" step="0.01" @ref="champPrix" @bind="prix"
             class="@Obligatoire.Classe(PrixManque)" aria-invalid="@Obligatoire.Aria(PrixManque)" /></div>
         <div class="champ" style="flex: 1 1 160px">
             <label for="p-classe" class="requis">Classe</label>
-            <select data-champ="classe" id="p-classe" @bind="classe">
+            <select data-champ="classe" id="p-classe" @bind="classe" disabled="@(!Medicament)" title="@(Medicament ? null : "Parapharmacie : classe « Libre » seulement")">
                 <option value="libre">Libre</option><option value="liste_i">Liste I</option><option value="liste_ii">Liste II</option>
                 <option value="psychotrope">Psychotrope</option><option value="stupefiant">Stupéfiant</option>
             </select>
@@ -69,12 +83,6 @@
                 </select>
             </div>
         }
-        <div class="champ" style="flex: 1 1 200px">
-            <label for="p-cat">Catégorie</label>
-            <select id="p-cat" data-champ="categorie" @bind="categorie">
-                @foreach (var cat in categories) { <option value="@cat.Code">@cat.Libelle</option> }
-            </select>
-        </div>
     </div>
     <div class="achats-ligne">
         <div class="champ" style="flex: 1 1 180px"><label for="p-cb">Code-barres (facultatif)</label><input id="p-cb" data-champ="code_barre" type="text" inputmode="numeric" @bind="codeBarre" /></div>
@@ -132,9 +140,27 @@
     /// <summary>Formes usuelles proposées quand le catalogue n'en donne pas encore (fusionnées sans doublon avec les formes déjà saisies).</summary>
     public static readonly IReadOnlyList<string> FormesUsuelles = ["comprimé", "gélule", "sirop", "ampoule", "injectable", "pommade", "collyre", "sachet", "stylo"];
     private bool NomManque => Obligatoire.Manque(controle, nom);
-    private bool DciManque => Obligatoire.Manque(controle, dci);
-    private bool DosageManque => Obligatoire.Manque(controle, dosage);
-    private bool FormeManque => Obligatoire.Manque(controle, forme);
+    // DCI, dosage et forme : obligatoires pour un médicament seulement (parapharmacie : facultatifs, RegleProduit)
+    private bool DciManque => Medicament && Obligatoire.Manque(controle, dci);
+    private bool DosageManque => Medicament && Obligatoire.Manque(controle, dosage);
+    private bool FormeManque => Medicament && Obligatoire.Manque(controle, forme);
+
+    /// <summary>Catégorie choisie : médicament (vrai par défaut, catégorie inconnue comprise) ou parapharmacie.</summary>
+    private bool Medicament => categories.FirstOrDefault(c => c.Code == categorie)?.Medicament ?? true;
+    /// <summary>TVA proposée pour la parapharmacie (modifiable) : taux à confirmer par le titulaire.</summary>
+    private const decimal TvaParapharmacie = 19m;
+    private bool tvaProposee;
+
+    /// <summary>Parapharmacie : classe libre et TVA proposée (si aucune n'est saisie) ; retour au médicament : la TVA proposée est retirée.</summary>
+    private void CategorieChangee()
+    {
+        if (!Medicament)
+        {
+            (classe, listePsychotrope) = ("libre", "");
+            if (tva == 0) (tva, tvaProposee) = (TvaParapharmacie, true);
+        }
+        else if (tvaProposee && tva == TvaParapharmacie) (tva, tvaProposee) = (0, false);
+    }
     // Un seul droit pour toute saisie de prix (prix.modifier, décision du titulaire du 2026-11-15) : sans ce droit, les champs de prix
     // sont grisés ; laissés vides, le produit est créé sans prix (invendable jusqu'à ce qu'un ayant droit fixe son prix) ; remplis,
     // le serveur refuse et la fenêtre « Faire autoriser » s'ouvre à l'enregistrement.
@@ -209,6 +235,9 @@
         dosage = m.Dosage;
         forme = m.Forme;
         classe = m.ClasseProposee;
+        // Médicament de la nomenclature : jamais de la parapharmacie
+        categorie = "medicament";
+        CategorieChangee();
     }
 
     private async Task CreerAsync()
@@ -244,7 +273,7 @@
     {
         (nom, dci, dosage, forme, codeBarre, prix, tarif, tva, stockMin, remboursable) = (null, null, null, null, null, 0, null, 0, null, false);
         (classe, categorie, listePsychotrope, choisi, erreur, controle) = ("libre", "medicament", "", null, null, false);
-        (nomenclatureVide, accordPrix) = (false, null);
+        (nomenclatureVide, accordPrix, tvaProposee) = (false, null, false);
         champNomenclature?.Afficher("");
     }
 }

@@ -382,7 +382,7 @@ else
                                     }
                                     @if (l.EcartShp is { } shpAttendu)
                                     {
-                                        <br /><span class="texte-attention">SHP facture @Libelles.Dinars(l.Shp!.Value, 2) ≠ SHP attendue @Libelles.Dinars(shpAttendu, 2) pour un produit @ClasseShp(l.Info!.Classe) : vérifier la classe du produit ou la facture</span>
+                                        <br /><span class="texte-attention">SHP facture @Libelles.Dinars(l.Shp!.Value, 2) ≠ SHP attendue @Libelles.Dinars(shpAttendu, 2) pour un produit @(l.Info!.LibelleClasseShp ?? l.Info.Classe) : vérifier la classe du produit ou la facture</span>
                                     }
                                     @if (l.EcartPpa is { } prixCatalogue)
                                     {
@@ -655,11 +655,7 @@ else
     private ChoixProduit? choixProduit;
     private ReceptionEnregistreeDto? resultat;
 
-    // Classe du produit dans le contrôle du SHP (même libellé que RegleShp.LibelleClasse côté serveur)
-    private static string ClasseShp(string? classe) => classe switch
-    {
-        "liste_i" => "liste I", "liste_ii" => "liste II", "psychotrope" => "psychotrope", "stupefiant" => "stupéfiant (liste I)", _ => "parapharmacie"
-    };
+    // Classe du produit dans le contrôle du SHP : libellé envoyé par le serveur (RegleShp.LibelleClasse, InfoAchatProduitDto.LibelleClasseShp)
     private bool enCours;
 
     // ---- Réception à l'aveugle : comptage (Comptage), puis facture saisie sur ce comptage (aFacturer) ----

@@ -36,7 +36,7 @@ public class ControleShpReceptionTests
     public void Message_indique_la_shp_facture_la_shp_attendue_et_la_classe()
     {
         var e = RegleShp.Controler(1, "Périndopril", "libre", 2.50m, 0m)!;
-        Assert.Contains("SHP facture 2,50 DA ≠ SHP attendue 0,00 DA pour un produit parapharmacie", e.Message.Replace('.', ','));
+        Assert.Contains("SHP facture 2,50 DA ≠ SHP attendue 0,00 DA pour un produit hors liste", e.Message.Replace('.', ','));
         Assert.Contains("vérifier la classe du produit ou la facture", e.Message);
     }
 

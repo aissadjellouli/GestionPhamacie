@@ -45,6 +45,9 @@ else
 @code {
     /// <summary>Plus grand nombre de propositions affichées (charte : 10).</summary>
     public const int Maximum = 10;
+    /// <summary>Propositions affichées au plus pour ce champ : <see cref="Maximum"/> sauf champ dont toutes les valeurs sont proposées
+    /// (rayon d'un emplacement : 30, comme le serveur ; la liste défile dans son cadre).</summary>
+    [Parameter] public int MaxPropositions { get; set; } = Maximum;
     /// <summary>Attente après la dernière touche avant de chercher (charte : 250 ms).</summary>
     public static readonly TimeSpan Attente = TimeSpan.FromMilliseconds(250);
 
@@ -183,7 +186,7 @@ else
         if (n != requete || ferme) return;
         var avaitManuel = actifManuel && actif >= 0 && actif < resultats.Count;
         var avant = avaitManuel ? resultats[actif] : default;
-        (resultats, erreur, chargement) = (liste.Take(Maximum).ToList(), e, false);
+        (resultats, erreur, chargement) = (liste.Take(MaxPropositions).ToList(), e, false);
         if (avaitManuel)
         {
             // Même proposition toujours présente : elle reste en avant ; sinon rien n'est mis en avant (jamais un autre élément)

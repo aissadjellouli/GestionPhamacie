@@ -37,7 +37,7 @@ internal static class ConversionsDto
     public static LigneStockDto VersDto(this LigneStock l) => new(
         l.ProduitId, l.NomCommercial, l.Dci, l.CodeBarre, l.Classe.Code(), l.Stock, l.CouvertureJours,
         l.PremierePeremption, l.NombreLots, l.Grossistes, l.NumerosLots, l.Statut, l.PeremptionProche,
-        l.EmplacementId, l.Emplacement, l.ReserveId, l.Reserve);
+        l.EmplacementId, l.Emplacement, l.ReserveId, l.Reserve, l.Categorie, l.CategorieLibelle, l.Parapharmacie);
 
     public static StockPageDto VersDto(this PageStock p) =>
         new(p.Indicateurs.VersDto(), new PageDto<LigneStockDto>(p.Page.Lignes.Select(l => l.VersDto()).ToList(), p.Page.Total, p.Page.Numero, p.Page.Taille),

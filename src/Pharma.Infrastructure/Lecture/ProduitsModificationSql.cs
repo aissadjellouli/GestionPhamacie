@@ -15,7 +15,10 @@ public sealed class ProduitsModificationSql(NpgsqlDataSource db) : IProduitsModi
                    ARRAY(SELECT COALESCE(n.conditionnement, '') FROM nomenclature_produit n
                          WHERE n.num_enregistrement = p.num_enregistrement
                            AND n.version_id = (SELECT max(x.version_id) FROM nomenclature_produit x WHERE x.num_enregistrement = p.num_enregistrement)
-                         ORDER BY n.id)
+                         ORDER BY n.id),
+                   p.categorie,
+                   p.num_enregistrement IS NOT NULL
+                       AND EXISTS (SELECT 1 FROM nomenclature_produit n WHERE n.num_enregistrement = btrim(p.num_enregistrement))
             FROM produit p LEFT JOIN dci d ON d.id = p.dci_id WHERE p.id = $1
             """);
         cmd.Parameters.AddWithValue(id);
@@ -29,7 +32,7 @@ public sealed class ProduitsModificationSql(NpgsqlDataSource db) : IProduitsModi
             r.IsDBNull(7) ? null : r.GetDecimal(7), r.GetBoolean(8), r.GetDecimal(9), r.GetBoolean(10), r.GetString(11), T(12), r.GetBoolean(13),
             r.IsDBNull(14) ? null : r.GetInt32(14),
             conditionnements.Length == 0 ? null : ContenanceProduit.DepuisNomenclature(conditionnements),
-            string.IsNullOrWhiteSpace(conditionnement) ? null : conditionnement);
+            string.IsNullOrWhiteSpace(conditionnement) ? null : conditionnement, r.GetString(16), r.GetBoolean(17));
     }
 
     public async Task<bool> CodeBarreAutreProduitAsync(string codeBarre, long id, CancellationToken ct = default)
@@ -44,6 +47,8 @@ public sealed class ProduitsModificationSql(NpgsqlDataSource db) : IProduitsModi
 
     public Task<string?> ClasseNomenclatureAsync(string numEnregistrement, CancellationToken ct = default) =>
         CatalogueEcritureSql.ClasseNomenclatureAsync(db, numEnregistrement, ct);
+
+    public Task<bool?> CategorieMedicamentAsync(string code, CancellationToken ct = default) => CatalogueEcritureSql.CategorieMedicamentAsync(db, code, ct);
 
     public async Task ModifierAsync(FicheProduitModifiable f, bool classeImposee, long utilisateurId, CancellationToken ct = default)
     {
@@ -64,6 +69,7 @@ public sealed class ProduitsModificationSql(NpgsqlDataSource db) : IProduitsModi
         await using var cmd = new NpgsqlCommand("""
             UPDATE produit SET nom_commercial = $2, dci_id = $3, dosage = $4, forme = $5, code_barre = $6, prix_public = $7,
                                tarif_reference = $8, remboursable = $9, taux_tva = $10, actif = $11, contenance = $12,
+                               categorie = COALESCE($13, categorie),
                                classe_confirmee_par = CASE WHEN dci_id IS DISTINCT FROM $3 THEN NULL ELSE classe_confirmee_par END,
                                classe_confirmee_le = CASE WHEN dci_id IS DISTINCT FROM $3 THEN NULL ELSE classe_confirmee_le END
             WHERE id = $1
@@ -79,6 +85,7 @@ public sealed class ProduitsModificationSql(NpgsqlDataSource db) : IProduitsModi
         cmd.Parameters.AddWithValue(f.TauxTva);
         cmd.Parameters.AddWithValue(f.Actif);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)f.Contenance ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Integer });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)f.Categorie ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         try { await cmd.ExecuteNonQueryAsync(ct); }
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
         {

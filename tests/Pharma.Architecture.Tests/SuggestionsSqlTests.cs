@@ -96,6 +96,7 @@ public class SuggestionsSqlTests(BaseJetableSuggestions fixture, ITestOutputHelp
                          ('sortie', 'depense', 'divers', 'Zzmouv automatique', true),
                          ('entree', 'transfert', NULL, 'Zzmouv Coffre → Banque', false),
                          ('entree', 'versement_organisme', NULL, 'Zzmouv Versement CNAS', false),
+                         ('entree', 'versement_organisme', NULL, 'Versement ' || (SELECT code FROM organisme ORDER BY id LIMIT 1), false),
                          ('entree', 'financement', NULL, 'Zzmouv prêt · pour : loyer', false),
                          ('sortie', 'depense', 'divers', 'Zzmouv loyer (payée par : prêt)', false)) AS v(sens, nature, categorie, libelle, auto);
             INSERT INTO utilisation_financement (source, usage, date_usage, montant, libelle, mouvement_id, depense_id, utilisateur_id)
@@ -111,8 +112,12 @@ public class SuggestionsSqlTests(BaseJetableSuggestions fixture, ITestOutputHelp
             FROM (VALUES ('Remboursement du titulaire'), ('Zzremb partiel')) AS v(libelle);
             """);
         var depot = new SuggestionsSql(base_.Source!);
-        // Seuls les libellés saisis à la main restent (l'apport est lié à un usage « versement » : inscrit par les financements)
-        Assert.Equal(["Zzmouv Électricité"], await depot.ValeursAsync(ChampsSuggestions.Liste["libelle_mouvement_tresorerie"], "zzmouv", 10));
+        // Trésorerie (2026-11-20) : aucun libellé tapé à la main n'est proposé, ni dépense, ni encaissement, ni versement d'organisme
+        // modifié ; le libellé de versement d'organisme mis par le logiciel (« Versement <code de l'organisme> ») l'est
+        var versement = ChampsSuggestions.Liste["libelle_versement_organisme"];
+        Assert.Empty(await depot.ValeursAsync(versement, "zzmouv", 10));
+        await using (var cmd = base_.Source!.CreateCommand("SELECT 'Versement ' || code FROM organisme ORDER BY id LIMIT 1"))
+            Assert.Contains((string)(await cmd.ExecuteScalarAsync())!, await depot.ValeursAsync(versement, "versement", 10));
         Assert.Equal(["Zzusage loyer"], await depot.ValeursAsync(ChampsSuggestions.Liste["libelle_usage_financement"], "loyer", 10));
         Assert.Empty(await depot.ValeursAsync(ChampsSuggestions.Liste["libelle_usage_financement"], "apport du", 10));
         Assert.Equal(["Zzremb partiel"], await depot.ValeursAsync(ChampsSuggestions.Liste["libelle_remboursement_titulaire"], "rem", 10));
@@ -193,8 +198,8 @@ public class SuggestionsSqlTests(BaseJetableSuggestions fixture, ITestOutputHelp
         var champ = ChampsSuggestions.Liste["rayon_emplacement"];
         // Tri alphabétique (et non par fréquence : ZZA, trois fois, ne passe pas devant pour cette raison), chaque rayon une fois
         Assert.Equal(["ZZA", "ZZB", "ZZC"], await depot.ValeursAsync(champ, "zz", 10));
-        // Sans lettre tapée : tous les rayons (10 au plus), triés
-        var tous = await depot.ValeursAsync(champ, "", 10);
+        // Sans lettre tapée : tous les rayons (30 au plus, 2026-11-20), triés
+        var tous = await depot.ValeursAsync(champ, "", champ.Limite);
         Assert.NotEmpty(tous);
         Assert.Equal(tous.OrderBy(v => v.ToLowerInvariant(), StringComparer.Ordinal), tous);
     }

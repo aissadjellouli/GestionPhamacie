@@ -1,6 +1,6 @@
-using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
+using ICSharpCode.SharpZipLib.Zip;
 using Npgsql;
 using Pharma.Cloud.Api.Depart;
 using Pharma.Cloud.Api.Reception;
@@ -102,11 +102,22 @@ public class DepartOfficineTests
         try
         {
             var export = await DepartOfficine.ExporterAsync(db, A, Path.Combine(dossier.FullName, "officine-a.zip"), ct);
-            await DepartOfficine.NoterExportAsync(db, A, "Administrateur essai", export, ct);
+            await DepartOfficine.NoterExportAsync(db, A, "Administrateur essai", export, null, ct);
+            Assert.Equal("Essai départ A", await DepartOfficine.LibelleAsync(db, A, ct));
             Assert.False(File.Exists(export.Chemin + ".partiel"));
+            // Empreinte = SHA-256 de l'archive chiffrée remise ; aucune copie en clair à côté
             Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(export.Chemin))), export.EmpreinteArchive);
-            using var zip = ZipFile.OpenRead(export.Chemin);
-            var noms = zip.Entries.Select(e => e.FullName).ToHashSet(StringComparer.Ordinal);
+            Assert.Equal([export.Chemin], Directory.GetFiles(dossier.FullName));
+            Assert.True(export.MotDePasse.Valeur.Length >= 24);
+            Assert.DoesNotContain(export.MotDePasse.Valeur, DepartOfficine.DetailExport(export));
+            using (var sansMotDePasse = new ZipFile(export.Chemin))
+                Assert.All(sansMotDePasse.Cast<ZipEntry>(), e =>
+                {
+                    Assert.True(e.IsCrypted && e.AESKeySize == 256, e.Name);
+                    Assert.ThrowsAny<Exception>(() => DepartArchiveChiffreeTests.Lire(sansMotDePasse, e));
+                });
+            using var zip = new ZipFile(export.Chemin) { Password = export.MotDePasse.Valeur };
+            var noms = zip.Cast<ZipEntry>().Select(e => e.Name).ToHashSet(StringComparer.Ordinal);
             Assert.Contains("produit.csv", noms);
             Assert.Contains("ligne_remplacee.csv", noms);
             Assert.Contains("cloud_epoque_changement.csv", noms);   // lot S6.5.3 : déclarations d'époque dans l'export
@@ -182,13 +193,7 @@ public class DepartOfficineTests
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private static byte[] Octets(ZipArchive zip, string fichier)
-    {
-        using var flux = zip.GetEntry(fichier)!.Open();
-        using var copie = new MemoryStream();
-        flux.CopyTo(copie);
-        return copie.ToArray();
-    }
+    private static byte[] Octets(ZipFile zip, string fichier) => DepartArchiveChiffreeTests.Lire(zip, zip.GetEntry(fichier));
 
-    private static string Lire(ZipArchive zip, string fichier) => new UTF8Encoding(false).GetString(Octets(zip, fichier));
+    private static string Lire(ZipFile zip, string fichier) => new UTF8Encoding(false).GetString(Octets(zip, fichier));
 }

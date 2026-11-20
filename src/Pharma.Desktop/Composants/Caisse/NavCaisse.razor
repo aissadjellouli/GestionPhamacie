@@ -10,6 +10,11 @@
 <NavDomaine Libelle="Actions de caisse">
     <span class="nav-groupe-titre">Comptoir</span>
     @Lien("caisse", "Vente")
+    @if (Session.A("caisse.vendre"))
+    {
+        @* Patients en attente d'un produit (2026-11-20) : même écran que Patients › Patients en attente, droit de vendre *@
+        @Lien("patients/attente", "Patients en attente")
+    }
     <span class="nav-groupe-titre">Opérations</span>
     @Lien("caisse?rubrique=annulation", "Annulation ou retour")
     @Lien("caisse?rubrique=credit", "Encaisser une dette")

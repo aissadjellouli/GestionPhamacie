@@ -40,8 +40,9 @@ public static partial class DetectionReprise
             new("forme", "Forme", false, NatureValeur.Texte, "forme", "presentation", "galenique"),
             new("prix_vente", "Prix de vente", false, NatureValeur.Nombre, "pv", "prix_vente", "prixvente", "ppa", "prix_public", "prixpublic", "pu", "prix"),
             new("prix_achat", "Prix d'achat", false, NatureValeur.Nombre, "pa", "prix_achat", "prixachat", "pachat", "cout", "pamp"),
-            // Psychotrope, liste I ou II, libre : appliquée au chargement si elle est plus stricte que celle de la nomenclature
-            new("classe", "Classe réglementaire", false, NatureValeur.Texte, "classe", "tableau", "liste", "psycho", "categorie", "reglementation", "toxique")
+            // Psychotrope, liste I ou II, libre : appliquée au chargement si elle est plus stricte que celle de la nomenclature.
+            // « categorie » n'en est plus un synonyme (2026-11-20) : la catégorie d'un ancien logiciel (médicament, parapharmacie…) n'est pas une classe
+            new("classe", "Classe réglementaire", false, NatureValeur.Texte, "classe", "tableau", "liste", "psycho", "reglementation", "toxique")
         ],
         [CibleReprise.Stock] =
         [

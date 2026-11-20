@@ -9,13 +9,14 @@ public sealed record IndicateursStock(int ReferencesEnStock, decimal? ValeurAcha
 
 /// <summary>
 /// Une ligne du tableau de stock. <see cref="Statut"/> vient de la vue v_etat_stock :
-/// ok, rupture, critique, dormant ou surstock.
+/// ok, rupture, critique, dormant ou surstock. Parapharmacie : catégorie non médicament (categorie_produit.medicament = false).
 /// </summary>
 public sealed record LigneStock(
     long ProduitId, string NomCommercial, string? Dci, string? CodeBarre, ClasseReglementaire Classe,
     int Stock, int? CouvertureJours, DateOnly? PremierePeremption, int NombreLots,
     IReadOnlyList<string> Grossistes, IReadOnlyList<string> NumerosLots,
-    string Statut, bool PeremptionProche, long? EmplacementId = null, string? Emplacement = null, long? ReserveId = null, string? Reserve = null);
+    string Statut, bool PeremptionProche, long? EmplacementId = null, string? Emplacement = null, long? ReserveId = null, string? Reserve = null,
+    string Categorie = "medicament", string? CategorieLibelle = null, bool Parapharmacie = false);
 
 public sealed record EtatStock(IndicateursStock Indicateurs, IReadOnlyList<LigneStock> Lignes);
 
@@ -25,7 +26,7 @@ public interface IStockLecture
     Task<IReadOnlyList<LigneStock>> LignesAsync(CancellationToken ct = default);
 }
 
-/// <summary>Filtres du tableau de stock : recherche (nom, DCI, code-barres, lot, emplacement), filtre (tous, commander, peremption, psychotropes), rayon (« - » = non rangé).</summary>
+/// <summary>Filtres du tableau de stock : recherche (nom, DCI, code-barres, lot, emplacement), filtre (tous, commander, peremption, psychotropes, parapharmacie), rayon (« - » = non rangé).</summary>
 public sealed record FiltreStock(string? Recherche = null, string? Filtre = null, string? Rayon = null);
 
 /// <summary>Page du tableau de stock, indicateurs de tout le stock, et propositions pour aider la saisie de la recherche.</summary>
@@ -67,6 +68,7 @@ public sealed class ConsulterStock(IStockLecture stock, IEmplacements? emplaceme
         "commander" => l.Statut is "rupture" or "critique",
         "peremption" => l.PeremptionProche,
         "psychotropes" => l.Classe is ClasseReglementaire.Psychotrope or ClasseReglementaire.Stupefiant,
+        "parapharmacie" => l.Parapharmacie,
         _ => true
     };
 

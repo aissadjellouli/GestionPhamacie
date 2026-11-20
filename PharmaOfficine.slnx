@@ -246,6 +246,7 @@
     <File Path="database/migration/151_integrite_restauration_officine.sql" />
     <File Path="database/migration/152_controle_demarrage_encaissement.sql" />
     <File Path="database/migration/153_alertes_psychotropes_traitement_en_cours.sql" />
+    <File Path="database/migration/154_parapharmacie_catalogue.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
@@ -277,6 +278,7 @@
     <File Path="database/tests/151_integrite_restauration_officine_tests.sql" />
     <File Path="database/tests/152_controle_demarrage_encaissement_tests.sql" />
     <File Path="database/tests/153_alertes_psychotropes_traitement_en_cours_tests.sql" />
+    <File Path="database/tests/154_parapharmacie_catalogue_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
     <File Path="database/tests/101b_suppression_num_facture_chifa_tests.sql" />
   </Folder>

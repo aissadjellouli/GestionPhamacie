@@ -610,6 +610,35 @@ public class RetourArriereSynchronisationTests
     }
 
     [Fact]
+    public async Task Nouvelle_epoque_validee_par_le_mot_de_passe_seul_sans_aucun_message_SMS_ni_e_mail()
+    {
+        // Décision du titulaire du 2026-11-19 : mot de passe ressaisi, seul facteur ; ni code SMS ni e-mail
+        var (b, s) = Restauree();
+        await Envoi(b, s).ExecuterAsync(Maintenant);
+        var (j, alertes) = (new Journal(), new Alertes());
+
+        var r = await Repartir(b, s, j: j).ExecuterAsync(1, BonMotDePasse, 1);
+
+        Assert.Equal(2, r.Epoque);
+        var details = Assert.Single(b.Journal);
+        Assert.Equal("mot_de_passe", details["validation"]);
+        Assert.DoesNotContain(details, x => x.Key.Contains("code", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(details.Values, v => v is string t && t.Contains(BonMotDePasse));   // jamais le mot de passe au journal
+        Assert.Empty(j.Ecrits);       // mot de passe juste : aucun refus noté
+        Assert.Empty(alertes.Envoyees);
+
+        // Aucun moyen d'envoyer un message : ni le cas d'usage ni la vérification du mot de passe ne reçoivent un service d'alertes,
+        // de notifications, de SMS ou d'e-mail
+        var messagerie = new[] { typeof(IAlertesTitulaire), typeof(INotificationService), typeof(IEnvoiSms), typeof(IEnvoiEmail) };
+        foreach (var type in new[] { typeof(RepartirNouvelleEpoqueSync), typeof(VerificationMotDePasseActuel) })
+        {
+            var dependances = type.GetConstructors().SelectMany(c => c.GetParameters()).Select(p => p.ParameterType).ToList();
+            Assert.NotEmpty(dependances);
+            Assert.DoesNotContain(dependances, d => messagerie.Contains(d) || d.Namespace == typeof(IAlertesTitulaire).Namespace);
+        }
+    }
+
+    [Fact]
     public async Task Nouvelle_epoque_au_dela_de_la_plus_grande_epoque_connue_du_central()
     {
         var (b, s) = Restauree();

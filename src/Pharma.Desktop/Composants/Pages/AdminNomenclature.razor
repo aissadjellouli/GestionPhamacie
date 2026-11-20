@@ -145,6 +145,12 @@
         {
         <ClassementProduits />
         }
+
+        @* Produits hors nomenclature encore « Médicament » : reclassement groupé en parapharmacie (2026-11-20) *@
+        @if (rubrique == "classer")
+        {
+        <ProduitsAClasser />
+        }
     </div>
 </div>
 

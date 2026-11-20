@@ -1051,6 +1051,15 @@ Les scripts de la base centrale sont dans `database\cloud\` (001 à 019). Ils ne
   ```
   - `PHARMA_CLOUD_MOT_DE_PASSE` : **sans lui, l'autorité est perdue**. À ranger au coffre.
   - `PHARMA_CLOUD_ADMIN_CONNEXION` : outil d'administration seulement, jamais le service.
+  - **Compte SMTP de l'éditeur** (envoi du mot de passe de l'archive de départ au titulaire, F8) : outil d'administration seulement, dans la **session** PowerShell, juste avant `--depart-officine`. **Jamais** dans `appsettings*.json`, un script ou un fichier. Valeurs ci-dessous **factices** :
+    ```powershell
+    $env:PHARMA_CLOUD_SMTP_HOTE = "smtp.exemple.invalid"
+    $env:PHARMA_CLOUD_SMTP_PORT = "587"            # 465 = TLS direct ; tout autre port = STARTTLS exigé ; jamais d'envoi en clair
+    $env:PHARMA_CLOUD_SMTP_UTILISATEUR = "<identifiant du compte d'envoi>"
+    $env:PHARMA_CLOUD_SMTP_MOT_DE_PASSE = "<mot de passe du compte d'envoi>"
+    $env:PHARMA_CLOUD_SMTP_EXPEDITEUR = "<adresse d'expédition>"
+    ```
+    Les cinq variables sont obligatoires pour envoyer ; s'il en manque une, la commande le dit et n'envoie rien (le mot de passe reste affiché). **[À CONFIRMER : compte SMTP de l'éditeur à créer (fournisseur, adresse d'expédition) ; aucun envoi réel essayé le 2026-11-20.]**
   - Pour le **service** qui tourne en continu, ces variables doivent être réglées au niveau de la machine ou du compte de service. **[À CONFIRMER : le code ne fournit pas de service Windows pour le serveur central ; mode de lancement et compte du service à définir.]**
 - [ ] **3.3** Publier le serveur central. **Où** : PC des sources. **Compte** : administrateur Windows. **[À CONFIRMER : même forme que l'API, `dotnet publish src\Pharma.Cloud.Api -c Release -r win-x64 --self-contained true -o "<dossier>\Cloud"`, à valider.]**
 
@@ -1441,13 +1450,20 @@ La première version du script créait une autorité « `PharmaOfficine Autorite
 
 - [ ] **1.** Enregistrer le départ et écrire l'export complet remis au titulaire :
   ```powershell
-  & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --depart-officine <code officine> --sortie "<dossier>\officine-<code>.zip" --operateur "<nom de l'opérateur>"
+  & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --depart-officine <code officine> --sortie "<dossier>\officine-<code>.zip" --operateur "<nom de l'opérateur>" --email "<adresse e-mail du titulaire>"
   ```
+  - `--email` est **facultatif** : avec lui, le mot de passe de l'archive est envoyé par e-mail au titulaire (compte SMTP de l'éditeur, variables `PHARMA_CLOUD_SMTP_*` de l'étape 3.2) ; sans lui, il est seulement affiché. Une adresse de forme invalide est **refusée avant tout départ ou export** (rien n'est fait). L'adresse n'est **pas enregistrée** au central : seule sa forme masquée (ex. `t***@exemple.fr`) est notée au journal des départs avec le résultat de l'envoi.
   - Tous les certificats de l'officine sont révoqués, la date de départ est posée (gardée si la commande est rejouée) : la synchronisation de l'officine est refusée dès son appel suivant. Rien d'autre à faire dans l'officine.
-  - L'archive contient un fichier CSV par table copiée au central et `ligne_remplacee.csv` (UTF-8, séparateur « ; », en-tête), et `empreintes.txt` (SHA-256 de chaque CSV, contrôle : `Get-FileHash -Algorithm SHA256 <fichier>`). Un fichier existant n'est jamais écrasé. Patients sous code, comme au central.
-  - Le départ, l'export et l'empreinte SHA-256 de l'archive (affichée) sont notés au journal des départs (`journal_depart_officine`, ajout seul) et au journal de sécurité.
-  - Remettre l'archive au titulaire, **au choix du titulaire** : soit **en main propre sur une clé USB** ; soit par **un lien à durée limitée**, le mot de passe étant transmis **par un autre canal** que le lien. L'archive protégée par un **zip chiffré** pour la remise par lien est **à réaliser plus tard** (fonction séparée, hors du présent lot) : tant qu'elle n'existe pas, la remise se fait en main propre.
-  - **Accusé de réception** (à faire signer avant toute étape d'effacement), à garder avec le procès-verbal : date de remise, nom du titulaire, mode de remise (clé USB ou lien), nom du fichier, empreinte SHA-256 de l'archive (celle affichée par la commande et notée au journal des départs), contrôle par le titulaire avec `Get-FileHash -Algorithm SHA256 <fichier>` (l'empreinte calculée doit être identique), signature du titulaire.
+  - L'archive est un **zip chiffré AES-256 (format WinZip AE-2)**, écrit directement chiffré (aucune copie en clair sur le disque ; le fichier provisoire `<fichier>.zip.partiel`, déjà chiffré, est renommé à la fin ou supprimé en cas d'erreur). Elle contient un fichier CSV par table copiée au central et `ligne_remplacee.csv` (UTF-8, séparateur « ; », en-tête), et `empreintes.txt` (SHA-256 de chaque CSV, une fois extrait : `Get-FileHash -Algorithm SHA256 <fichier>`). Les **noms** des fichiers de l'archive restent visibles sans mot de passe (format zip), pas leur contenu. Un fichier existant n'est jamais écrasé. Patients sous code, comme au central.
+  - **Mot de passe** : tiré au sort par la commande (24 caractères, sans caractères ambigus), **affiché une seule fois** à la fin de la commande (dans tous les cas, pour le noter), et, avec `--email`, **envoyé par e-mail au titulaire** après la création réussie de l'archive (message : nom de l'officine, nom du fichier, début de l'empreinte SHA-256, mot de passe ; **jamais l'archive ni un lien**). Il n'est écrit dans aucun journal, ni la base, ni un fichier. **Ne pas rediriger la sortie de la commande vers un fichier.**
+    - **Échec de l'envoi** (réglages SMTP incomplets, refus du serveur, réseau) : la commande l'affiche avec sa raison et le note au journal des départs ; **l'archive reste valide** : transmettre le mot de passe affiché **par un autre canal que l'archive** (téléphone, papier).
+    - **SMS** : non disponible (aucun fournisseur SMS au serveur central ; noté au reste à faire).
+    - **Règle des deux canaux** : l'archive et son mot de passe ne passent **jamais par le même canal**. Aujourd'hui : archive sur clé USB, mot de passe par e-mail (et affiché). **Si un jour l'archive est remise par un lien envoyé par e-mail, le mot de passe ne doit plus partir par e-mail.**
+    - Mot de passe perdu : l'archive est illisible, relancer la commande avec un autre `--sortie` (nouvel export, nouveau mot de passe, nouvelle empreinte).
+  - **Ouvrir l'archive** : avec **7-Zip** (clic droit → 7-Zip → Extraire, saisir le mot de passe). L'Explorateur de Windows **n'ouvre pas** ce format chiffré. **[À VÉRIFIER : ouverture constatée avec 7-Zip sur un poste réel (non faite : 7-Zip absent du poste de développement le 2026-11-20 ; format vérifié par les tests automatiques).]**
+  - Le départ, l'export, le chiffrement, l'empreinte SHA-256 de l'**archive chiffrée** (affichée) et le résultat de l'envoi du mot de passe (adresse masquée, envoyé ou raison de l'échec, jamais le mot de passe) sont notés au journal des départs (`journal_depart_officine`, ajout seul) et au journal de sécurité.
+  - Remettre l'archive au titulaire **en main propre sur une clé USB**. La remise par **lien de téléchargement à durée limitée** n'existe pas encore (dans aucun lot, noté au reste à faire).
+  - **Accusé de réception** (à faire signer avant toute étape d'effacement), à garder avec le procès-verbal : date de remise, nom du titulaire, mode de remise (clé USB), nom du fichier, empreinte SHA-256 de l'**archive chiffrée telle que remise** (celle affichée par la commande et notée au journal des départs), contrôle par le titulaire avec `Get-FileHash -Algorithm SHA256 <fichier>.zip` **sur l'archive avant extraction** (l'empreinte calculée doit être identique), mot de passe reçu par un autre canal que l'archive (e-mail, téléphone ou papier ; **ne jamais l'écrire sur l'accusé**), signature du titulaire.
 - [ ] **2.** Ne rien effacer : l'effacement n'est **jamais automatique**. Il est refusé (même en simulation) tant que la durée de conservation après départ (étape 7.8) n'est pas écoulée.
 - [ ] **3.** Après la durée de conservation : simulation (nombre de lignes par table, rien n'est effacé) :
   ```powershell
@@ -1462,6 +1478,10 @@ La première version du script créait une autorité « `PharmaOfficine Autorite
 ---
 
 ## Annexes
+
+> **API sous Linux** (démonstration cloud) : réglages ajoutés (`Donnees:Racine`, `Protection:*`, `Fiscal:DossierArchives`,
+> `CopieSecours:Fichier`, `ProxysConnus`), dossiers, polices et limites dans [demo-cloud.md](demo-cloud.md). Sur un PC serveur
+> Windows, **aucun de ces réglages n'est nécessaire** : sans eux, tout reste comme décrit dans ce manuel.
 
 ### A1. Dépannage
 

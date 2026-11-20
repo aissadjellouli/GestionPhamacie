@@ -16,6 +16,8 @@
     <PackageVersion Include="System.IO.Ports" Version="10.0.13" />
     <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.13" />
     <PackageVersion Include="System.Data.Odbc" Version="10.0.13" />
+    <!-- Serveur central : archive de départ d'une officine en zip chiffré AES-256 (format WinZip AE-2), licence MIT -->
+    <PackageVersion Include="SharpZipLib" Version="1.4.2" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageVersion Include="xunit" Version="2.9.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />

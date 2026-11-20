@@ -222,11 +222,19 @@
                     </fieldset>
                 }
             }
-            @if (nature != "transfert")
+            @if (nature == "versement_organisme")
             {
-                @* Libellés déjà saisis à la main proposés (jamais ceux écrits par le logiciel), texte libre accepté *@
-                <ValeursSaisies Id="m-lib" Champ="libelle_mouvement_tresorerie" Libelle="Libellé" Requis="@(nature != "versement_organisme")" @bind-Valeur="libelle"
-                                data-champ="libelle" maxlength="200" placeholder="@(nature == "depense" ? "Ex. Facture Sonelgaz octobre" : nature == "encaissement" ? "Ex. Apport du titulaire" : "Facultatif : « Versement CNAS » par défaut")" />
+                @* Versement d'un organisme : libellés de versement d'organisme mis par le logiciel proposés (« Versement CNAS », « … · bordereau … »,
+                   « Versement du bordereau … »), jamais un libellé tapé à la main ; texte libre accepté (décision du titulaire 2026-11-20) *@
+                <ValeursSaisies Id="m-lib" Champ="libelle_versement_organisme" Libelle="Libellé" @bind-Valeur="libelle"
+                                data-champ="libelle" maxlength="200" placeholder="Facultatif : « Versement CNAS » par défaut" />
+            }
+            else if (nature != "transfert")
+            {
+                @* Dépense, encaissement : aucune proposition (un libellé tapé à la main peut contenir le nom d'un client, décision du titulaire 2026-11-20) *@
+                <div class="champ"><label for="m-lib" class="requis">Libellé</label>
+                    <input id="m-lib" type="text" data-champ="libelle" maxlength="200" autocomplete="off" @bind="libelle"
+                           placeholder="@(nature == "depense" ? "Ex. Facture Sonelgaz octobre" : "Ex. Apport du titulaire")" /></div>
             }
             @if (nature is "encaissement" or "versement_organisme" && FacturesProposees.Any())
             {

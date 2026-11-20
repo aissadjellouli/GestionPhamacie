@@ -377,7 +377,7 @@ signalées, bouton « Recharger toutes les données » avec confirmation (droit 
 
 ### 13.6 Reste à faire
 
-- **Restauration de la base de l'officine** (n° de lots revenus en arrière) : nouvelle époque + chargement, non réalisé.
+- ~~**Restauration de la base de l'officine** (n° de lots revenus en arrière) : nouvelle époque + chargement~~ **réalisé** (lot S6, § 30.5 à 30.8 ; intégrité après restauration : § 31).
 - Gros volumes : durée de l'instantané et taille de la transaction à mesurer sur une vraie base **[À VÉRIFIER]** ; débit plafonné par la
   limite de dépôts et le quota journalier.
 - ~~Purge de `sync_sortie` après accusé (S3)~~ **réalisée (§ 20)** ; écran central de consultation des lignes absentes (S7).
@@ -1094,7 +1094,7 @@ Justification : (1) la file n'est qu'une copie de ce que la base de l'officine c
 
 **Exécution** : tâche de fond `PurgeSynchronisation` (5 minutes après le démarrage, puis toutes les heures), `PurgerSortieSync` : paquets de 20 lots par transaction (jusqu'à 10 000 lignes), 40 lots au plus par passage ; elle prend le **verrou d'envoi** (`VerrouSync`) et passe son tour si un passage d'envoi est en cours (un renvoi de lots manquants ne lit jamais des lignes en train d'être purgées) ; rien sur une base en lecture seule (2e serveur en veille : la purge se réplique). Journal du serveur : nombre de lots et de lignes, aucune donnée ; une erreur est mémorisée sans détail (`derniere_purge_erreur`) et affichée à l'écran. L'espace libéré est réutilisé par PostgreSQL (nettoyage automatique) ; l'écran montre la taille de la file.
 
-**Limites** : la purge ne traite que l'**époque courante** (le repère est par époque) ; à la création d'une nouvelle époque après restauration de la base de l'officine (§ 13.6, non réalisée), il faudra décider du sort des lots de l'ancienne époque. `sync_lot` n'est jamais purgée (environ 100 octets par lot).
+**Limites** : la purge ne traite que l'**époque courante** (le repère est par époque) ; à la création d'une nouvelle époque après restauration de la base de l'officine (§ 13.6, réalisée : § 30.6), les lots de l'ancienne époque sont gardés (jamais purgés) et la purge repart sur la nouvelle époque (`purge_epoque` à NULL, `purge_dernier_lot` à 0). `sync_lot` n'est jamais purgée (environ 100 octets par lot).
 
 ### 20.2 Bandeau sur les postes (§ 8)
 
@@ -1499,7 +1499,7 @@ au reclassement, si la synchronisation est active ; RC-D3 `associe_par` (n° d'e
    tables montantes à clé `id` sont avancées au-delà du plus grand `id` connu du central pour cette officine (nouvelle route
    `GET /api/v1/maximums`, réservée à l'officine appelante, aucune donnée de ligne). Les ventes faites ensuite ne reprennent plus
    les n° perdus ; il reste un risque pour celles faites entre le redémarrage et la première détection (une minute au plus).
-3. « Repartir sur une nouvelle époque » (titulaire, code de confirmation, journal des actions) : `sync_nouvelle_epoque()` :
+3. « Repartir sur une nouvelle époque » (titulaire, mot de passe du titulaire ressaisi, seul facteur ; ni code SMS ni e-mail (décision du 2026-11-19) ; journal des actions) : `sync_nouvelle_epoque()` :
    époque + 1, `dernier_lot` et `dernier_accuse` à 0, lots non accusés de l'ancienne époque gardés et signalés (comme aujourd'hui),
    puis chargement complet demandé (mécanisme du § 13).
 
@@ -1516,7 +1516,7 @@ au reclassement, si la synchronisation est active ; RC-D3 `associe_par` (n° d'e
 7. Réglage central `cloud_parametre.conservation_depart_ans` (6 par défaut, 6 minimum **[À VÉRIFIER : avis du juriste, loi 18-07 et
    durée fiscale]**), surchargeable par officine comme `conservation_lots_ans`.
 8. `--depart-officine <id>` : révocation de tous ses certificats, `officine.resiliee_le`, export complet remis au titulaire
-   (un fichier CSV par table miroir dans une archive zip, avec un fichier d'empreintes SHA-256 ; patients sous code, comme au central),
+   (un fichier CSV par table miroir dans une archive zip chiffrée AES-256 depuis le 2026-11-20 — mot de passe tiré au sort, affiché une seule fois et envoyé par e-mail au titulaire avec `--email`, voir `regles-metier.md` —, avec un fichier d'empreintes SHA-256 ; patients sous code, comme au central),
    journal. `--effacer-officine <id>` : **simulation par défaut** (nombre de lignes par table), refusée avant la fin de la durée de
    conservation, puis effacement réel sur `--confirmer`, procès-verbal écrit (journal ajout seul).
 9. Côté officine : synchronisation désactivée par la révocation (certificat refusé), rien d'autre à faire.
@@ -1581,15 +1581,17 @@ persistante (`sync_noter_passage(NULL)`) : l'alerte propre à la détection remp
 avant l'envoi comme l'alerte d'intégrité ; SMS sans accents, e-mail avec les n° de lots et la marche à suivre.
 
 **Nouvelle époque** : route `POST /api/admin/synchronisation/nouvelle-epoque` (groupe `admin.parametres`, puis **titulaire** exigé par
-`RepartirNouvelleEpoqueSync`), corps `{ epoqueAffichee }` (confirmation : refus si l'époque a changé), verrou d'envoi, journal
-`synchronisation_nouvelle_epoque`. `sync_nouvelle_epoque` : époque + 1, `dernier_lot`/`dernier_accuse` à 0, `purge_epoque` à NULL et
+`RepartirNouvelleEpoqueSync`), corps `{ epoqueAffichee, motDePasse }` (confirmation : refus si l'époque a changé ; mot de passe du titulaire
+vérifié par `VerificationMotDePasseActuel`, même vérification que « Changer mon mot de passe », erreur sur le champ `mot_de_passe` ; ni code
+SMS ni e-mail), verrou d'envoi, journal `synchronisation_nouvelle_epoque` (avec `validation = mot_de_passe`). `sync_nouvelle_epoque` : époque + 1, `dernier_lot`/`dernier_accuse` à 0, `purge_epoque` à NULL et
 `purge_dernier_lot` à 0 (sinon la contrainte `purge_dernier_lot <= dernier_accuse` refuserait la remise à zéro ; la purge ne traite que
 l'époque courante, § 20.1), détection effacée, chargement en cours de l'ancienne époque passé « remplacé » (ses lignes d'instantané sont de
 l'ancienne époque et ne partiraient jamais), puis `sync_demander_chargement('demande', titulaire)` : motif existant, le contrat `DebutChargementDto`
 et le central ne sont pas changés.
 
 **Écran** (Administration › Synchronisation › État) : bandeau d'attention (remplace « Dernière erreur », même message) avec les n° de lots,
-l'état de l'avance des n° et le bouton titulaire « Repartir sur une nouvelle époque » → « Repartir sur l'époque N + 1 ? » Confirmer / Annuler ;
+l'état de l'avance des n° et le bouton titulaire « Repartir sur une nouvelle époque » → « Repartir sur une nouvelle époque (après l'époque N) ? » avec le champ « Votre mot de passe »,
+Confirmer (grisé tant que le mot de passe est vide) / Annuler ;
 autres comptes : « Seul le titulaire peut repartir sur une nouvelle époque ». « Recharger toutes les données » est grisé pendant la détection.
 Nouvelle règle CSS `.bandeau-attention .actions` (boutons sous le texte du bandeau).
 
@@ -1632,7 +1634,8 @@ supprimés ; vérifié : aucune base d'essai, aucun port 5194 / 5195 / 9222 en �
 
 **Rendu de l'écran** (poste compilé à part, `PHARMA_API` vers l'API d'essai, piloté par CDP ; compte titulaire d'essai) : trois états
 mesurés — bandeau de retour en arrière avec « Repartir sur une nouvelle époque », confirmation « Repartir sur l'époque 2 ? » Confirmer /
-Annuler, puis message de réussite après confirmation — en thèmes sombre et clair, à 1 536 × 890 et 1 366 × 768 : `scrollHeight -
+Annuler (captures antérieures à l'ajout du mot de passe : la confirmation actuelle est « Repartir sur une nouvelle époque (après
+l'époque N) ? » avec le champ « Votre mot de passe »), puis message de réussite après confirmation — en thèmes sombre et clair, à 1 536 × 890 et 1 366 × 768 : `scrollHeight -
 innerHeight` = 0 et `scrollWidth - innerWidth` = 0 dans les 12 vues, aucun libellé tronqué. Captures regardées : bandeau d'attention
 au-dessus, boutons de 44 px sous le texte (`.bandeau-attention .actions`), panneaux État et Chargement complet dans le cadre défilant
 (seul à défiler à 1 366 × 768), « Recharger toutes les données » grisé pendant la détection, en-tête sur une ligne (nom de la

@@ -64,19 +64,30 @@ internal static class CatalogueEndpoints
                 return Results.NoContent();
             })
            .ExigerPermission(Permissions.CatalogueCreer);
+        // Produits à classer (hors nomenclature, encore médicaments, non classés d'office) et reclassement groupé (2026-11-20)
+        api.MapGet("/produits/a-classer", async (string? q, int? page, int? taille, ListerProduitsAClasser lister, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var p = await lister.ExecuterAsync(q, Pharma.Application.Commun.DemandePage.Lire(page, taille), user.UtilisateurId(), ct);
+                return Results.Ok(new PageDto<ProduitAClasserDto>(p.Lignes.Select(x => new ProduitAClasserDto(x.ProduitId, x.Nom, x.Dci, x.Dosage, x.Forme,
+                    x.NumEnregistrement, x.Remboursable, x.TarifReference, x.PrixPublic, x.Stock)).ToList(), p.Total, p.Numero, p.Taille));
+            })
+           .ExigerPermission(Permissions.CatalogueCreer);
+        api.MapPost("/produits/reclassement", async (ReclassementProduitsRequete req, ReclasserProduits reclasser, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok(new NombreDto(await reclasser.ExecuterAsync(req.Produits, req.Categorie, user.UtilisateurId(), ct))))
+           .ExigerPermission(Permissions.CatalogueCreer);
 
         // Fiche d'un produit : lecture et modification (droit de créer un produit ; prix : droit de modifier un prix)
         api.MapGet("/produits/{id:long}/fiche", async (long id, LireFicheProduit lire, CancellationToken ct) =>
             {
                 var f = await lire.ExecuterAsync(id, ct);
                 return Results.Ok(new FicheProduitModifiableDto(f.Id, f.NomCommercial, f.Dci, f.Dosage, f.Forme, f.CodeBarre, f.PrixPublic, f.TarifReference,
-                    f.Remboursable, f.TauxTva, f.Actif, f.Classe, f.Contenance, f.ContenanceNomenclature, f.ConditionnementNomenclature));
+                    f.Remboursable, f.TauxTva, f.Actif, f.Classe, f.Contenance, f.ContenanceNomenclature, f.ConditionnementNomenclature, f.Categorie));
             })
            .ExigerPermission(Permissions.CatalogueCreer);
         api.MapPut("/produits/{id:long}", async (long id, FicheProduitModifiableDto d, ModifierProduit modifier, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 var information = await modifier.ExecuterAsync(new FicheProduitModifiable(id, d.NomCommercial, d.Dci, d.Dosage, d.Forme, d.CodeBarre, d.PrixPublic,
-                    d.TarifReference, d.Remboursable, d.TauxTva, d.Actif, Contenance: d.Contenance), user.UtilisateurId(), ct);
+                    d.TarifReference, d.Remboursable, d.TauxTva, d.Actif, Contenance: d.Contenance, Categorie: d.Categorie), user.UtilisateurId(), ct);
                 return Results.Ok(new ProduitEnregistreDto(id, information));
             })
            .ExigerPermission(Permissions.CatalogueCreer);

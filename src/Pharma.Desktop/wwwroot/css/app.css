@@ -307,6 +307,8 @@ input[type=date], input[type=time] { height: 44px; padding: 0 12px; border-radiu
 @media (prefers-reduced-motion: reduce) { .tableau tbody tr { transition: none; } }
 .tableau tfoot tr { border-top: 2px solid var(--bordure); background: var(--surface-2); }
 .tableau .nom { font-weight: 500; }
+/* Seuils par produit (2026-11-20) : cellules sur une ligne, sauf le nom du produit, pour 8 à 10 lignes visibles à 1 366 × 768 */
+.seuils-produits .tableau th, .seuils-produits .tableau td:not(.nom) { white-space: nowrap; }
 .tableau .detail { font-size: 13px; color: var(--texte-2); }
 
 /* ---- Barre de progression ----------------------------------------------- */

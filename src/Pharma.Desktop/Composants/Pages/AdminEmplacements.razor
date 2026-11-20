@@ -24,8 +24,8 @@
                 <div class="achats-ligne champs-courts">
                     @* Rayon : saisie libre ; les rayons font une lettre, donc TOUS les rayons existants sont proposés, triés, dès l'entrée dans
                        le champ puis filtrés à la frappe (ValeursSaisies « rayon_emplacement », minimum de 0 lettre fixé par le serveur, droit
-                       admin.parametres) ; un nouveau rayon peut toujours être tapé *@
-                    <ValeursSaisies @ref="champRayon" Id="e-rayon" Champ="rayon_emplacement" LettresMin="0" LibelleListe="Rayons existants" Libelle="Rayon" Requis="true" Style="flex: 0 0 110px"
+                       admin.parametres), 30 au plus et non 10 (tous les rayons, 2026-11-20 ; la liste défile) ; un nouveau rayon peut toujours être tapé *@
+                    <ValeursSaisies @ref="champRayon" Id="e-rayon" Champ="rayon_emplacement" LettresMin="0" MaxPropositions="30" LibelleListe="Rayons existants" Libelle="Rayon" Requis="true" Style="flex: 0 0 110px"
                                     @bind-Valeur="fiche.Rayon" maxlength="10" placeholder="A"
                                     class="@Obligatoire.Classe(RayonManque)" Invalide="RayonManque" />
                     <div class="champ" style="flex: 0 0 110px"><label for="e-etagere">Étagère</label><input id="e-etagere" type="text" maxlength="10" placeholder="02" @bind="fiche.Etagere" @bind:event="oninput" /></div>

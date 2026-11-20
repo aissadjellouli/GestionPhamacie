@@ -13,6 +13,8 @@ namespace Pharma.Architecture.Tests;
 /// </summary>
 public class IntegriteJournauxTests
 {
+    private static readonly IProtectionDonnees Dpapi = new ProtectionDpapiMachine();
+
     // ---- Clé de scellement ----
 
     [Fact]
@@ -24,7 +26,7 @@ public class IntegriteJournauxTests
         try
         {
             var message = "sceau-v1|integrite_essai|officine|manuel"u8.ToArray();
-            var premier = new ScelleurIntegriteLocal(chemin);
+            var premier = new ScelleurIntegriteLocal(chemin, Dpapi);
             Assert.False(File.Exists(chemin));
             var sceau = premier.Sceller(message);
             Assert.True(File.Exists(chemin));
@@ -32,14 +34,14 @@ public class IntegriteJournauxTests
             Assert.Equal("HMAC-SHA256", premier.Algorithme);
 
             // Le fichier n'est pas la clé en clair, et la clé relue (autre instance) donne le même sceau
-            var relu = new ScelleurIntegriteLocal(chemin);
+            var relu = new ScelleurIntegriteLocal(chemin, Dpapi);
             Assert.Equal(premier.EmpreinteCle, relu.EmpreinteCle);
             Assert.True(relu.Verifier(message, sceau));
             Assert.False(relu.Verifier("sceau-v1|integrite_essai|officine|autre"u8.ToArray(), sceau));
             Assert.True(File.ReadAllBytes(chemin).Length > 32);
 
             // Une autre clé ne valide pas le sceau
-            var autre = new ScelleurIntegriteLocal(Path.Combine(dossier, "autre.dat"));
+            var autre = new ScelleurIntegriteLocal(Path.Combine(dossier, "autre.dat"), Dpapi);
             Assert.NotEqual(premier.EmpreinteCle, autre.EmpreinteCle);
             Assert.False(autre.Verifier(message, sceau));
         }
@@ -57,7 +59,7 @@ public class IntegriteJournauxTests
         try
         {
             File.WriteAllBytes(chemin, Encoding.UTF8.GetBytes("pas une clé DPAPI"));
-            Assert.Throws<InvalidOperationException>(() => new ScelleurIntegriteLocal(chemin).Sceller([1]));
+            Assert.Throws<InvalidOperationException>(() => new ScelleurIntegriteLocal(chemin, Dpapi).Sceller([1]));
             Assert.Equal("pas une clé DPAPI", File.ReadAllText(chemin));
         }
         finally

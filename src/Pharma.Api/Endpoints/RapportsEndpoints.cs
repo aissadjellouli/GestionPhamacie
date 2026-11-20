@@ -84,7 +84,7 @@ internal static class RapportsEndpoints
 
     private static SyntheseVentesDto VersDto(SyntheseVentes s) =>
         new(s.NombreVentes, s.ChiffreAffaires, s.PartOrganismes, s.CreditsAccordes, s.Remises, s.Annulations, s.Retours, s.MontantRetours,
-            s.VentesMedicaments, s.VentesAutres, s.Shp, s.DonsPartiels, s.RemisesAutomatiques);
+            s.VentesMedicaments, s.VentesParapharmacie, s.Shp, s.DonsPartiels, s.RemisesAutomatiques, s.VentesPrestations);
 
     private static RapportActiviteDto VersDto(RapportActivite r)
     {

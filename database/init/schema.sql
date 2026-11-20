@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 153 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 154 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 153 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 154 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -97,6 +97,7 @@ DECLARE
     v_nomencl  text;
     v_ancien   text;
     v_classe   text;
+    v_categorie text;
     v_existant bigint;
     r          record;
 BEGIN
@@ -108,7 +109,9 @@ BEGIN
     END IF;
 
     -- Produits absents du catalogue, créés à la demande du pharmacien. Classe : la plus stricte entre la nomenclature
-    -- et l'ancien logiciel. Absent de la nomenclature : à vérifier par le titulaire, non vendable d'ici là (037)
+    -- et l'ancien logiciel. Absent de la nomenclature : à vérifier par le titulaire, non vendable d'ici là (037).
+    -- Catégorie (154) : n° trouvé dans la nomenclature, médicament ; sinon parapharmacie seulement si la règle stricte
+    -- (parapharmacie_certaine) est remplie ; sinon médicament, à classer par le titulaire (Administration › Nomenclature)
     FOR r IN
         SELECT s.*
         FROM import.correspondance_produit c
@@ -119,10 +122,13 @@ BEGIN
         v_ancien  := import.classe_src(r.classe);
         v_classe  := CASE WHEN COALESCE(import.rang_classe(v_ancien), -1) > COALESCE(import.rang_classe(v_nomencl), -1)
                           THEN v_ancien ELSE COALESCE(v_nomencl, 'libre') END;
-        INSERT INTO produit (code_barre, num_enregistrement, nom_commercial, dosage, forme, prix_public, classe, a_verifier)
+        v_categorie := CASE WHEN v_nomencl IS NULL
+                                 AND parapharmacie_certaine(r.num_enregistrement, NULL, v_classe, false, NULL, r.nom)
+                            THEN 'parapharmacie' ELSE 'medicament' END;
+        INSERT INTO produit (code_barre, num_enregistrement, nom_commercial, dosage, forme, prix_public, classe, a_verifier, categorie)
         VALUES (NULLIF(btrim(r.code_barre), ''), NULLIF(btrim(r.num_enregistrement), ''),
                 r.nom, r.dosage, r.forme, COALESCE(import.nombre(r.prix_vente), 0),
-                v_classe, v_nomencl IS NULL)
+                v_classe, v_nomencl IS NULL, v_categorie)
         RETURNING id INTO v_id;
         UPDATE import.correspondance_produit SET produit_id = v_id
         WHERE session_id = p_session AND ref_source = r.ref_source;
@@ -2233,6 +2239,32 @@ END $$;
 --
 
 COMMENT ON FUNCTION public.officine_courante() IS 'Code de l''officine installée (sync_parametre.officine_id), défaut de la colonne officine_id des tables synchronisées (script 128).';
+
+
+--
+-- Name: parapharmacie_certaine(text, bigint, text, boolean, numeric, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.parapharmacie_certaine(p_num text, p_dci_id bigint, p_classe text, p_remboursable boolean, p_tarif_reference numeric, p_nom text, p_dci text DEFAULT NULL::text) RETURNS boolean
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT p_dci_id IS NULL
+       AND NULLIF(btrim(COALESCE(p_dci, '')), '') IS NULL
+       AND COALESCE(p_classe, '') = 'libre'   -- classe inconnue (NULL) : jamais (résultat false, pas NULL)
+       AND NOT COALESCE(p_remboursable, false)
+       AND p_tarif_reference IS NULL
+       AND (NULLIF(btrim(p_num), '') IS NULL
+            OR NOT EXISTS (SELECT 1 FROM nomenclature_produit n WHERE n.num_enregistrement = btrim(p_num)))
+       AND NOT EXISTS (SELECT 1 FROM substance_surveillee s
+                       WHERE majuscule_sans_accent(COALESCE(p_nom, '') || ' ' || COALESCE(p_dci, '')) LIKE '%' || s.motif || '%')
+$$;
+
+
+--
+-- Name: FUNCTION parapharmacie_certaine(p_num text, p_dci_id bigint, p_classe text, p_remboursable boolean, p_tarif_reference numeric, p_nom text, p_dci text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.parapharmacie_certaine(p_num text, p_dci_id bigint, p_classe text, p_remboursable boolean, p_tarif_reference numeric, p_nom text, p_dci text) IS 'Règle stricte (154) : produit classable en parapharmacie sans regard humain (hors nomenclature, sans DCI, classe libre, non remboursable, sans tarif de référence, aucune substance surveillée dans le nom)';
 
 
 --
@@ -6096,7 +6128,7 @@ CREATE TABLE public.categorie_produit (
 -- Name: TABLE categorie_produit; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON TABLE public.categorie_produit IS 'Catégories de produits ; medicament : compté dans les totaux « médicaments », sinon « autres produits »';
+COMMENT ON TABLE public.categorie_produit IS 'Catégories de produits ; medicament : compté dans les totaux « médicaments », sinon parapharmacie (« autres produits » au ticket)';
 
 
 --

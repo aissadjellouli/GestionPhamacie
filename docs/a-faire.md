@@ -38,7 +38,7 @@ Vue d'ensemble courte (point d'avancement) : [reste-a-faire-synthese.md](reste-a
   - liste des 214 DCI d'antibiotiques ;
   - format de l'export pour les impôts et taux de TVA.
 - [x] **Majorations Chifa** : quels types en plus de « Garde » ? (Tranché le 2026-11-19 : « Garde » seule pour l'instant ; voir `docs/chifa.md`.)
-- [ ] **Démo** : tranché le 2026-11-19 : « préparation démo cloud » (Dockerfile, docker-compose local, mode démo) ; à réaliser sur « go ».
+- [ ] **Démo** : tranché le 2026-11-19 : « préparation démo cloud » (Dockerfile, docker-compose local, mode démo) ; « go » reçu le 2026-11-20 ; étape 0 (API utilisable sous Linux) faite le 2026-11-20, suite : [demo-cloud.md](demo-cloud.md).
 - [ ] **Script 111b** (séparation des rôles PostgreSQL) : à passer par le titulaire avec un superutilisateur ; sans lui, une falsification est détectée mais pas empêchée (voir `docs/securite-et-droits.md`).
 - [x] **Réglages communs aux officines** : tranché le 2026-11-16 : « imposé » ou « proposé » est décidé par l'administrateur du serveur central, rien n'est figé dans le logiciel ; précisé le même jour : choix par table, changement tracé au central et dans l'officine, valeur imposée qui remplace la valeur locale (ancienne valeur au journal, titulaire prévenu). Reste à réaliser (fin du lot S3, `docs/conception-synchronisation.md` § 16).
 - [ ] **Ancienne colonne `num_facture_chifa`** : le script `101b` est **écrit et testé sur copies jetables** (`database/migration/101b_suppression_num_facture_chifa.sql`) ; la **décision d'exécution reste en attente** du titulaire (destructif, sauvegarde obligatoire, procédure : `docs/mise-en-production.md`, étape 8). Le jour de l'exécution : retirer la colonne de `database/init/schema.sql` (colonne et son commentaire dans `vente`) et régénérer `database/cloud/002_tables_miroir.sql`.
@@ -68,7 +68,7 @@ Vue d'ensemble courte (point d'avancement) : [reste-a-faire-synthese.md](reste-a
   - [x] **S5.1 (socle des ordres) et S5.5 (employés et droits)** réalisés le 2026-11-18 (§ 24) : scripts central 013 et officine 145, écran « Ordres du central », essai de bout en bout sur copies jetables réussi. S5.2 (prix) réalisé le 2026-11-18 (§ 25). S5.3 (nomenclature) réalisé le 2026-11-18 (§ 26). S5.4 (commandes en brouillon) réalisé le 2026-11-18 (§ 27) ; plafond de 200 lignes par ordre à confirmer à l'usage **[À DÉCIDER]**. Référentiels (§ 28) : antibiotiques suivis, organismes et centres payeurs réalisés le 2026-11-18. Prestations, indications et DCI réalisés le 2026-11-18 (§ 28.1). `chifa_code_produit` et `produit_indication` reclassées montantes le 2026-11-18 (§ 29). Reste : usage de `laboratoire` et `zone_psychotrope_wilaya` **[À VÉRIFIER]** ; organismes, prestations et indications appliqués sans transaction unique **[À VÉRIFIER]** ; changements faits sans auteur local affichés au journal des actions « Serveur central (auteur) » (fait le 2026-11-18) ; essai par l'échange HTTPS réel **[À VÉRIFIER]**.
 - [ ] Découpage par officine des grandes tables du central, avant d'accueillir beaucoup d'officines.
 - [ ] Multi-officines (lot 12) et partie cloud du lot 5 : après le choix de l'hébergeur.
-- [ ] Restauration de la base d'une officine depuis le central (nouvelle époque + chargement) : non réalisée (`docs/conception-synchronisation.md` § 13.6).
+- [x] Restauration de la base d'une officine (retour en arrière détecté, nouvelle époque confirmée par le mot de passe du titulaire seul, puis chargement complet) : réalisée et essayée de bout en bout (`docs/conception-synchronisation.md` § 30.5 à 30.8, intégrité après restauration § 31).
 - [ ] Compatibilité des versions du format d'échange : à coder à l'arrivée d'une version 2.
 - [ ] Envoi des produits vers CHIFA-Officine et import de son fichier : selon la réponse de la CNAS.
 - [ ] Effacement automatique au central : désactivé ; à activer après vérification des durées réglementaires.
@@ -99,7 +99,7 @@ Vue d'ensemble courte (point d'avancement) : [reste-a-faire-synthese.md](reste-a
 
 - [ ] **Comparaison des tarifs des grossistes** : importer les tarifs de chaque grossiste et comparer les prix produit par produit (aide au choix du grossiste à la commande).
   - À fournir par le titulaire : un exemple de fichier de tarifs de chaque grossiste (Excel, PDF ou autre) pour connaître le format.
-- [ ] **Parapharmacie** : distinguer les produits de parapharmacie dans le catalogue (préalable à la fidélisation parapharmacie de la V2). Tranché le 2026-11-19 : dès la V1, à réaliser sur « go ».
+- [x] **Parapharmacie** : distinguer les produits de parapharmacie dans le catalogue (préalable à la fidélisation parapharmacie de la V2). Tranché le 2026-11-19 : dès la V1. **Fait le 2026-11-20** (script 154, règles dans regles-metier.md « Catégories ») ; restent : passage du script 154 sur `pharmacie_dev` et `pharmacie_test`, mesures d'écran, taux de TVA de 19 % proposé à confirmer par le titulaire ; remise automatique « toute la parapharmacie » en V2.
   - À préciser par le titulaire : comment les reconnaître (classe du catalogue, liste fournie, autre).
 
 ## Scanner mobile : suites

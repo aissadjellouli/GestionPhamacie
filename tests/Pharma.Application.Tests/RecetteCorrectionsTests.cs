@@ -40,6 +40,9 @@ internal sealed class ProduitsModifEnMemoire : IProduitsModification
     /// <summary>Nomenclature : n° 12/34/A (stupéfiant).</summary>
     public Task<string?> ClasseNomenclatureAsync(string num, CancellationToken ct = default) =>
         Task.FromResult<string?>(num == "12/34/A" ? "stupefiant" : null);
+    /// <summary>Catégories : medicament (médicament), parapharmacie (non médicament) ; tout autre code est inconnu.</summary>
+    public Task<bool?> CategorieMedicamentAsync(string code, CancellationToken ct = default) =>
+        Task.FromResult<bool?>(code switch { "medicament" => true, "parapharmacie" => false, _ => null });
 }
 
 public class RecetteCorrectionsTests

@@ -777,6 +777,12 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(ClassementProduitDto?, string?)> ClassementProduitAsync(long produitId) => GetAsync<ClassementProduitDto?>($"api/produits/{produitId}/classement", null);
     public async Task<string?> ModifierClassementProduitAsync(long produitId, string categorie, string? listePsychotrope) =>
         (await EnvoyerCorpsAsync<ClassementProduitRequete, object>(HttpMethod.Put, $"api/produits/{produitId}/classement", new(categorie, listePsychotrope))).Item2;
+    /// <summary>Produits à classer (hors nomenclature, encore médicaments, non classés d'office), filtrés et paginés par le serveur.</summary>
+    public Task<(PageDto<ProduitAClasserDto>?, string?)> ProduitsAClasserAsync(string? texte, int page, int taille) =>
+        GetAsync<PageDto<ProduitAClasserDto>?>("api/produits/a-classer?" + Requete(("q", texte?.Trim()), ("page", page), ("taille", taille)), null);
+    /// <summary>Reclassement groupé des produits cochés dans une catégorie : nombre de produits reclassés.</summary>
+    public Task<(NombreDto?, string?)> ReclasserProduitsAsync(List<long> produits, string categorie) =>
+        PostAsync<ReclassementProduitsRequete, NombreDto>("api/produits/reclassement", new(produits, categorie));
     public async Task<string?> ModifierMedecinAsync(long id, NouveauMedecinDto medecin) =>
         (await EnvoyerCorpsAsync<NouveauMedecinDto, object>(HttpMethod.Put, $"api/medecins/{id}", medecin)).Item2;
     public Task<(List<OrganismeDto>, string?)> OrganismesAsync() => GetAsync<List<OrganismeDto>>("api/organismes", []);

@@ -14,13 +14,16 @@
   | Stock (Ctrl + Maj + S) | Alertes, Stock, Inventaire, Registre des psychotropes, Étiquettes internes (`stock/etiquettes`), Traçabilité et rappel de lot |
   | Achats (Ctrl + Maj + H) | Achats (commandes, réceptions et réimpression des étiquettes d'une livraison, retours, règlements, traites à payer, grossistes) |
   | Finances (Ctrl + Maj + F) | Factures, Trésorerie, Dettes et créances, Financements (titulaire seul) (Chifa : à venir) |
-  | Patients (Ctrl + Maj + T) | Fichier des patients (`patients`), Droits expirés ou bientôt expirés (`patients/droits-chifa`), Patients en attente (`patients/attente`) |
+  | Patients (Ctrl + Maj + T) | Fichier des patients (`patients`), Droits expirés ou bientôt expirés (`patients/droits-chifa`), Patients en attente (`patients/attente`, accessible avec le seul `caisse.vendre`) |
   | Pilotage (Ctrl + Maj + P) | Rapports, Contrôle interne |
 
   Étiquettes internes : dans le Stock depuis le 2026-11-13 (stock.consulter ou achats.receptionner ; imprimer : achats.receptionner) ;
   l'ancienne adresse `achats?onglet=etiquettes` y renvoie. Patients en attente (« Prévenir quand disponible ») : dans le domaine
   Patients depuis le 2026-11-18 (droit de vendre, comme avant) ; l'ancienne adresse `achats?onglet=patients-attente` y renvoie ;
-  Achats › Ruptures garde sa colonne « Patients en attente » (nombre). Domaine Patients réservé au droit de vendre (`MiseEnPage`). Un écran sans droit n'apparaît pas ; un domaine sans écran permis non plus. Description unique : `Services/Domaines.cs`.
+  Achats › Ruptures garde sa colonne « Patients en attente » (nombre). Depuis le 2026-11-20, l'écran est **accessible avec le seul
+  `caisse.vendre`** : sans `stock.consulter`, le produit attendu se choisit par la recherche du comptoir (`GET /api/caisse/produits`,
+  composant `ChoixProduit`) ; lien « Patients en attente » aussi dans la colonne de la Caisse (groupe Comptoir, après « Vente »,
+  `NavCaisse`, avec `caisse.vendre`). Domaine Patients réservé au droit de vendre (`MiseEnPage`). Un écran sans droit n'apparaît pas ; un domaine sans écran permis non plus. Description unique : `Services/Domaines.cs`.
 - **Accueil selon les droits** : qui a un droit de gestion (achats, stock, rapports, trésorerie, factures, paramètres, titulaire)
   arrive sur le **tableau de bord** (`/accueil` : alertes urgentes, lots périmant dans les 6 mois, réceptions en attente, écarts
   d'inventaire à valider ; chaque tuile ouvre son écran et n'apparaît que si l'employé peut l'ouvrir) ; les autres (vendeur,

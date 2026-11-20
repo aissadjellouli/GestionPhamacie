@@ -13,10 +13,13 @@ namespace Pharma.Application.Catalogue;
 /// Contenance : unités par boîte saisies par le pharmacien (facultatif, 1 à 10000, produit.contenance). ContenanceNomenclature et
 /// ConditionnementNomenclature : lus en base (nomenclature nationale, version la plus récente du n° d'enregistrement), jamais saisis ;
 /// la contenance de la nomenclature ne sert que si la saisie est vide (ContenanceProduit).
+/// Categorie : code de categorie_produit (null en saisie : inchangée). DansNomenclature : lu en base, jamais saisi (n° d'enregistrement
+/// présent dans la nomenclature nationale : la parapharmacie lui est refusée).
 /// </summary>
 public sealed record FicheProduitModifiable(long Id, string NomCommercial, string? Dci, string? Dosage, string? Forme, string? CodeBarre,
     decimal PrixPublic, decimal? TarifReference, bool Remboursable, decimal TauxTva, bool Actif, string Classe = "libre", string? NumEnregistrement = null,
-    bool ClasseConfirmee = false, int? Contenance = null, int? ContenanceNomenclature = null, string? ConditionnementNomenclature = null);
+    bool ClasseConfirmee = false, int? Contenance = null, int? ContenanceNomenclature = null, string? ConditionnementNomenclature = null,
+    string? Categorie = null, bool DansNomenclature = false);
 
 public interface IProduitsModification
 {
@@ -26,8 +29,10 @@ public interface IProduitsModification
     Task<string?> ClasseSurveilleeAsync(string dci, CancellationToken ct = default);
     /// <summary>Classe sous registre proposée par la nomenclature nationale pour ce n° d'enregistrement (voir ICatalogueEcriture), sinon null.</summary>
     Task<string?> ClasseNomenclatureAsync(string numEnregistrement, CancellationToken ct = default);
+    /// <summary>Catégorie active de ce code : vrai si médicament, faux si parapharmacie, null si inconnue (voir ICatalogueEcriture).</summary>
+    Task<bool?> CategorieMedicamentAsync(string code, CancellationToken ct = default);
     /// <summary>
-    /// Enregistre la fiche ; la DCI est créée si elle n'existe pas encore. La classe n'est écrite que si elle est imposée
+    /// Enregistre la fiche (catégorie comprise) ; la DCI est créée si elle n'existe pas encore. La classe n'est écrite que si elle est imposée
     /// (<paramref name="classeImposee"/>) : le produit devient alors « à vérifier » et, s'il entre sous registre avec du stock, reçoit
     /// son solde d'ouverture au registre (une fois par produit), inscrit au nom de <paramref name="utilisateurId"/>. Une DCI changée
     /// retire la confirmation de classe du titulaire.
@@ -49,6 +54,8 @@ public sealed class LireFicheProduit(IProduitsModification produits)
 /// (psychotrope ou stupéfiant, la plus stricte) et produit « à vérifier » ; renvoie alors le message à lui afficher (sinon null).
 /// Sauf si le titulaire a confirmé la classe du produit (produit.classe_confirmee_par) et que la DCI ne change pas : sa confirmation
 /// vaut. Une DCI changée (par quiconque) retire la confirmation ; le n° d'enregistrement ne change pas ici.
+/// Catégorie (2026-11-20) : modifiable ici avec le même droit ; passer en parapharmacie est refusé pour un produit de la nomenclature
+/// nationale, d'une classe autre que « libre », ou dont la classe vient d'être imposée (substance surveillée).
 /// </summary>
 public sealed class ModifierProduit(IProduitsModification produits, IPermissionService droits, IJournal journal, Surveillance.Surveiller? surveillance = null)
 {
@@ -57,9 +64,22 @@ public sealed class ModifierProduit(IProduitsModification produits, IPermissionS
         await droits.ExigerAsync(utilisateurId, Permissions.CatalogueCreer, "modifier un produit", ct);
         var actuel = await produits.LireAsync(saisie.Id, ct) ?? throw new RegleMetierException("Produit introuvable.");
         static string? N(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+        var categorieActuelle = actuel.Categorie ?? "medicament";
         var f = saisie with { NomCommercial = saisie.NomCommercial?.Trim() ?? "", Dci = N(saisie.Dci), Dosage = N(saisie.Dosage), Forme = N(saisie.Forme),
             CodeBarre = N(saisie.CodeBarre), Classe = actuel.Classe, NumEnregistrement = actuel.NumEnregistrement, ClasseConfirmee = actuel.ClasseConfirmee,
-            ContenanceNomenclature = actuel.ContenanceNomenclature, ConditionnementNomenclature = actuel.ConditionnementNomenclature };
+            ContenanceNomenclature = actuel.ContenanceNomenclature, ConditionnementNomenclature = actuel.ConditionnementNomenclature,
+            Categorie = N(saisie.Categorie) ?? categorieActuelle, DansNomenclature = actuel.DansNomenclature };
+        // Catégorie : code connu ; parapharmacie refusée pour un produit de la nomenclature ou d'une classe autre que « libre »
+        var categorieChangee = f.Categorie != categorieActuelle;
+        var medicament = await produits.CategorieMedicamentAsync(f.Categorie!, ct);
+        if (categorieChangee)
+        {
+            if (medicament is null) throw new RegleMetierException("Catégorie inconnue : choisissez-en une de la liste.", "categorie");
+            RegleProduit.ControlerCategorie(medicament.Value, actuel.Classe, actuel.DansNomenclature);
+            if (medicament == false && f.Dci is { } dciSaisie && await produits.ClasseSurveilleeAsync(dciSaisie, ct) is not null)
+                throw new RegleMetierException($"La DCI « {dciSaisie} » correspond à une substance surveillée : ce produit est un médicament, "
+                    + "choisissez la catégorie « Médicament ».", "categorie");
+        }
         if (!ContenanceProduit.SaisieValide(f.Contenance))
             throw new RegleMetierException($"Contenance : nombre entier d’unités par boîte, de {ContenanceProduit.Minimum} à {ContenanceProduit.Maximum} (ou vide).", "contenance");
         if (f.NomCommercial.Length == 0) throw new RegleMetierException("Nom commercial obligatoire.", "nom_commercial");
@@ -99,6 +119,10 @@ public sealed class ModifierProduit(IProduitsModification produits, IPermissionS
             var parNomenclature = actuel.NumEnregistrement is { Length: > 0 } num ? await produits.ClasseNomenclatureAsync(num, ct) : null;
             if (RegleProduit.ClasseImposee(choisie, RegleProduit.ClasseSurveilleeRetenue(parDci, parNomenclature), false) is { } imposee)
             {
+                // Classe sous registre imposée : un psychotrope ou un stupéfiant n'est jamais de la parapharmacie
+                if (medicament == false)
+                    throw new RegleMetierException($"La DCI « {f.Dci} » correspond à une substance surveillée : ce produit est un médicament, "
+                        + "choisissez la catégorie « Médicament ».", "categorie");
                 f = f with { Classe = imposee.Code() };
                 information = RegleProduit.MessageClasseImposee(f.Dci ?? "", imposee, parDci == imposee.Code() ? null : actuel.NumEnregistrement);
             }
@@ -113,6 +137,7 @@ public sealed class ModifierProduit(IProduitsModification produits, IPermissionS
         Comparer("tarif_reference", actuel.TarifReference, f.TarifReference); Comparer("remboursable", actuel.Remboursable, f.Remboursable);
         Comparer("taux_tva", actuel.TauxTva, f.TauxTva); Comparer("actif", actuel.Actif, f.Actif);
         Comparer("classe", actuel.Classe, f.Classe); Comparer("contenance", actuel.Contenance, f.Contenance);
+        Comparer("categorie", categorieActuelle, f.Categorie);
         if (information is not null) changes["a_verifier"] = true;
         if (confirmationRetiree) changes["confirmation_classe_retiree"] = true;
         if (changes.Count > 1)

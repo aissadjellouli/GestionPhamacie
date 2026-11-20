@@ -17,11 +17,8 @@ public sealed class DocumentsAchats : IDocumentsAchats
     private static readonly CultureInfo Fr = CultureInfo.GetCultureInfo("fr-FR");
     private static readonly Color Gris = Color.FromRgb(0x47, 0x54, 0x67);
 
-    static DocumentsAchats()
-    {
-        if (OperatingSystem.IsWindows())
-            GlobalFontSettings.UseWindowsFontsUnderWindows = true;
-    }
+    // Polices : celles de Windows sous Windows (inchangé), Liberation Sans embarquée ailleurs
+    static DocumentsAchats() => PolicesPdf.Configurer();
 
     // ---- Bon de commande ------------------------------------------------------
 

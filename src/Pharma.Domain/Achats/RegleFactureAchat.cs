@@ -30,14 +30,17 @@ public static class RegleShp
         _ => 0m
     };
 
-    /// <summary>Classe du produit telle qu'écrite dans le contrôle du SHP de la réception (hors liste : parapharmacie).</summary>
+    /// <summary>
+    /// Classe du produit telle qu'écrite dans le contrôle du SHP de la réception. Classe libre : « hors liste » (et non « parapharmacie » :
+    /// la parapharmacie est une catégorie du produit, un médicament hors liste n'en fait pas partie ; corrigé le 2026-11-20).
+    /// </summary>
     public static string LibelleClasse(string? classe) => classe switch
     {
         "liste_i" => "liste I",
         "liste_ii" => "liste II",
         "psychotrope" => "psychotrope",
         "stupefiant" => "stupéfiant (liste I)",
-        _ => "parapharmacie"
+        _ => "hors liste"
     };
 
     /// <summary>

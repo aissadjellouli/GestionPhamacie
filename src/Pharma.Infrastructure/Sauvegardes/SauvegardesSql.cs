@@ -117,7 +117,8 @@ public sealed class SauvegardesSql(NpgsqlDataSource db) : ISauvegardesDepot
 
 /// <summary>
 /// Export par pg_dump (format personnalisé, compressé, restaurable avec pg_restore).
-/// pg_dump est cherché dans le réglage Sauvegardes:PgDump, sinon dans C:\Program Files\PostgreSQL\*\bin (version la plus récente).
+/// pg_dump est cherché dans le réglage Sauvegardes:PgDump, sinon dans C:\Program Files\PostgreSQL\*\bin (version la plus récente) ;
+/// hors Windows, dans /usr/lib/postgresql/*/bin puis le PATH (OutilsPostgres).
 /// </summary>
 public sealed class StockagePgDump(string chaineConnexion, string? cheminPgDump) : IStockageSauvegarde
 {
@@ -256,14 +257,7 @@ public sealed class StockagePgDump(string chaineConnexion, string? cheminPgDump)
     {
         if (!string.IsNullOrWhiteSpace(cheminPgDump))
             return File.Exists(cheminPgDump) ? cheminPgDump : throw new InvalidOperationException($"pg_dump introuvable : {cheminPgDump}");
-        var racine = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "PostgreSQL");
-        var trouve = Directory.Exists(racine)
-            ? Directory.GetDirectories(racine)
-                .Select(d => Path.Combine(d, "bin", "pg_dump.exe")).Where(File.Exists)
-                .OrderByDescending(f => int.TryParse(Path.GetFileName(Path.GetDirectoryName(Path.GetDirectoryName(f))), out var v) ? v : 0)
-                .FirstOrDefault()
-            : null;
-        return trouve ?? throw new InvalidOperationException("pg_dump introuvable : renseignez Sauvegardes:PgDump dans appsettings.json.");
+        return OutilsPostgres.Trouver("pg_dump", null) ?? throw new InvalidOperationException("pg_dump introuvable : renseignez Sauvegardes:PgDump dans appsettings.json.");
     }
 
     private static void TryDelete(string f)

@@ -292,6 +292,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\151_integrite_restauration_officine.sql = database\migration\151_integrite_restauration_officine.sql
 		database\migration\152_controle_demarrage_encaissement.sql = database\migration\152_controle_demarrage_encaissement.sql
 		database\migration\153_alertes_psychotropes_traitement_en_cours.sql = database\migration\153_alertes_psychotropes_traitement_en_cours.sql
+		database\migration\154_parapharmacie_catalogue.sql = database\migration\154_parapharmacie_catalogue.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52-9A41-4B8E-A5F2-3C6D11B0E111}"
@@ -325,6 +326,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52
 		database\tests\151_integrite_restauration_officine_tests.sql = database\tests\151_integrite_restauration_officine_tests.sql
 		database\tests\152_controle_demarrage_encaissement_tests.sql = database\tests\152_controle_demarrage_encaissement_tests.sql
 		database\tests\153_alertes_psychotropes_traitement_en_cours_tests.sql = database\tests\153_alertes_psychotropes_traitement_en_cours_tests.sql
+		database\tests\154_parapharmacie_catalogue_tests.sql = database\tests\154_parapharmacie_catalogue_tests.sql
 		database\tests\117_registre_renforce_tests.sql = database\tests\117_registre_renforce_tests.sql
 		database\tests\101b_suppression_num_facture_chifa_tests.sql = database\tests\101b_suppression_num_facture_chifa_tests.sql
 	EndProjectSection

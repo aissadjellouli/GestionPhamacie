@@ -263,6 +263,8 @@ public static class DependencyInjection
         services.AddScoped<ListerCategoriesProduits>();
         services.AddScoped<LireClassementProduit>();
         services.AddScoped<ModifierClassementProduit>();
+        services.AddScoped<ListerProduitsAClasser>();
+        services.AddScoped<ReclasserProduits>();
         services.AddScoped<LireBlocageProduit>();
         services.AddScoped<ModifierBlocageProduit>();
         services.AddScoped<ListerEmplacements>();

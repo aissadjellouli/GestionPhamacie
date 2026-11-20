@@ -16,10 +16,13 @@ namespace Pharma.Application.Rapports;
 /// ChiffreAffaires est net des retours clients enregistrés pendant la période (Retours, MontantRetours) : un retour
 /// diminue le chiffre du jour où la caisse a repris les boîtes, pas celui du jour de la vente.
 /// </summary>
-/// <summary>VentesMedicaments / VentesAutres : montant des lignes (avant remise et retours) selon la catégorie du produit ; Shp : SHP compris.</summary>
+/// <summary>
+/// VentesMedicaments / VentesParapharmacie : montant des lignes (avant remise et retours) selon la catégorie du produit (médicament ou non) ;
+/// VentesPrestations : lignes sans produit (prestations, script 105), à part depuis le 2026-11-20 ; Shp : SHP compris.
+/// </summary>
 public sealed record SyntheseVentes(int NombreVentes, decimal ChiffreAffaires, decimal PartOrganismes, decimal CreditsAccordes, decimal Remises, int Annulations,
-    int Retours = 0, decimal MontantRetours = 0, decimal VentesMedicaments = 0, decimal VentesAutres = 0, decimal Shp = 0,
-    decimal DonsPartiels = 0, decimal RemisesAutomatiques = 0);
+    int Retours = 0, decimal MontantRetours = 0, decimal VentesMedicaments = 0, decimal VentesParapharmacie = 0, decimal Shp = 0,
+    decimal DonsPartiels = 0, decimal RemisesAutomatiques = 0, decimal VentesPrestations = 0);
 
 /// <summary>
 /// Marge brute : chiffre d'affaires hors TVA (remises déduites) moins le coût d'achat HT des boîtes vendues,
@@ -280,7 +283,8 @@ public static class RapportCsv
         L("Dons partiels du reste à charge (médicaments)", r.Synthese.DonsPartiels);
         L("dont remises automatiques (remises et dons)", r.Synthese.RemisesAutomatiques);
         L("Ventes de médicaments (avant remises et retours)", r.Synthese.VentesMedicaments);
-        L("Ventes d'autres produits (avant remises et retours)", r.Synthese.VentesAutres);
+        L("Ventes de parapharmacie (avant remises et retours)", r.Synthese.VentesParapharmacie);
+        L("Ventes de prestations (avant remises et retours)", r.Synthese.VentesPrestations);
         L("dont SHP (honoraire du pharmacien)", r.Synthese.Shp);
         L("Ventes annulées", r.Synthese.Annulations);
         if (r.Marge is { } m)

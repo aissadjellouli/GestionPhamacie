@@ -8,7 +8,7 @@
     <section class="panneau" aria-labelledby="t-modif-produit">
         <div>
             <h2 id="t-modif-produit">Modifier un produit</h2>
-            <p class="sous-titre">Nom, DCI, dosage, forme, code-barres, prix, TVA, remboursement ; un produit désactivé n’est plus proposé à la vente ni aux commandes.</p>
+            <p class="sous-titre">Nom, DCI, dosage, forme, catégorie, code-barres, prix, TVA, remboursement ; un produit désactivé n’est plus proposé à la vente ni aux commandes.</p>
         </div>
         @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
         @if (message is not null) { <div class="succes" role="status">@message</div> }
@@ -40,6 +40,14 @@
             </div>
             @* Contenance (unités par boîte, facultative) : sert à l'alerte « quantité anormale » du registre ; vide : valeur de la nomenclature si elle est lisible *@
             <div class="achats-ligne" style="align-items: center">
+                @* Catégorie (2026-11-20) : médicament ou parapharmacie ; changer change le geste de la caisse (remise ↔ don). Parapharmacie refusée par le
+                   serveur pour un produit de la nomenclature ou d'une classe autre que « Libre » *@
+                <div class="champ" style="flex: 0 1 240px" title="Médicament : don partiel à la caisse ; parapharmacie : remise">
+                    <label for="mp-cat">Catégorie</label>
+                    <select id="mp-cat" data-champ="categorie" @bind="f.Categorie">
+                        @foreach (var cat in categories) { <option value="@cat.Code">@cat.Libelle@(cat.Medicament ? "" : " (parapharmacie)")</option> }
+                    </select>
+                </div>
                 <div class="champ" style="flex: 0 1 210px" title="Facultatif, 1 à 10000. Vide : la valeur de la nomenclature nationale est utilisée si elle est lisible.">
                     <label for="mp-contenance">Contenance (unités par boîte)</label>
                     <input id="mp-contenance" data-champ="contenance" type="number" min="1" max="10000" step="1"
@@ -90,6 +98,14 @@
         public int? Contenance { get; set; }
         public int? ContenanceNomenclature { get; init; }
         public string? ConditionnementNomenclature { get; init; }
+        public string Categorie { get; set; } = "medicament";
+    }
+
+    private List<CategorieProduitDto> categories = [new("medicament", "Médicament", true)];
+
+    protected override async Task OnInitializedAsync()
+    {
+        if ((await Api.CategoriesProduitsAsync()) is ({ Count: > 0 } liste, null)) categories = liste;
     }
 
     private Fiche? fiche;
@@ -129,7 +145,8 @@
         {
             Id = f.Id, NomCommercial = f.NomCommercial, Dci = f.Dci, Dosage = f.Dosage, Forme = f.Forme, CodeBarre = f.CodeBarre, PrixPublic = f.PrixPublic,
             TarifReference = f.TarifReference, Remboursable = f.Remboursable, TauxTva = f.TauxTva, Actif = f.Actif, Classe = f.Classe,
-            Contenance = f.Contenance, ContenanceNomenclature = f.ContenanceNomenclature, ConditionnementNomenclature = f.ConditionnementNomenclature
+            Contenance = f.Contenance, ContenanceNomenclature = f.ContenanceNomenclature, ConditionnementNomenclature = f.ConditionnementNomenclature,
+            Categorie = f.Categorie ?? "medicament"
         };
     }
 
@@ -140,7 +157,7 @@
         try
         {
             var (information, e) = await Api.ModifierProduitAsync(new FicheProduitModifiableDto(f.Id, f.NomCommercial, f.Dci, f.Dosage, f.Forme, f.CodeBarre, f.PrixPublic,
-                f.TarifReference, f.Remboursable, f.TauxTva, f.Actif, f.Classe, f.Contenance));
+                f.TarifReference, f.Remboursable, f.TauxTva, f.Actif, f.Classe, f.Contenance, Categorie: f.Categorie));
             if (e is not null) { erreur = e; return; }
             if (await Api.AssocierIndicationsAsync(f.Id, indications.Select(i => i.Id).ToList()) is { } ei)
             {

@@ -142,7 +142,8 @@ internal static class AchatsEndpoints
             {
                 var liste = (ids ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => long.TryParse(x, out var v) ? v : 0).Where(v => v > 0);
                 return Results.Ok((await lire.ExecuterAsync(liste, ct))
-                    .Select(i => new InfoAchatProduitDto(i.ProduitId, i.Classe, i.PrixPublic, i.TauxTva, i.ShpParBoite, i.BloqueAchat, i.MotifBlocage)).ToList());
+                    .Select(i => new InfoAchatProduitDto(i.ProduitId, i.Classe, i.PrixPublic, i.TauxTva, i.ShpParBoite, i.BloqueAchat, i.MotifBlocage,
+                        Pharma.Domain.Achats.RegleShp.LibelleClasse(i.Classe))).ToList());
             })
            .ExigerPermission(Permissions.AchatsReceptionner);
 

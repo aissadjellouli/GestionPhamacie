@@ -28,8 +28,13 @@ namespace Pharma.Infrastructure;
 /// <param name="FichierSuperAdmin">Fichier chiffré du compte super admin (vide : C:\ProgramData\PharmaOfficine\super-admin.dat).</param>
 /// <param name="DossierSynchronisation">Dossier de la clé et du certificat de synchronisation de ce serveur (vide : C:ProgramDataPharmaOfficineSynchronisation).</param>
 /// <param name="FichierCleIntegrite">Fichier chiffré de la clé de scellement des journaux (vide : C:\ProgramData\PharmaOfficine\cle-integrite.dat).</param>
+/// <param name="RacineDonnees">Racine des données (réglage Donnees:Racine ; vide : C:\ProgramData\PharmaOfficine sous Windows, /var/lib/pharmaofficine ailleurs).</param>
+/// <param name="Protection">Protection des secrets locaux, choisie par l'hôte (vide : DPAPI machine, comportement d'origine).</param>
+/// <param name="DossierArchivesFiscales">Archives des rapports fiscaux scellés (réglage Fiscal:DossierArchives ; vide : racine\archives-fiscales).</param>
+/// <param name="FichierCopieSecours">Réglages et état de la copie de secours (réglage CopieSecours:Fichier ; vide : racine\copie-secours.json).</param>
 public sealed record InfrastructureOptions(string ChaineConnexion, string DossierExportChifa, string DossierOrdonnances, string? CheminPgDump = null,
-    string? DossierArchiveChifa = null, string? FichierSuperAdmin = null, string? FichierCleIntegrite = null, string? DossierSynchronisation = null);
+    string? DossierArchiveChifa = null, string? FichierSuperAdmin = null, string? FichierCleIntegrite = null, string? DossierSynchronisation = null,
+    string? RacineDonnees = null, IProtectionDonnees? Protection = null, string? DossierArchivesFiscales = null, string? FichierCopieSecours = null);
 
 public static class DependencyInjection
 {
@@ -54,6 +59,11 @@ public static class DependencyInjection
             throw new InvalidOperationException("Chaîne de connexion « Pharmacie » manquante.");
 
         services.AddSingleton(NpgsqlDataSource.Create(AvecFuseau(options.ChaineConnexion)));
+        // Dossiers du serveur et protection des secrets hors base : inchangés sous Windows sans réglage (C:\ProgramData\PharmaOfficine, DPAPI)
+        var racine = DossiersDonnees.Racine(options.RacineDonnees);
+        var protection = options.Protection ?? new ProtectionDpapiMachine();
+        services.AddSingleton(protection);
+        static string Choisir(string? reglage, string defaut) => string.IsNullOrWhiteSpace(reglage) ? defaut : reglage;
         services.AddDbContext<PharmaDbContext>((sp, o) => o.UseNpgsql(sp.GetRequiredService<NpgsqlDataSource>()));
 
         services.AddSingleton<IHorloge, HorlogeSysteme>();
@@ -191,20 +201,15 @@ public static class DependencyInjection
         services.AddScoped<Application.Notifications.IFileMessagesLecture, Notifications.NotificationsSql>();
         services.AddScoped<Application.Notifications.IDonneesRapport, Notifications.DonneesRapportSql>();
         services.AddScoped<Application.Notifications.IAlertesNonEnvoyees, Notifications.AlertesNonEnvoyeesSql>();
-        services.AddSingleton<Application.Notifications.IProtectionSecret, Notifications.ProtectionDpapi>();
+        services.AddSingleton<Application.Notifications.IProtectionSecret, Notifications.ProtectionSecretSmtp>();
         services.AddSingleton<Application.Notifications.IEnvoiEmail, Notifications.EnvoiEmailMailKit>();
         services.AddSingleton<Application.Achats.IEnvoiEmailPieceJointe, Notifications.EnvoiEmailMailKit>();
         services.AddSingleton<Application.Notifications.IEnvoiSms, Notifications.EnvoiSmsModemGsm>();
         services.AddSingleton<Application.SuperAdmin.ICompteSuperAdmin>(new Securite.CompteSuperAdminFichier(
-            string.IsNullOrWhiteSpace(options.FichierSuperAdmin)
-                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "super-admin.dat")
-                : options.FichierSuperAdmin));
+            Choisir(options.FichierSuperAdmin, Path.Combine(racine, "super-admin.dat")), protection));
         services.AddScoped<Application.SuperAdmin.ITitulaireLecture, Securite.TitulaireLecture>();
         // Intégrité des journaux : clé de scellement hors de la base (DPAPI machine), registre et vérifications en base (script 111)
-        var scelleur = new Securite.ScelleurIntegriteLocal(
-            string.IsNullOrWhiteSpace(options.FichierCleIntegrite)
-                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "cle-integrite.dat")
-                : options.FichierCleIntegrite);
+        var scelleur = new Securite.ScelleurIntegriteLocal(Choisir(options.FichierCleIntegrite, Path.Combine(racine, "cle-integrite.dat")), protection);
         services.AddSingleton<Application.Integrite.IScelleurIntegrite>(scelleur);
         // 2e serveur (script 122) : export / import de la clé (même fichier), réglages par serveur, réplication
         services.AddSingleton<Application.SecondServeur.ICleIntegriteStockee>(scelleur);
@@ -226,9 +231,7 @@ public static class DependencyInjection
         // Lots S5.1 et S5.5 : ordres reçus du serveur central (script 145)
         services.AddScoped<Application.Synchronisation.IOrdresCentrauxDepot, Synchronisation.OrdresCentrauxSql>();
         services.AddSingleton<Application.Synchronisation.ICertificatSync>(new Synchronisation.CertificatSyncFichier(
-            string.IsNullOrWhiteSpace(options.DossierSynchronisation)
-                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "Synchronisation")
-                : options.DossierSynchronisation));
+            Choisir(options.DossierSynchronisation, Path.Combine(racine, "Synchronisation")), protection));
         // Registre des psychotropes renforcé (lot 8, script 117) ; répertoire national des ordonnances : adaptateur FACTICE
         services.AddScoped<Application.Psychotropes.IRegistreRenforceDepot, Psychotropes.RegistreRenforceSql>();
         services.AddScoped<Application.Psychotropes.IZonePsychotropesDepot, Psychotropes.RegistreRenforceSql>();
@@ -237,14 +240,14 @@ public static class DependencyInjection
         services.AddScoped<Application.Fiscal.IJournalFiscalDepot, Fiscal.JournalFiscalSql>();
         services.AddSingleton<Application.Fiscal.IDocumentsFiscaux, DocumentsPdf>();
         services.AddSingleton<Application.Fiscal.IArchivesFiscales>(new Fiscal.ArchivesFiscalesLocales(
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "archives-fiscales")));
+            Choisir(options.DossierArchivesFiscales, Path.Combine(racine, "archives-fiscales"))));
         // Restauration : scripts database/migration/0xx livrés avec l'API (sous-dossier « database »)
         services.AddScoped<Application.SuperAdmin.IRestaurationBase>(sp => new Sauvegardes.RestaurationPostgres(
             options.ChaineConnexion, options.CheminPgDump, Path.Combine(AppContext.BaseDirectory, "database"), sp.GetRequiredService<NpgsqlDataSource>()));
         services.AddScoped<Application.Sauvegardes.ISauvegardesDepot, Sauvegardes.SauvegardesSql>();
         // PC de secours : réglages et état de la seconde copie hors de la base (C:\ProgramData\PharmaOfficine\copie-secours.json)
         services.AddSingleton<Application.Sauvegardes.ICopieSecoursDepot>(new Sauvegardes.CopieSecoursFichier(
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "copie-secours.json")));
+            Choisir(options.FichierCopieSecours, Path.Combine(racine, "copie-secours.json"))));
         services.AddSingleton<Application.Sauvegardes.IFichiersCopieSecours, Sauvegardes.FichiersCopieSecours>();
         services.AddScoped<Application.Sauvegardes.ITestRestauration>(sp => new Sauvegardes.RestaurationPostgres(
             options.ChaineConnexion, options.CheminPgDump, Path.Combine(AppContext.BaseDirectory, "database"), sp.GetRequiredService<NpgsqlDataSource>()));

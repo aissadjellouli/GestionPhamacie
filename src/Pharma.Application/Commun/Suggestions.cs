@@ -16,8 +16,10 @@ namespace Pharma.Application.Commun;
 /// <param name="LettresMin">Lettres tapées au minimum avant de proposer : 2 (charte) ; 0 seulement pour un champ à valeurs très courtes
 /// dont toutes les valeurs sont proposées dès l'entrée dans le champ (rayon d'un emplacement : A, B, C…).</param>
 /// <param name="Alphabetique">Vrai : valeurs triées par ordre alphabétique (sans majuscules ni accents) ; faux : les plus fréquentes d'abord.</param>
+/// <param name="Limite">Propositions au plus : 10 (charte) ; davantage seulement pour un champ dont TOUTES les valeurs doivent être
+/// proposées (rayon d'un emplacement : jusqu'à <see cref="ChampsSuggestions.LimiteRayons"/>, décision du titulaire 2026-11-20).</param>
 public sealed record ChampSuggestion(string Cle, string Table, string Colonne, string? Condition, IReadOnlyList<string> Droits,
-    int LettresMin = ChampsSuggestions.LettresMin, bool Alphabetique = false);
+    int LettresMin = ChampsSuggestions.LettresMin, bool Alphabetique = false, int Limite = ChampsSuggestions.Limite);
 
 /// <summary>
 /// Liste blanche des champs à valeurs proposées. JAMAIS de colonne de la table patient ni de texte libre pouvant contenir le nom d'un
@@ -29,19 +31,22 @@ public static class ChampsSuggestions
 {
     /// <summary>Propositions au plus par saisie (charte : 10).</summary>
     public const int Limite = 10;
+    /// <summary>Rayons proposés au plus (une lettre chacun, A à Z, et quelques rayons nommés) : tous les rayons, liste défilante.</summary>
+    public const int LimiteRayons = 30;
     /// <summary>Lettres tapées au minimum avant de proposer (charte : 2), sauf champ de la liste qui en demande moins (rayon : 0).</summary>
     public const int LettresMin = 2;
     /// <summary>Droit particulier : réservé au pharmacien titulaire (écrans Financements).</summary>
     public const string Titulaire = PermissionServiceExtensions.MarqueTitulaire;
 
     /// <summary>
-    /// Libellé d'un mouvement de trésorerie saisi à la main : dépense ou encaissement, hors caisse et hors écriture automatique, et non
-    /// inscrit par un usage de financement ni par le paiement d'une échéance de prêt (libellés composés par le logiciel).
+    /// Libellé d'un versement d'organisme mis par le logiciel, jamais un libellé tapé à la main (risque de nom de client ; décision du
+    /// titulaire 2026-11-20) : « Versement CNAS » ou « Versement CNAS · bordereau … » (libellé laissé vide, composé par le serveur avec
+    /// l'organisme et le bordereau du mouvement) ou « Versement du bordereau … » (mis par l'écran depuis un bordereau déposé).
     /// </summary>
-    public const string LibelleMouvementSaisi =
-        "nature IN ('depense', 'encaissement') AND NOT automatique AND session_caisse_id IS NULL"
-        + " AND NOT EXISTS (SELECT 1 FROM utilisation_financement u WHERE u.mouvement_id = mouvement_tresorerie.id OR u.depense_id = mouvement_tresorerie.id)"
-        + " AND NOT EXISTS (SELECT 1 FROM paiement_echeance_pret e WHERE e.mouvement_charges_id = mouvement_tresorerie.id)";
+    public const string LibelleVersementOrganismeLogiciel =
+        "nature = 'versement_organisme' AND (libelle = 'Versement ' || (SELECT o.code FROM organisme o WHERE o.id = mouvement_tresorerie.organisme_id)"
+        + " || COALESCE(' · bordereau ' || (SELECT b.numero FROM bordereau b WHERE b.id = mouvement_tresorerie.bordereau_id), '')"
+        + " OR EXISTS (SELECT 1 FROM bordereau b WHERE mouvement_tresorerie.libelle = 'Versement du bordereau ' || b.numero))";
 
     public static readonly IReadOnlyDictionary<string, ChampSuggestion> Liste = new[]
     {
@@ -57,15 +62,16 @@ public static class ChampsSuggestions
         new ChampSuggestion("banque_reglement_fournisseur", "reglement_fournisseur", "banque", null, [Permissions.AchatsRegler]),
         // Compte de trésorerie : banque
         new ChampSuggestion("banque_compte_tresorerie", "compte_tresorerie", "banque", null, [Permissions.TresorerieGerer]),
-        // Mouvement de trésorerie saisi à la main (Trésorerie › dépense ou encaissement). Exclus, car écrits par le logiciel : versements
-        // de la caisse et transferts (« A → B »), versements d'organisme (« Versement CNAS · bordereau … » par défaut), mouvements des
-        // financements (« … · pour : … », « … (payée par : …) », « Échéance du … · prêt … »), dont les dépenses qu'ils inscrivent.
-        new ChampSuggestion("libelle_mouvement_tresorerie", "mouvement_tresorerie", "libelle", LibelleMouvementSaisi, [Permissions.TresorerieGerer]),
+        // Trésorerie › versement d'un organisme : libellés de versement d'organisme mis par le logiciel seulement. Les libellés de dépense
+        // et d'encaissement tapés à la main ne sont plus proposés (risque de nom de client, décision du titulaire 2026-11-20) ; les
+        // transferts et versements de caisse n'ont pas de libellé à taper (écrits par le logiciel)
+        new ChampSuggestion("libelle_versement_organisme", "mouvement_tresorerie", "libelle", LibelleVersementOrganismeLogiciel, [Permissions.TresorerieGerer]),
         // Prêt bancaire sans compte de la pharmacie : prêteur (écran Financements, réservé au titulaire)
         new ChampSuggestion("preteur_pret", "pret_bancaire", "preteur", null, [Titulaire]),
         // Emplacements : rayon. Les rayons font une lettre (A, B, C…) : tous les rayons existants sont proposés dès l'entrée dans le
-        // champ, triés (décision du titulaire, 2026-11-18) ; un nouveau rayon peut toujours être tapé
-        new ChampSuggestion("rayon_emplacement", "emplacement", "rayon", null, [Permissions.AdminParametres], LettresMin: 0, Alphabetique: true),
+        // champ, triés (décision du titulaire, 2026-11-18), TOUS et non 10 au plus (2026-11-20) ; un nouveau rayon peut toujours être tapé
+        new ChampSuggestion("rayon_emplacement", "emplacement", "rayon", null, [Permissions.AdminParametres], LettresMin: 0, Alphabetique: true,
+            Limite: LimiteRayons),
         // Financements › usage d'un prêt ou d'un apport (versement ou dépense payée) : libellé saisi ; les usages écrits par le logiciel
         // (règlement d'un grossiste, traite) et les libellés mis par défaut sont exclus (écran réservé au titulaire)
         new ChampSuggestion("libelle_usage_financement", "utilisation_financement", "libelle",
@@ -83,7 +89,7 @@ public interface ISuggestionsDepot
 
 /// <summary>
 /// GET /api/suggestions/{champ}?q= : clé inconnue refusée (422), droit de l'écran exigé (403), rien sous le minimum de lettres du champ
-/// (2, ou 0 pour le rayon d'un emplacement), 10 valeurs au plus.
+/// (2, ou 0 pour le rayon d'un emplacement), 10 valeurs au plus (30 pour le rayon d'un emplacement).
 /// </summary>
 public sealed class ProposerValeurs(ISuggestionsDepot depot, IPermissionService droits)
 {
@@ -102,7 +108,7 @@ public sealed class ProposerValeurs(ISuggestionsDepot depot, IPermissionService 
         if (!autorise) throw new DroitRefuseException(champ.Droits[0], "voir les valeurs déjà saisies de ce champ");
         var t = texte?.Trim() ?? "";
         if (t.Length < champ.LettresMin) return [];
-        var valeurs = await depot.ValeursAsync(champ, t, ChampsSuggestions.Limite, ct);
-        return valeurs.Take(ChampsSuggestions.Limite).ToList();
+        var valeurs = await depot.ValeursAsync(champ, t, champ.Limite, ct);
+        return valeurs.Take(champ.Limite).ToList();
     }
 }

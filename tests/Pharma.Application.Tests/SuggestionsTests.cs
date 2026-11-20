@@ -67,6 +67,10 @@ public class SuggestionsTests
         Assert.Equal(10, valeurs.Count);
         var appel = Assert.Single(depot.Appels);
         Assert.Equal(("comp", 10), (appel.Texte, appel.Limite));
+        // Rayon d'un emplacement : tous les rayons, 30 au plus (2026-11-20)
+        var rayons = new DepotEspion { Valeurs = 40 };
+        Assert.Equal(30, (await new ProposerValeurs(rayons, new DroitsFactices(Permissions.AdminParametres)).ExecuterAsync("rayon_emplacement", "", 1)).Count);
+        Assert.Equal(30, Assert.Single(rayons.Appels).Limite);
     }
 
     [Fact]
@@ -75,6 +79,9 @@ public class SuggestionsTests
         // Rayon d'un emplacement (une lettre : A, B, C…) : tous les rayons dès l'entrée dans le champ, triés (décision du 2026-11-18)
         var rayon = ChampsSuggestions.Liste["rayon_emplacement"];
         Assert.Equal((0, true), (rayon.LettresMin, rayon.Alphabetique));
+        // Tous les rayons (2026-11-20) : 30 au plus et non 10 ; les autres champs restent à 10 (charte)
+        Assert.Equal(ChampsSuggestions.LimiteRayons, rayon.Limite);
+        Assert.All(ChampsSuggestions.Liste.Values.Where(c => c.Cle != "rayon_emplacement"), c => Assert.Equal(ChampsSuggestions.Limite, c.Limite));
         var depot = new DepotEspion();
         var proposer = new ProposerValeurs(depot, new DroitsFactices(Permissions.AdminParametres));
         Assert.Equal(3, (await proposer.ExecuterAsync("rayon_emplacement", "", 1)).Count);
@@ -127,13 +134,14 @@ public class SuggestionsTests
     [Fact]
     public void Les_libelles_ecrits_par_le_logiciel_ne_sont_pas_proposes()
     {
-        // Trésorerie : dépense et encaissement saisis, hors caisse, hors automatique, hors mouvements inscrits par les financements
-        var mouvement = ChampsSuggestions.Liste["libelle_mouvement_tresorerie"].Condition!;
-        Assert.Contains("nature IN ('depense', 'encaissement')", mouvement);
-        Assert.Contains("NOT automatique", mouvement);
-        Assert.Contains("session_caisse_id IS NULL", mouvement);
-        Assert.Contains("utilisation_financement", mouvement);
-        Assert.Contains("paiement_echeance_pret", mouvement);
+        // Trésorerie (décision du 2026-11-20) : les libellés tapés à la main ne sont plus proposés (risque de nom de client) ;
+        // seuls les libellés de versement d'organisme mis par le logiciel le sont
+        Assert.False(ChampsSuggestions.Liste.ContainsKey("libelle_mouvement_tresorerie"));
+        var versement = ChampsSuggestions.Liste["libelle_versement_organisme"];
+        Assert.Equal(("mouvement_tresorerie", "libelle", Permissions.TresorerieGerer), (versement.Table, versement.Colonne, versement.Droits.Single()));
+        Assert.StartsWith("nature = 'versement_organisme' AND (", versement.Condition!);
+        Assert.Contains("libelle = 'Versement ' || (SELECT o.code FROM organisme o", versement.Condition!);
+        Assert.Contains("'Versement du bordereau ' || b.numero", versement.Condition!);
         // Financements : usages saisis seulement (pas les règlements de grossiste ni les traites), libellés par défaut exclus
         var usage = ChampsSuggestions.Liste["libelle_usage_financement"].Condition!;
         Assert.Contains("usage IN ('tresorerie', 'depense')", usage);
