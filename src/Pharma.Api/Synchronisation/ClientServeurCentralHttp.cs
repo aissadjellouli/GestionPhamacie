@@ -176,6 +176,14 @@ public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogge
         return new ReponseDeclarationSync(r.DejaDeclaree, r.AvantPremierLot);
     }
 
+    /// <summary>Lot S7.2b : code de rattachement (POST /api/v1/rattachement) ; le code n'est jamais journalisé ici.</summary>
+    public async Task<CodeRattachementSync> CodeRattachementAsync(string adresse, string compte, CancellationToken ct = default)
+    {
+        var r = await PosterAsync<DemandeCodeRattachementDto, ReponseCodeRattachementDto>(adresse, "api/v1/rattachement", new DemandeCodeRattachementDto(compte), ct);
+        if (ComptesDistants.NormaliserCodeRattachement(r.Code) is null) throw new ServeurCentralException("réponse du serveur central mal formée (code de rattachement)");
+        return new CodeRattachementSync(r.Code, r.Expire.UtcDateTime);
+    }
+
     private async Task<T> LireGetAsync<T>(string adresse, string route, CancellationToken ct)
     {
         var (http, cert) = await ClientCertifieAsync(adresse, ct);

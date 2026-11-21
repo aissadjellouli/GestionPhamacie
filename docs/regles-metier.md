@@ -2277,6 +2277,27 @@ Règles appliquées par le script central `032_ecrans_titulaire.sql`, la console
   terminé comprenant la table, table ou colonne non envoyée, colonne d'une famille nominative non envoyée) ; sans les retours clients, le
   chiffre d'affaires reste non disponible. Les totaux sont ceux des données reçues au dernier contact.
 
+## Accès à distance : code de rattachement tiré par le poste (lot S7.2b, 2026-11-21)
+
+Règles appliquées par `GenererCodeAccesDistant` (API locale), la route `POST /api/v1/rattachement` et le script central
+`033_code_rattachement_poste.sql` ([ecrans-central.md](ecrans-central.md) § 3 ter) :
+
+- **Qui** : le titulaire seulement (un autre employé, même avec `admin.parametres`, voit un texte et aucun bouton ; l'API refuse) ; mot de
+  passe du titulaire **ressaisi** à chaque code (même vérification que « Repartir sur une nouvelle époque »).
+- **Quand** : synchronisation activée (case cochée, adresse réglée, serveur activé, certificat non échu) et base hors lecture seule ; sinon
+  refus clair, aucun appel au central. Identifiant du compte distant : 3 à 60 caractères, minuscules, chiffres, « . _ - ».
+- **Quelle officine** : celle du certificat de ce serveur, jamais choisie ni saisie.
+- **Code** : mêmes règles que la console (12 caractères, 30 minutes, usage unique, un compte et une officine, le code précédent du même
+  compte pour la même officine est annulé, empreinte seule au central) ; affiché une seule fois, effacé de l'écran au changement de
+  rubrique ou par « J'ai noté le code », jamais gardé ni écrit dans un journal.
+- **Refus** : compte inconnu, non titulaire, désactivé ou mal formé au central → **même message** (« Code non délivré : vérifiez
+  l'identifiant du compte distant… ») ; au-delà de **5 demandes par heure** pour l'officine (délivrées ou refusées) → « Trop de codes
+  demandés… » ; central injoignable → aucun code, réessayer.
+- **Journaux** : poste, `code_acces_distant` (échéance, sans code ni identifiant) ; central, journal des accès (« Poste de l'officine »,
+  visible du titulaire) et journal de sécurité (délivrance, ou motif réel du refus sans l'identifiant saisi).
+- — `src/Pharma.Application/Synchronisation/AccesDistant.cs`, `src/Pharma.Cloud.Api/Comptes/RattachementPoste.cs`,
+  `database/cloud/033_code_rattachement_poste.sql`, `src/Pharma.Desktop/Composants/Pages/AdminSynchronisation.razor`
+
 ## Barre d'état : liaisons avec le serveur central et le 2e serveur (2026-11-21)
 
 - **Un élément par liaison, seulement en anomalie.** Rien n'est affiché quand la liaison n'est pas en place (synchronisation

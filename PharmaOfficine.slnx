@@ -361,6 +361,8 @@
     <File Path="database/cloud/tests/031_ecrans_editeur_tests.sql" />
     <File Path="database/cloud/032_ecrans_titulaire.sql" />
     <File Path="database/cloud/tests/032_ecrans_titulaire_tests.sql" />
+    <File Path="database/cloud/033_code_rattachement_poste.sql" />
+    <File Path="database/cloud/tests/033_code_rattachement_poste_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

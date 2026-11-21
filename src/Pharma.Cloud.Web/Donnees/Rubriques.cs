@@ -71,7 +71,7 @@ public static class Rubriques
         Guid g => g.ToString()[..8],
         string s when colonne == "etat" && Etats.TryGetValue(s, out var e) => e,
         string s when colonne == "droits" => string.Join(", ", s.Split(',').Select(d => d switch { "consulter" => "tableau de bord", "journal_acces" => "journal des accès", _ => d })),
-        string s when colonne == "acteur" => s switch { "vous" => "Vous", "editeur" => "Éditeur (support)", "titulaire" => "Autre titulaire", "console" => "Console du central", _ => s },
+        string s when colonne == "acteur" => s switch { "vous" => "Vous", "editeur" => "Éditeur (support)", "titulaire" => "Autre titulaire", "poste" => "Poste de l’officine", "console" => "Console du central", _ => s },
         _ => Convert.ToString(valeur, CultureInfo.GetCultureInfo("fr-FR")) ?? "—",
     };
 }

@@ -86,5 +86,10 @@ Détail : [ecrans-central.md](ecrans-central.md) § 5. En local seulement à ce 
   seule en base ; 5 refus par quart d'heure ; code d'un autre compte : même réponse qu'un code inconnu). Droits par officine : `consulter`
   (tableau de bord : **totaux seulement**, aucun patient, aucune vente détaillée) et `journal_acces` (journal des accès de l'officine, y
   compris ceux de l'éditeur, sans identifiant ni nom). Sessions : 30 minutes d'inactivité, 8 heures au plus.
+- **Accès à distance depuis le poste (lot S7.2b, script central 033)** : seul le **titulaire** de l'officine génère un code de rattachement
+  (Administration › Synchronisation › Accès à distance), avec son **mot de passe ressaisi** (essais comptés, blocage) et la synchronisation
+  activée. Le poste demande le code au central par `POST /api/v1/rattachement` (certificat client + jeton) : **l'officine est celle du
+  certificat**, jamais un champ ; la base revérifie le certificat. Compte inconnu, non titulaire ou désactivé : **même réponse** (aucune
+  énumération) ; 5 demandes par heure et par officine. Le code est montré une fois, jamais gardé ni journalisé (empreinte seule au central).
 - **Rôles étanches** : le titulaire n'ouvre aucun écran ni aucune action de l'éditeur, l'éditeur aucun écran du titulaire ; refus par les
   écrans (« Accès refusé ») **et** par la base (rôle revérifié dans chaque fonction).

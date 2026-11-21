@@ -487,6 +487,11 @@ select, .panneau input[type="date"] { height: 44px; padding: 0 10px; border-radi
 /* Boutons d'action sous le texte d'un bandeau d'attention (Synchronisation : « Repartir sur une nouvelle époque ») */
 .bandeau-attention .actions { margin-top: 8px; align-items: flex-end; }
 .code-emplacement { display: inline-block; padding: 2px 8px; border-radius: 6px; background: var(--accent-clair); color: var(--accent-fonce); font-weight: 600; font-size: 13px; letter-spacing: 0.02em; white-space: nowrap; }
+/* Lot S7.2b : code d'accès à distance (Synchronisation › Accès à distance), montré une fois en grand ; couleurs de la charte (clair et sombre) */
+.code-acces-distant { display: inline-block; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--bordure); background: var(--surface-2); color: var(--accent-texte);
+  font-family: Consolas, "Courier New", monospace; font-size: 32px; font-weight: 700; letter-spacing: 0.08em; white-space: nowrap; user-select: all; }
+.achats-ligne > .champ.champ-compte-distant { flex: 1 1 260px; }
+.achats-ligne > .champ.champ-bouton { flex: 0 0 auto; }
 .ligne-comptee { background: var(--accent-clair); }
 .texte-urgent { color: var(--urgent); }
 .suggestions button.actif { background: var(--accent-clair); outline: 2px solid var(--accent-trait); outline-offset: -2px; }

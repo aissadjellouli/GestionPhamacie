@@ -166,6 +166,34 @@ public static class PointsEntree
             return Results.Ok(await depot.DescendantsAsync(appelant.Officine, d.VersionAppliquee, ct));
         }).RequireRateLimiting("officine");
 
+        // Lot S7.2b (script 033) : code de rattachement demandé par le poste (Administration › Synchronisation › Accès à distance).
+        // Officine = celle du certificat et du jeton (AppelantAsync), jamais un champ de la demande ; code montré une seule fois
+        // (réponse non mise en cache), jamais journalisé ; compte inconnu, non titulaire ou désactivé : même réponse neutre (422) ;
+        // 5 demandes par heure et par officine (429 avec motif).
+        v1.MapPost("/rattachement", async (DemandeCodeRattachementDto d, HttpContext ctx, Npgsql.NpgsqlDataSource db, ILoggerFactory lf, CancellationToken ct) =>
+        {
+            var (appelant, refus) = await AppelantAsync(ctx, ct);
+            if (appelant is null) return refus!;
+            ctx.Response.Headers.CacheControl = "no-store";
+            var log = lf.CreateLogger("Pharma.Cloud.Rattachement");
+            try
+            {
+                var (statut, code, expire) = await Comptes.RattachementPoste.DemanderAsync(db, appelant.Officine, appelant.EmpreinteCertificat, d.Compte, ct);
+                if (Comptes.RattachementPoste.Reponse(statut) is { } r)
+                {
+                    log.LogWarning("Officine {Officine} : code de rattachement non délivré ({Statut})", appelant.Officine, statut);
+                    return Results.Problem(r.Motif, statusCode: r.Code);
+                }
+                log.LogInformation("Officine {Officine} : code de rattachement délivré au poste (30 min)", appelant.Officine);
+                return Results.Ok(new ReponseCodeRattachementDto(code!, expire!.Value));
+            }
+            catch (Npgsql.PostgresException p) when (p.SqlState == "42501")
+            {
+                // Certificat révoqué ou officine partie entre le contrôle de l'API et la base
+                return Results.Problem("Certificat révoqué, échu ou inconnu.", statusCode: 401);
+            }
+        }).RequireRateLimiting("officine");
+
         // Lot S5.3 : téléchargement d'un fichier de référentiel (nomenclature) désigné par un ordre de cette officine ; 404 sinon
         v1.MapGet("/referentiels/{id:long}", async (long id, HttpContext ctx, DepotCentral depot, CancellationToken ct) =>
         {

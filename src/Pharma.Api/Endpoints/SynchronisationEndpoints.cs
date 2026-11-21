@@ -74,6 +74,16 @@ public static class SynchronisationEndpoints
             return Results.Ok(new ResultatNouvelleEpoqueSynchronisationDto(r.Epoque, r.AncienneEpoque, r.Chargement));
         });
 
+        // Lot S7.2b : accès à distance, code de rattachement de l'officine (celle du certificat) à un compte distant ; titulaire seulement,
+        // mot de passe du titulaire ressaisi ; code rendu une fois, réponse non mise en cache, jamais gardé ni journalisé
+        s.MapPost("/acces-distant/code", async (DemandeCodeAccesDistantDto d, GenererCodeAccesDistant generer, ClaimsPrincipal user, HttpContext ctx,
+            CancellationToken ct) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store";
+            var r = await generer.ExecuterAsync(d.Compte, d.MotDePasse, user.UtilisateurId(), ct);
+            return Results.Ok(new CodeAccesDistantDto(r.Code, r.ExpireLeUtc));
+        });
+
         // Lot S6.5.4 (S6.5-D4) : prise d'acte du titulaire d'une restauration constatée par le serveur central (cause), journalisée,
         // envoyée au central ; une fois par époque
         s.MapPost("/integrite/prise-acte", async (PriseActeRestaurationDto d, PrendreActeRestaurationSync prendre, ClaimsPrincipal user, CancellationToken ct) =>

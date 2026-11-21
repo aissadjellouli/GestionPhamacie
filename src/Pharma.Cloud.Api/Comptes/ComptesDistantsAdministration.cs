@@ -10,7 +10,8 @@ namespace Pharma.Cloud.Api.Comptes;
 ///   --creer-compte-editeur &lt;identifiant&gt; --nom &lt;nom&gt; (--telephone &lt;n°&gt; | --email &lt;adresse&gt;)   mot de passe provisoire affiché UNE fois
 ///   --creer-compte-titulaire &lt;identifiant&gt; --nom &lt;nom&gt; (--telephone &lt;n°&gt; | --email &lt;adresse&gt;) --auteur &lt;nom&gt;   idem
 ///   --code-rattachement &lt;identifiant&gt; &lt;officine (uuid)&gt; --auteur &lt;nom&gt;   code de 30 min affiché UNE fois (empreinte seule en base ;
-///                                                                    développement, en attendant la rubrique du poste, lot S7.2b)
+///                                                                    développement ; le titulaire le tire du poste depuis le lot S7.2b,
+///                                                                    mêmes tirage et règles : RattachementPoste, script central 033)
 ///   --comptes-distants                                                                       liste (sans empreinte ni contact complet)
 ///   --desactiver-compte &lt;identifiant&gt;                                                     sessions fermées
 ///   --deverrouiller-compte &lt;identifiant&gt;
@@ -65,11 +66,11 @@ public static class ComptesDistantsAdministration
             case "--code-rattachement":
                 {
                     var (identifiant, officine, auteur) = LireCodeRattachement(args);
-                    var code = ComptesDistants.CodeRattachement();
+                    var (code, empreinte) = ComptesDistants.TirerCodeRattachement();
                     await using var cmd = db.CreateCommand("SELECT statut, expire_le FROM cloud_compte_distant_code_rattachement($1, $2, $3, $4)");
                     cmd.Parameters.AddWithValue(identifiant);
                     cmd.Parameters.AddWithValue(officine);
-                    cmd.Parameters.AddWithValue(ComptesDistants.EmpreinteCodeRattachement(code)!);
+                    cmd.Parameters.AddWithValue(empreinte);
                     cmd.Parameters.AddWithValue(auteur);
                     await using var r = await cmd.ExecuteReaderAsync(ct);
                     await r.ReadAsync(ct);

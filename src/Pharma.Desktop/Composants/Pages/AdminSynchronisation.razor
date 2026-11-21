@@ -449,6 +449,48 @@
                 <p class="detail" style="margin: 0">La clé privée de ce serveur est créée ici et ne le quitte jamais ; le certificat est valable 3 ans et renouvelé automatiquement avant l’échéance.</p>
             </section>
         }
+
+        @if (t is not null && rubrique == "acces-distant")
+        {
+            @* Lot S7.2b : le titulaire tire lui-même le code de rattachement de l'officine (celle du certificat de ce serveur) à son compte
+               distant ; mot de passe ressaisi ; code montré une fois, effacé de l'écran au changement de rubrique, jamais gardé. Sans
+               synchronisation activée : explication, aucun bouton. Aucun style en ligne (classes de la charte). *@
+            <section class="panneau" aria-labelledby="s-acces-distant" data-zone="acces-distant">
+                <h2 id="s-acces-distant">Accès à distance</h2>
+                <p class="detail">Le titulaire consulte le tableau de bord de l’officine et le journal des accès depuis les écrans du serveur central, avec son compte distant. Pour rattacher l’officine à ce compte, générez ici un code à usage unique.</p>
+                @if (!AccesDistantPossible)
+                {
+                    <p class="detail" data-zone="acces-distant-indisponible">La synchronisation n’est pas activée sur ce serveur : l’accès à distance passe par le serveur central. Activez d’abord la synchronisation (sous-rubriques Réglages et Activation), puis revenez ici.</p>
+                }
+                else if (!EstTitulaire)
+                {
+                    <p class="detail" data-zone="acces-distant-titulaire">Seul le titulaire peut générer un code d’accès à distance.</p>
+                }
+                else if (codeAcces is { } ca)
+                {
+                    <div class="champ" data-zone="code-acces-distant">
+                        <span class="detail">Code de rattachement (usage unique, valable jusqu’à @ca.ExpireLe.ToLocalTime().ToString("HH:mm")) :</span>
+                        <span class="code-acces-distant" aria-live="polite">@ca.Code</span>
+                    </div>
+                    <p class="detail">À saisir dans « Rattacher une officine » des écrans du serveur central (https://‹adresse des écrans du serveur central›/rattacher), connecté avec le compte distant, <strong>dans les 30 minutes</strong>. Le code n’est pas gardé : il disparaît de cet écran dès que vous le quittez. Un nouveau code annule le précédent.</p>
+                    <div class="actions"><button type="button" class="btn" @onclick="EffacerCodeAcces">J’ai noté le code</button></div>
+                }
+                else
+                {
+                    <div class="achats-ligne">
+                        <div class="champ champ-compte-distant"><label for="s-compte-distant" class="requis">Identifiant du compte distant</label>
+                            <input id="s-compte-distant" data-champ="compte" type="text" autocomplete="off" placeholder="titulaire.dupont"
+                                   @bind="compteDistant" @bind:event="oninput" /></div>
+                        <div class="champ champ-compte-distant"><label for="s-mdp-acces" class="requis">Votre mot de passe</label>
+                            <input id="s-mdp-acces" data-champ="mot_de_passe" type="password" autocomplete="current-password"
+                                   @bind="motDePasseAcces" @bind:event="oninput" /></div>
+                        <div class="champ champ-bouton"><button type="button" class="btn btn-principal"
+                                disabled="@(enCours || string.IsNullOrWhiteSpace(compteDistant) || motDePasseAcces.Length == 0)" @onclick="GenererCodeAccesAsync">Générer le code</button></div>
+                    </div>
+                    <p class="detail">Le code ne vaut que pour ce compte et cette officine, 30 minutes, une seule fois. 5 codes par heure au plus pour l’officine.</p>
+                }
+            </section>
+        }
     </div>
 </div>
 
@@ -517,6 +559,8 @@
     protected override async Task OnParametersSetAsync()
     {
         if (rubrique != rubriqueAffichee) { rubriqueAffichee = rubrique; message = null; }
+        // Lot S7.2b : le code d'accès à distance et le mot de passe saisi ne survivent pas à un changement de rubrique
+        if (rubrique != "acces-distant") (codeAcces, motDePasseAcces) = (null, "");
         if (rubrique != "ordres") ordresCharges = false;
         else if (!ordresCharges)
         {
@@ -727,6 +771,23 @@
         confirmerEpoque = false;
         message = $"Nouvelle époque {r.Epoque} : l’envoi reprend au prochain passage avec un chargement complet (« Synchroniser maintenant » pour le lancer tout de suite).";
         await ChargerAsync();
+        return null;
+    });
+
+    // Lot S7.2b : accès à distance (code de rattachement tiré par le titulaire, mot de passe ressaisi, code jamais gardé)
+    private string compteDistant = "", motDePasseAcces = "";
+    private CodeAccesDistantDto? codeAcces;
+    private bool AccesDistantPossible => t is { Active: true, Activee: true, BaseEnLectureSeule: false };
+
+    private void EffacerCodeAcces() => codeAcces = null;
+
+    private Task GenererCodeAccesAsync() => Executer(async () =>
+    {
+        var mdp = motDePasseAcces;
+        motDePasseAcces = "";   // jamais gardé à l'écran après l'essai
+        var (r, e) = await Api.CodeAccesDistantAsync(compteDistant, mdp);
+        if (r is null) return e;
+        codeAcces = r;
         return null;
     });
 

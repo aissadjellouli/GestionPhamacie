@@ -600,6 +600,13 @@ Avant de livrer un écran : le comparer à un écran d'Administration (par exemp
 de styles fait le 10 novembre 2026 sur les 21 écrans donnait, après alignement, les mêmes valeurs partout pour chaque ligne du
 tableau « Hiérarchie du texte ».
 
+### Code d'accès à distance (S7.2b, 2026-11-21)
+
+`.code-acces-distant` (Administration › Synchronisation › Accès à distance) : code montré une seule fois, en grand (32 px, chasse fixe,
+espacé), couleurs par variables (`--surface-2`, `--accent-texte`, `--bordure`) donc lisible en clair et en sombre ; champs de la ligne
+`.achats-ligne` avec `.champ-compte-distant` et `.champ-bouton`. Aucun style en ligne dans la rubrique. **Mesure à faire** (1 366 × 768 et
+1 536 × 890, clair et sombre : formulaire, code affiché, synchronisation non activée).
+
 ### Mesures du 2026-11-21 (S7.2a, écrans du titulaire au central)
 
 Compte `titulaire.dev`, officine de développement rattachée par un code de la console ; Edge sans fenêtre, 1 366 × 768 et 1 536 × 890,

@@ -215,6 +215,21 @@ public sealed record NouvelleEpoqueSynchronisationDto(int EpoqueAffichee, string
 
 public sealed record ResultatNouvelleEpoqueSynchronisationDto(int Epoque, int AncienneEpoque, int? Chargement);
 
+// ---- Lot S7.2b : accès à distance (code de rattachement tiré par le poste ; docs/ecrans-central.md § 3 ter) ----
+
+/// <summary>API centrale, POST /api/v1/rattachement : identifiant du compte distant visé. L'officine est celle du certificat client,
+/// jamais un champ de la demande.</summary>
+public sealed record DemandeCodeRattachementDto(string? Compte);
+
+/// <summary>Code de rattachement en clair (montré une seule fois, jamais gardé) et son échéance (30 minutes).</summary>
+public sealed record ReponseCodeRattachementDto(string Code, DateTimeOffset Expire);
+
+/// <summary>API locale, Administration › Synchronisation › Accès à distance : compte distant visé et mot de passe du titulaire ressaisi.</summary>
+public sealed record DemandeCodeAccesDistantDto(string? Compte, string? MotDePasse);
+
+/// <summary>Code à saisir dans l'écran « Rattacher une officine » du serveur central, échéance (UTC) ; jamais gardé par le poste.</summary>
+public sealed record CodeAccesDistantDto(string Code, DateTime ExpireLe);
+
 /// <summary>
 /// Lot S4 : dernière vérification d'intégrité faite par le serveur central (résumé reçu par la voie descendante, format integrite-v1).
 /// Statut : ok, attente (une ligne, un ticket ou un sceau attendu n'est pas encore arrivé) ou anomalie.

@@ -172,6 +172,14 @@ affiché une fois). Le code de second facteur est écrit dans `%LOCALAPPDATA%\Ph
 développement seulement). Certificat HTTPS : celui de développement d'ASP.NET (`dotnet dev-certs https --trust`, il couvre `127.0.0.1`).
 Détails : [ecrans-central.md](ecrans-central.md).
 
+**Accès à distance (lot S7.2b) : comment tester.** Prérequis : scripts centraux `032` puis `033` passés sur `pharmacie_cloud_dev` (après
+relecture), `-Preparer` relancé (compte `titulaire.dev`), synchronisation du poste activée (étapes ci-dessus). Profil **« API + Poste + Central »**,
+F5 ; dans le poste, se connecter avec le compte **titulaire** de l'officine, Administration › Synchronisation › **Accès à distance** :
+identifiant `titulaire.dev`, mot de passe du titulaire du poste, « Générer le code » → code en grand, valable 30 minutes. Puis
+https://127.0.0.1:5094/ : connexion `titulaire.dev`, « Rattacher une officine », saisir le code → tableau de bord ; le journal des accès de
+l'officine montre « Poste de l'officine ». À vérifier aussi : identifiant inconnu ou `editeur.dev` → même message ; 6e demande dans l'heure
+→ « Trop de codes demandés » ; employé non titulaire → texte sans bouton ; synchronisation décochée → explication sans bouton.
+
 **5. Retirer** (central arrêté) : `.\scripts\dev\preparer_central_vs.ps1 -Retirer -WhatIf`, puis sans `-WhatIf`. Retire les variables
 posées par le script, les rôles `pharma_cloud_dev_vs` et `pharma_cloud_etat_vs` et le dossier `%LOCALAPPDATA%\PharmaOfficine\central-dev` ; rien n'est supprimé en
 base (l'officine reste au central, les réglages de synchronisation restent dans `pharmacie_dev` : décocher **Synchronisation activée**

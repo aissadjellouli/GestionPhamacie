@@ -318,6 +318,8 @@ public static class DependencyInjection
         // Synchronisation, lot S6.2 : base revenue en arrière, nouvelle époque (titulaire)
         services.AddScoped<Synchronisation.RepartirNouvelleEpoqueSync>();
         services.AddScoped<Synchronisation.PrendreActeRestaurationSync>();
+        // Synchronisation, lot S7.2b : accès à distance (code de rattachement tiré par le titulaire)
+        services.AddScoped<Synchronisation.GenererCodeAccesDistant>();
         // Synchronisation, lot S3 : bandeau, alertes au titulaire, réglages de supervision, purge de la file
         services.AddSingleton<Synchronisation.MemoireSupervisionSync>();
         services.AddScoped<Synchronisation.ConsulterAttenteSync>();

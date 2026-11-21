@@ -2101,3 +2101,16 @@ Le poste ne change pas dans ce lot. Détail et routes : [ecrans-central.md](ecra
 - **Journal des accès consultable par le titulaire** (§ 6) : accès de ses officines, acteur « vous », « éditeur », « autre titulaire » ou
   « console », sans identifiant ni nom.
 - **Console** : `--creer-compte-titulaire … --auteur`, `--code-rattachement <identifiant> <officine> --auteur` (développement, en attendant S7.2b).
+
+### 32.2 Lot S7.2b : accès à distance, code tiré par le poste (réalisé en local le 2026-11-21, go du titulaire, recommandations acceptées)
+
+Détail : [ecrans-central.md](ecrans-central.md) § 3 ter.
+
+- **Poste** : Administration › Synchronisation › **Accès à distance** ; titulaire seulement, mot de passe ressaisi, synchronisation activée
+  (sinon explication sans bouton) ; code en grand, échéance, consigne « …/rattacher dans les 30 minutes », jamais gardé.
+- **API locale** : `POST /api/admin/synchronisation/acces-distant/code` (`GenererCodeAccesDistant`), journal `code_acces_distant` sans code.
+- **API centrale** : `POST /api/v1/rattachement`, même authentification que l'échange (certificat client + jeton, `AppelantAsync`) ;
+  l'officine est celle du certificat ; même tirage que la console ; 422 neutre, 429 au-delà de 5 demandes par heure et par officine.
+- **Script central `033_code_rattachement_poste.sql`** : `cloud_poste_code_rattachement` (rôle `pharma_cloud_api`), enregistrement commun
+  `cloud_code_rattachement_enregistrer` (console et poste), acteur « poste » au journal de l'officine.
+- **Reste** : voir et retirer les comptes rattachés depuis le poste ; adresse réelle des écrans (mise en ligne).

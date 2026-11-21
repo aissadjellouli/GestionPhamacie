@@ -194,7 +194,14 @@ public interface IClientServeurCentral
     /// autre déclaration déjà reçue pour cette époque : 409. Sans implémentation : NotSupportedException.</summary>
     Task<ReponseDeclarationSync> DeclarerEpoqueAsync(string adresse, DeclarationEpoqueSync declaration, CancellationToken ct = default) =>
         throw new NotSupportedException();
+    /// <summary>Lot S7.2b : code de rattachement de cette officine (celle du certificat) à un compte distant (POST /api/v1/rattachement).
+    /// Refus neutre : ServeurCentralException 422 ; limite : 429. Sans implémentation : NotSupportedException.</summary>
+    Task<CodeRattachementSync> CodeRattachementAsync(string adresse, string compte, CancellationToken ct = default) =>
+        throw new NotSupportedException();
 }
+
+/// <summary>Code de rattachement délivré par le serveur central (montré une fois, jamais gardé) et son échéance (UTC).</summary>
+public sealed record CodeRattachementSync(string Code, DateTime ExpireLeUtc);
 
 /// <summary>Un seul passage de synchronisation à la fois dans l'API (singleton).</summary>
 public sealed class VerrouSync

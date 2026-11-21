@@ -60,6 +60,16 @@ public static partial class ComptesDistants
         return $"{c[..4]}-{c[4..8]}-{c[8..]}";
     }
 
+    /// <summary>
+    /// Code de rattachement et son empreinte, tirés ensemble : seul point de tirage de la console du central (--code-rattachement)
+    /// et de la route du poste (POST /api/v1/rattachement, lot S7.2b) ; le code est montré une fois, seule l'empreinte va en base.
+    /// </summary>
+    public static (string Code, string Empreinte) TirerCodeRattachement()
+    {
+        var code = CodeRattachement();
+        return (code, EmpreinteCodeRattachement(code)!);
+    }
+
     /// <summary>Code saisi ramené à sa forme canonique (majuscules, sans espace ni tiret), ou null s'il ne peut pas être un code.</summary>
     public static string? NormaliserCodeRattachement(string? saisie)
     {

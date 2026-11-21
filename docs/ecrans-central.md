@@ -3,7 +3,8 @@
 > **Statut (2026-11-21)** : lot **S7.1 réalisé en local** (écrans de l'éditeur), go du titulaire, toutes les recommandations de la
 > conception retenues. Lot **S7.2a réalisé en local** (écrans du titulaire, **côté serveur central seulement**, go du titulaire,
 > recommandations S7 acceptées) : § 3 bis. **Rien n'est en ligne** : la mise en ligne (hébergeur, certificat, SMTP, connexion de production)
-> viendra plus tard. Lot suivant : **S7.2b** (rubrique « Accès à distance » du poste : le titulaire tire lui-même le code de rattachement), à faire.
+> viendra plus tard. Lot **S7.2b réalisé en local** (rubrique « Accès à distance » du poste : le titulaire tire lui-même le code de
+> rattachement, go du titulaire, recommandations acceptées) : § 3 ter.
 
 Documents liés : [conception-synchronisation.md](conception-synchronisation.md) § 1, § 6, § 6.1, § 6.2 et § 32 ;
 [securite-et-droits.md](securite-et-droits.md) ; [charte-graphique.md](charte-graphique.md) ; [database/cloud/README.md](../database/cloud/README.md) ;
@@ -17,6 +18,9 @@ Documents liés : [conception-synchronisation.md](conception-synchronisation.md)
 | Script central `030_comptes_distants.sql` | base centrale | Rôle `pharma_cloud_ecrans`, comptes, sessions, codes de second facteur, journal des accès |
 | Script central `031_ecrans_editeur.sql` | base centrale | Lecture de l'éditeur et actions |
 | Script central `032_ecrans_titulaire.sql` (S7.2a) | base centrale | Droits par officine, codes de rattachement, lecture du titulaire (agrégats), journal des accès de ses officines |
+| Script central `033_code_rattachement_poste.sql` (S7.2b) | base centrale | Code de rattachement demandé par le poste (`cloud_poste_code_rattachement`, rôle `pharma_cloud_api`), enregistrement commun avec la console, acteur « poste » au journal de l'officine |
+| Route `POST /api/v1/rattachement` (S7.2b) | API centrale (`Pharma.Cloud.Api`, mTLS) | Code de rattachement de l'officine du certificat, montré une fois |
+| Rubrique « Accès à distance » (S7.2b) | poste, Administration › Synchronisation | Le titulaire génère le code (mot de passe ressaisi) |
 | Commandes de la console du central | `Pharma.Cloud.Api.exe` | `--creer-compte-editeur`, `--creer-compte-titulaire` (S7.2a), `--code-rattachement` (S7.2a), `--comptes-distants`, `--desactiver-compte`, `--deverrouiller-compte` |
 | Tests | `tests/Pharma.Cloud.Web.Tests`, `tests/Pharma.Cloud.Tests/ComptesDistantsConsoleTests.cs`, `database/cloud/tests/030_…`, `031_…`, `032_…` | Voir § 7 |
 
@@ -88,7 +92,21 @@ officine annule le précédent. La base ne garde que l'empreinte SHA-256 (`ratta
 destiné à un autre compte (**même réponse**, le motif réel `autre_compte` reste au journal), expiré, déjà utilisé ou annulé, officine
 partie ; au-delà de **5 refus par quart d'heure**, plus aucun essai (« Trop d'essais »). Réussite : `compte_officine` (droits `consulter`,
 `journal_acces`, « code de rattachement n° … »), note au journal des accès **et** au journal de sécurité de l'officine. En attendant
-S7.2b, le code est tiré par la console du central (`--code-rattachement`, développement).
+S7.2b, le code n'était tiré que par la console du central ; depuis S7.2b, le titulaire le tire du poste (§ 3 ter), la console reste pour
+le développement.
+
+## 3 ter. Lot S7.2b : accès à distance depuis le poste (réalisé en local le 2026-11-21)
+
+Le titulaire tire lui-même le code de rattachement de **son** officine dans le poste, puis le saisit dans `/rattacher` (§ 3 bis).
+
+| Maillon | Où | Règle |
+|---|---|---|
+| Écran | poste, Administration › Synchronisation › **Accès à distance** (`admin/synchronisation?rubrique=acces-distant`) | Identifiant du compte distant, mot de passe du titulaire ressaisi, « Générer le code » → code en grand (`XXXX-XXXX-XXXX`, classe `.code-acces-distant`), échéance, consigne « à saisir dans https://‹adresse des écrans du serveur central›/rattacher dans les 30 minutes ». Code et mot de passe effacés au changement de rubrique ou par « J'ai noté le code » ; jamais gardés (ni base, ni navigateur, ni journal). Synchronisation non activée (ou 2e serveur en veille) : texte d'explication, **aucun bouton** ; employé non titulaire : texte seulement |
+| API locale | `POST /api/admin/synchronisation/acces-distant/code` (droit `admin.parametres`) → `GenererCodeAccesDistant` | **Titulaire seulement** (403 sinon), puis synchronisation activée (activée, adresse réglée, serveur activé, certificat non échu ; sinon refus clair), identifiant bien formé, puis **mot de passe du titulaire** (même vérification que la nouvelle époque : essais comptés, blocage, refus journalisés), puis appel au central. Journal des actions `code_acces_distant` (échéance seulement : ni le code ni l'identifiant). Réponse `Cache-Control: no-store`. Coupée en démonstration |
+| API centrale | `POST /api/v1/rattachement` (certificat client + jeton, comme `/echange` ; limite de débit « officine ») | Corps : `{ "compte": "…" }` seulement ; **l'officine est celle du certificat**, jamais un champ. Même tirage que la console (`ComptesDistants.TirerCodeRattachement`) ; seule l'empreinte va en base. Réponses : 200 `{ code, expire }` (une seule fois, `no-store`) ; **422 neutre** pour un compte inconnu, non titulaire, désactivé ou un identifiant mal formé (même texte) ; 429 au-delà de **5 demandes par heure et par officine** (délivrées ou refusées : pas d'oracle) |
+| Base centrale | `cloud_poste_code_rattachement` (033, SECURITY DEFINER, seul droit donné à `pharma_cloud_api`) | Revérifie que le certificat présenté est valable, non révoqué, **de l'officine posée** (`app.officine_id`), officine non partie (sinon 42501). Enregistrement commun avec la console (`cloud_code_rattachement_enregistrer`) : un compte, une officine, 30 min, usage unique, code précédent du même compte et de la même officine annulé. Journal des accès : objet `poste` (refus sans compte), `poste:limite` ; journal de sécurité : délivrance, ou refus avec le motif réel (sans l'identifiant saisi). Écran du titulaire : acteur « Poste de l'officine » |
+
+Restent (non demandés dans ce lot) : voir et retirer les comptes rattachés depuis le poste ; adresse réelle des écrans du central (mise en ligne).
 
 ## 4. Actions de l'éditeur
 
@@ -168,6 +186,8 @@ Le **code d'activation** est tiré par les écrans (`CodeActivationSync`, comme 
    **une fois**) ; sans 032 : avertissement, rien n'est fait pour lui. L'outil est recompilé d'office (source des comptes plus récente).
 3. Code de rattachement (développement, en attendant S7.2b), avec l'outil et la connexion du propriétaire (`PHARMA_CLOUD_ADMIN_CONNEXION`) :
    `Pharma.Cloud.Api.exe --code-rattachement titulaire.dev <officine (uuid)> --auteur "<votre nom>"` → code affiché **une fois**, 30 minutes.
+   **Ou, depuis S7.2b** (script central **033** passé, après 032) : dans le poste, connecté en **titulaire**, Administration › Synchronisation ›
+   Accès à distance, identifiant `titulaire.dev`, mot de passe du titulaire du poste, « Générer le code » (synchronisation activée exigée).
    Un autre compte titulaire : `--creer-compte-titulaire <identifiant> --nom "…" (--telephone … | --email …) --auteur "<votre nom>"`.
 4. Connexion `titulaire.dev` sur https://127.0.0.1:5094/ (code dans `%LOCALAPPDATA%\PharmaOfficine\central-dev\codes\titulaire.dev.txt`),
    changer le mot de passe provisoire, puis « Rattacher une officine ».
@@ -194,14 +214,20 @@ Variables : `PHARMA_CLOUD_ECRANS_CONNEXION` (obligatoire), `PHARMA_CLOUD_DOSSIER
   titulaires, deux officines, non-fuite, rattachement, agrégats exacts, « non disponible », rôles croisés refusés par la base ; **bout en bout
   HTTPS** : connexion du titulaire, rattachement, tableau de bord, journal, officine d'un autre compte refusée, écrans de l'éditeur refusés au
   titulaire et écrans du titulaire refusés à l'éditeur) ; `ReglesEcransTests` (aiguillage par rôle, code de rattachement, « non disponible »).
+- **S7.2b** : `database/cloud/tests/033_code_rattachement_poste_tests.sql` (officine du certificat seulement, réponse neutre, limite,
+  mêmes règles que la console, code utilisable par `/rattacher`, acteur « poste ») ; `tests/Pharma.Cloud.Tests/RattachementPosteTests.cs`
+  (rôle `pharma_cloud_api` sur base jetable, réponses neutres, route authentifiée comme l'échange) ; `tests/Pharma.Application.Tests/AccesDistantTests.cs`
+  (titulaire seulement, mot de passe requis, synchronisation non activée, refus neutre et limite, code jamais journalisé) ;
+  `tests/Pharma.Architecture.Tests/AccesDistantEcranTests.cs` (écran, route locale, démonstration).
 
 ## 8. Reste à faire
 
 - **Mise en ligne** (plus tard) : hébergeur, nom de domaine et certificat, proxy inverse (adresse réelle pour les limites de débit), connexion de
   production rattachée à `pharma_cloud_ecrans`, compte SMTP, clé HMAC commune si plusieurs instances, comptes éditeur réels, test d'intrusion.
-- **S7.2b** (à faire) : rubrique « Accès à distance » du **poste** (le titulaire tire lui-même le code de rattachement de son officine,
-  voit et retire les comptes rattachés) ; la commande `--code-rattachement` de la console reste pour le développement.
+- **S7.2b** : génération du code par le poste **réalisée en local** (§ 3 ter) ; reste : voir et retirer les comptes rattachés depuis le
+  poste ; la commande `--code-rattachement` de la console reste pour le développement.
 - Reste de S7.2 : SMS (fournisseur à choisir), remise à zéro d'un mot de passe par l'éditeur, retrait d'un rattachement depuis les écrans,
   alertes (refus en série).
 - Mesure des écrans à 1 366 × 768 et 1 536 × 890, clair et sombre (règle de l'écran fixe) : **à faire**, S7.1 et S7.2a
-  (`/mes-officines`, `/rattacher`, `/mes-officines/{officine}`, `/mes-officines/{officine}/journal`).
+  (`/mes-officines`, `/rattacher`, `/mes-officines/{officine}`, `/mes-officines/{officine}/journal`), et rubrique « Accès à distance »
+  du poste (S7.2b : formulaire, code affiché, synchronisation non activée).

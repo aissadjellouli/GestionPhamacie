@@ -162,6 +162,14 @@ public class ReglesEcransTests
     }
 
     [Fact]
+    public void Acteur_poste_de_l_officine_au_journal_des_acces()
+    {
+        // Lot S7.2b (script central 033) : demandes de code faites par le poste de l'officine
+        Assert.Equal("Poste de l’officine", Rubriques.Afficher("acteur", "poste"));
+        Assert.Equal("Console du central", Rubriques.Afficher("acteur", "console"));
+    }
+
+    [Fact]
     public void Mots_de_passe_et_retours_locaux()
     {
         Assert.NotNull(ComptesDistants.RefusMotDePasse("court1", "a.b"));

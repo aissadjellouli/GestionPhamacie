@@ -976,6 +976,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(ResultatNouvelleEpoqueSynchronisationDto?, string?)> NouvelleEpoqueSynchronisationAsync(int epoqueAffichee, string motDePasse) =>
         PostAsync<NouvelleEpoqueSynchronisationDto, ResultatNouvelleEpoqueSynchronisationDto>("api/admin/synchronisation/nouvelle-epoque",
             new NouvelleEpoqueSynchronisationDto(epoqueAffichee, motDePasse));
+    /// <summary>Lot S7.2b : code d'accès à distance (titulaire, mot de passe ressaisi) ; montré une fois, jamais gardé par le poste.</summary>
+    public Task<(CodeAccesDistantDto?, string?)> CodeAccesDistantAsync(string compte, string motDePasse) =>
+        PostAsync<DemandeCodeAccesDistantDto, CodeAccesDistantDto>("api/admin/synchronisation/acces-distant/code",
+            new DemandeCodeAccesDistantDto(compte, motDePasse));
     /// <summary>Lot S6.5.4 : prise d'acte du titulaire d'une restauration constatée par le serveur central (cause).</summary>
     public async Task<string?> PrendreActeRestaurationAsync(int nouvelleEpoque, string cause) =>
         (await EnvoyerCorpsAsync<PriseActeRestaurationDto, object>(HttpMethod.Post, "api/admin/synchronisation/integrite/prise-acte",

@@ -233,6 +233,13 @@ END $$;
 
 -- Journal des accès d'une officine du titulaire (tous les comptes, éditeur compris : qui, quoi, quand), sans identifiant ni nom :
 -- l'acteur est « vous », « editeur » ou « titulaire » (un autre compte titulaire). Page de 10 à 100 lignes.
+-- Garde de rejeu (2026-11-21, lot S7.2b) : définition remplacée par le script 033 ; rejouer ce script après 033 ne la
+-- ramène pas en arrière (marqueur : fonction cloud_poste_code_rattachement, posée par 033).
+DO $rejeu$ BEGIN
+    IF to_regprocedure('public.cloud_poste_code_rattachement(text,text,text)') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_ecran_titulaire_journal : définition plus récente (script 033) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_ecran_titulaire_journal(p_empreinte_jeton text, p_officine uuid, p_page int, p_taille int)
 RETURNS TABLE (total bigint, id bigint, le timestamptz, acteur text, evenement text, resultat text, objet text)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
@@ -248,6 +255,9 @@ BEGIN
                  FROM journal_acces_distant j LEFT JOIN compte_distant c ON c.id = j.compte_id
                  WHERE j.officine_id = p_officine ORDER BY j.id DESC OFFSET (v_page - 1) * v_taille LIMIT v_taille;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 -- ---------------------------------------------------------------------
 -- Rattachement d'une officine par code
@@ -302,6 +312,13 @@ END $$;
 -- Nouveau code de rattachement pour un compte titulaire actif et une officine non partie : les codes en cours du même compte
 -- et de la même officine sont annulés. Seule l'empreinte arrive ici (code tiré par l'application, affiché une fois).
 -- Statuts : ok, compte_inconnu, pas_titulaire, compte_inactif, officine_inconnue, partie.
+-- Garde de rejeu (2026-11-21, lot S7.2b) : définition remplacée par le script 033 ; rejouer ce script après 033 ne la
+-- ramène pas en arrière (marqueur : fonction cloud_poste_code_rattachement, posée par 033).
+DO $rejeu$ BEGIN
+    IF to_regprocedure('public.cloud_poste_code_rattachement(text,text,text)') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_compte_distant_code_rattachement : définition plus récente (script 033) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_compte_distant_code_rattachement(p_identifiant text, p_officine uuid, p_empreinte_code text, p_par text)
 RETURNS TABLE (statut text, expire_le timestamptz)
 LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
@@ -327,6 +344,9 @@ BEGIN
             left('console : code de rattachement n° ' || v_id || ' (30 min) pour le compte n° ' || left(c.id::text, 8) || ', par ' || btrim(p_par), 500));
     RETURN QUERY SELECT 'ok'::text, v_expire;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 -- ---- Droits : rien pour PUBLIC ; les écrans n'exécutent que les fonctions du titulaire ci-dessous ----
 DO $droits$
