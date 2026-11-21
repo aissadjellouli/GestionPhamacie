@@ -44,16 +44,22 @@ public static class TypesOrdre
     public const string Sauvegarde = "sauvegarde";
     /// <summary>Lot S7.3 : vérification d'intégrité des journaux chaînés demandée à distance (lecture seule, appliquée tout de suite).</summary>
     public const string VerificationIntegrite = "verification_integrite";
+    /// <summary>Lot S7.4 : réglages communs proposés par le titulaire à distance (liste fermée, reglages-v1) ; jamais appliqués sans
+    /// l'acceptation du titulaire local (mot de passe ressaisi).</summary>
+    public const string Reglages = Pharma.Domain.Reglages.ReglagesCommuns.TypeOrdre;
     public static readonly IReadOnlySet<string> Connus = new HashSet<string>(StringComparer.Ordinal)
     {
         Essai, EmployeCreer, EmployeModifier, EmployeBloquer, EmployeDebloquer, DroitsRole, PrixProduit, Nomenclature, Commande, ClasseSuivie, Organismes,
-        Prestations, Indications, Dci, Sauvegarde, VerificationIntegrite
+        Prestations, Indications, Dci, Sauvegarde, VerificationIntegrite, Reglages
     };
 
     /// <summary>Confirmation du titulaire exigée avant application (décision S5-D3) ; le blocage et l'essai s'appliquent tout de suite.</summary>
     public static bool ConfirmationRequise(string type) =>
         type is EmployeCreer or EmployeModifier or EmployeDebloquer or DroitsRole or Nomenclature or ClasseSuivie or Organismes
-            or Prestations or Indications or Dci or Sauvegarde;
+            or Prestations or Indications or Dci or Sauvegarde or Reglages;
+
+    /// <summary>Lot S7.4 : accepter ou refuser exige le mot de passe du titulaire qui décide (ressaisi).</summary>
+    public static bool MotDePasseTitulaireRequis(string type) => type is Reglages;
 
     public static string Libelle(string type) => type switch
     {
@@ -73,6 +79,7 @@ public static class TypesOrdre
         Dci => "Dénominations communes (DCI)",
         Sauvegarde => "Sauvegarde demandée à distance",
         VerificationIntegrite => "Vérification d’intégrité demandée à distance",
+        Reglages => "Réglages communs proposés à distance",
         _ => type
     };
 }
@@ -85,6 +92,8 @@ public static class StatutsOrdre
     public const string Refuse = "refuse";
     public const string Expire = "expire";
     public const string Annule = "annule";
+    /// <summary>Lot S7.4 : filtre des ordres traités (appliqué, refusé, expiré, annulé) ; jamais un état enregistré.</summary>
+    public const string Traite = "traite";
     public static readonly IReadOnlySet<string> Tous = new HashSet<string>(StringComparer.Ordinal) { AAppliquer, AConfirmer, Applique, Refuse, Expire, Annule };
 }
 
@@ -99,7 +108,9 @@ public interface IOrdresCentrauxDepot
     /// <summary>Ordres à appliquer ou à confirmer (les plus anciens d'abord).</summary>
     Task<IReadOnlyList<OrdreRecu>> EnCoursAsync(CancellationToken ct = default);
     Task<OrdreRecu?> LireAsync(Guid id, CancellationToken ct = default);
-    Task<PageOrdresRecus> ListerAsync(string? statut, int page, int taille, CancellationToken ct = default);
+    /// <param name="statut">État, ou « traite » (lot S7.4 : appliqué, refusé, expiré, annulé) ; null : tous.</param>
+    /// <param name="type">Lot S7.4 : type d'ordre (null : tous).</param>
+    Task<PageOrdresRecus> ListerAsync(string? statut, int page, int taille, string? type = null, CancellationToken ct = default);
     /// <summary>Change l'état (sync_ordre_noter) : ordre, résultat envoyé au central, journal des actions.</summary>
     Task NoterAsync(Guid id, string statut, string? motif, long? par, CancellationToken ct = default);
     Task<bool> BaseEnLectureSeuleAsync(CancellationToken ct = default);
@@ -151,7 +162,7 @@ public sealed class OrdreInapplicableException(string message) : Exception(messa
 public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisateur creer, ModifierUtilisateur modifier, EnregistrerDroits droitsRole,
     Catalogue.IProduitsModification produits, IOrdresCentrauxDepot depot, Catalogue.ImporterNomenclature nomenclature,
     ITelechargementReferentiel referentiels, Achats.IAchats achats, IOrganismesCentraux organismes, IListesCentrales listes,
-    Sauvegardes.LancerSauvegarde? sauvegarde = null, Integrite.VerifierIntegrite? integrite = null)
+    Sauvegardes.LancerSauvegarde? sauvegarde = null, Integrite.VerifierIntegrite? integrite = null, ReglagesCommunsOrdre? reglagesCommuns = null)
 {
     /// <summary>Lignes au plus dans un ordre de commande (décision S5.4-D5).</summary>
     public const int LignesCommandeMax = 200;
@@ -221,6 +232,10 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
         // Lot S7.3 : ordres du titulaire à distance (liste fermée, sans donnée) ; rien ne modifie une vente, un stock, un prix ni un compte
         if (o.Type == TypesOrdre.Sauvegarde) return await SauvegarderAsync(titulaireId!.Value, ct);
         if (o.Type == TypesOrdre.VerificationIntegrite) return await VerifierIntegriteAsync(ct);
+        // Lot S7.4 : réglages communs, appliqués par la saisie locale des seuils (mêmes règles, garde « fixé par le serveur central », journal)
+        if (o.Type == TypesOrdre.Reglages)
+            return await (reglagesCommuns ?? throw new OrdreInapplicableException("Réglages communs indisponibles sur ce serveur."))
+                .AppliquerAsync(o, titulaireId!.Value, ct);
         var etat = await admin.LireAsync(ct);
         switch (o.Type)
         {
@@ -341,6 +356,9 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
             TypesOrdre.Organismes => (await organismes.CalculerAsync(d, ct)).Texte(),
             TypesOrdre.Prestations or TypesOrdre.Indications => (await listes.CalculerAsync(o.Type, d, ct)).Texte(),
             TypesOrdre.Dci => (await depot.AjouterDciAsync(Textes(d, "dci"), false, null, o.Auteur, o.Id, ct)).Texte(),
+            // Lot S7.4 : liste fermée et bornes revérifiées à la réception (hors liste ou hors bornes : refusé, jamais à confirmer)
+            TypesOrdre.Reglages => ReglagesCommunsOrdre.TexteComparaison(await (reglagesCommuns
+                ?? throw new OrdreInapplicableException("Réglages communs indisponibles sur ce serveur.")).ComparerAsync(o, ct)),
             _ => null
         };
     }
@@ -512,13 +530,22 @@ public sealed class AppliquerOrdresCentraux(IOrdresCentrauxDepot depot, Executer
 }
 
 /// <summary>Confirmation par le titulaire d'un ordre « à confirmer » ; mot de passe provisoire pour une création de compte.</summary>
-public sealed class ConfirmerOrdreCentral(IOrdresCentrauxDepot depot, ExecuterOrdreCentral executer, IPermissionService droits, IHorloge horloge)
+public sealed class ConfirmerOrdreCentral(IOrdresCentrauxDepot depot, ExecuterOrdreCentral executer, IPermissionService droits, IHorloge horloge,
+    VerificationMotDePasseActuel? motDePasseActuel = null)
 {
-    public async Task<string> ExecuterAsync(Guid id, string? motDePasse, long titulaireId, CancellationToken ct = default)
+    public Task<string> ExecuterAsync(Guid id, string? motDePasse, long titulaireId, CancellationToken ct = default) =>
+        ExecuterAsync(id, motDePasse, null, titulaireId, ct);
+
+    /// <param name="motDePasseTitulaire">Lot S7.4 : mot de passe du titulaire qui accepte des réglages communs, vérifié AVANT tout ;
+    /// faux : l'ordre reste à confirmer.</param>
+    public async Task<string> ExecuterAsync(Guid id, string? motDePasse, string? motDePasseTitulaire, long titulaireId, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(titulaireId, "confirmer un ordre du serveur central", ct);
         var o = await depot.LireAsync(id, ct) ?? throw new RegleMetierException("Ordre introuvable.");
         if (o.Statut != StatutsOrdre.AConfirmer) throw new RegleMetierException("Cet ordre n’attend plus de confirmation.");
+        if (TypesOrdre.MotDePasseTitulaireRequis(o.Type))
+            await (motDePasseActuel ?? throw new RegleMetierException("Vérification du mot de passe indisponible."))
+                .VerifierAsync(titulaireId, motDePasseTitulaire, "accepter_reglages_communs", ReglagesCommunsOrdre.ChampMotDePasse, ct);
         if (horloge.MaintenantUtc >= o.ExpireLeUtc)
         {
             await depot.NoterAsync(id, StatutsOrdre.Expire, "non traité avant sa date limite (horloge de l’officine)", null, ct);
@@ -541,15 +568,21 @@ public sealed class ConfirmerOrdreCentral(IOrdresCentrauxDepot depot, ExecuterOr
 }
 
 /// <summary>Refus par le titulaire d'un ordre pas encore appliqué, avec son motif (envoyé au serveur central, filtré comme les textes libres).</summary>
-public sealed class RefuserOrdreCentral(IOrdresCentrauxDepot depot, IPermissionService droits)
+public sealed class RefuserOrdreCentral(IOrdresCentrauxDepot depot, IPermissionService droits, VerificationMotDePasseActuel? motDePasseActuel = null)
 {
-    public async Task ExecuterAsync(Guid id, string? motif, long titulaireId, CancellationToken ct = default)
+    public Task ExecuterAsync(Guid id, string? motif, long titulaireId, CancellationToken ct = default) => ExecuterAsync(id, motif, null, titulaireId, ct);
+
+    /// <param name="motDePasseTitulaire">Lot S7.4 : mot de passe du titulaire qui refuse des réglages communs (ressaisi).</param>
+    public async Task ExecuterAsync(Guid id, string? motif, string? motDePasseTitulaire, long titulaireId, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(titulaireId, "refuser un ordre du serveur central", ct);
         var m = (motif ?? "").Trim();
         if (m.Length is < 3 or > 300) throw new RegleMetierException("Motif du refus : 3 à 300 caractères.", "motif");
         var o = await depot.LireAsync(id, ct) ?? throw new RegleMetierException("Ordre introuvable.");
         if (o.Statut is not (StatutsOrdre.AConfirmer or StatutsOrdre.AAppliquer)) throw new RegleMetierException("Cet ordre est déjà traité.");
+        if (TypesOrdre.MotDePasseTitulaireRequis(o.Type))
+            await (motDePasseActuel ?? throw new RegleMetierException("Vérification du mot de passe indisponible."))
+                .VerifierAsync(titulaireId, motDePasseTitulaire, "refuser_reglages_communs", ReglagesCommunsOrdre.ChampMotDePasse, ct);
         await depot.NoterAsync(id, StatutsOrdre.Refuse, "refusé par le titulaire : " + m, titulaireId, ct);
     }
 }
@@ -585,6 +618,9 @@ public static class ResumeOrdre
                 TypesOrdre.Essai => "Vérification de la liaison : rien ne change.",
                 TypesOrdre.Sauvegarde => "Sauvegarde de la base sur le disque externe, lancée à votre confirmation (choisissez un moment calme) ; rien d’autre ne change.",
                 TypesOrdre.VerificationIntegrite => "Vérification des journaux chaînés (lecture seule) ; une rupture vous est signalée.",
+                TypesOrdre.Reglages => "Seuils d’alerte de stock et de péremption proposés par le titulaire à distance, appliqués seulement si vous acceptez : "
+                    + (Pharma.Domain.Reglages.ReglagesCommuns.Lire(o.DonneesJson) is { Erreurs.Count: 0 } j
+                        ? Pharma.Domain.Reglages.ReglagesCommuns.Texte(j.Valeurs) : "réglages illisibles") + ".",
                 TypesOrdre.EmployeCreer => $"Nouveau compte « {T(d, "nom")} », identifiant {T(d, "identifiant")}, rôle {NomRole(T(d, "role"))}.",
                 TypesOrdre.EmployeModifier => $"{Employe()} : "
                     + string.Join(", ", new[]

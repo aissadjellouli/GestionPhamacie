@@ -73,7 +73,7 @@
 
     <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap">
         @{ var retenus = choix.Values.Where(x => x.Inclus && x.FournisseurId is not null).ToList(); }
-        <span><strong>@retenus.Count</strong> produit(s) coché(s) chez <strong>@retenus.Select(x => x.FournisseurId).Distinct().Count()</strong> grossiste(s)</span>
+        <span><strong>@retenus.Count</strong> @(retenus.Count > 1 ? "produits cochés" : "produit coché") chez <strong>@NombreGrossistes</strong> @(NombreGrossistes > 1 ? "grossistes" : "grossiste")</span>
         <button type="button" class="btn btn-principal" disabled="@(enCours || retenus.Count == 0 || !PeutCommander)" @onclick="RepartirAsync">Créer les bons (un par grossiste)</button>
         @foreach (var b in bons)
         {
@@ -98,6 +98,8 @@
 
     private List<FournisseurDto> fournisseurs = [];
     private List<ComparaisonProduitDto> lignes = [];
+    private int NombreGrossistes => choix.Values.Where(x => x.Inclus && x.FournisseurId is not null).Select(x => x.FournisseurId).Distinct().Count();
+
     // Choix gardés d'une page à l'autre et d'un filtre à l'autre (produit → grossiste, quantité, coché)
     private readonly Dictionary<long, ChoixLigne> choix = [];
     private List<BonRepartiDto> bons = [];

@@ -24,25 +24,32 @@ public sealed class OrdresCentrauxSql(NpgsqlDataSource db) : IOrdresCentrauxDepo
         return (await LireListeAsync(cmd, ct)).FirstOrDefault();
     }
 
-    public async Task<PageOrdresRecus> ListerAsync(string? statut, int page, int taille, CancellationToken ct = default)
+    public async Task<PageOrdresRecus> ListerAsync(string? statut, int page, int taille, string? type = null, CancellationToken ct = default)
     {
         await using var cnx = await db.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand($"""
-            SELECT {Colonnes} FROM sync_ordre_recu WHERE ($1::text IS NULL OR statut = $1)
-            ORDER BY (statut = 'a_confirmer') DESC, recu_le DESC, id LIMIT $2 OFFSET $3
+            SELECT {Colonnes} FROM sync_ordre_recu WHERE {Filtre}
+            ORDER BY (statut = 'a_confirmer') DESC, CASE WHEN $1 = 'traite' THEN traite_le END DESC NULLS LAST, recu_le DESC, id LIMIT $2 OFFSET $3
             """, cnx);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)statut ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         cmd.Parameters.AddWithValue(taille);
         cmd.Parameters.AddWithValue((page - 1) * taille);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)type ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         var ordres = await LireListeAsync(cmd, ct);
-        await using var compte = new NpgsqlCommand("""
-            SELECT count(*) FILTER (WHERE $1::text IS NULL OR statut = $1), count(*) FILTER (WHERE statut = 'a_confirmer') FROM sync_ordre_recu
+        await using var compte = new NpgsqlCommand($"""
+            SELECT count(*) FILTER (WHERE {Filtre.Replace("$4", "$2")}), count(*) FILTER (WHERE statut = 'a_confirmer') FROM sync_ordre_recu
             """, cnx);
         compte.Parameters.Add(new NpgsqlParameter { Value = (object?)statut ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        compte.Parameters.Add(new NpgsqlParameter { Value = (object?)type ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         await using var r = await compte.ExecuteReaderAsync(ct);
         await r.ReadAsync(ct);
         return new PageOrdresRecus(ordres, (int)r.GetInt64(0), (int)r.GetInt64(1));
     }
+
+    /// <summary>Filtre de la liste : $1 état (ou « traite »), $4 type (lot S7.4) ; paramètres seulement.</summary>
+    private const string Filtre = """
+        ($1::text IS NULL OR statut = $1 OR ($1 = 'traite' AND statut IN ('applique', 'refuse', 'expire', 'annule'))) AND ($4::text IS NULL OR type = $4)
+        """;
 
     public async Task NoterAsync(Guid id, string statut, string? motif, long? par, CancellationToken ct = default)
     {

@@ -184,6 +184,42 @@ public class ReglesEcransTests
     }
 
     [Fact]
+    public void Lot_s7_4_reglages_communs_acces_liste_fermee_et_saisie()
+    {
+        SessionEcran S(string role) => new(1, Guid.NewGuid(), "a.b", "A", role, "ouverte", DateTime.UtcNow.AddHours(1), false);
+        // Accès : le titulaire seulement ; l'éditeur jamais
+        foreach (var c in new[] { "/mes-officines/reglages", "/actions/mes-officines/reglages" })
+        {
+            Assert.Null(ControleAcces.Redirection(c, S("titulaire")));
+            Assert.Equal("/acces-refuse", ControleAcces.Redirection(c, S("editeur")));
+        }
+        Assert.Equal("/acces-refuse", ControleAcces.Redirection("/mes-officines/reglages/x", S("titulaire")));
+        // Liste fermée de l'écran = liste fermée de la base (script 035), mêmes bornes
+        var sql = File.ReadAllText(Path.Combine(Depot.Racine(), "database", "cloud", "035_reglages_communs_titulaire.sql"));
+        foreach (var r in Pharma.Domain.Reglages.ReglagesCommuns.Liste)
+            Assert.Contains($"('{r.Cle}', {r.Minimum}, {r.Maximum})", sql);
+        Assert.Equal(9, Regex.Matches(sql[sql.IndexOf("FUNCTION cloud_reglage_commun_bornes", StringComparison.Ordinal)..sql.IndexOf("WHERE b.cle", StringComparison.Ordinal)], @"\('[a-z_]+', \d+, \d+\)").Count);
+        Assert.DoesNotContain(Pharma.Domain.Reglages.ReglagesCommuns.Liste, r => r.Cle.Contains("prix") || r.Cle.Contains("tva") || r.Cle.Contains("droit"));
+        // Saisie : clé hors liste gardée pour être refusée ; texte non entier illisible ; adresse de retour sans clé inconnue
+        var f = new Microsoft.AspNetCore.Http.FormCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
+        {
+            ["r.jours_orange"] = "120", ["r.jours_rouge"] = "", ["r.taux_tva"] = "19", ["code"] = "123456"
+        });
+        var (valeurs, illisible) = SaisieReglages.Lire(f);
+        Assert.False(illisible);
+        Assert.Equal("hors_liste", Pharma.Domain.Reglages.ReglagesCommuns.Controler(valeurs).Code);
+        var o = Guid.NewGuid();
+        Assert.Equal($"/mes-officines/reglages?v=jours_orange:120&o={o}", SaisieReglages.Adresse(valeurs, [o]));
+        Assert.True(SaisieReglages.Lire(new Microsoft.AspNetCore.Http.FormCollection(new() { ["r.jours_orange"] = "12,5" })).Illisible);
+        Assert.Equal(new Dictionary<string, int> { ["jours_orange"] = 120 }, SaisieReglages.Relire("jours_orange:120,taux_tva:19,jours_rouge:x"));
+        Assert.Equal("hors_bornes", Pharma.Domain.Reglages.ReglagesCommuns.Controler(new Dictionary<string, int> { ["jours_orange"] = 0 }).Code);
+        Assert.Equal("incoherent", Pharma.Domain.Reglages.ReglagesCommuns.Controler(new Dictionary<string, int> { ["jours_orange"] = 60, ["jours_rouge"] = 60 }).Code);
+        Assert.Equal("vide", Pharma.Domain.Reglages.ReglagesCommuns.Controler(new Dictionary<string, int>()).Code);
+        Assert.Equal("Réglages communs", Rubriques.Afficher("type", "reglages"));
+        Assert.Equal("Accepté", Rubriques.StatutsReglages["applique"]);
+    }
+
+    [Fact]
     public void Lot_s7_3_total_du_groupe_jamais_un_non_disponible_compte_comme_zero()
     {
         var t = new TableEcran(["id", "ca_jour", "ventes_jour"],

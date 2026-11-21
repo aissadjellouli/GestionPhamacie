@@ -936,12 +936,12 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     /// <summary>Mode démonstration du serveur (route sans connexion) : bandeau permanent de la barre d'état.</summary>
     public Task<(EtatDemoDto?, string?)> EtatDemoAsync() => GetAsync<EtatDemoDto?>("api/demo", null);
     // Lots S5.1 et S5.5 : ordres du serveur central (liste ; confirmation et refus par le titulaire)
-    public Task<(PageOrdresCentrauxDto?, string?)> OrdresCentrauxAsync(string? statut, int page, int taille) =>
-        GetAsync<PageOrdresCentrauxDto?>($"api/admin/synchronisation/ordres?page={page}&taille={taille}{(statut is null ? "" : "&statut=" + Uri.EscapeDataString(statut))}", null);
-    public async Task<string?> ConfirmerOrdreCentralAsync(Guid id, string? motDePasse) =>
-        (await PostAsync<ConfirmerOrdreCentralDto, object>($"api/admin/synchronisation/ordres/{id}/confirmer", new(motDePasse))).Item2;
-    public async Task<string?> RefuserOrdreCentralAsync(Guid id, string motif) =>
-        (await PostAsync<RefuserOrdreCentralDto, object>($"api/admin/synchronisation/ordres/{id}/refuser", new(motif))).Item2;
+    public Task<(PageOrdresCentrauxDto?, string?)> OrdresCentrauxAsync(string? statut, int page, int taille, string? type = null) =>
+        GetAsync<PageOrdresCentrauxDto?>($"api/admin/synchronisation/ordres?page={page}&taille={taille}{(statut is null ? "" : "&statut=" + Uri.EscapeDataString(statut))}{(type is null ? "" : "&type=" + Uri.EscapeDataString(type))}", null);
+    public async Task<string?> ConfirmerOrdreCentralAsync(Guid id, string? motDePasse, string? motDePasseTitulaire = null) =>
+        (await PostAsync<ConfirmerOrdreCentralDto, object>($"api/admin/synchronisation/ordres/{id}/confirmer", new(motDePasse, motDePasseTitulaire))).Item2;
+    public async Task<string?> RefuserOrdreCentralAsync(Guid id, string motif, string? motDePasseTitulaire = null) =>
+        (await PostAsync<RefuserOrdreCentralDto, object>($"api/admin/synchronisation/ordres/{id}/refuser", new(motif, motDePasseTitulaire))).Item2;
     // Mutualisation des réglages (lots M5 et M7) : état des 11 tables, « Adopter », réglage fiscal et traçabilité
     public Task<(List<ReglageMutualiseDto>, string?)> ReglagesMutualisesAsync() => GetAsync<List<ReglageMutualiseDto>>("api/reglages-mutualises", []);
     public Task<(ReglageMutualiseDto?, string?)> ReglageMutualiseAsync(string table) =>

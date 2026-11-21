@@ -1053,3 +1053,22 @@ fieldset.panneau:disabled { opacity: 0.85; }
 .tuile-valeur.non-disponible { color: var(--texte-2); font-weight: 500; }
 /* Vue d'ensemble du titulaire : montants sur une ligne, en-têtes courts (titre complet dans le pied de page) */
 .tableau-ensemble td.nombre, .tableau-ensemble th.nombre { white-space: nowrap; }
+/* Réglages communs du titulaire (lot S7.4) : formulaire à gauche, mes envois à droite ; hauteur prise sur la fenêtre (écran fixe,
+   aucun défilement de page), chaque colonne défile seule (.cadre-defilant) */
+.reglages-communs { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 20px; min-height: 260px; } /* hauteur posée par ecrans.js (data-hauteur-restante) */
+.reglages-communs > .panneau { min-height: 0; }
+.reglages-communs > .colonne-envois { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.reglages-communs > .colonne-envois > .tableau-cadre { flex: 1 1 auto; min-height: 0; }
+.reglages-communs .grille-reglages { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px 14px; }
+.reglages-communs .grille-reglages input { width: 100%; }
+.reglages-communs fieldset { margin: 0; padding: 0; border: none; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.reglages-communs legend { padding: 0; margin-bottom: 4px; font-size: 13px; color: var(--texte-2); }
+.reglages-communs .tableau th, .reglages-communs .tableau td { white-space: normal; } /* colonne étroite : le texte passe à la ligne, aucun défilement horizontal */
+.reglages-communs .tableau td.texte-reglages { min-width: 0; }
+.reglages-communs .tableau .pastille { white-space: nowrap; }
+@media (max-width: 1100px) { .reglages-communs { grid-template-columns: 1fr; height: auto; } }
+/* Maquette validée S7.4 : réglage et valeur côte à côte, code et « Recevoir un code » côte à côte */
+.reglages-communs .formulaire-reglages { display: flex; flex-direction: column; gap: 12px; }
+.reglages-communs .ligne-reglage { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; align-items: end; }
+.reglages-communs .ligne-reglage select, .reglages-communs .ligne-reglage input { width: 100%; }
+.reglages-communs .champ-bouton { justify-content: flex-end; }

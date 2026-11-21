@@ -1,0 +1,150 @@
+@page "/mes-officines/reglages"
+@using Jeu = Pharma.Domain.Reglages.ReglagesCommuns
+@inject DepotEcrans Depot
+
+<PageTitle>Réglages communs · écrans du central</PageTitle>
+
+@* Lot S7.4 (maquette validée du 2026-11-21) : le titulaire propose un réglage commun (LISTE FERMÉE : seuils d'alerte de stock et de
+   péremption ; jamais prix, TVA, droits, comptes ni rien de fiscal) à une ou plusieurs de ses officines (droit « ordres » sur
+   chacune, tout ou rien, code de confirmation, 24 heures). Chaque officine décide sur son poste (titulaire local, mot de passe
+   ressaisi) : rien ne change avant. Écran fixe : deux colonnes, chacune défile seule ; propositions envoyées paginées. *@
+<div class="page page-serree">
+    <div class="titre-page titre-actions-cote">
+        <div>
+            <h1>Réglages communs</h1>
+            <p class="sous-titre">Proposer les mêmes réglages à plusieurs officines ; chacune décide sur son poste, rien ne s'applique sans son accord.</p>
+        </div>
+        <div class="actions">
+            <a class="btn btn-contour" href="mes-officines/ensemble">Vue d'ensemble</a>
+            <a class="btn btn-contour" href="mes-officines">Mes officines</a>
+        </div>
+    </div>
+    <Message Erreur="@Erreur" Ok="@Ok" />
+    <div class="reglages-communs" data-hauteur-restante>
+        <section class="panneau cadre-defilant" aria-labelledby="t-jeu">
+            <h2 id="t-jeu">Nouvelle proposition</h2>
+            <form method="post" action="actions/mes-officines/reglages" class="formulaire-reglages">
+                <AntiforgeryToken />
+                <input type="hidden" name="retour" value="/mes-officines/reglages" />
+                <div class="ligne-reglage">
+                    <div class="champ">
+                        <label for="reglage" class="requis">Réglage</label>
+                        <select id="reglage" name="reglage" required>
+                            @foreach (var r in Jeu.Liste)
+                            {
+                                <option value="@r.Cle" selected="@(r.Cle == ReglageChoisi)">@r.Libelle (@r.Minimum à @r.Maximum @r.Unite)</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="champ">
+                        <label for="valeur" class="requis">Valeur (bornes du réglage choisi)</label>
+                        <input id="valeur" name="valeur" type="number" step="1" min="0" max="1095" required value="@ValeurChoisie" />
+                    </div>
+                </div>
+                <fieldset>
+                    <legend>Officines (droit « ordres » seulement)</legend>
+                    @if (Officines.Count == 0)
+                    {
+                        <p class="detail">Aucune officine rattachée.</p>
+                    }
+                    @foreach (var (id, libelle, ordres) in Officines)
+                    {
+                        <label class="case @(ordres ? null : "inactif")">
+                            <input type="checkbox" name="officine" value="@id" checked="@(ordres && (Choisies.Count == 0 || Choisies.Contains(id)))" disabled="@(!ordres)" />
+                            <span>@libelle@(ordres ? "" : " (droit « ordres » non accordé)")</span>
+                        </label>
+                    }
+                </fieldset>
+                <div class="ligne-reglage">
+                    <div class="champ">
+                        <label for="code" class="requis">Code de confirmation</label>
+                        <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required />
+                    </div>
+                    <div class="champ champ-bouton">
+                        <button type="submit" class="btn btn-contour" formaction="actions/code-action" formnovalidate>Recevoir un code</button>
+                    </div>
+                </div>
+                <div class="actions">
+                    <button type="submit" class="btn btn-principal">Proposer aux officines cochées (@NombrePossibles possible(s))</button>
+                </div>
+            </form>
+            <p class="detail">Valable 24 h. Valeurs contrôlées au central puis sur chaque poste. Tout ou rien : si une officine cochée refuse
+                l'envoi (droit absent, proposition déjà en attente), rien n'est envoyé. Demandez le code avant de saisir le réglage.</p>
+        </section>
+        <section class="panneau colonne-envois" aria-labelledby="t-envois">
+            <h2 id="t-envois">Propositions envoyées</h2>
+            @if (Envois.Lignes.Count == 0)
+            {
+                <p class="vide">Aucune proposition envoyée à vos officines (droit « ordres »).</p>
+            }
+            else
+            {
+                <div class="tableau-cadre">
+                    <table class="tableau tableau-serre tableau-central">
+                        <thead><tr><th scope="col">Réglage</th><th scope="col">Valeur</th><th scope="col">Officine</th><th scope="col">Statut</th><th scope="col">Le</th></tr></thead>
+                        <tbody>
+                            @foreach (var l in Envois.Lignes)
+                            {
+                                var statut = Envois.Valeur(l, "statut") as string ?? "";
+                                var (reglage, valeur) = Colonnes(Envois.Valeur(l, "reglages"));
+                                <tr>
+                                    <td class="texte-reglages">@reglage</td>
+                                    <td>@valeur</td>
+                                    <td>@Envois.Valeur(l, "officine")</td>
+                                    <td><span class="pastille @Classe(statut)">@(Rubriques.StatutsReglages.TryGetValue(statut, out var s) ? s : statut)</span></td>
+                                    <td>@Rubriques.Afficher("cree_le", Envois.Valeur(l, "cree_le"))</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <PaginationEcran Page="@PageCourante" Taille="@Taille" Total="@Envois.Total" Base="mes-officines/reglages" />
+            }
+        </section>
+    </div>
+    <p class="pied-page">Aucune donnée de patient ni de vente. Chaque proposition est notée au journal des accès de l'officine ; le motif d'un refus reste dans l'officine.</p>
+</div>
+
+@code {
+    private const int Taille = 5;
+
+    [CascadingParameter] private HttpContext? Contexte { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] private int? Numero { get; set; }
+    [SupplyParameterFromQuery(Name = "erreur")] private string? Erreur { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] private string? Ok { get; set; }
+    [SupplyParameterFromQuery(Name = "v")] private string? V { get; set; }
+    [SupplyParameterFromQuery(Name = "o")] private string? O { get; set; }
+
+    private List<(Guid Id, string Libelle, bool Ordres)> Officines { get; set; } = [];
+    private TableEcran Envois { get; set; } = TableEcran.Vide;
+    private Dictionary<string, int> Saisie => SaisieReglages.Relire(V);
+    private HashSet<Guid> Choisies => SaisieReglages.Officines(O);
+    private string? ReglageChoisi => Saisie.Keys.FirstOrDefault();
+    private string? ValeurChoisie => Saisie.Values.Select(v => v.ToString(System.Globalization.CultureInfo.InvariantCulture)).FirstOrDefault();
+    private int NombrePossibles => Officines.Count(o => o.Ordres);
+    private int PageCourante => Math.Clamp(Numero ?? 1, 1, 100_000);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Contexte?.EmpreinteJeton() is not { } jeton) return;
+        var t = await Depot.TitulaireOfficinesAsync(jeton, Contexte.RequestAborted);
+        Officines = t.Lignes.Where(l => t.Valeur(l, "id") is Guid).Select(l => ((Guid)t.Valeur(l, "id")!, t.Valeur(l, "libelle") as string ?? "?",
+            t.Valeur(l, "droits") is string d && d.Split(',').Contains("ordres"))).ToList();
+        Envois = await Depot.TitulaireReglagesEnvoisAsync(jeton, PageCourante, Taille, Contexte.RequestAborted);
+    }
+
+    /// <summary>Réglage(s) et valeur(s) d'une ligne (jsonb rendu en texte par la base), libellés de la liste fermée.</summary>
+    internal static (string Reglage, string Valeur) Colonnes(object? reglages)
+    {
+        if (reglages is not string json) return ("—", "—");
+        var (valeurs, erreurs) = Jeu.Lire($$"""{"format":"{{Jeu.Format}}","reglages":{{json}}}""");
+        if (erreurs.Count > 0) return ("réglages illisibles", "—");
+        var liste = Jeu.Liste.Where(r => valeurs.ContainsKey(r.Cle)).ToList();
+        return (string.Join(" ; ", liste.Select(r => r.Libelle)), string.Join(" ; ", liste.Select(r => $"{valeurs[r.Cle]} {r.Unite}")));
+    }
+
+    private static string? Classe(string statut) => statut switch
+    {
+        "applique" => "ok", "refuse" => "urgent", "en_attente" or "a_confirmer" => "attention", _ => null
+    };
+}

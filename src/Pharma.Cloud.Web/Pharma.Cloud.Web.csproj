@@ -14,6 +14,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Pharma.Shared\Pharma.Shared.csproj" />
+    <!-- Lot S7.4 : liste fermée et bornes des réglages communs (Pharma.Domain n'a aucune dépendance) -->
+    <ProjectReference Include="..\Pharma.Domain\Pharma.Domain.csproj" />
   </ItemGroup>
   <ItemGroup>
     <!-- Réglages SMTP et envoi : même fichier que le serveur central (aucune autre dépendance au serveur central) -->

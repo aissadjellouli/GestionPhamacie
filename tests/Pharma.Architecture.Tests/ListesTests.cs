@@ -27,7 +27,8 @@ public class ListesTests
         ["Pages/AdminSecondServeur.razor"] = (1, "serveurs de l'officine : bornés par nature (le principal et le 2e serveur, 2026-11-16)"),
         ["Pages/AdminDroits.razor"] = (2, "utilisateurs : exception choisie le 2026-11-13 ; droits par rôle (bornés)"),
         ["Pages/AdminNotifications.razor"] = (1, "destinataires des notifications (quelques personnes)"),
-        ["Pages/AdminSynchronisation.razor"] = (3, "11 tables de réglages que le serveur central peut mutualiser : liste fermée, bornée par nature (2026-11-16, lot M7) ; "
+        ["Pages/AdminSynchronisation.razor"] = (5, "réglages communs proposés par le titulaire à distance (lot S7.4, 2026-11-21) : avant / après d'une proposition, 9 réglages au plus (panneau de la rubrique et fenêtre des ordres) ; "
+            + "11 tables de réglages que le serveur central peut mutualiser : liste fermée, bornée par nature (2026-11-16, lot M7) ; "
             + "intégrité au central (lot S4, 2026-11-17) : 20 dernières anomalies au plus (plafond du serveur central) ; "
             + "restaurations constatées (lot S6.5, 2026-11-19) : une ligne par restauration de la base, rare par nature (plus de 2 en 12 mois : « à justifier »)"),
         ["Pages/AdminPsychotropes.razor"] = (1, "règles d'alerte du registre des psychotropes (quatre, bornées par le script 117, 2026-11-16)"),

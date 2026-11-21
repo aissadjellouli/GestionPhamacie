@@ -99,7 +99,7 @@ public class OrdresCentrauxTests
         public Task<IReadOnlyList<OrdreRecu>> EnCoursAsync(CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<OrdreRecu>>(Ordres.Where(o => o.Statut is StatutsOrdre.AAppliquer or StatutsOrdre.AConfirmer).ToList());
         public Task<OrdreRecu?> LireAsync(Guid id, CancellationToken ct = default) => Task.FromResult(Ordres.FirstOrDefault(o => o.Id == id));
-        public Task<PageOrdresRecus> ListerAsync(string? statut, int page, int taille, CancellationToken ct = default) =>
+        public Task<PageOrdresRecus> ListerAsync(string? statut, int page, int taille, string? type = null, CancellationToken ct = default) =>
             Task.FromResult(new PageOrdresRecus(Ordres, Ordres.Count, Ordres.Count(o => o.Statut == StatutsOrdre.AConfirmer)));
         public Task NoterAsync(Guid id, string statut, string? motif, long? par, CancellationToken ct = default)
         {
@@ -141,17 +141,24 @@ public class OrdresCentrauxTests
             StatutsOrdre.AAppliquer, null, Maintenant.AddMinutes(-5), null, null);
 
     private static (Depot Depot, UtilisateursEnMemoire Admin, Alertes Alertes, JournalEspion Journal, AppliquerOrdresCentraux Auto,
-        ConfirmerOrdreCentral Confirmer, RefuserOrdreCentral Refuser) Monter(bool titulaire = true, Pharma.Application.Integrite.VerifierIntegrite? integrite = null)
+        ConfirmerOrdreCentral Confirmer, RefuserOrdreCentral Refuser, SeuilsEnMemoire Seuils, MoteurEspion Moteur) Monter(bool titulaire = true,
+        Pharma.Application.Integrite.VerifierIntegrite? integrite = null, Pharma.Application.Reglages.IGardeReglagesCentraux? garde = null)
     {
         var (depot, admin, alertes, journal) = (new Depot(), new UtilisateursEnMemoire(), new Alertes(), new JournalEspion());
+        var (seuils, moteur) = (new SeuilsEnMemoire(), new MoteurEspion());
         var droits = new DroitsFactices("admin.utilisateurs") { Titulaire = titulaire };
         var executer = new ExecuterOrdreCentral(admin, new CreerUtilisateur(admin, new HacheurFactice(), journal, droits),
             new ModifierUtilisateur(admin, new HacheurFactice(), journal, droits), new EnregistrerDroits(admin, journal), depot.Produits, depot,
             new Pharma.Application.Catalogue.ImporterNomenclature(new LecteurFactice(200), depot.Nomenclature, droits, journal), depot.Referentiels,
-            depot.Achats, depot.Organismes, depot.Listes, integrite: integrite);
+            depot.Achats, depot.Organismes, depot.Listes, integrite: integrite,
+            reglagesCommuns: new ReglagesCommunsOrdre(seuils, new EnregistrerSeuils(seuils, moteur, journal, garde)));
         var horloge = new Horloge(Maintenant);
+        // Lot S7.4 : mot de passe du titulaire (n° 1) ressaisi pour accepter ou refuser des réglages communs
+        var motDePasse = new Pharma.Application.Securite.VerificationMotDePasseActuel(
+            new ComptesEnMemoire(new Pharma.Domain.Securite.Utilisateur { Id = 1, Identifiant = "titulaire", NomComplet = "Titulaire", MotDePasseHash = "hash:BonMotDePasse1", Actif = true }),
+            new VerificateurFactice(), journal);
         return (depot, admin, alertes, journal, new AppliquerOrdresCentraux(depot, executer, horloge, alertes),
-            new ConfirmerOrdreCentral(depot, executer, droits, horloge), new RefuserOrdreCentral(depot, droits));
+            new ConfirmerOrdreCentral(depot, executer, droits, horloge, motDePasse), new RefuserOrdreCentral(depot, droits, motDePasse), seuils, moteur);
     }
 
     [Fact]
@@ -663,5 +670,114 @@ public class OrdresCentrauxTests
         Assert.Equal("3 prestation(s) : ajouts et corrections seulement, rien n’est supprimé ni désactivé.",
             ResumeOrdre.Texte(Ordre(TypesOrdre.Prestations, null, "{}", """{"prestations":[{},{},{}]}"""), new EtatDroits([], [], [])));
         Assert.Equal("2 DCI à ajouter si elles manquent ; rien n’est renommé ni supprimé.", ResumeOrdre.Texte(dci, new EtatDroits([], [], [])));
+    }
+
+    // ---- Lot S7.4 : réglages communs proposés par le titulaire à distance ----
+
+    private const string JeuValide = """{"format":"reglages-v1","reglages":{"jours_orange":120,"jours_rouge":60,"jours_dormant":200}}""";
+
+    private sealed class GardeImposee : Pharma.Application.Reglages.IGardeReglagesCentraux
+    {
+        public Task ExigerModifiableAsync(string table, CancellationToken ct = default) => throw new Pharma.Application.Reglages.ReglageImposeException(table);
+        public Task ExigerAjoutLocalAsync(string table, CancellationToken ct = default) => Task.CompletedTask;
+        public Task ExigerElementLocalAsync(string table, bool venuDuCentral, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
+    [Fact]
+    public async Task Reglages_communs_rien_n_est_applique_sans_acceptation_puis_accepte_avec_le_mot_de_passe()
+    {
+        var m = Monter();
+        var o = Ordre(TypesOrdre.Reglages, donnees: JeuValide);
+        m.Depot.Ordres.Add(o);
+
+        await m.Auto.ExecuterAsync();
+        Assert.Equal(StatutsOrdre.AConfirmer, m.Depot.Statut(o.Id));
+        Assert.Null(m.Seuils.Enregistres);                                      // rien n'est appliqué sans acceptation
+        Assert.Contains("Péremption : alerte orange : 180 → 120 jours", m.Depot.Ordres.Single().Motif);   // avant → après
+        Assert.Equal(0, await m.Auto.ExecuterAsync());                         // le passage automatique ne l'applique jamais
+        Assert.Null(m.Seuils.Enregistres);
+
+        // Mot de passe absent ou faux : refus, l'ordre reste à confirmer, rien d'écrit
+        await Assert.ThrowsAsync<RegleMetierException>(() => m.Confirmer.ExecuterAsync(o.Id, null, null, 1));
+        await Assert.ThrowsAsync<RegleMetierException>(() => m.Confirmer.ExecuterAsync(o.Id, null, "faux", 1));
+        Assert.Equal(StatutsOrdre.AConfirmer, m.Depot.Statut(o.Id));
+        Assert.Null(m.Seuils.Enregistres);
+
+        Assert.Equal(StatutsOrdre.Applique, await m.Confirmer.ExecuterAsync(o.Id, null, "BonMotDePasse1", 1));
+        var g = m.Seuils.Enregistres!.General;
+        Assert.Equal((120, 60, 200, 365, 2), (g.JoursOrange, g.JoursRouge, g.JoursDormant, g.HorizonRisqueJours, g.DelaiFournisseurJours));
+        Assert.Equal(1, m.Moteur.Appels);                                      // alertes recalculées
+        Assert.Contains("seuils_alerte", m.Journal.Actions);                   // journal des actions (avant / après)
+        Assert.Equal("3 réglage(s) appliqué(s)", m.Depot.Notes.Last().Motif);   // résultat remonté au central
+        Assert.Equal(1L, m.Depot.Notes.Last().Par);
+
+        // Rejeu : déjà traité, rien n'est réappliqué
+        await Assert.ThrowsAsync<RegleMetierException>(() => m.Confirmer.ExecuterAsync(o.Id, null, "BonMotDePasse1", 1));
+        Assert.Equal(1, m.Moteur.Appels);
+    }
+
+    [Fact]
+    public async Task Reglages_communs_hors_liste_ou_hors_bornes_refuses_des_la_reception()
+    {
+        var m = Monter();
+        var horsListe = Ordre(TypesOrdre.Reglages, donnees: """{"format":"reglages-v1","reglages":{"taux_tva":9}}""");
+        var horsBornes = Ordre(TypesOrdre.Reglages, donnees: """{"format":"reglages-v1","reglages":{"jours_orange":5000}}""");
+        var nonEntier = Ordre(TypesOrdre.Reglages, donnees: """{"format":"reglages-v1","reglages":{"jours_orange":"120"}}""");
+        var incoherent = Ordre(TypesOrdre.Reglages, donnees: """{"format":"reglages-v1","reglages":{"jours_orange":60,"jours_rouge":90}}""");
+        var format = Ordre(TypesOrdre.Reglages, donnees: """{"format":"autre","reglages":{"jours_orange":120}}""");
+        m.Depot.Ordres.AddRange([horsListe, horsBornes, nonEntier, incoherent, format]);
+
+        await m.Auto.ExecuterAsync();
+        Assert.All([horsListe, horsBornes, nonEntier, incoherent, format], o => Assert.Equal(StatutsOrdre.Refuse, m.Depot.Statut(o.Id)));
+        Assert.Contains("hors de la liste permise", m.Depot.Ordres.Single(o => o.Id == horsListe.Id).Motif);
+        Assert.Contains("de 1 à 1095", m.Depot.Ordres.Single(o => o.Id == horsBornes.Id).Motif);
+        Assert.Null(m.Seuils.Enregistres);
+        // Même confirmé de force, un ordre hors liste n'est jamais appliqué
+        Assert.Throws<OrdreInapplicableException>(() => ReglagesCommunsOrdre.Valeurs(horsListe));
+    }
+
+    [Fact]
+    public async Task Reglages_communs_rouge_combine_trop_long_ou_table_fixee_refuses_a_l_acceptation()
+    {
+        var m = Monter();
+        // Seul le rouge est proposé : 200 ≥ orange actuel (180) une fois combiné → refus définitif, rien d'écrit
+        var o = Ordre(TypesOrdre.Reglages, donnees: """{"format":"reglages-v1","reglages":{"jours_rouge":200}}""");
+        m.Depot.Ordres.Add(o);
+        await m.Auto.ExecuterAsync();
+        await Assert.ThrowsAsync<RegleMetierException>(() => m.Confirmer.ExecuterAsync(o.Id, null, "BonMotDePasse1", 1));
+        Assert.Equal(StatutsOrdre.Refuse, m.Depot.Statut(o.Id));
+        Assert.Null(m.Seuils.Enregistres);
+
+        var fixe = Monter(garde: new GardeImposee());
+        var f = Ordre(TypesOrdre.Reglages, donnees: JeuValide);
+        fixe.Depot.Ordres.Add(f);
+        await fixe.Auto.ExecuterAsync();
+        await Assert.ThrowsAsync<RegleMetierException>(() => fixe.Confirmer.ExecuterAsync(f.Id, null, "BonMotDePasse1", 1));
+        Assert.Equal(StatutsOrdre.Refuse, fixe.Depot.Statut(f.Id));
+        Assert.Contains("fixé par le serveur central", fixe.Depot.Ordres.Single().Motif);
+        Assert.Null(fixe.Seuils.Enregistres);
+    }
+
+    [Fact]
+    public async Task Reglages_communs_refus_avec_mot_de_passe_et_expiration()
+    {
+        var m = Monter();
+        var o = Ordre(TypesOrdre.Reglages, donnees: JeuValide);
+        var echu = Ordre(TypesOrdre.Reglages, donnees: JeuValide, expire: Maintenant.AddMinutes(-1));
+        m.Depot.Ordres.AddRange([o, echu]);
+        await m.Auto.ExecuterAsync();
+        Assert.Equal(StatutsOrdre.Expire, m.Depot.Statut(echu.Id));               // jamais appliqué
+        await Assert.ThrowsAsync<RegleMetierException>(() => m.Refuser.ExecuterAsync(o.Id, "pas maintenant", "faux", 1));
+        Assert.Equal(StatutsOrdre.AConfirmer, m.Depot.Statut(o.Id));
+        await m.Refuser.ExecuterAsync(o.Id, "pas maintenant", "BonMotDePasse1", 1);
+        Assert.Equal(StatutsOrdre.Refuse, m.Depot.Statut(o.Id));
+        Assert.Null(m.Seuils.Enregistres);
+        // Le titulaire seul décide
+        var autre = Monter(titulaire: false);
+        var x = Ordre(TypesOrdre.Reglages, donnees: JeuValide);
+        autre.Depot.Ordres.Add(x);
+        await autre.Auto.ExecuterAsync();
+        await Assert.ThrowsAnyAsync<Exception>(() => autre.Confirmer.ExecuterAsync(x.Id, null, "BonMotDePasse1", 1));
+        Assert.Null(autre.Seuils.Enregistres);
     }
 }

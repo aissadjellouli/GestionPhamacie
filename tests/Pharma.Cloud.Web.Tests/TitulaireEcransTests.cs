@@ -245,6 +245,37 @@ public class TitulaireEcransTests
             Assert.Equal($"/mes-officines/{e.B}/ordres?erreur=ordre_refuse", autreOrdre.Headers.Location?.OriginalString);
             Assert.Equal(1L, await b.ScalaireAsync("SELECT count(*) FROM journal_acces_distant WHERE evenement = 'ordre_titulaire' AND resultat = 'ok' AND officine_id = $1", e.A));
 
+            // Lot S7.4 : réglages communs (liste fermée, droit « ordres » sur chaque officine, tout ou rien, code de confirmation)
+            var pageReglages = await Texte(client, "/mes-officines/reglages");
+            Assert.Contains("Réglages communs", pageReglages);
+            Assert.Contains($"value=\"{e.A}\"", pageReglages);
+            Assert.DoesNotContain($"value=\"{e.B}\"", pageReglages);
+            Assert.DoesNotContain("style=\"", pageReglages);
+            var horsListe = await Poster(client, "/mes-officines/reglages", "/actions/mes-officines/reglages",
+                new() { ["reglage"] = "taux_tva", ["valeur"] = "19", ["officine"] = e.A.ToString(), ["code"] = "000000" });
+            Assert.Equal($"/mes-officines/reglages?o={e.A}&erreur=reglages_hors_liste", horsListe.Headers.Location?.OriginalString);
+            var horsBornes = await Poster(client, "/mes-officines/reglages", "/actions/mes-officines/reglages",
+                new() { ["r.jours_orange"] = "5000", ["officine"] = e.A.ToString(), ["code"] = "000000" });
+            Assert.Equal($"/mes-officines/reglages?v=jours_orange:5000&o={e.A}&erreur=reglages_hors_bornes", horsBornes.Headers.Location?.OriginalString);
+            var versB = await Poster(client, "/mes-officines/reglages", "/actions/mes-officines/reglages",
+                new() { ["r.jours_orange"] = "120", ["officine"] = e.B.ToString(), ["code"] = "000000" });
+            Assert.Equal($"/mes-officines/reglages?v=jours_orange:120&o={e.B}&erreur=reglages_refuse", versB.Headers.Location?.OriginalString);
+            Assert.Contains("Rien n'est envoyé", await Texte(client, versB.Headers.Location!.OriginalString));
+            Assert.Equal("/mes-officines/reglages?ok=code_envoye",
+                (await Poster(client, "/mes-officines/reglages", "/actions/code-action", new() { ["retour"] = "/mes-officines/reglages" })).Headers.Location?.OriginalString);
+            var codeReglages = Regex.Match(await File.ReadAllTextAsync(Path.Combine(codes, "tit.web.a.txt")), "[0-9]{6}").Value;
+            var propose = await Poster(client, "/mes-officines/reglages", "/actions/mes-officines/reglages",
+                new() { ["reglage"] = "jours_orange", ["valeur"] = "120", ["officine"] = e.A.ToString(), ["code"] = codeReglages });
+            Assert.Equal("/mes-officines/reglages?ok=reglages_envoyes&n=1", propose.Headers.Location?.OriginalString);
+            var suivi = (await Texte(client, "/mes-officines/reglages?ok=reglages_envoyes&n=1")).Replace(' ', ' ').Replace(' ', ' ');
+            Assert.Contains("Proposé", suivi);
+            Assert.Contains("Péremption : alerte orange", suivi);
+            Assert.Contains("120 jours", suivi);
+            Assert.Contains("Propositions envoyées", suivi);
+            Assert.Contains("Aucune donnée de patient ni de vente", suivi);
+            Assert.DoesNotContain("style=\"", suivi);
+            Assert.Equal(1L, await b.ScalaireAsync("SELECT count(*) FROM journal_acces_distant WHERE evenement = 'reglages_titulaire' AND resultat = 'ok' AND officine_id = $1", e.A));
+
             // Officine d'un autre titulaire : refus (rien de B) ; écrans de l'éditeur : accès refusé
             var autre = await Texte(client, $"/mes-officines/{e.B}");
             Assert.Contains("Officine introuvable ou non rattachée", autre);

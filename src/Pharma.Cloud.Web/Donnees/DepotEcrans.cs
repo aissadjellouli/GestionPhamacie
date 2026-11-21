@@ -155,6 +155,25 @@ public sealed class DepotEcrans(NpgsqlDataSource db)
         return (string)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
+    // Lot S7.4 (script central 035) : réglages communs du titulaire (liste fermée, droit « ordres » sur chaque officine, tout ou rien)
+    /// <summary>Envoi d'un jeu (données reglages-v1 déjà contrôlées par l'écran, revérifiées par la base) ; seule l'empreinte du code part.</summary>
+    public async Task<(string Statut, Guid? Officine, int Ordres)> EnvoyerReglagesAsync(string empreinteJeton, IReadOnlyList<Guid> officines, string reglagesJson,
+        string? empreinteCode, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("SELECT statut, officine_id, ordres FROM cloud_ecran_titulaire_envoyer_reglages($1, $2, $3, $4)");
+        cmd.Parameters.Add(Texte(empreinteJeton));
+        cmd.Parameters.Add(new NpgsqlParameter { Value = officines.ToArray(), NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Uuid });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = reglagesJson, NpgsqlDbType = NpgsqlDbType.Jsonb });
+        cmd.Parameters.Add(Texte(empreinteCode));
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        await r.ReadAsync(ct);
+        return (r.GetString(0), r.IsDBNull(1) ? null : r.GetGuid(1), r.GetInt32(2));
+    }
+
+    /// <summary>Mes envois de réglages communs (officines encore rattachées avec le droit « ordres ») : une ligne par officine.</summary>
+    public Task<TableEcran> TitulaireReglagesEnvoisAsync(string empreinteJeton, int page, int taille, CancellationToken ct) =>
+        LireAsync(null, null, "SELECT * FROM cloud_ecran_titulaire_reglages_envois($1, $2, $3)", [Texte(empreinteJeton), Entier(page), Entier(taille)], ct);
+
     /// <summary>Rattachement par code : seule l'empreinte du code saisi part vers la base (null si la saisie n'est pas un code : refus compté).</summary>
     public async Task<(string Statut, Guid? Officine)> RattacherAsync(string empreinteJeton, string? empreinteCode, CancellationToken ct)
     {

@@ -60,8 +60,9 @@ public static class ControleAcces
     private static readonly string[] Communs = ["/mot-de-passe", "/actions/mot-de-passe", "/actions/deconnexion", "/actions/theme", "/mon-journal", "/acces-refuse"];
 
     /// <summary>Écrans du titulaire (liste fermée) : ses officines, la vue d'ensemble (S7.3), le rattachement, le code de confirmation
-    /// d'un ordre (S7.3), le tableau de bord, le journal et les ordres d'une officine.</summary>
-    private static readonly string[] Titulaire = ["/mes-officines", "/mes-officines/ensemble", "/rattacher", "/actions/rattacher", "/actions/code-action"];
+    /// d'un ordre (S7.3), le tableau de bord, le journal et les ordres d'une officine ; les réglages communs et leur envoi (S7.4).</summary>
+    private static readonly string[] Titulaire = ["/mes-officines", "/mes-officines/ensemble", "/mes-officines/reglages", "/rattacher", "/actions/rattacher",
+        "/actions/code-action", "/actions/mes-officines/reglages"];
 
     /// <summary>Accueil de chaque rôle (après la connexion, le code, le mot de passe).</summary>
     public static string Accueil(SessionEcran session) => session.Titulaire ? "/mes-officines" : "/officines";

@@ -16,7 +16,21 @@
     return total;
   }
 
+  // Zone à deux colonnes (data-hauteur-restante, ex. Réglages communs) : hauteur réelle restante de la fenêtre (messages compris),
+  // ses panneaux défilent dedans ; rien sous 1 100 px de large (colonnes empilées, hauteur libre)
+  function zones() {
+    var liste = Array.prototype.slice.call(document.querySelectorAll("[data-hauteur-restante]"));
+    liste.forEach(function (z) { z.style.height = ""; });
+    if (window.innerWidth <= 1100) return [];
+    liste.forEach(function (z) {
+      var haut = z.getBoundingClientRect().top + window.scrollY;
+      z.style.height = Math.max(260, Math.floor(window.innerHeight - haut - dessous(z) - MARGE)) + "px";
+    });
+    return liste;
+  }
+
   function ajuster() {
+    var zonesFixes = zones();
     var cadres = Array.prototype.slice.call(document.querySelectorAll(".tableau-cadre"));
     cadres.forEach(function (c) { c.style.maxHeight = ""; });
     cadres.forEach(function (c) {
@@ -28,7 +42,12 @@
     var d = document.scrollingElement;
     for (var essai = 0; essai < 4; essai++) {
       var deborde = Math.ceil(d.scrollHeight - d.clientHeight);
-      if (deborde <= 0 || cadres.length === 0) break;
+      if (deborde <= 0) break;
+      if (zonesFixes.length > 0) {
+        var z = zonesFixes[0], hz = parseFloat(z.style.height) || z.clientHeight, nz = Math.max(260, hz - deborde);
+        if (nz < hz) { z.style.height = nz + "px"; continue; }
+      }
+      if (cadres.length === 0) break;
       var grand = cadres.slice().sort(function (a, b) { return b.clientHeight - a.clientHeight; })[0];
       var actuel = parseFloat(grand.style.maxHeight) || grand.clientHeight;
       var h = Math.max(MINIMUM, actuel - deborde);

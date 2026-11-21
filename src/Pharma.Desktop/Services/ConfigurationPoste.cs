@@ -8,7 +8,7 @@ public sealed class ConfigurationPoste
 {
     public string NomLogiciel { get; } = "Tracodex Officine";
     public string? Pharmacie { get; } = Lire("PHARMA_PHARMACIE");
-    /// <summary>Nom donné au poste (PHARMA_POSTE), null s'il n'est pas déclaré (barre d'état : vendeur seul).</summary>
+    /// <summary>Nom donné au poste (PHARMA_POSTE), null s'il n'est pas déclaré (barre d'état : nom de l'ordinateur, voir NomCourt).</summary>
     public string? PosteDeclare { get; } = Lire("PHARMA_POSTE");
     public string Poste => PosteDeclare ?? $"Poste {Environment.MachineName}";
     /// <summary>Nom court du poste pour la barre d'état : PHARMA_POSTE s'il est déclaré, sinon le nom de l'ordinateur (comme la caisse).</summary>

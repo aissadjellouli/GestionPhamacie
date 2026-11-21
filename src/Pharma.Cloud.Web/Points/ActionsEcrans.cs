@@ -49,6 +49,18 @@ public static class Messages
         ["ordre_partie"] = "Cette officine est partie : aucun ordre.",
         ["ordre_deja_en_cours"] = "Un ordre du même type attend déjà l'officine : attendez son résultat (ou son expiration, 24 heures).",
         ["ordre_trop_d_ordres"] = "Trop d'ordres envoyés : 10 par heure au plus.",
+        // Lot S7.4 : réglages communs (rien n'est envoyé : tout ou rien)
+        ["reglages_refuse"] = "Rien n'est envoyé : une officine choisie n'est pas rattachée à votre compte, son accès est retiré ou le droit « ordres » n'y est pas accordé depuis son poste.",
+        ["reglages_partie"] = "Rien n'est envoyé : une officine choisie est partie.",
+        ["reglages_deja_en_cours"] = "Rien n'est envoyé : une officine choisie a encore une proposition de réglages en attente (décision sur son poste, ou expiration après 24 heures).",
+        ["reglages_trop_d_envois"] = "Trop d'envois de réglages : 5 par heure au plus.",
+        ["reglages_hors_liste"] = "Rien n'est envoyé : réglage hors de la liste permise (seuils d'alerte de stock et de péremption seulement).",
+        ["reglages_hors_bornes"] = "Rien n'est envoyé : une valeur n'est pas un nombre entier ou sort des bornes indiquées.",
+        ["reglages_incoherent"] = "Rien n'est envoyé : l'alerte rouge doit être plus courte que l'alerte orange.",
+        ["reglages_vide"] = "Rien n'est envoyé : saisissez au moins un réglage à proposer.",
+        ["reglages_format"] = "Rien n'est envoyé : réglages illisibles.",
+        ["reglages_aucune_officine"] = "Rien n'est envoyé : cochez au moins une officine.",
+        ["reglages_trop_d_officines"] = "Rien n'est envoyé : 50 officines au plus par envoi.",
     };
 
     public static readonly Dictionary<string, string> Succes = new()
@@ -59,11 +71,72 @@ public static class Messages
         ["serveur_revoque"] = "Certificats du serveur révoqués : refusés dès le prochain appel.",
         ["rattachee"] = "Officine rattachée à votre compte : tableau de bord et journal des accès.",
         ["ordre_envoye"] = "Ordre envoyé : l'officine le relève à son prochain passage (une minute environ) ; résultat ci-dessous.",
+        ["reglages_envoyes"] = "Réglages proposés : chaque officine les relève, puis son titulaire les accepte ou les refuse sur le poste (24 heures) ; rien ne change avant. Suivi ci-dessous.",
     };
 
     public static string? Erreur(string? cle) => cle is not null && Erreurs.TryGetValue(cle, out var m) ? m : null;
 
     public static string? Reussite(string? cle) => cle is not null && Succes.TryGetValue(cle, out var m) ? m : null;
+}
+
+/// <summary>
+/// Lot S7.4 : saisie du formulaire des réglages communs. Champs « r.&lt;clé&gt; » (vide = réglage non proposé) ; une clé hors de la liste
+/// fermée est GARDÉE pour être refusée (hors_liste) ; une valeur qui n'est pas un entier rend la saisie illisible (hors_bornes).
+/// </summary>
+public static class SaisieReglages
+{
+    public const string Prefixe = "r.";
+
+    public static (Dictionary<string, int> Valeurs, bool Illisible) Lire(IFormCollection formulaire)
+    {
+        var valeurs = new Dictionary<string, int>(StringComparer.Ordinal);
+        var illisible = false;
+        foreach (var (nom, v) in formulaire.Where(f => f.Key.StartsWith(Prefixe, StringComparison.Ordinal)).Take(30))
+        {
+            var texte = v.ToString().Trim();
+            if (texte.Length == 0) continue;
+            var cle = nom[Prefixe.Length..];
+            if (cle.Length is 0 or > 60) { illisible = true; continue; }
+            if (int.TryParse(texte, System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture, out var n)) valeurs[cle] = n;
+            else illisible = true;
+        }
+        // Maquette validée (lot S7.4) : un réglage choisi dans la liste et sa valeur
+        if (formulaire["reglage"].ToString().Trim() is { Length: > 0 } choisi)
+        {
+            if (choisi.Length > 60) illisible = true;
+            else if (int.TryParse(formulaire["valeur"].ToString().Trim(), System.Globalization.NumberStyles.AllowLeadingSign,
+                         System.Globalization.CultureInfo.InvariantCulture, out var n)) valeurs[choisi] = n;
+            else illisible = true;
+        }
+        return (valeurs, illisible);
+    }
+
+    /// <summary>Adresse de l'écran avec la saisie (réglages de la liste fermée et officines seulement) : « ?v=cle:120,cle:60&amp;o=uuid,uuid ».</summary>
+    public static string Adresse(IReadOnlyDictionary<string, int> valeurs, IReadOnlyList<Guid> officines)
+    {
+        var v = string.Join(',', Pharma.Domain.Reglages.ReglagesCommuns.Liste.Where(r => valeurs.ContainsKey(r.Cle))
+            .Select(r => $"{r.Cle}:{valeurs[r.Cle].ToString(System.Globalization.CultureInfo.InvariantCulture)}"));
+        var o = string.Join(',', officines.Take(50));
+        var parties = new[] { v.Length > 0 ? "v=" + v : null, o.Length > 0 ? "o=" + o : null }.Where(x => x is not null);
+        var q = string.Join('&', parties);
+        return "/mes-officines/reglages" + (q.Length > 0 ? "?" + q : "");
+    }
+
+    /// <summary>Saisie relue depuis l'adresse (« v ») : seulement les clés de la liste fermée, valeurs entières.</summary>
+    public static Dictionary<string, int> Relire(string? v)
+    {
+        var valeurs = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var morceau in (v ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Take(20))
+            if (morceau.Split(':') is [var cle, var n] && Pharma.Domain.Reglages.ReglagesCommuns.Trouver(cle) is not null
+                && int.TryParse(n, System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture, out var e))
+                valeurs[cle] = e;
+        return valeurs;
+    }
+
+    /// <summary>Officines relues depuis l'adresse (« o »).</summary>
+    public static HashSet<Guid> Officines(string? o) =>
+        (o ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Take(50).Select(x => Guid.TryParseExact(x, "D", out var g) ? g : Guid.Empty)
+            .Where(g => g != Guid.Empty).ToHashSet();
 }
 
 /// <summary>Certificat PUBLIC de l'autorité (autorite.crt) : début de son empreinte épinglé dans chaque code d'activation. Jamais la clé.</summary>
@@ -174,6 +247,30 @@ public static class ActionsEcrans
             return Results.Redirect(statut == "ok"
                 ? $"/mes-officines/{officine}/ordres?ok=ordre_envoye"
                 : $"/mes-officines/{officine}/ordres?erreur={(Messages.Erreurs.ContainsKey("ordre_" + statut) ? "ordre_" + statut : Cle(statut))}");
+        }).RequireRateLimiting("code");
+
+        // Lot S7.4 : réglages communs envoyés à une ou plusieurs officines (liste fermée contrôlée ici puis par la base, droit « ordres »
+        // sur chacune, tout ou rien, code de confirmation). Après un refus, la saisie revient dans l'adresse (nombres et identifiants seulement).
+        g.MapPost("/mes-officines/reglages", async (HttpContext ctx, DepotEcrans depot, CodesSecondFacteur codes) =>
+        {
+            var formulaire = await ctx.Request.ReadFormAsync(ctx.RequestAborted);
+            var (valeurs, illisible) = SaisieReglages.Lire(formulaire);
+            var officines = formulaire["officine"].Select(o => Guid.TryParseExact(o, "D", out var g) ? g : Guid.Empty).Where(g => g != Guid.Empty)
+                .Distinct().Take(51).ToList();
+            var retour = SaisieReglages.Adresse(valeurs, officines);
+            string statut;
+            if (illisible) statut = "hors_bornes";
+            else if (Pharma.Domain.Reglages.ReglagesCommuns.Controler(valeurs).Code is { } refus) statut = refus;
+            else if (officines.Count == 0) statut = "aucune_officine";
+            else
+            {
+                var r = await depot.EnvoyerReglagesAsync(ctx.EmpreinteJeton()!, officines, Pharma.Domain.Reglages.ReglagesCommuns.Json(valeurs),
+                    codes.Empreinte("action", formulaire["code"].ToString()), ctx.RequestAborted);
+                if (r.Statut == "ok") return Results.Redirect($"/mes-officines/reglages?ok=reglages_envoyes&n={r.Ordres}");
+                statut = r.Statut;
+            }
+            var cle = Messages.Erreurs.ContainsKey("reglages_" + statut) ? "reglages_" + statut : Messages.Erreurs.ContainsKey(statut) ? statut : "reglages_refuse";
+            return Results.Redirect($"{retour}{(retour.Contains('?') ? '&' : '?')}erreur={cle}");
         }).RequireRateLimiting("code");
 
         // Code de confirmation d'une action (second facteur à chaque action sensible)

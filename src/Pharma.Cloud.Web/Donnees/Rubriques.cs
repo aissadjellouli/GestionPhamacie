@@ -65,6 +65,13 @@ public static class Rubriques
         ["expire"] = "Expiré", ["annule"] = "Annulé",
     };
 
+    /// <summary>Lot S7.4 : statut d'une proposition de réglages communs, vu du titulaire au central.</summary>
+    public static readonly Dictionary<string, string> StatutsReglages = new()
+    {
+        ["en_attente"] = "Proposé", ["a_confirmer"] = "Proposé (sur le poste)", ["applique"] = "Accepté", ["refuse"] = "Refusé",
+        ["expire"] = "Expiré", ["annule"] = "Annulé",
+    };
+
     /// <summary>Colonnes jamais affichées (techniques internes : clés, total).</summary>
     public static readonly HashSet<string> Masquees = ["total", "id", "officine_id"];
 
@@ -87,6 +94,7 @@ public static class Rubriques
         string s when colonne == "etat" && Etats.TryGetValue(s, out var e) => e,
         string s when colonne == "droits" => string.Join(", ", s.Split(',').Select(d => d switch { "consulter" => "tableau de bord", "journal_acces" => "journal des accès", "ordres" => "ordres à distance", _ => d })),
         string s when colonne == "type" && OrdresTitulaire.FirstOrDefault(o => o.Type == s) is { Libelle: { } l } => l,
+        string s when colonne == "type" && s == Pharma.Domain.Reglages.ReglagesCommuns.TypeOrdre => "Réglages communs",
         string s when colonne == "statut" && StatutsOrdre.TryGetValue(s, out var so) => so,
         string s when colonne == "acteur" => s switch { "vous" => "Vous", "editeur" => "Éditeur (support)", "titulaire" => "Autre titulaire", "poste" => "Poste de l’officine", "console" => "Console du central", _ => s },
         _ => Convert.ToString(valeur, CultureInfo.GetCultureInfo("fr-FR")) ?? "—",

@@ -61,7 +61,7 @@ public static class PastillesBarre
         return new AffichageBarre(gardees, anomalies.Except(gardees).Concat(grises).ToList());
     }
 
-    /// <summary>Poste et vendeur connecté (« Caisse 1 · Karim ») ; nom du poste seulement s'il est déclaré, sinon vendeur seul.</summary>
+    /// <summary>Poste et vendeur connecté (« Caisse 1 · Karim ») ; le poste reçu est PHARMA_POSTE, sinon le nom de l'ordinateur (ConfigurationPoste.NomCourt) ; partie vide omise.</summary>
     public static string Identite(string? posteDeclare, string? vendeur) =>
         string.Join(" · ", new[] { posteDeclare, vendeur }.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s!.Trim()));
 

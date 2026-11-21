@@ -313,11 +313,20 @@ public sealed record ResultatEnvoiSynchronisationDto(int LotsAccuses, string? Ar
 
 /// <summary>Lots S5.1 et S5.5 : ordre reçu du serveur central (Resume : texte lisible, employé et rôle nommés d'après la base de l'officine).</summary>
 public sealed record OrdreCentralDto(Guid Id, string Type, string Libelle, string Resume, string Auteur, DateTime CreeLe, DateTime ExpireLe,
-    string Statut, string? Motif, DateTime RecuLe, DateTime? TraiteLe, bool DemandeMotDePasse);
+    string Statut, string? Motif, DateTime RecuLe, DateTime? TraiteLe, bool DemandeMotDePasse,
+    bool DemandeMotDePasseTitulaire = false, IReadOnlyList<ComparaisonReglageDto>? Comparaison = null,
+    IReadOnlyList<ReglageProposeDto>? Proposes = null, string? TraitePar = null);
+
+/// <summary>Lot S7.4 : réglage commun d'une proposition (valeur proposée), pour l'historique des décisions.</summary>
+public sealed record ReglageProposeDto(string Libelle, int Valeur, string Unite);
+
+/// <summary>Lot S7.4 : réglage commun proposé, valeur actuelle de l'officine (avant) et valeur proposée (après).</summary>
+public sealed record ComparaisonReglageDto(string Libelle, int Avant, int Apres, string Unite, bool Change);
 
 /// <summary>Page d'ordres reçus ; AConfirmer : nombre d'ordres qui attendent la confirmation du titulaire.</summary>
 public sealed record PageOrdresCentrauxDto(PageDto<OrdreCentralDto> Page, int AConfirmer);
 
-public sealed record ConfirmerOrdreCentralDto(string? MotDePasse);
+/// <summary>MotDePasseTitulaire (lot S7.4) : mot de passe du titulaire qui accepte des réglages communs.</summary>
+public sealed record ConfirmerOrdreCentralDto(string? MotDePasse, string? MotDePasseTitulaire = null);
 
-public sealed record RefuserOrdreCentralDto(string? Motif);
+public sealed record RefuserOrdreCentralDto(string? Motif, string? MotDePasseTitulaire = null);

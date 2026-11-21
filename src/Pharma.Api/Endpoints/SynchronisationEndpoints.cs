@@ -143,31 +143,54 @@ public static class SynchronisationEndpoints
         });
 
         // Lots S5.1 et S5.5 : ordres reçus du serveur central (liste : admin.parametres ; confirmation et refus : titulaire seul)
-        s.MapGet("/ordres", async (string? statut, int? page, int? taille, IOrdresCentrauxDepot ordres,
-            Pharma.Application.Administration.IUtilisateursAdmin admin, CancellationToken ct) =>
+        s.MapGet("/ordres", async (string? statut, string? type, int? page, int? taille, IOrdresCentrauxDepot ordres,
+            Pharma.Application.Administration.IUtilisateursAdmin admin, ReglagesCommunsOrdre reglagesCommuns, CancellationToken ct) =>
         {
-            if (statut is not null && !StatutsOrdre.Tous.Contains(statut)) return Results.Problem("État d’ordre inconnu.", statusCode: 400);
+            if (statut is not null && !StatutsOrdre.Tous.Contains(statut) && statut != StatutsOrdre.Traite) return Results.Problem("État d’ordre inconnu.", statusCode: 400);
+            if (type is not null && !TypesOrdre.Connus.Contains(type)) return Results.Problem("Type d’ordre inconnu.", statusCode: 400);
             var demande = Pharma.Application.Commun.DemandePage.Lire(page, taille);
-            var p = await ordres.ListerAsync(statut, demande.Page, demande.Taille, ct);
+            var p = await ordres.ListerAsync(statut, demande.Page, demande.Taille, type, ct);
             var etat = await admin.LireAsync(ct);
-            var lignes = p.Ordres.Select(o => new OrdreCentralDto(o.Id, o.Type, TypesOrdre.Libelle(o.Type), ResumeOrdre.Texte(o, etat), o.Auteur,
-                o.CreeLeUtc, o.ExpireLeUtc, o.Statut, o.Motif, o.RecuLeUtc, o.TraiteLeUtc, o.Type == TypesOrdre.EmployeCreer)).ToList();
+            var lignes = new List<OrdreCentralDto>();
+            foreach (var o in p.Ordres)
+            {
+                // Lot S7.4 : réglages communs à décider : avant (valeur actuelle de l'officine) / après (valeur proposée), relus à chaque affichage
+                List<ComparaisonReglageDto>? comparaison = null;
+                if (o.Type == TypesOrdre.Reglages && o.Statut == StatutsOrdre.AConfirmer)
+                {
+                    try { comparaison = (await reglagesCommuns.ComparerAsync(o, ct)).Select(c => new ComparaisonReglageDto(c.Libelle, c.Avant, c.Apres, c.Unite, c.Change)).ToList(); }
+                    catch (OrdreInapplicableException) { comparaison = []; }
+                }
+                lignes.Add(new OrdreCentralDto(o.Id, o.Type, TypesOrdre.Libelle(o.Type), ResumeOrdre.Texte(o, etat), o.Auteur,
+                    o.CreeLeUtc, o.ExpireLeUtc, o.Statut, o.Motif, o.RecuLeUtc, o.TraiteLeUtc, o.Type == TypesOrdre.EmployeCreer,
+                    TypesOrdre.MotDePasseTitulaireRequis(o.Type), comparaison, Proposes(o),
+                    o.TraitePar is { } par ? etat.Utilisateurs.FirstOrDefault(u => u.Id == par)?.NomComplet : null));
+            }
             return Results.Ok(new PageOrdresCentrauxDto(new PageDto<OrdreCentralDto>(lignes, p.Total, demande.Page, demande.Taille), p.AConfirmer));
         });
 
         s.MapPost("/ordres/{id:guid}/confirmer", async (Guid id, ConfirmerOrdreCentralDto d, ConfirmerOrdreCentral confirmer, ClaimsPrincipal user,
             CancellationToken ct) =>
         {
-            await confirmer.ExecuterAsync(id, d.MotDePasse, user.UtilisateurId(), ct);
+            await confirmer.ExecuterAsync(id, d.MotDePasse, d.MotDePasseTitulaire, user.UtilisateurId(), ct);
             return Results.NoContent();
         });
 
         s.MapPost("/ordres/{id:guid}/refuser", async (Guid id, RefuserOrdreCentralDto d, RefuserOrdreCentral refuser, ClaimsPrincipal user,
             CancellationToken ct) =>
         {
-            await refuser.ExecuterAsync(id, d.Motif, user.UtilisateurId(), ct);
+            await refuser.ExecuterAsync(id, d.Motif, d.MotDePasseTitulaire, user.UtilisateurId(), ct);
             return Results.NoContent();
         });
+    }
+
+    /// <summary>Lot S7.4 : valeurs proposées d'un ordre de réglages communs (null pour les autres types, ou illisibles).</summary>
+    private static List<ReglageProposeDto>? Proposes(OrdreRecu o)
+    {
+        if (o.Type != TypesOrdre.Reglages) return null;
+        var (valeurs, erreurs) = Pharma.Domain.Reglages.ReglagesCommuns.Lire(o.DonneesJson);
+        return erreurs.Count > 0 ? [] : valeurs.Select(v => Pharma.Domain.Reglages.ReglagesCommuns.Trouver(v.Key)!)
+            .Select(r => new ReglageProposeDto(r.Libelle, valeurs[r.Cle], r.Unite)).ToList();
     }
 
     private static AnomalieLiaisonDto? Dto(AnomalieLiaison? a) => a is null ? null : new AnomalieLiaisonDto(a.Libelle, a.Niveau, a.Detail);

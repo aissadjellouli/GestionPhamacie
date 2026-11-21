@@ -451,6 +451,8 @@ select.selection { height: 44px; padding: 0 12px; border-radius: 8px; border: 1p
 
 /* ---- Connexion ---------------------------------------------------------- */
 .connexion { max-width: 420px; }
+/* Connexion : marges resserrées pour tenir à 1 366 × 768 avec un message (« … a quitté le poste ») et le lien super admin */
+.page.connexion { padding-top: 16px; padding-bottom: 16px; gap: 16px; }
 .connexion form { display: flex; flex-direction: column; gap: 12px; }
 
 #blazor-error-ui { display: none; position: fixed; bottom: 0; left: 0; right: 0; padding: 12px 24px; background: var(--alerte-fond); color: var(--urgent); }
@@ -1067,3 +1069,11 @@ fieldset.panneau:disabled { opacity: 0.85; }
 /* Résultat de la relève ou de la clôture (recette du 2026-11-15, D6) : montants jamais coupés en deux lignes */
 .resultat-releve .ligne-total > :last-child, .resultat-releve .a-payer > :last-child { white-space: nowrap; }
 .resultat-releve .ligne-total { gap: 12px; }
+/* Lot S7.4 : comparaison avant / après des réglages communs dans la fenêtre de décision : seul le tableau défile */
+.comparaison-reglages { max-height: 280px; }
+/* Lot S7.4 (maquette validée) : proposition de réglages communs : valeur actuelle barrée, valeur proposée en couleur d'accent ;
+   mot de passe, motif et boutons sur une ligne */
+.avant-apres .valeur-avant { text-decoration: line-through; color: var(--texte-2); }
+.avant-apres .valeur-proposee { color: var(--accent-texte); font-weight: 600; }
+.decision-proposition { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 2fr) auto; gap: 12px; align-items: end; }
+.decision-proposition > .actions { flex-wrap: nowrap; }

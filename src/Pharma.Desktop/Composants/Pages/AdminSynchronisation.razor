@@ -385,7 +385,26 @@
                 <section class="panneau" style="max-width: 620px; width: 100%">
                     <h2 id="t-ordre">@(action == "confirmer" ? "Confirmer" : "Refuser") : @oo.Libelle</h2>
                     <p style="margin: 0 0 4px">@oo.Resume</p>
-                    @if (oo.Motif is { } apercu) { <p class="detail" style="margin: 0 0 4px">@apercu</p> }
+                    @if (oo.Motif is { } apercu && oo.Comparaison is null) { <p class="detail" style="margin: 0 0 4px">@apercu</p> }
+                    @if (oo.Comparaison is { } comparaison)
+                    {
+                        @* Lot S7.4 : réglages communs proposés par le titulaire à distance : valeur actuelle de l'officine et valeur proposée ;
+                           rien ne change tant que le titulaire n'a pas accepté (mot de passe ressaisi). Liste fermée de 9 lignes au plus. *@
+                        <div class="tableau-cadre cadre-defilant comparaison-reglages" data-zone="comparaison-reglages">
+                            <table class="tableau" style="min-width: 0">
+                                <thead><tr><th scope="col">Réglage</th><th scope="col" class="nombre">Actuel</th><th scope="col" class="nombre">Proposé</th></tr></thead>
+                                <tbody>
+                                    @foreach (var c in comparaison)
+                                    {
+                                        <tr data-reglage="@c.Libelle"><td class="nom">@c.Libelle</td><td class="nombre">@c.Avant @c.Unite</td>
+                                            <td class="nombre">@if (c.Change) { <strong>@c.Apres @c.Unite</strong> } else { <span>@c.Apres @c.Unite (inchangé)</span> }</td></tr>
+                                    }
+                                    @if (comparaison.Count == 0) { <tr><td colspan="3" class="vide">Proposition illisible : refusez-la.</td></tr> }
+                                </tbody>
+                            </table>
+                        </div>
+                        <p class="detail" style="margin: 0">Seuls ces réglages généraux changent (seuils par grossiste et exceptions par produit inchangés) ; journal des actions au nom du titulaire, résultat renvoyé au serveur central.</p>
+                    }
                     <p class="detail" style="margin: 0 0 8px">Envoyé par @oo.Auteur le @Date(oo.CreeLe) ; expire le @Date(oo.ExpireLe).</p>
                     @if (erreurFenetre is not null) { <div class="erreur" role="alert">@erreurFenetre</div> }
                     @if (action == "confirmer" && oo.DemandeMotDePasse)
@@ -396,6 +415,11 @@
                             <input id="or-mdp2" type="password" autocomplete="new-password" aria-invalid="@(motDePasse2.Length >= motDePasse.Length && motDePasse2 != "" && motDePasse != motDePasse2 ? "true" : null)" @bind="motDePasse2" @bind:event="oninput" /></div>
                         <p class="detail" style="margin: 0">L’employé devra le changer à sa première connexion. Il n’est jamais envoyé au serveur central.</p>
                     }
+                    @if (oo.DemandeMotDePasseTitulaire)
+                    {
+                        <div class="champ"><label for="or-mdp-titulaire" class="requis">Votre mot de passe (titulaire)</label>
+                            <input id="or-mdp-titulaire" data-champ="mot_de_passe_titulaire" type="password" autocomplete="current-password" @bind="motDePasseTitulaire" @bind:event="oninput" /></div>
+                    }
                     @if (action == "refuser")
                     {
                         <div class="champ"><label for="or-motif" class="requis">Motif du refus (envoyé au serveur central)</label>
@@ -403,7 +427,7 @@
                     }
                     <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 12px">
                         <button type="button" class="btn" disabled="@enCours" @onclick="Fermer">Annuler</button>
-                        <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ValiderOrdreAsync">@(action == "confirmer" ? "Confirmer et appliquer" : "Refuser l’ordre")</button>
+                        <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="ValiderOrdreAsync">@(action == "confirmer" ? (oo.DemandeMotDePasseTitulaire ? "Accepter et appliquer" : "Confirmer et appliquer") : (oo.DemandeMotDePasseTitulaire ? "Refuser la proposition" : "Refuser l’ordre"))</button>
                     </div>
                 </section>
             </div>
@@ -411,28 +435,98 @@
 
         @if (t is not null && rubrique == "reglages-mutualises")
         {
-            @* Lot M7 : état des 11 tables de réglages que le serveur central peut fixer (imposé) ou proposer. Liste fermée de 11 lignes (bornée par nature), seul le cadre défile. *@
-            <p class="detail" style="margin: 0">Réglages que le serveur central peut fixer pour toutes les officines (« fixé ») ou proposer (« proposé » : votre valeur est gardée tant que vous ne l’adoptez pas, depuis l’écran du réglage).
-                @(t.Active ? "" : "La synchronisation est désactivée : tous les réglages sont modifiables ici, les valeurs du serveur central ne s’appliquent plus.")</p>
-            <div class="tableau-cadre" data-zone="reglages-mutualises">
-                <table class="tableau" style="min-width: 0">
-                    <thead><tr><th scope="col">Réglage</th><th scope="col">Mode</th><th scope="col" class="nombre">Version reçue</th><th scope="col" class="nombre">Version appliquée</th><th scope="col">État</th><th scope="col">Reçu le</th><th scope="col">Motif du refus</th></tr></thead>
-                    <tbody>
-                        @foreach (var g in reglagesMutualises)
+            @* Lot S7.4 (maquette validée du 2026-11-21) : réglages communs proposés par le titulaire depuis les écrans du serveur central ;
+               rien ne change sans l'accord du titulaire de l'officine (mot de passe ressaisi) ; un autre employé voit sans décider.
+               Lot M7 : état des 11 tables mutualisables (liste fermée, bornée). Écran fixe : tout le contenu défile dans un seul cadre. *@
+            <div class="cadre-defilant cadre-empile" data-zone="reglages-mutualises-cadre">
+                @if (propositions.Count > 0)
+                {
+                    <div class="bandeau-attention" role="status" data-zone="propositions-attente">@propositions.Count proposition(s) en attente de votre décision (valable jusqu’au @Libelles.DateHeureLocale(propositions.Min(x => x.ExpireLe))).</div>
+                }
+                @foreach (var pr in propositions)
+                {
+                    <section class="panneau" aria-label="Proposition de réglages communs" data-zone="proposition" data-ordre="@pr.Id">
+                        <h2>Proposition du @Libelles.DateHeureLocale(pr.CreeLe)</h2>
+                        <p class="detail" style="margin: 0">Envoyée par @pr.Auteur depuis les écrans du serveur central ; valable jusqu’au @Libelles.DateHeureLocale(pr.ExpireLe).</p>
+                        <div class="tableau-cadre">
+                            <table class="tableau avant-apres" style="min-width: 0">
+                                <thead><tr><th scope="col">Réglage</th><th scope="col" class="nombre">Actuel</th><th scope="col" class="nombre">Proposé</th></tr></thead>
+                                <tbody>
+                                    @foreach (var c in pr.Comparaison ?? [])
+                                    {
+                                        <tr data-reglage="@c.Libelle"><td class="nom">@c.Libelle</td>
+                                            <td class="nombre">@if (c.Change) { <span class="valeur-avant">@c.Avant @c.Unite</span> } else { <span>@c.Avant @c.Unite</span> }</td>
+                                            <td class="nombre">@if (c.Change) { <span class="valeur-proposee">@c.Apres @c.Unite</span> } else { <span>@c.Apres @c.Unite (inchangé)</span> }</td></tr>
+                                    }
+                                    @if (pr.Comparaison is not { Count: > 0 }) { <tr><td colspan="3" class="vide">Proposition illisible : refusez-la.</td></tr> }
+                                </tbody>
+                            </table>
+                        </div>
+                        @if (erreursProposition.TryGetValue(pr.Id, out var ep)) { <div class="erreur" role="alert">@ep</div> }
+                        @if (EstTitulaire)
                         {
-                            <tr data-table="@g.Table">
-                                <td class="nom"><a href="@Ecran(g.Table)">@g.Libelle</a></td>
-                                <td><span class="pastille @ClasseMode(g)">@LibelleMode(g)</span></td>
-                                <td class="nombre">@(g.VersionRecue?.ToString() ?? "—")</td>
-                                <td class="nombre">@(g.VersionAppliquee?.ToString() ?? "—")</td>
-                                <td><span class="pastille @ClasseEtat(g.Etat)">@LibelleEtat(g.Etat)</span></td>
-                                <td>@(g.RecuLe is { } rl ? Libelles.DateHeureLocale(rl) : "—")</td>
-                                <td class="detail">@(g.MotifRejet ?? "—")</td>
-                            </tr>
+                            <div class="decision-proposition">
+                                <div class="champ"><label for="@($"pr-mdp-{pr.Id}")" class="requis">Votre mot de passe</label>
+                                    <input id="@($"pr-mdp-{pr.Id}")" data-champ="mot_de_passe_titulaire" type="password" autocomplete="current-password" value="@Saisie(motsDePasseProposition, pr.Id)" @oninput="e => motsDePasseProposition[pr.Id] = e.Value?.ToString() ?? string.Empty" /></div>
+                                <div class="champ"><label for="@($"pr-motif-{pr.Id}")">Motif si vous refusez (envoyé au serveur central)</label>
+                                    <input id="@($"pr-motif-{pr.Id}")" data-champ="motif" type="text" maxlength="300" autocomplete="off" value="@Saisie(motifsProposition, pr.Id)" @oninput="e => motifsProposition[pr.Id] = e.Value?.ToString() ?? string.Empty" /></div>
+                                <div class="actions">
+                                    <button type="button" class="btn" disabled="@enCours" @onclick="() => DeciderPropositionAsync(pr, false)">Refuser</button>
+                                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => DeciderPropositionAsync(pr, true)">Accepter et appliquer</button>
+                                </div>
+                            </div>
                         }
-                        @if (reglagesMutualises.Count == 0) { <tr><td colspan="7" class="vide">@(erreur is null ? "Aucun réglage." : "Réglages illisibles.")</td></tr> }
-                    </tbody>
-                </table>
+                        else
+                        {
+                            <p class="detail" style="margin: 0" data-zone="proposition-lecture">Seul le pharmacien titulaire accepte ou refuse cette proposition.</p>
+                        }
+                        <p class="detail" style="margin: 0">Accepté : les seuils changent tout de suite sur tous les postes de l’officine (seuils par grossiste et exceptions par produit inchangés), noté au journal des actions ; le résultat remonte au serveur central.</p>
+                    </section>
+                }
+                <section class="panneau" aria-labelledby="t-decisions" data-zone="decisions-reglages">
+                    <h2 id="t-decisions">Décisions précédentes</h2>
+                    <div class="tableau-cadre">
+                        <table class="tableau" style="min-width: 0">
+                            <thead><tr><th scope="col">Le</th><th scope="col">Réglage</th><th scope="col">Valeur</th><th scope="col">Décision</th><th scope="col">Par</th></tr></thead>
+                            <tbody>
+                                @foreach (var d in decisions)
+                                {
+                                    <tr data-ordre="@d.Id">
+                                        <td>@Date(d.TraiteLe ?? d.RecuLe)</td>
+                                        <td>@string.Join(", ", (d.Proposes ?? []).Select(x => x.Libelle))</td>
+                                        <td>@string.Join(", ", (d.Proposes ?? []).Select(x => $"{x.Valeur} {x.Unite}"))</td>
+                                        <td><span class="pastille @ClasseOrdre(d.Statut)">@LibelleDecision(d.Statut)</span></td>
+                                        <td>@(d.TraitePar ?? "—")</td>
+                                    </tr>
+                                }
+                                @if (decisions.Count == 0) { <tr><td colspan="5" class="vide">Aucune proposition décidée.</td></tr> }
+                            </tbody>
+                        </table>
+                    </div>
+                    <Pagination Total="decisionsTotal" Numero="decisionsPage" Taille="decisionsTaille" Libelle="Pages des décisions précédentes" OnChange="p => ChargerDecisionsAsync(p.Numero, p.Taille)" />
+                </section>
+                <p class="detail" style="margin: 0">Réglages que le serveur central peut fixer pour toutes les officines (« fixé ») ou proposer (« proposé » : votre valeur est gardée tant que vous ne l’adoptez pas, depuis l’écran du réglage).
+                    @(t.Active ? "" : "La synchronisation est désactivée : tous les réglages sont modifiables ici, les valeurs du serveur central ne s’appliquent plus.")</p>
+                <div class="tableau-cadre" data-zone="reglages-mutualises">
+                    <table class="tableau" style="min-width: 0">
+                        <thead><tr><th scope="col">Réglage</th><th scope="col">Mode</th><th scope="col" class="nombre">Version reçue</th><th scope="col" class="nombre">Version appliquée</th><th scope="col">État</th><th scope="col">Reçu le</th><th scope="col">Motif du refus</th></tr></thead>
+                        <tbody>
+                            @foreach (var g in reglagesMutualises)
+                            {
+                                <tr data-table="@g.Table">
+                                    <td class="nom"><a href="@Ecran(g.Table)">@g.Libelle</a></td>
+                                    <td><span class="pastille @ClasseMode(g)">@LibelleMode(g)</span></td>
+                                    <td class="nombre">@(g.VersionRecue?.ToString() ?? "—")</td>
+                                    <td class="nombre">@(g.VersionAppliquee?.ToString() ?? "—")</td>
+                                    <td><span class="pastille @ClasseEtat(g.Etat)">@LibelleEtat(g.Etat)</span></td>
+                                    <td>@(g.RecuLe is { } rl ? Libelles.DateHeureLocale(rl) : "—")</td>
+                                    <td class="detail">@(g.MotifRejet ?? "—")</td>
+                                </tr>
+                            }
+                            @if (reglagesMutualises.Count == 0) { <tr><td colspan="7" class="vide">@(erreur is null ? "Aucun réglage." : "Réglages illisibles.")</td></tr> }
+                        </tbody>
+                    </table>
+                </div>
             </div>
         }
 
@@ -575,6 +669,47 @@
     protected override Task OnInitializedAsync() => ChargerAsync();
 
     private List<ReglageMutualiseDto> reglagesMutualises = [];
+    // Lot S7.4 : réglages communs proposés par le titulaire à distance (à décider) et décisions précédentes (paginées)
+    private List<OrdreCentralDto> propositions = [], decisions = [];
+    private int decisionsTotal, decisionsPage = 1, decisionsTaille = 5;
+    private readonly Dictionary<Guid, string> motsDePasseProposition = [], motifsProposition = [], erreursProposition = [];
+    private static string Saisie(Dictionary<Guid, string> d, Guid id) => d.TryGetValue(id, out var v) ? v : "";
+    private static string LibelleDecision(string statut) => statut switch
+    {
+        "applique" => "Accepté", "refuse" => "Refusé", "expire" => "Expiré", "annule" => "Annulé", _ => statut
+    };
+
+    private async Task ChargerPropositionsAsync()
+    {
+        var (p, _) = await Api.OrdresCentrauxAsync("a_confirmer", 1, 20, "reglages");
+        propositions = p?.Page.Lignes.ToList() ?? [];
+        await ChargerDecisionsAsync(decisionsPage, decisionsTaille);
+    }
+
+    private async Task ChargerDecisionsAsync(int page, int taille)
+    {
+        (decisionsPage, decisionsTaille) = (page, taille);
+        var (p, _) = await Api.OrdresCentrauxAsync("traite", page, taille, "reglages");
+        (decisions, decisionsTotal) = (p?.Page.Lignes.ToList() ?? [], p?.Page.Total ?? 0);
+    }
+
+    // Lot S7.4 : accepter ou refuser une proposition (titulaire, mot de passe ressaisi ; motif obligatoire pour refuser)
+    private async Task DeciderPropositionAsync(OrdreCentralDto pr, bool accepter)
+    {
+        enCours = true;
+        try
+        {
+            var mdp = Saisie(motsDePasseProposition, pr.Id);
+            var e = accepter ? await Api.ConfirmerOrdreCentralAsync(pr.Id, null, mdp) : await Api.RefuserOrdreCentralAsync(pr.Id, Saisie(motifsProposition, pr.Id), mdp);
+            motsDePasseProposition.Remove(pr.Id);
+            if (e is not null) { erreursProposition[pr.Id] = e; await ChargerPropositionsAsync(); return; }
+            erreursProposition.Remove(pr.Id);
+            motifsProposition.Remove(pr.Id);
+            message = accepter ? "Proposition acceptée : réglages appliqués ; le résultat part au serveur central." : "Proposition refusée ; le refus part au serveur central.";
+            await ChargerPropositionsAsync();
+        }
+        finally { enCours = false; }
+    }
 
     // Lot M7 : écran où se règle chacune des 11 tables
     private static string Ecran(string table) => table switch
@@ -632,7 +767,8 @@
                 (fStatut, ordresPage, ordresTaille) = (h.Texte("statut") ?? "", h.Entier("page") ?? 1, h.Entier("taille") ?? ordresTaille);
             await ChargerOrdresAsync(ordresPage, ordresTaille);
         }
-        if (rubrique != "reglages-mutualises") { reglagesCharges = null; return; }
+        // Lot S7.4 : mots de passe et motifs saisis effacés en quittant la rubrique
+        if (rubrique != "reglages-mutualises") { reglagesCharges = null; motsDePasseProposition.Clear(); motifsProposition.Clear(); erreursProposition.Clear(); return; }
         if (reglagesCharges is null) await ChargerReglagesMutualisesAsync();
     }
 
@@ -642,6 +778,7 @@
         var (liste, el) = await Api.ReglagesMutualisesAsync();
         reglagesMutualises = liste;
         erreur = el;
+        await ChargerPropositionsAsync();
     }
 
     private async Task ChargerAsync()
@@ -697,8 +834,10 @@
 
     private void OuvrirConfirmation(OrdreCentralDto o) => Ouvrir(o, "confirmer");
     private void OuvrirRefus(OrdreCentralDto o) => Ouvrir(o, "refuser");
-    private void Ouvrir(OrdreCentralDto o, string quoi) => (ordreOuvert, action, motDePasse, motDePasse2, motifRefus, erreurFenetre) = (o, quoi, "", "", "", null);
-    private void Fermer() => (ordreOuvert, motDePasse, motDePasse2, erreurFenetre) = (null, "", "", null);
+    private void Ouvrir(OrdreCentralDto o, string quoi) => (ordreOuvert, action, motDePasse, motDePasse2, motifRefus, erreurFenetre, motDePasseTitulaire) = (o, quoi, "", "", "", null, "");
+    private void Fermer() => (ordreOuvert, motDePasse, motDePasse2, erreurFenetre, motDePasseTitulaire) = (null, "", "", null, "");
+    // Lot S7.4 : mot de passe du titulaire pour accepter ou refuser des réglages communs ; jamais gardé après la fenêtre
+    private string motDePasseTitulaire = "";
 
     private async Task ValiderOrdreAsync()
     {
@@ -707,8 +846,9 @@
         enCours = true;
         try
         {
-            var e = action == "confirmer" ? await Api.ConfirmerOrdreCentralAsync(o.Id, o.DemandeMotDePasse ? motDePasse : null)
-                                          : await Api.RefuserOrdreCentralAsync(o.Id, motifRefus);
+            var mdpTitulaire = o.DemandeMotDePasseTitulaire ? motDePasseTitulaire : null;
+            var e = action == "confirmer" ? await Api.ConfirmerOrdreCentralAsync(o.Id, o.DemandeMotDePasse ? motDePasse : null, mdpTitulaire)
+                                          : await Api.RefuserOrdreCentralAsync(o.Id, motifRefus, mdpTitulaire);
             if (e is not null) { erreurFenetre = e; await ChargerOrdresAsync(ordresPage, ordresTaille); return; }
             message = action == "confirmer" ? "Ordre confirmé et appliqué." : "Ordre refusé ; le refus est envoyé au serveur central.";
             Fermer();
