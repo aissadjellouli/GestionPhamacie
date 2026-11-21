@@ -884,12 +884,13 @@ public sealed record VentesParBoiteDto(bool Exacte, string Produit, string? Lot,
 
 /// <summary>CaisseOuverte : vente récente (le caissier peut l'annuler seul) ; sinon validation du pharmacien ou de l'assistant.</summary>
 /// <summary>DetteEffaceeAnnulation : vente à crédit, dette de cette vente effacée par l'annulation.</summary>
+/// <summary>RegularisationRendueRestante (script 159) : régularisation « rendu au patient », part pas encore retenue par des retours.</summary>
 public sealed record VenteAnnulableDto(
     long Id, string Numero, DateTime Date, string Vendeur, string? Patient, decimal Total, decimal PartPatient, decimal PartOrganisme,
     string? Mode, string Statut, bool CaisseOuverte, bool DansUnBordereau, IReadOnlyList<LigneVenteAnnulableDto> Lignes,
     decimal ARendreAnnulation = 0, string? FactureNumero = null, decimal SoldeCreditPatient = 0, long? VendeurId = null, long? PatientId = null, decimal DetteEffaceeAnnulation = 0,
     string? Remise = null, string? RegularisationSort = null, decimal RegularisationDue = 0, decimal RegularisationTropPaye = 0,
-    decimal TropPayeCredit = 0, decimal PayeParAvoir = 0, decimal AvoirRecreditable = 0, bool Deposee = false);
+    decimal TropPayeCredit = 0, decimal PayeParAvoir = 0, decimal AvoirRecreditable = 0, bool Deposee = false, decimal RegularisationRendueRestante = 0);
 
 /// <summary>Validateur* : identifiant et code comptoir du pharmacien ou de l'assistant (vente ancienne).</summary>
 /// <summary>SolderDette : l'argent à rendre est retiré de la dette du patient (PatientDetteId : patient nommé, pour une vente sans patient).</summary>
@@ -928,18 +929,22 @@ public sealed record LigneRetourClientDto(long LigneVenteId, int Quantite, strin
 /// MotifCode (script 104) : motif obligatoire de la liste réglable « retour_client » ; Motif : précision facultative, obligatoire pour « Autre ».
 /// Dettes (script 158) : patient de la vente qui doit encore de l'argent, choix du vendeur : « deduire » (imputé sur ses dettes, avec
 /// AccordClient) ou « rendre » (rendu quand même, validation du droit caisse.retour_especes).
+/// DetteRetenue (script 159) : le vendeur a prévenu le patient que la part de la régularisation « rendu au patient » non couverte par le
+/// retour est ajoutée à sa dette (exigé dans ce cas).
 /// </summary>
 public sealed record RetourClientRequete(string? Motif, IReadOnlyList<LigneRetourClientDto> Lignes, string? ValidateurIdentifiant, string? ValidateurCode,
-    bool SolderDette = false, long? PatientDetteId = null, bool AccordClient = false, string? MotifCode = null, string? Dettes = null);
+    bool SolderDette = false, long? PatientDetteId = null, bool AccordClient = false, string? MotifCode = null, string? Dettes = null,
+    bool DetteRetenue = false);
 
 /// <summary>
 /// PartOrganismeRetiree (script 155) : part de l'organisme retirée de sa créance ; Canal et factures : rappel affiché après le retour.
 /// Script 158 : ImputeSurDettes (argent dû imputé sur ses dettes), PartRegularisation (part de la régularisation à sa charge rendue),
-/// DetteRestante (ce que le patient doit encore).
+/// DetteRestante (ce que le patient doit encore). Script 159 : AvoirRetenu (régularisation « rendu au patient » des boîtes rendues,
+/// retenue) et DetteAvoirRetenu (sa part non couverte, ajoutée à sa dette).
 /// </summary>
 public sealed record RetourClientDto(string Numero, decimal ARendre, string? Mode, int RemisEnStock, int ADetruire, string? ValidePar, decimal DetteDiminuee = 0,
     decimal AvoirRecredite = 0, decimal PartOrganismeRetiree = 0, string? Canal = null, string? FactureOrganisme = null, string? FactureChifa = null,
-    decimal ImputeSurDettes = 0, decimal PartRegularisation = 0, decimal DetteRestante = 0);
+    decimal ImputeSurDettes = 0, decimal PartRegularisation = 0, decimal DetteRestante = 0, decimal AvoirRetenu = 0, decimal DetteAvoirRetenu = 0);
 
 /// <summary>Retour avec part organisme d'une vente Chifa, à corriger dans CHIFA-Officine (Finances › Chifa, script 155).</summary>
 public sealed record RetourACorrigerChifaDto(long RetourId, DateTime RetourLe, string RetourPar, long VenteId, string Numero, DateTime DateVente,

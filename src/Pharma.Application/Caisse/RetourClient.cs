@@ -33,10 +33,11 @@ public sealed record LigneRetourDemandee(long LigneVenteId, int Quantite, string
 
 /// <summary>
 /// Montant : part payée par le patient rendue ; MontantOrganisme : part de l'organisme retirée de sa créance (script 155) ;
-/// MontantRegularisation : part de la régularisation « à la charge du patient » des boîtes rendues, rendue au patient (script 158).
+/// MontantRegularisation : part de la régularisation « à la charge du patient » des boîtes rendues, rendue au patient (script 158) ;
+/// MontantAvoirRetenu : part de la régularisation « rendu au patient » des boîtes rendues, retenue (script 159 ; Montant reste brut).
 /// </summary>
 public sealed record LigneRetourAEcrire(long LigneVenteId, long LotId, int Quantite, DestinationRetour Destination, decimal Montant, IReadOnlyList<long> Boites,
-    decimal MontantOrganisme = 0, decimal MontantRegularisation = 0);
+    decimal MontantOrganisme = 0, decimal MontantRegularisation = 0, decimal MontantAvoirRetenu = 0);
 
 /// <summary>
 /// Montant : tout ce que le retour rend au patient (part payée par le patient pour les boîtes rendues, plus la part de la régularisation à
@@ -44,11 +45,13 @@ public sealed record LigneRetourAEcrire(long LigneVenteId, long LotId, int Quant
 /// lui est rendu en espèces depuis la caisse ouverte du poste. ReductionRegularisation : part impayée de la régularisation retirée de sa
 /// dette (relevé : correction rattachée à la vente). ImputationDettes : argent dû au patient imputé sur ses dettes comme un encaissement
 /// de dette (relevé : remboursement, ventes les plus anciennes d'abord), sans passer par le tiroir.
+/// Script 159 : Montant est déjà diminué de la retenue couverte (régularisation « rendu au patient ») ; DetteAvoirRetenu : part non
+/// couverte de la retenue, ajoutée à la dette du patient (relevé : correction rattachée à la vente).
 /// </summary>
 public sealed record RetourAEcrire(long VenteId, string Numero, string Motif, long UtilisateurId, long ValidePar, string? Mode, decimal Montant,
     long? SessionCaisseId, string Poste, IReadOnlyList<LigneRetourAEcrire> Lignes, decimal ReductionDette = 0, long? PatientDetteId = null,
     bool AccordClient = false, string? MotifCode = null, string? MotifTexte = null, decimal AvoirRecredite = 0, long? PatientAvoirId = null,
-    decimal ReductionRegularisation = 0, decimal ImputationDettes = 0)
+    decimal ReductionRegularisation = 0, decimal ImputationDettes = 0, decimal DetteAvoirRetenu = 0)
 {
     /// <summary>Argent rendu par le tiroir (ou la carte, le chèque) : le reste, une fois l'avoir et les dettes servis.</summary>
     public decimal Rendu => Montant - ReductionDette - ReductionRegularisation - ImputationDettes - AvoirRecredite;
@@ -66,10 +69,13 @@ public interface IRetoursClient
 /// FactureChifa : pour le rappel affiché (correction dans CHIFA-Officine, avoir AV- manuel d'une facture d'organisme).
 /// Script 158 : DetteDiminuee comprend aussi la part impayée de la régularisation et ImputeSurDettes (argent dû imputé sur ses dettes) ;
 /// PartRegularisation : part de la régularisation à la charge du patient des boîtes rendues ; DetteRestante : ce qu'il doit encore.
+/// Script 159 : AvoirRetenu (part de la régularisation « rendu au patient » des boîtes rendues, retenue) et DetteAvoirRetenu (sa part
+/// non couverte, ajoutée à sa dette, comprise dans DetteRestante).
 /// </summary>
 public sealed record ResultatRetour(string Numero, decimal ARendre, string? Mode, int RemisEnStock, int ADetruire, string? ValidePar,
     decimal DetteDiminuee = 0, decimal AvoirRecredite = 0, decimal PartOrganismeRetiree = 0, string? Canal = null, string? FactureOrganisme = null,
-    string? FactureChifa = null, decimal ImputeSurDettes = 0, decimal PartRegularisation = 0, decimal DetteRestante = 0);
+    string? FactureChifa = null, decimal ImputeSurDettes = 0, decimal PartRegularisation = 0, decimal DetteRestante = 0, decimal AvoirRetenu = 0,
+    decimal DetteAvoirRetenu = 0);
 
 public sealed class LireVenteRetournable(IRetoursClient retours)
 {
@@ -93,7 +99,7 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
 {
     public async Task<ResultatRetour> ExecuterAsync(long venteId, string? motif, IReadOnlyList<LigneRetourDemandee> demandees, long utilisateurId,
         string? poste, string? validateurIdentifiant, string? validateurCode, bool solderDette = false, long? patientDetteId = null,
-        CancellationToken ct = default, bool accordClient = false, string? motifCode = null, string? dettes = null)
+        CancellationToken ct = default, bool accordClient = false, string? motifCode = null, string? dettes = null, bool detteRetenue = false)
     {
         var nomPoste = PosteCaisse.Exiger(poste);
         // Motif choisi dans la liste réglable « retour_client » (script 104), obligatoire ; « Autre » avec un texte, sinon le texte
@@ -123,8 +129,11 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
         var partCaisseRestante = vr.Lignes.Sum(l => RegleRetour.PartCaisseRestante(l.MontantOrganisme, l.QuantiteVendue, l.DejaRendue));
         var ratioOrganisme = RegleRetour.RatioRetenu(organisme.PartRetenue - organisme.DejaRetiree, partCaisseRestante);
         // Régularisation « à la charge du patient » faite au rattachement du volet (décision du titulaire du 2026-11-21, script 158) :
-        // ce qui en reste est rendu au prorata de la part de la caisse des boîtes rendues (même base que la part organisme)
-        var regul = v.Regularisation is { Sort: RegularisationPartOrganisme.ChargePatient } g && g.Restante > 0 ? g : null;
+        // ce qui en reste est rendu au prorata de la part de la caisse des boîtes rendues (même base que la part organisme).
+        // Régularisation « rendu au patient » (script 159) : même prorata, la part déjà rendue est retenue sur le remboursement
+        var ecartRegul = v.Regularisation is { Sort: RegularisationPartOrganisme.ChargePatient or RegularisationPartOrganisme.AvoirPatient } g
+            && g.Restante > 0 ? g : null;
+        var regul = ecartRegul is { Sort: RegularisationPartOrganisme.ChargePatient } ? ecartRegul : null;
 
         // Lignes nettes de leurs réductions (remise, don partiel) ; ventes antérieures sans réduction par ligne : prorata de ce que le patient a payé
         var brutPatient = vr.Lignes.Sum(l => l.MontantPatient);
@@ -152,7 +161,7 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
             lignes.Add(new LigneRetourAEcrire(l.LigneVenteId, l.LotId, d.Quantite, destination,
                 RegleRetour.MontantPaye(l.MontantPatient, l.QuantiteVendue, d.Quantite, v.PartPatient, brutPatient), boites,
                 RegleRetour.MontantOrganisme(l.MontantOrganisme, l.QuantiteVendue, d.Quantite, ratioOrganisme),
-                regul is null ? 0 : RegleRetour.MontantRegularisation(l.MontantOrganisme, l.QuantiteVendue, d.Quantite, regul.Restante, partCaisseRestante)));
+                ecartRegul is null ? 0 : RegleRetour.MontantRegularisation(l.MontantOrganisme, l.QuantiteVendue, d.Quantite, ecartRegul.Restante, partCaisseRestante)));
         }
         // Part organisme : au plus ce qui reste de la part retenue ; dernières boîtes remboursées rendues : le solde exact (arrondis),
         // l'écart porté sur la dernière ligne rendue qui a une part organisme
@@ -166,17 +175,22 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
             lignes[dernier] = lignes[dernier] with { MontantOrganisme = Math.Max(lignes[dernier].MontantOrganisme + totalOrganisme - calculeOrganisme, 0) };
         var partOrganismeRetiree = lignes.Sum(l => l.MontantOrganisme);
         // Part de la régularisation : au plus ce qui en reste ; dernières boîtes remboursées rendues : le solde exact (arrondis)
-        if (regul is not null)
+        if (ecartRegul is not null)
         {
             var dernieresRendues = avecOrganisme.Count > 0
                 && avecOrganisme.All(l => l.DejaRendue + (lignes.FirstOrDefault(x => x.LigneVenteId == l.LigneVenteId)?.Quantite ?? 0) >= l.QuantiteVendue);
             var calculeRegul = lignes.Sum(l => l.MontantRegularisation);
-            var totalRegul = dernieresRendues ? regul.Restante : Math.Min(calculeRegul, regul.Restante);
+            var totalRegul = dernieresRendues ? ecartRegul.Restante : Math.Min(calculeRegul, ecartRegul.Restante);
             var porteuse = lignes.FindLastIndex(x => vr.Lignes.First(l => l.LigneVenteId == x.LigneVenteId).MontantOrganisme > 0);
             if (totalRegul != calculeRegul && porteuse >= 0)
                 lignes[porteuse] = lignes[porteuse] with { MontantRegularisation = Math.Max(lignes[porteuse].MontantRegularisation + totalRegul - calculeRegul, 0) };
         }
+        // « Rendu au patient » : la part calculée est à retenir, pas à rendre (script 159)
+        if (ecartRegul is { Sort: RegularisationPartOrganisme.AvoirPatient })
+            for (var i = 0; i < lignes.Count; i++)
+                lignes[i] = lignes[i] with { MontantAvoirRetenu = lignes[i].MontantRegularisation, MontantRegularisation = 0 };
         var partRegularisation = lignes.Sum(l => l.MontantRegularisation);
+        var avoirRetenu = lignes.Sum(l => l.MontantAvoirRetenu);
         // Total au plus ce qui reste de la part payée ; dernier retour : le solde exact (arrondis)
         var toutRendu = vr.Lignes.All(l => l.DejaRendue + (lignes.FirstOrDefault(x => x.LigneVenteId == l.LigneVenteId)?.Quantite ?? 0) >= l.QuantiteVendue);
         var total = RegleRetour.TotalARendre(lignes.Sum(l => l.Montant), v.PartPatient, v.DejaRendu, toutRendu);
@@ -190,8 +204,7 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
         // Part payée par le patient pour les boîtes rendues : rendue, ou retirée de sa dette pour une vente à crédit
         // (ce que le patient a déjà remboursé lui est rendu en espèces, comme pour une annulation)
         var montantPatient = lignes.Sum(l => l.Montant);
-        // Tout ce que le retour rend au patient : sa part des boîtes rendues et la part de la régularisation à sa charge (script 158)
-        var montant = montantPatient + partRegularisation;
+
         // Vente payée en partie par avoir (2026-11-15, D2, script 109) : l'avoir est recrédité d'abord, à hauteur de ce qui a été payé par
         // avoir et pas encore recrédité ; seul le reste suit le mode d'origine (espèces, carte, chèque, crédit)
         var (avoirRecredite, resteAutreMode) = v.PatientId is null ? (0m, montantPatient)
@@ -210,6 +223,14 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
             ? RegleAnnulation.RemboursementCredit(resteAutreMode, Math.Max(v.PartPatient - v.PayeParAvoir - (v.DejaRendu - v.AvoirRecrediteParRetours), 0), v.PayeSurVente, dette)
             : patientDette is not null ? (Math.Min(Math.Max(dette, 0), resteAutreMode), resteAutreMode - Math.Min(Math.Max(dette, 0), resteAutreMode)) : (0m, resteAutreMode);
         var deduitAuChoix = patientDette is not null && reductionDette > 0;
+
+        // Retenue de la régularisation « rendu au patient » (script 159), AVANT la règle des dettes : sur l'argent payé que le retour rendrait,
+        // puis sur l'avoir recrédité ; le reste non couvert devient une dette du patient (alerte au vendeur, confirmation exigée)
+        var retenue = RegleRetour.Retenir(avoirRetenu, renduPartPatient, avoirRecredite, v.PatientId is not null, detteRetenue);
+        (renduPartPatient, avoirRecredite) = (renduPartPatient - retenue.SurArgent, avoirRecredite - retenue.SurAvoir);
+        // Tout ce que le retour rend au patient : sa part des boîtes rendues et la part de la régularisation à sa charge (script 158), moins la
+        // retenue couverte (script 159)
+        var montant = montantPatient + partRegularisation - retenue.SurArgent - retenue.SurAvoir;
 
         // Patient de la vente qui doit encore de l'argent (décision du titulaire du 2026-11-21, script 158) : l'argent qu'il a payé et que le
         // retour lui rend n'est rendu qu'après le choix du vendeur : « déduire de ses dettes » (recommandé ; imputé comme un encaissement de
@@ -249,7 +270,7 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
         var detteDiminuee = rem.DetteVenteDiminuee + rem.RegularisationDiminuee + rem.ImputeSurDettes;
         await retours.EnregistrerAsync(new RetourAEcrire(v.Id, v.Numero, texte, utilisateurId, validePar, v.Mode, montant, session?.Id, nomPoste, lignes,
             rem.DetteVenteDiminuee, rem.DetteVenteDiminuee > 0 ? patientDette : null, deduitAuChoix || rem.ImputeSurDettes > 0, code, precision, avoirRecredite,
-            avoirRecredite > 0 ? v.PatientId : null, rem.RegularisationDiminuee, rem.ImputeSurDettes), ct);
+            avoirRecredite > 0 ? v.PatientId : null, rem.RegularisationDiminuee, rem.ImputeSurDettes, retenue.Dette), ct);
         await journal.EcrireAsync(utilisateurId, "retour_client", "vente", v.Id,
             new Dictionary<string, object?>
             {
@@ -265,6 +286,10 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
                 ["choix_dettes"] = rem.ChoixExige ? choix : null,
                 ["dette_patient"] = rem.ChoixExige ? rem.DetteRestante : null,
                 ["impute_sur_dettes"] = rem.ImputeSurDettes > 0 ? rem.ImputeSurDettes : null,
+                // Script 159 : part de la régularisation « rendu au patient » retenue, dont la part ajoutée à sa dette
+                ["avoir_retenu"] = avoirRetenu > 0 ? avoirRetenu : null,
+                ["avoir_retenu_sur_remboursement"] = avoirRetenu > 0 ? retenue.SurArgent + retenue.SurAvoir : null,
+                ["dette_avoir_retenu"] = retenue.Dette > 0 ? retenue.Dette : null,
                 ["remis_en_stock"] = lignes.Where(l => l.Destination == DestinationRetour.Stock).Sum(l => l.Quantite),
                 ["a_detruire"] = lignes.Where(l => l.Destination == DestinationRetour.Destruction).Sum(l => l.Quantite),
                 ["valide_par"] = validePar
@@ -281,6 +306,6 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
             lignes.Where(l => l.Destination == DestinationRetour.Stock).Sum(l => l.Quantite),
             lignes.Where(l => l.Destination == DestinationRetour.Destruction).Sum(l => l.Quantite), nomValidateur, detteDiminuee, avoirRecredite,
             partOrganismeRetiree, organisme.Canal, organisme.FactureOrganisme, organisme.FactureChifa, rem.ImputeSurDettes, partRegularisation,
-            Math.Max(Math.Max(dette, 0) - detteDiminuee, 0));
+            Math.Max(Math.Max(dette, 0) - detteDiminuee, 0) + retenue.Dette, avoirRetenu, retenue.Dette);
     }
 }

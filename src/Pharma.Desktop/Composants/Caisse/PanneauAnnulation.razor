@@ -267,7 +267,7 @@
                         @* Vente payée en partie par avoir (D2, script 109) : l'avoir est recrédité d'abord, le reste suit le mode de la vente *@
                         <div class="info-bandeau" role="note" data-champ="repartition_retour">
                             Vente payée en partie par l’avoir du patient (@Libelles.Dinars(retour.Vente.PayeParAvoir, 2)) : sur les @Libelles.Dinars(totalRetour, 2) du retour,
-                            <strong>recrédité en avoir @Libelles.Dinars(AvoirRecrediteRetour, 2)</strong>@if (totalRetour - AvoirRecrediteRetour > 0) { <text>, <strong>rendu en @(Libelles.ModePaiement(retour.Vente.Mode == "credit" ? "especes" : retour.Vente.Mode).ToLowerInvariant()) @Libelles.Dinars(totalRetour - AvoirRecrediteRetour, 2)</strong></text> }.
+                            <strong>recrédité en avoir @Libelles.Dinars(AvoirRecrediteRetour - RetenueSurAvoir, 2)</strong>@if (totalRetour - AvoirRecrediteRetour - RetenueSurArgent > 0) { <text>, <strong>rendu en @(Libelles.ModePaiement(retour.Vente.Mode == "credit" ? "especes" : retour.Vente.Mode).ToLowerInvariant()) @Libelles.Dinars(totalRetour - AvoirRecrediteRetour - RetenueSurArgent, 2)</strong></text> }.
                         </div>
                     }
                     </div>
@@ -314,6 +314,9 @@
     private bool ValidationRequise => mode == "retour" ? !Session.A(DroitRequis) && !DeductionTotale : choisie is { CaisseOuverte: false } && !Session.A(DroitRequis);
     private bool DeductionTotale => DeduireChoisi && accordClient && ARenduAffiche == 0;
     private bool AccordManque => controle && DeduireChoisi && !accordClient;
+    /// <summary>Retenue non couverte par le retour (script 159) : le vendeur confirme avoir prévenu le patient avant d'enregistrer.</summary>
+    private bool detteRetenue;
+    private bool RetenueManque => controle && mode == "retour" && DetteRetenueEstimee > 0 && !detteRetenue;
     /// <summary>
     /// Le vendeur a choisi de déduire le remboursement des dettes du patient. Retour d'une vente à un patient qui doit encore de
     /// l'argent (script 158) : « Déduire de ses dettes » est choisi par défaut (recommandé), « Rendre quand même » au choix.
@@ -425,21 +428,31 @@
     /// Part de la régularisation « à la charge du patient » des boîtes rendues : ce qui en reste, au prorata de la part de la caisse des
     /// boîtes rendues sur celle des boîtes remboursées encore chez lui ; dernières boîtes remboursées rendues : tout ce qui reste.
     /// </summary>
-    private decimal PartRegularisationEstimee
+    private decimal PartRegularisationEstimee => retour is { Vente.RegularisationSort: "charge_patient" } r
+        ? PartEcartEstimee(r.Vente.RegularisationDue + r.Vente.RegularisationTropPaye) : 0;
+
+    /// <summary>
+    /// Régularisation « rendu au patient » (script 159) : part de l'écart déjà rendue au patient pour les boîtes rendues (même prorata),
+    /// retenue sur le remboursement : d'abord sur l'argent payé, puis sur l'avoir recrédité ; le reste devient une dette du patient.
+    /// </summary>
+    private decimal RetenueEstimee => retour is { Vente.RegularisationSort: "avoir_patient" } r ? PartEcartEstimee(r.Vente.RegularisationRendueRestante) : 0;
+    private decimal ArgentAvantRetenue => (ARendre ?? 0) - AvoirRecrediteRetour - EffaceCreditRetour + PartRegularisationEstimee - RegulDiminueeRetour;
+    private decimal RetenueSurArgent => Math.Min(RetenueEstimee, Math.Max(ArgentAvantRetenue, 0));
+    private decimal RetenueSurAvoir => Math.Min(RetenueEstimee - RetenueSurArgent, AvoirRecrediteRetour);
+    private decimal DetteRetenueEstimee => RetenueEstimee - RetenueSurArgent - RetenueSurAvoir;
+
+    /// <summary>Part d'un écart de régularisation (ce qui en reste) pour les boîtes rendues ; dernières boîtes remboursées : tout ce qui reste.</summary>
+    private decimal PartEcartEstimee(decimal restante)
     {
-        get
-        {
-            if (retour is not { Vente.RegularisationSort: "charge_patient" } r) return 0;
-            var restante = r.Vente.RegularisationDue + r.Vente.RegularisationTropPaye;
-            var partCaisse = r.Lignes.Where(l => l.QuantiteVendue > 0 && l.MontantOrganisme > 0)
-                .Sum(l => l.MontantOrganisme * Math.Max(l.QuantiteVendue - l.DejaRendue, 0) / l.QuantiteVendue);
-            if (restante <= 0 || partCaisse <= 0) return 0;
-            var calcule = saisies.Where(s => s.Ligne.MontantOrganisme > 0 && s.Ligne.QuantiteVendue > 0)
-                .Sum(s => Math.Min(Math.Round(restante * (s.Ligne.MontantOrganisme * s.Rendue / s.Ligne.QuantiteVendue) / partCaisse, 2, MidpointRounding.AwayFromZero), restante));
-            var toutRendu = saisies.Any(s => s.Ligne.MontantOrganisme > 0 && s.Rendue > 0)
-                && saisies.Where(s => s.Ligne.MontantOrganisme > 0).All(s => s.Ligne.DejaRendue + s.Rendue >= s.Ligne.QuantiteVendue);
-            return toutRendu ? restante : Math.Min(calcule, restante);
-        }
+        var r = retour!;
+        var partCaisse = r.Lignes.Where(l => l.QuantiteVendue > 0 && l.MontantOrganisme > 0)
+            .Sum(l => l.MontantOrganisme * Math.Max(l.QuantiteVendue - l.DejaRendue, 0) / l.QuantiteVendue);
+        if (restante <= 0 || partCaisse <= 0) return 0;
+        var calcule = saisies.Where(s => s.Ligne.MontantOrganisme > 0 && s.Ligne.QuantiteVendue > 0)
+            .Sum(s => Math.Min(Math.Round(restante * (s.Ligne.MontantOrganisme * s.Rendue / s.Ligne.QuantiteVendue) / partCaisse, 2, MidpointRounding.AwayFromZero), restante));
+        var toutRendu = saisies.Any(s => s.Ligne.MontantOrganisme > 0 && s.Rendue > 0)
+            && saisies.Where(s => s.Ligne.MontantOrganisme > 0).All(s => s.Ligne.DejaRendue + s.Rendue >= s.Ligne.QuantiteVendue);
+        return toutRendu ? restante : Math.Min(calcule, restante);
     }
 
     /// <summary>Vente à crédit : part du patient des boîtes rendues retirée de sa dette (il ne l'avait pas payée).</summary>
@@ -449,7 +462,7 @@
     private decimal RegulDiminueeRetour => retour is null ? 0
         : Math.Min(Math.Min(PartRegularisationEstimee, retour.Vente.RegularisationDue), Math.Max(retour.Vente.SoldeCreditPatient - EffaceCreditRetour, 0));
     /// <summary>Argent réellement payé que le retour doit au patient (part payée des boîtes rendues et de la régularisation).</summary>
-    private decimal? ArgentDuRetour => ARendre is { } a ? a - AvoirRecrediteRetour - EffaceCreditRetour + PartRegularisationEstimee - RegulDiminueeRetour : null;
+    private decimal? ArgentDuRetour => ARendre is not null ? ArgentAvantRetenue - RetenueSurArgent : null;
     /// <summary>Ce que le patient doit encore, une fois sa dette diminuée de ce qu'il n'avait pas payé.</summary>
     private decimal DetteRestanteRetour => Math.Max((retour?.Vente.SoldeCreditPatient ?? 0) - EffaceCreditRetour - RegulDiminueeRetour, 0);
 
@@ -509,6 +522,26 @@
             <div class="info-bandeau compact" role="note" data-champ="part_regularisation">
                 Régularisation Chifa mise à la charge du patient : <strong>@Libelles.Dinars(PartRegularisationEstimee, 2)</strong> lui reviennent pour les boîtes rendues@(RegulDiminueeRetour > 0 ? $", dont {Libelles.Dinars(RegulDiminueeRetour, 2)} non payés, retirés de sa dette" : "").
             </div>
+        }
+        if (RetenueEstimee > 0)
+        {
+            @* Régularisation Chifa « rendu au patient » (décision du titulaire du 2026-11-21, script 159) : la part déjà rendue pour les boîtes
+               rendues est retenue ; ce que le retour ne couvre pas devient une dette du patient, après l'avoir prévenu (confirmation exigée) *@
+            if (DetteRetenueEstimee > 0)
+            {
+                <fieldset class="conflit-lot" role="alert" aria-label="Retenue de la régularisation Chifa" data-champ="dette_retenue">
+                    <legend><strong>Attention : @Libelles.Dinars(RetenueEstimee, 2) déjà rendus au patient pour ces boîtes</strong> (régularisation Chifa « rendu au patient ») ; le retour n’en couvre que @Libelles.Dinars(RetenueEstimee - DetteRetenueEstimee, 2).</legend>
+                    <label class="case @Obligatoire.Classe(RetenueManque)" aria-invalid="@Obligatoire.Aria(RetenueManque)">
+                        <input type="checkbox" checked="@detteRetenue" @onchange="e => detteRetenue = e.Value is true" />
+                        <span><strong>Patient prévenu</strong> : @Libelles.Dinars(DetteRetenueEstimee, 2) ajoutés à sa dette (obligatoire)</span></label>
+                </fieldset>
+            }
+            else
+            {
+                <div class="info-bandeau compact" role="note" data-champ="avoir_retenu">
+                    Régularisation Chifa « rendu au patient » : <strong>@Libelles.Dinars(RetenueEstimee, 2)</strong> déjà rendus pour ces boîtes, retenus sur le remboursement.
+                </div>
+            }
         }
         if (DetteAProposer && RetourPatientConnu && ArgentDuRetour is { } du)
         {
@@ -635,7 +668,7 @@
     private void Choisir(VenteAnnulableDto v)
     {
         (choisie, mode, retour, saisies, motif, validateur, code, controle, erreur) = (v, null, null, [], null, null, null, false, null);
-        motifCode = null;
+        (motifCode, detteRetenue) = (null, false);
         (solderDette, patientDette, accordClient) = (null, null, false);
     }
 
@@ -704,7 +737,7 @@
         var (r, e) = await Api.VenteRetournableAsync(choisie!.Id);
         if (e is not null) { (erreur, mode) = (e, null); return; }
         retour = r;
-        (solderDette, patientDette, accordClient) = (null, null, false);
+        (solderDette, patientDette, accordClient, detteRetenue) = (null, null, false, false);
         saisies = r!.Lignes.Select(l => new SaisieRetour(l)).ToList();
         await ChargerValidateursAsync();
     }
@@ -719,6 +752,7 @@
         controle = true;
         return MotifManque ? (mode == "retour" && !string.IsNullOrEmpty(motifCode) ? "Motif « Autre » : précisez le motif." : mode == "retour" ? "Choisissez le motif du retour." : "Indiquez le motif.")
             : AccordManque ? "Pour déduire le remboursement de sa dette, le client doit l’accepter : cochez son accord, ou rendez-lui l’argent."
+            : RetenueManque ? "Prévenez le patient que la part non couverte de la régularisation Chifa est ajoutée à sa dette, puis cochez « Patient prévenu »."
             : ValidateurManque ? "Choisissez le pharmacien ou l’assistant qui valide."
             : CodeManque ? "Tapez son code comptoir (4 à 6 chiffres)." : null;
     }
@@ -759,12 +793,14 @@
         // Patient de la vente qui doit encore de l'argent (script 158) : choix explicite « deduire » (par défaut) ou « rendre »
         var (r, e) = await Api.RetourClientAsync(choisie.Id, new RetourClientRequete(motif, lignes, ValidationRequise ? validateur : null, ValidationRequise ? code : null,
             DeduireChoisi && !RetourPatientConnu, DeduireChoisi && !RetourPatientConnu ? patientDette?.Id : null, DeduireChoisi && accordClient,
-            motifCode, RetourPatientConnu && DetteAProposer ? (DeduireChoisi ? "deduire" : "rendre") : null));
+            motifCode, RetourPatientConnu && DetteAProposer ? (DeduireChoisi ? "deduire" : "rendre") : null, DetteRetenueEstimee > 0 && detteRetenue));
         (enCours, code) = (false, null);
         if (e is not null) { erreur = e; return; }
         message = $"Retour enregistré sur la vente {r!.Numero}{(r.ValidePar is { } p ? $", validé par {p}" : "")} : "
                   + $"{r.RemisEnStock} boîte(s) remise(s) en stock, {r.ADetruire} à détruire."
                   + (r.PartRegularisation > 0 ? $" Régularisation Chifa à sa charge rendue pour ces boîtes : {Libelles.Dinars(r.PartRegularisation, 2)}." : "")
+                  + (r.AvoirRetenu > 0 ? $" Régularisation Chifa « rendu au patient » retenue pour ces boîtes : {Libelles.Dinars(r.AvoirRetenu, 2)}"
+                     + (r.DetteAvoirRetenu > 0 ? $", dont {Libelles.Dinars(r.DetteAvoirRetenu, 2)} ajoutés à sa dette (il doit encore {Libelles.Dinars(r.DetteRestante, 2)})" : "") + "." : "")
                   + (r.DetteDiminuee > 0 ? $" Dette du patient diminuée de {Libelles.Dinars(r.DetteDiminuee, 2)}" + (r.ImputeSurDettes > 0 ? $" (dont {Libelles.Dinars(r.ImputeSurDettes, 2)} déduits de ses dettes au lieu d’être rendus)" : "") + $", il doit encore {Libelles.Dinars(r.DetteRestante, 2)}." : "")
                   + (r.AvoirRecredite > 0 ? $" Recrédité en avoir : {Libelles.Dinars(r.AvoirRecredite, 2)}." : "")
                   + (r.ARendre > 0 ? $" À rendre au patient : {Libelles.Dinars(r.ARendre, 2)} ({Libelles.ModePaiement(r.Mode)})."

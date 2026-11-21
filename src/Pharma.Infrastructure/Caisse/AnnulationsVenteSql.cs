@@ -52,8 +52,9 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                -- Portée sur un bordereau déposé (sorti de « préparation ») : ni annulation ni retour avec part organisme (script 155)
                EXISTS (SELECT 1 FROM bordereau_vente bv JOIN bordereau bb ON bb.id = bv.bordereau_id
                        WHERE bv.vente_id = v.id AND bb.statut <> 'preparation'),
-               -- Part de la régularisation à la charge du patient déjà rendue par des retours (script 158)
-               rr.rendu
+               -- Part de la régularisation à la charge du patient déjà rendue par des retours (script 158) ; « rendu au patient » : part déjà
+               -- retenue par des retours (script 159)
+               CASE WHEN g.sort = 'avoir_patient' THEN {AvoirRetenu} ELSE rr.rendu END
         FROM vente v
         JOIN utilisateur u ON u.id = v.utilisateur_id
         LEFT JOIN patient pa ON pa.id = v.patient_id
@@ -68,12 +69,21 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
          WHERE lr.vente_id = v.id)
         """;
 
+    /// <summary>Part de la régularisation « rendu au patient » retenue par les retours de la vente v (script 159).</summary>
+    internal const string AvoirRetenu = """
+        (SELECT COALESCE(SUM(rl.montant_avoir_retenu), 0) FROM retour_client_ligne rl JOIN ligne_vente lr ON lr.id = rl.ligne_vente_id
+         WHERE lr.vente_id = v.id)
+        """;
+
     /// <summary>
     /// Déjà rendu par les retours de la vente v sur la part du patient (argent, dette diminuée, avoir, imputation sur ses dettes) : la part
-    /// de la régularisation rendue en est retirée (script 158), elle ne fait pas partie de ce que le patient a payé pour la vente.
+    /// de la régularisation rendue en est retirée (script 158), elle ne fait pas partie de ce que le patient a payé pour la vente ; la retenue
+    /// couverte par le remboursement (script 159 : retenue moins la dette ajoutée) y est rajoutée : la part du patient des boîtes rendues
+    /// est rendue en entier, la retenue n'en est qu'une compensation.
     /// </summary>
     internal const string DejaRenduPartPatient = $"""
-        ((SELECT COALESCE(SUM(rc.montant_rembourse), 0) FROM retour_client rc WHERE rc.vente_id = v.id) - {RegularisationRendue})
+        ((SELECT COALESCE(SUM(rc.montant_rembourse), 0) - COALESCE(SUM(rc.dette_avoir_retenu), 0) FROM retour_client rc WHERE rc.vente_id = v.id)
+         - {RegularisationRendue} + {AvoirRetenu})
         """;
 
     public async Task<VenteAnnulable?> TrouverAsync(long? venteId, string? numero, CancellationToken ct = default)

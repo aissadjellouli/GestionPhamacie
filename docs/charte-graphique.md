@@ -142,6 +142,19 @@ réorganisé : résumé de la vente, alerte des dettes et ses choix juste dessou
 un seul `.cadre-defilant.retour-cadre`, bouton « Enregistrer le retour » sous le cadre. Mesuré 0 px, bouton visible, à
 1 366 × 768 et 1 536 × 890, clair et sombre, captures regardées : vente en tiers payant sans dette, patient endetté (« Déduire de
 ses dettes »), patient endetté (« Rendre quand même »).
+**Mesures du 2026-11-21 (fin de journée)** :
+- **Caisse, fenêtre « Changement d'utilisateur impossible »** (serveur arrêté pendant une vente, puis « Changer ») : fenêtre
+  entière à l'écran, 0 px de défilement de la page à 1 366 × 768 et 1 536 × 890, clair et sombre ; « Rester sur la vente »
+  referme la fenêtre et garde le panier.
+- **Panneau de retour, régularisation « rendu au patient »** (script 159) : ligne compacte de la retenue dans la zone des
+  alertes, 0 px aux deux tailles, clair et sombre, bouton visible. Les états « boîtes à 100 % » et « patient endetté avec
+  retenue » n'ont pas de vente d'exemple dans `pharmacie_test` (couverts par les tests d'écran).
+- **Écrans du central (S7.1, `Pharma.Cloud.Web`)**, navigateur sans fenêtre, compte `editeur.dev` : connexion, code, mot de passe,
+  liste des officines, fiche (résumé et 12 rubriques), nouvelle officine, nouveau code, révocation de serveur, mon journal,
+  accès refusé : 19 pages, 0 px à 1 366 × 768 et 1 536 × 890, thèmes clair et sombre. Défaut trouvé et corrigé : la CSP
+  `base-uri 'none'` faisait ignorer `<base href="/">` ; sur les pages imbriquées (`/officines/…`), feuille de style, script et
+  logo étaient cherchés sous `/officines/` (404) et la rubrique « Lots reçus » défilait de 532 px (654 px à 1 536 × 890) ;
+  `base-uri 'self'`, test `La_balise_base_est_permise…`.
 **Seuils par produit revu le 2026-11-20** (Administration › Alertes et seuils › Seuils par produit, demande du titulaire : 8 à 10
 lignes visibles à 1 366 × 768 ; avant : 2 lignes entières, lignes de 70 px) : titre du panneau retiré (il répétait celui de la
 page), explication en `.detail` dans la colonne de gauche (masquée quand un produit est choisi), tableau `tableau-serre`, cellules
@@ -586,3 +599,9 @@ Seule exception de taille : « Encaisser » à la caisse (`.btn-large`, 52 px).
 Avant de livrer un écran : le comparer à un écran d'Administration (par exemple Sauvegardes), dans les deux thèmes. Le relevé
 de styles fait le 10 novembre 2026 sur les 21 écrans donnait, après alignement, les mêmes valeurs partout pour chaque ligne du
 tableau « Hiérarchie du texte ».
+
+### Mesures du 2026-11-21 (S7.2a, écrans du titulaire au central)
+
+Compte `titulaire.dev`, officine de développement rattachée par un code de la console ; Edge sans fenêtre, 1 366 × 768 et 1 536 × 890,
+clair et sombre : « Mes officines », « Rattacher une officine », tableau de bord (13 tuiles sur deux rangées), journal des accès de
+l'officine : **0 px** partout ; un titulaire renvoyé de `/officines` (écran de l'éditeur) arrive sur « Mes officines ».

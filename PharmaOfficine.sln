@@ -301,6 +301,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\156_reglage_taches_laissees_poste.sql = database\migration\156_reglage_taches_laissees_poste.sql
 		database\migration\157_rapprochement_volet_apres_retour.sql = database\migration\157_rapprochement_volet_apres_retour.sql
 		database\migration\158_retour_regularisation_dettes_patient.sql = database\migration\158_retour_regularisation_dettes_patient.sql
+		database\migration\159_retour_regularisation_rendu_patient.sql = database\migration\159_retour_regularisation_rendu_patient.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52-9A41-4B8E-A5F2-3C6D11B0E111}"
@@ -339,6 +340,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52
 		database\tests\156_reglage_taches_laissees_poste_tests.sql = database\tests\156_reglage_taches_laissees_poste_tests.sql
 		database\tests\157_rapprochement_volet_apres_retour_tests.sql = database\tests\157_rapprochement_volet_apres_retour_tests.sql
 		database\tests\158_retour_regularisation_dettes_patient_tests.sql = database\tests\158_retour_regularisation_dettes_patient_tests.sql
+		database\tests\159_retour_regularisation_rendu_patient_tests.sql = database\tests\159_retour_regularisation_rendu_patient_tests.sql
 		database\tests\117_registre_renforce_tests.sql = database\tests\117_registre_renforce_tests.sql
 		database\tests\101b_suppression_num_facture_chifa_tests.sql = database\tests\101b_suppression_num_facture_chifa_tests.sql
 		database\tests\rejeu_complet.ps1 = database\tests\rejeu_complet.ps1
@@ -400,6 +402,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "cloud", "cloud", "{9B1E6C2A
 		database\cloud\031_ecrans_editeur.sql = database\cloud\031_ecrans_editeur.sql
 		database\cloud\tests\030_comptes_distants_tests.sql = database\cloud\tests\030_comptes_distants_tests.sql
 		database\cloud\tests\031_ecrans_editeur_tests.sql = database\cloud\tests\031_ecrans_editeur_tests.sql
+		database\cloud\032_ecrans_titulaire.sql = database\cloud\032_ecrans_titulaire.sql
+		database\cloud\tests\032_ecrans_titulaire_tests.sql = database\cloud\tests\032_ecrans_titulaire_tests.sql
 		database\cloud\001_base_centrale.sql = database\cloud\001_base_centrale.sql
 		database\cloud\002_tables_miroir.sql = database\cloud\002_tables_miroir.sql
 		database\cloud\003_chargement_complet_officine.sql = database\cloud\003_chargement_complet_officine.sql

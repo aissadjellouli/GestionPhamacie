@@ -15,12 +15,14 @@ Légende des états :
 
 | État | Nombre de fonctions |
 | --- | --- |
-| Fait | 167 |
-| En cours | 0 |
-| En attente | 47 |
-| Bloqué | 8 |
+| Fait | 182 |
+| En cours | 1 |
+| En attente | 44 |
+| Bloqué | 9 |
 | À vérifier | 0 |
-| **Total** | **222** |
+| **Total** | **236** |
+
+Recompté le 2026-11-21 (nuit) à partir des lignes ci-dessous ; « En cours » : démonstration cloud (Docker absent du poste).
 
 ## Caisse et ventes
 
@@ -45,6 +47,7 @@ Légende des états :
 | Remboursement sans ticket : vente retrouvée par le scan de la boîte rapportée | Fait | Caisse ; regles-metier.md |
 | Retour partiel d’une vente en tiers payant (option A du 2026-11-21, script 155) : avant tout dépôt, part patient rendue au prorata et part de l’organisme des boîtes rendues retirée de sa créance (prorata de la part retenue, Chifa si régularisée ; majoration retirée quand plus aucune boîte remboursée ne reste) ; après dépôt, refus (« Vente déposée à la CNAS… ») sauf lignes non remboursées ; taux 100 % sans argent rendu, validation `caisse.retour_especes` ; journal fiscal au TTC complet ; rappel d’avoir AV- manuel pour une facture d’organisme du logiciel ; ticket réimprimé (imprimé et PDF) : « Part organisme retirée : X DA » sur la ligne du retour, plus « facture à corriger dans CHIFA-Officine » tant que le retour Chifa n’est pas marqué corrigé ; rapprochement d’un volet après un retour ajusté (script 157 : comparaison nette des retours, aucune double déduction, deux ordres) | Fait (2026-11-21, non commité ; script 155 à passer sur dev et test ; panneau de retour à mesurer) | Caisse ; regles-metier.md « Retour de médicaments par le patient » |
 | Retour et dettes du patient (décision du titulaire du 2026-11-21, script 158) : la part de la régularisation Chifa « à la charge du patient » des boîtes rendues lui est rendue (impayée : retirée de sa dette) ; patient qui doit encore de l’argent et qui a payé sa part : alerte bloquante dans le panneau de retour (nom cliquable, total de ses dettes), « Déduire de ses dettes » (recommandé, choisi par défaut, accord du client, imputé comme un encaissement de dette, sans tiroir) ou « Rendre quand même » (validation `caisse.retour_especes`) ; achat à crédit : boîte reprise sans rien rendre, dette diminuée | Fait (2026-11-21, non commité ; script 158 à passer sur dev et test ; panneau de retour à mesurer) | Caisse ; regles-metier.md « Retour et dettes du patient » |
+| Retour d’une vente régularisée « rendu au patient » (décision du titulaire du 2026-11-21, script 159) : la part de l’écart déjà rendue au patient pour les boîtes rendues (même prorata que la règle 158, solde exact aux dernières boîtes) est retenue sur ce que le retour lui rend (argent payé, puis avoir), avant la règle des dettes ; reste non couvert : ajouté à sa dette (relevé, journal) après l’alerte « Patient prévenu » dans le panneau de retour ; vente sans patient : retour refusé si un reste n’est pas couvert | Fait (2026-11-21, non commité ; script 159 à passer sur dev et test ; panneau de retour à mesurer) | Caisse ; regles-metier.md « Retour d’une vente régularisée « rendu au patient » » |
 | Liste « Retours à corriger dans CHIFA-Officine » (Finances › Chifa) : retours avec part organisme des ventes Chifa, recherche et état (à corriger / corrigés / tous), paginée ; « Corrigé dans CHIFA-Officine » daté, signé, journalisé | Fait (2026-11-21, non commité ; écran à mesurer à 1366 × 768) | Finances › Chifa ; regles-metier.md |
 | Mention « part organisme retirée » sur le ticket d’un retour en tiers payant | En attente (reportée : ticket modifié par un autre lot) | regles-metier.md « Retour de médicaments par le patient » |
 | Procédure de la CNAS pour une vente déposée (correction d’une facture signée, indu, retour d’un médicament remboursé, avoir sur bordereau) | Bloqué (réponse de la CNAS attendue) | chifa.md « Retour d’un médicament remboursé » |
@@ -266,6 +269,7 @@ Légende des états :
 | Réplication en continu de la base vers le 2e serveur (lecture seule), jamais deux API qui écrivent | Fait (à essayer sur les vrais serveurs) | regles-metier.md « 2e serveur » |
 | Bascule manuelle (script), remise en second, vérification | Fait (à essayer en réel) | scripts/second-serveur |
 | Alerte de réplication (décrochage ou retard) | Fait | Administration › 2e serveur |
+| Barre d’état : élément « 2e serveur : … » seulement en anomalie (décroché, en retard), rien sans 2e serveur ; tout employé connecté, lien pour le titulaire | Fait (2026-11-21, à voir avec un vrai 2e serveur) | regles-metier.md « Barre d’état : liaisons » |
 | Écran « 2e serveur » : réplication, versions, clé de scellement, dossiers Chifa / MDN, imprimantes | Fait | Administration › 2e serveur |
 | Export et import de la clé de scellement | Fait | Administration › 2e serveur |
 | Port 5432 ouvert au seul 2e serveur (script) | Fait (à essayer sur le vrai PC serveur) | scripts/second-serveur/ouvrir-port-base.ps1 |
@@ -318,6 +322,7 @@ Légende des états :
 | Réglages du serveur central et voie descendante (réglages descendants) | Fait | conception-synchronisation.md § 14, § 15 |
 | S3 : envoi environ chaque minute, supervision, purge de la file, bandeau des postes, alertes au titulaire | Fait | Administration › Synchronisation ; § 20 |
 | Valeurs de départ de la supervision (bandeau, retard, erreur, conservation) | En attente (à confirmer par le titulaire) | a-faire.md « Plus tard » |
+| Barre d’état : élément « Central : … » seulement en anomalie (activation, envoi suspendu, certificat, quota, erreur d’envoi, retard, attente), rien si la synchronisation n’est pas activée ; tout employé connecté, lien pour le droit admin.parametres | Fait (2026-11-21, à voir sur un poste relié au central) | regles-metier.md « Barre d’état : liaisons » |
 | S4 : vérification d’intégrité au serveur central, alerte au titulaire | Fait | Synchronisation › Intégrité au central ; § 22 |
 | S6.5 : intégrité après restauration (déclaration de la nouvelle époque, restaurations constatées au central, prise d’acte du titulaire, tickets avancés au-delà du central) | Fait (lot terminé le 2026-11-19, essai de bout en bout réussi ; synthèse § 31.9) ; en attente : avis du comptable sur les n° sautés | Synchronisation › Restaurations constatées ; § 31 |
 | N° de tickets après une restauration : caisse en attente du contrôle du serveur central au démarrage (120 s au plus, réglable), n° réattribués signalés au central et listés avec la restauration | Fait (2026-11-19, scripts 152 et central 025) | Caisse (bandeau) ; Synchronisation › Réglages et › Restaurations constatées ; § 31.10 |
@@ -337,7 +342,9 @@ Légende des états :
 | Remise de l’export de départ par lien de téléchargement à durée limitée (mot de passe par un autre canal : alors plus par e-mail si le lien part par e-mail) | En attente (dans aucun lot ; remise en main propre sur clé USB d’ici là) | mise-en-production.md F8 ; reste-a-faire-synthese.md |
 | S6.5 : intégrité après restauration (époque déclarée au central, version divergente gardée à part, vérification par branches, classement « remplacée après restauration » sous conditions, alerte et export) | Fait (2026-11-19, voir la ligne S6.5 plus haut ; décisions D1 à D9 validées le 2026-11-18) | conception-synchronisation.md § 31 |
 | S7.1 : écrans de l’éditeur au serveur central (https://127.0.0.1:5094 en développement) : connexion avec mot de passe BCrypt et code de second facteur, mot de passe provisoire à changer, verrouillage progressif, liste des officines filtrée et paginée (état, dernier contact, retard, dernier lot, chargement, échéance de certificat, anomalies), fiche d’une officine en rubriques (certificats, codes d’activation sans le code, chargements, lots sans contenu, époques, volumes, intégrité sans détail, restaurations, ordres sans données, journal de sécurité), mon journal des accès ; actions avec code de confirmation, motif et ressaisie : créer une officine (code d’activation affiché une fois, bouton Copier), nouveau code d’activation, révoquer un certificat ou un serveur ; comptes par la console du central ; jamais de donnée nominative pour l’éditeur | Fait en local (2026-11-21 ; scripts centraux 030 et 031 à passer, écrans à mesurer ; rien en ligne) | ecrans-central.md ; conception-synchronisation.md § 32 |
-| S7.2 : écrans du titulaire à distance, multi-officines | En attente (après S7.1 et l’hébergeur) | ecrans-central.md § 8 |
+| S7.2a : écrans du titulaire au serveur central (côté central seulement) : mes officines, rattacher une officine par code (30 minutes, usage unique, empreinte seule en base, 5 refus par quart d’heure), tableau de bord d’une officine en totaux seulement (chiffre d’affaires du jour, du mois et du mois précédent, ventes, part Chifa, crédits en cours, alertes de stock et de péremption, synchronisation, anomalies d’intégrité, ordres en attente ; « non disponible » si la donnée n’est pas montée), journal des accès de l’officine ; rôles étanches avec l’éditeur ; console `--creer-compte-titulaire`, `--code-rattachement` | Fait en local (2026-11-21 ; script central 032 à passer, écrans à mesurer ; rien en ligne) | ecrans-central.md § 3 bis ; conception-synchronisation.md § 32.1 |
+| S7.2b : rubrique « Accès à distance » du poste (le titulaire tire le code de rattachement, voit et retire les comptes rattachés) | En attente | ecrans-central.md § 8 |
+| S7.2 (reste) : SMS (fournisseur), remise à zéro d’un mot de passe par l’éditeur, retrait d’un rattachement depuis les écrans, alertes de refus en série | En attente (après l’hébergeur) | ecrans-central.md § 8 |
 | Mise en ligne des écrans du central (domaine, certificat, SMTP, connexion de production, comptes réels) | En attente (après le choix de l’hébergeur) | ecrans-central.md § 8 |
 | Découpage par officine des grandes tables du central | En attente | reste-a-faire-synthese.md § 7 |
 | Compatibilité des versions du format d’échange | En attente (à l’arrivée d’une version 2) | a-faire.md « Plus tard » |

@@ -15,6 +15,15 @@ public sealed record RemboursementRetour(decimal DetteVenteDiminuee, decimal Reg
     bool ChoixExige, decimal DetteRestante);
 
 /// <summary>
+/// Retenue de la régularisation « rendu au patient » des boîtes rendues (script 159) : SurArgent (retenue sur l'argent payé que le retour
+/// rend), SurAvoir (retenue sur l'avoir recrédité), Dette (reste non couvert, ajouté à la dette du patient).
+/// </summary>
+public sealed record RetenueRetour(decimal SurArgent, decimal SurAvoir, decimal Dette)
+{
+    public decimal Total => SurArgent + SurAvoir + Dette;
+}
+
+/// <summary>
 /// Retour de médicaments par le patient après la vente, à l'appréciation du pharmacien : retour partiel possible,
 /// boîtes remises en stock ou à détruire, part payée par le patient rendue au prorata.
 /// Vente en tiers payant (décision du titulaire du 2026-11-21, option A, script 155) : avant tout dépôt (vente sur aucun bordereau),
@@ -105,6 +114,7 @@ public static class RegleRetour
     /// Part de la régularisation « à la charge du patient » (rattachement du volet) d'une ligne rendue (décision du titulaire du
     /// 2026-11-21, script 158) : ce qui reste de l'écart mis à sa charge, au prorata de la part de la caisse des boîtes rendues sur
     /// celle des boîtes remboursées encore chez le patient (même base que la part organisme), arrondi au centime.
+    /// Même formule pour la régularisation « rendu au patient » (script 159) : part de l'écart déjà rendue au patient, à retenir.
     /// </summary>
     public static decimal MontantRegularisation(decimal montantOrganismeLigne, int quantiteVendue, int quantiteRendue, decimal regularisationRestante,
         decimal partCaisseRestante) =>
@@ -150,6 +160,33 @@ public static class RegleRetour
                 "dettes_patient");
         var impute = choix == DettesDeduire ? Math.Min(paye, detteRestante) : 0;
         return new RemboursementRetour(detteVenteDiminuee, regulDiminuee, impute, paye - impute, true, detteRestante);
+    }
+
+    /// <summary>
+    /// Retenue de la régularisation « rendu au patient » (décision du titulaire du 2026-11-21, script 159, même modèle que le script 158) :
+    /// au rattachement du volet, l'organisme a couvert plus que prévu et la différence a été rendue au patient ; pour les boîtes rendues,
+    /// cette part (<paramref name="retenue"/>, prorata de <see cref="MontantRegularisation"/>) est retenue sur ce que le retour lui rend,
+    /// AVANT la règle des dettes (<see cref="Rembourser"/>) : d'abord sur l'argent qu'il a payé et que le retour lui rendrait, puis sur
+    /// l'avoir recrédité. Le reste non couvert devient une dette du patient (relevé, journal), seulement après l'alerte au vendeur
+    /// (<paramref name="detteConfirmee"/>). Vente sans patient : aucune dette possible, le retour est refusé (jamais de perte non tracée).
+    /// </summary>
+    /// <param name="argentPaye">Argent réellement payé que le retour rendrait (hors dette diminuée d'une vente à crédit, hors avoir).</param>
+    /// <param name="avoirRecredite">Avoir que le retour recréditerait (vente payée en partie par avoir).</param>
+    public static RetenueRetour Retenir(decimal retenue, decimal argentPaye, decimal avoirRecredite, bool patientConnu, bool detteConfirmee)
+    {
+        var r = Math.Max(retenue, 0);
+        var surArgent = Math.Min(r, Math.Max(argentPaye, 0));
+        var surAvoir = Math.Min(r - surArgent, Math.Max(avoirRecredite, 0));
+        var dette = r - surArgent - surAvoir;
+        if (dette > 0 && !patientConnu)
+            throw new RegleMetierException(
+                $"Vente sans patient : {dette:N2} DA déjà rendus au rattachement du volet Chifa ne sont pas couverts par ce retour et ne peuvent devenir la dette de personne. Retour impossible dans le logiciel : voyez le titulaire.",
+                "dette_retenue");
+        if (dette > 0 && !detteConfirmee)
+            throw new RegleMetierException(
+                $"Le patient a déjà reçu {r:N2} DA pour ces boîtes au rattachement du volet Chifa : le retour n’en couvre que {surArgent + surAvoir:N2} DA, {dette:N2} DA seront ajoutés à sa dette. Prévenez-le, puis confirmez.",
+                "dette_retenue");
+        return new RetenueRetour(surArgent, surAvoir, dette);
     }
 
     public static DestinationRetour Destination(string? code) => code switch

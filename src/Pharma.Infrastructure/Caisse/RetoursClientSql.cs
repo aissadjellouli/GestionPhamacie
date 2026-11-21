@@ -128,6 +128,19 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
             if (await cmd.ExecuteScalarAsync(ct) is not decimal reste || reste < partRegularisation)
                 throw new RegleMetierException("La régularisation de part organisme de cette vente vient de changer : rechargez la vente.");
         }
+        // Part de la régularisation « rendu au patient » retenue (script 159) : jamais plus que ce qui en reste (régularisation active)
+        var avoirRetenu = a.Lignes.Sum(l => l.MontantAvoirRetenu);
+        if (avoirRetenu > 0 || a.DetteAvoirRetenu > 0)
+        {
+            await using var cmd = new NpgsqlCommand($"""
+                SELECT g.montant_patient - {AnnulationsVenteSql.AvoirRetenu}
+                FROM vente v JOIN regularisation_part_organisme g ON g.vente_id = v.id AND g.statut = 'active' AND g.sort = 'avoir_patient'
+                WHERE v.id = $1
+                """, cx, tx);
+            cmd.Parameters.AddWithValue(a.VenteId);
+            if (await cmd.ExecuteScalarAsync(ct) is not decimal reste || reste < avoirRetenu || a.DetteAvoirRetenu > avoirRetenu)
+                throw new RegleMetierException("La régularisation de part organisme de cette vente vient de changer : rechargez la vente.");
+        }
         // Sous le verrou de la vente : l'avoir recrédité ne dépasse jamais ce qui a été payé par avoir moins ce que les retours ont déjà recrédité
         if (a.AvoirRecredite > 0)
         {
@@ -167,7 +180,8 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
         if (dette > 0) parts.Add(("credit", dette));
         if (rendu > 0 || parts.Count == 0) parts.Add((a.Mode == "credit" && rendu == 0 ? "credit" : modeRendu, rendu));
         // Les lignes rendues sont rattachées à la première écriture
-        var retourId = await InsererRetourAsync(cx, tx, a, parts[0].Mode, parts[0].Montant, ct);
+        // Dette ajoutée par la retenue (script 159) : portée par la première écriture, celle qui porte les lignes
+        var retourId = await InsererRetourAsync(cx, tx, a, parts[0].Mode, parts[0].Montant, ct, a.DetteAvoirRetenu);
         foreach (var (mode, montant) in parts.Skip(1))
             await InsererRetourAsync(cx, tx, a, mode, montant, ct);
         if (a.AvoirRecredite > 0)
@@ -178,9 +192,11 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
         foreach (var l in a.Lignes)
         {
             await Executer(cx, tx, """
-                INSERT INTO retour_client_ligne (retour_id, ligne_vente_id, quantite, destination, montant, montant_organisme, montant_regularisation)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                """, ct, retourId, l.LigneVenteId, l.Quantite, l.Destination.Code(), l.Montant, l.MontantOrganisme, l.MontantRegularisation);
+                INSERT INTO retour_client_ligne (retour_id, ligne_vente_id, quantite, destination, montant, montant_organisme, montant_regularisation,
+                                                 montant_avoir_retenu)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                """, ct, retourId, l.LigneVenteId, l.Quantite, l.Destination.Code(), l.Montant, l.MontantOrganisme, l.MontantRegularisation,
+                l.MontantAvoirRetenu);
 
             // La boîte revient à l'officine (lot et registre), puis repart à la destruction si le pharmacien l'a décidé
             await Executer(cx, tx, "UPDATE lot SET quantite_disponible = quantite_disponible + $2 WHERE id = $1", ct, l.LotId, l.Quantite);
@@ -246,6 +262,18 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
             await DiminuerDetteVenteAsync(cx, tx, a.VenteId, a.ReductionRegularisation, ct);
         }
         if (a.ImputationDettes > 0) await ImputerSurDettesAsync(cx, tx, a, ct);
+        // Script 159 : part de la retenue (régularisation « rendu au patient ») que le retour ne couvrait pas, ajoutée à la dette du patient
+        // (mouvement « correction » rattaché à la vente, comme la régularisation ; compté par v_credit_accorde)
+        if (a.DetteAvoirRetenu > 0)
+        {
+            await ReleveCredit.ContexteAsync(cx, tx, ReleveCredit.Correction, a.VenteId, a.UtilisateurId, a.Poste,
+                $"Retour client {a.Numero} : part de la régularisation Chifa « rendu au patient » des boîtes rendues, non couverte par le remboursement", ct);
+            await using var cmd = new NpgsqlCommand("UPDATE patient SET solde_credit = solde_credit + $2 WHERE id = (SELECT patient_id FROM vente WHERE id = $1)", cx, tx);
+            cmd.Parameters.AddWithValue(a.VenteId);
+            cmd.Parameters.AddWithValue(a.DetteAvoirRetenu);
+            if (await cmd.ExecuteNonQueryAsync(ct) == 0)
+                throw new RegleMetierException("Vente sans patient : la part non couverte ne peut pas devenir une dette.");
+        }
 
         await tx.CommitAsync(ct);
     }
@@ -300,11 +328,12 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
     }
 
     private static async Task<long> InsererRetourAsync(NpgsqlConnection cx, NpgsqlTransaction tx, RetourAEcrire a, string? mode, decimal montant,
-        CancellationToken ct)
+        CancellationToken ct, decimal detteAvoirRetenu = 0)
     {
         await using var cmd = new NpgsqlCommand("""
-            INSERT INTO retour_client (vente_id, motif, utilisateur_id, valide_par, mode, montant_rembourse, session_caisse_id, poste, motif_code, motif_texte)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id
+            INSERT INTO retour_client (vente_id, motif, utilisateur_id, valide_par, mode, montant_rembourse, session_caisse_id, poste, motif_code, motif_texte,
+                                       dette_avoir_retenu)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id
             """, cx, tx);
         cmd.Parameters.AddWithValue(a.VenteId);
         cmd.Parameters.AddWithValue(a.Motif);
@@ -316,6 +345,7 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
         cmd.Parameters.AddWithValue(a.Poste);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)a.MotifCode ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)a.MotifTexte ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.AddWithValue(detteAvoirRetenu);
         return (long)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
