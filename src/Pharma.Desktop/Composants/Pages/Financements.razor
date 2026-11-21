@@ -238,12 +238,16 @@
 
             case "titulaire":
                 <div class="tuiles">
-                    <div class="tuile"><span class="tuile-libelle">Dû au titulaire</span><span class="tuile-valeur">@Libelles.Dinars(titulaire?.SoldeDu ?? 0, 2)</span>
-                        <span class="tuile-pied">apports non remboursés</span></div>
-                    <div class="tuile"><span class="tuile-libelle">Apports</span><span class="tuile-valeur">@Libelles.Dinars(titulaire?.TotalApports ?? 0, 2)</span>
-                        <span class="tuile-pied">depuis le début</span></div>
-                    <div class="tuile"><span class="tuile-libelle">Remboursés</span><span class="tuile-valeur">@Libelles.Dinars(titulaire?.TotalRemboursements ?? 0, 2)</span>
-                        <span class="tuile-pied">sortis du coffre ou d’une banque</span></div>
+                    @* Tuiles navigables (2026-11-21) : elles filtrent les mouvements ci-dessous (filtre appliqué : bordure verte) *@
+                    <button type="button" class="tuile tuile-lien" aria-pressed="@(operation == "" && !FiltreTitulaireActif ? "true" : "false")" title="Affiche tous les mouvements du compte du titulaire ci-dessous"
+                            @onclick='() => FiltrerTitulaireAsync("")'><span class="tuile-libelle">Dû au titulaire</span><span class="tuile-valeur">@Libelles.Dinars(titulaire?.SoldeDu ?? 0, 2)</span>
+                        <span class="tuile-pied">apports non remboursés</span></button>
+                    <button type="button" class="tuile tuile-lien" aria-pressed="@(operation == "" && ftSens == "apport" && ftDu is null && ftAu is null ? "true" : "false")" title="Affiche les apports ci-dessous"
+                            @onclick='() => FiltrerTitulaireAsync("apport")'><span class="tuile-libelle">Apports</span><span class="tuile-valeur">@Libelles.Dinars(titulaire?.TotalApports ?? 0, 2)</span>
+                        <span class="tuile-pied">depuis le début</span></button>
+                    <button type="button" class="tuile tuile-lien" aria-pressed="@(operation == "" && ftSens == "remboursement" && ftDu is null && ftAu is null ? "true" : "false")" title="Affiche les remboursements ci-dessous"
+                            @onclick='() => FiltrerTitulaireAsync("remboursement")'><span class="tuile-libelle">Remboursés</span><span class="tuile-valeur">@Libelles.Dinars(titulaire?.TotalRemboursements ?? 0, 2)</span>
+                        <span class="tuile-pied">sortis du coffre ou d’une banque</span></button>
                 </div>
                 <div class="filtres" role="tablist" aria-label="Opération">
                     <button type="button" role="tab" class="puce" aria-selected="@(operation == "" ? "true" : "false")" @onclick='() => operation = ""'>Mouvements</button>
@@ -488,6 +492,8 @@
     }
 
     private Task EffacerFiltresTitulaireAsync() { (ftSens, ftDu, ftAu) = ("", null, null); return ChargerTitulaireAsync(1, tailleTitulaire); }
+    /// <summary>Tuiles du compte du titulaire : mouvements de ce sens depuis le début (vide : tous), formulaire refermé.</summary>
+    private Task FiltrerTitulaireAsync(string sens) { (operation, ftSens, ftDu, ftAu) = ("", sens, null, null); return ChargerTitulaireAsync(1, tailleTitulaire); }
 
     private void NouveauPret()
     {

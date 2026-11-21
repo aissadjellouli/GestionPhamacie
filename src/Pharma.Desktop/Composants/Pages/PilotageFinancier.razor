@@ -65,40 +65,41 @@
         {
             case "synthese":
                 <div class="tuiles tuiles-compactes" style="grid-template-columns: repeat(6, minmax(0, 1fr))">
-                    <div class="tuile">
+                    @* Tuiles navigables (2026-11-21) : chacune ouvre l'écran ou la rubrique qui la détaille (les rapports gardent leur propre période) *@
+                    <TuileLien Lien="rapports?rubrique=ventes" Infobulle="Ouvre les rapports › Ventes (période choisie dans les rapports)">
                         <span class="tuile-libelle">Chiffre d’affaires TTC</span>
                         <span class="tuile-valeur">@Libelles.Dinars(t.ChiffreAffaires.Actuel)</span>
                         <span class="tuile-pied">@Comparer(t.ChiffreAffaires, true)</span>
-                    </div>
-                    <div class="tuile">
+                    </TuileLien>
+                    <TuileLien Lien="pilotage-financier?rubrique=marges" Infobulle="Ouvre la rubrique Marges (par produit ou laboratoire)">
                         <span class="tuile-libelle">Marge brute</span>
                         <span class="tuile-valeur">@Libelles.Dinars(t.MargeBrute.Actuel)</span>
                         <span class="tuile-pied">@(t.TauxMarge is { } tm ? $"{tm:0.0} % du CA HT" : "pas de vente")@(t.TauxMargePrecedent is { } tp ? $" (précédente {tp:0.0} %)" : "")</span>
                         <span class="tuile-pied">@Comparer(t.MargeBrute, true)</span>
-                    </div>
-                    <div class="tuile">
+                    </TuileLien>
+                    <TuileLien Lien="rapports?rubrique=ventes" Infobulle="Ouvre les rapports › Ventes (période choisie dans les rapports)">
                         <span class="tuile-libelle">Ventes · panier moyen</span>
                         <span class="tuile-valeur">@t.NombreVentes.Actuel.ToString("0") · @(t.PanierMoyen is { } pm ? Libelles.Dinars(pm.Actuel) : "—")</span>
                         <span class="tuile-pied">ventes @Comparer(t.NombreVentes, false)</span>
                         @if (t.PanierMoyen is { } pm2) { <span class="tuile-pied">panier @Comparer(pm2, true)</span> }
-                    </div>
-                    <div class="tuile">
+                    </TuileLien>
+                    <TuileLien Lien="rapports?rubrique=synthese" Infobulle="Ouvre les rapports › Synthèse (tiers payant, crédits, remises)">
                         <span class="tuile-libelle">Répartition</span>
                         <span class="tuile-pied">comptant @Libelles.Dinars(t.Repartition.Comptant) · crédit @Libelles.Dinars(t.Repartition.Credit)</span>
                         <span class="tuile-pied">Chifa @Libelles.Dinars(t.Repartition.Chifa) · MDN @Libelles.Dinars(t.Repartition.Mdn)@(t.Repartition.AutresOrganismes != 0 ? $" · autres {Libelles.Dinars(t.Repartition.AutresOrganismes)}" : "")</span>
-                    </div>
-                    <div class="tuile tuile-lien" @onclick='() => Aller("creances")'>
+                    </TuileLien>
+                    <TuileLien Lien="pilotage-financier?rubrique=creances" Infobulle="Ouvre la rubrique Créances">
                         <span class="tuile-libelle">Créances à encaisser</span>
                         <span class="tuile-valeur">@Libelles.Dinars(t.Creances.TotalBordereaux + t.Creances.HorsBordereau + t.Creances.CreditsPatients)</span>
                         <span class="tuile-pied">bordereaux @Libelles.Dinars(t.Creances.TotalBordereaux) · hors bordereau @Libelles.Dinars(t.Creances.HorsBordereau)</span>
                         <span class="tuile-pied">crédits patients @Libelles.Dinars(t.Creances.CreditsPatients) (@t.Creances.PatientsDebiteurs)</span>
-                    </div>
-                    <div class="tuile tuile-lien" @onclick='() => Aller("stock")'>
+                    </TuileLien>
+                    <TuileLien Lien="pilotage-financier?rubrique=stock" Infobulle="Ouvre la rubrique Stock et dormant">
                         <span class="tuile-libelle">Stock au prix d’achat HT (hors périmés/bloqués)</span>
                         <span class="tuile-valeur">@Libelles.Dinars(t.Stock.ValeurAchat)</span>
                         <span class="tuile-pied">rotation @(t.Stock.RotationAnnuelle?.ToString("0.0") ?? "—") / an · couverture @(t.Stock.CouvertureJours?.ToString("0") ?? "—") j</span>
                         <span class="tuile-pied">dormant @Libelles.Dinars(t.Stock.ValeurDormante) (@t.Stock.Dormants) · ruptures @t.Stock.RupturesOfficine / grossistes @t.Stock.RupturesGrossistes</span>
-                    </div>
+                    </TuileLien>
                 </div>
                 @if (t.ParJour.Count > 1)
                 {
@@ -127,11 +128,11 @@
                 <div class="tuiles">
                     @foreach (var x in t.Creances.BordereauxParAge)
                     {
-                        <div class="tuile"><span class="tuile-libelle">Bordereaux · @x.Tranche</span><span class="tuile-valeur">@Libelles.Dinars(x.Montant)</span><span class="tuile-pied">@x.Nombre bordereau(x)</span></div>
+                        <TuileLien Lien="bordereaux-chifa" Infobulle="Ouvre les bordereaux Chifa (dépôt, rejets, paiements)"><span class="tuile-libelle">Bordereaux · @x.Tranche</span><span class="tuile-valeur">@Libelles.Dinars(x.Montant)</span><span class="tuile-pied">@x.Nombre bordereau(x)</span></TuileLien>
                     }
-                    <div class="tuile"><span class="tuile-libelle">Part organismes hors bordereau</span><span class="tuile-valeur">@Libelles.Dinars(t.Creances.HorsBordereau)</span><span class="tuile-pied">ventes pas encore portées sur un bordereau</span></div>
-                    <div class="tuile"><span class="tuile-libelle">Crédits patients</span><span class="tuile-valeur">@Libelles.Dinars(t.Creances.CreditsPatients)</span>
-                        <span class="tuile-pied">@t.Creances.PatientsDebiteurs patient(s) · @string.Join(" · ", t.Creances.CreditsParAge.Select(c => $"{c.Tranche} {Libelles.Dinars(c.Montant)}"))</span></div>
+                    <TuileLien Lien="bordereaux-chifa?rubrique=a-deposer" Infobulle="Ouvre les bordereaux Chifa › Ventes à déposer"><span class="tuile-libelle">Part organismes hors bordereau</span><span class="tuile-valeur">@Libelles.Dinars(t.Creances.HorsBordereau)</span><span class="tuile-pied">ventes pas encore portées sur un bordereau</span></TuileLien>
+                    <TuileLien Lien="dettes?onglet=patient" Infobulle="Ouvre Dettes et créances › Patients"><span class="tuile-libelle">Crédits patients</span><span class="tuile-valeur">@Libelles.Dinars(t.Creances.CreditsPatients)</span>
+                        <span class="tuile-pied">@t.Creances.PatientsDebiteurs patient(s) · @string.Join(" · ", t.Creances.CreditsParAge.Select(c => $"{c.Tranche} {Libelles.Dinars(c.Montant)}"))</span></TuileLien>
                 </div>
                 <section class="tableau-cadre" aria-label="Bordereaux non réglés">
                     <table class="tableau" style="min-width: 0">
@@ -154,10 +155,11 @@
 
             case "stock":
                 <div class="tuiles">
-                    <div class="tuile"><span class="tuile-libelle">Valeur du stock (achat HT)</span><span class="tuile-valeur">@Libelles.Dinars(t.Stock.ValeurAchat)</span><span class="tuile-pied">@t.Stock.Produits produit(s) · hors lots périmés/bloqués</span><span class="tuile-pied" title="Non compté dans la valeur, la rotation ni la couverture">pour information, exclus : @Libelles.Dinars(t.Stock.ValeurExclue) (@t.Stock.LotsExclus lot(s))</span></div>
-                    <div class="tuile"><span class="tuile-libelle">Rotation · couverture</span><span class="tuile-valeur">@(t.Stock.RotationAnnuelle?.ToString("0.0") ?? "—") / an</span><span class="tuile-pied">couverture @(t.Stock.CouvertureJours?.ToString("0") ?? "—") jours · coût des ventes @Libelles.Dinars(t.Stock.CoutVentesPeriode)</span></div>
-                    <div class="tuile"><span class="tuile-libelle">Stock dormant</span><span class="tuile-valeur">@Libelles.Dinars(t.Stock.ValeurDormante)</span><span class="tuile-pied">@t.Stock.Dormants produit(s) sans vente depuis @t.Stock.SeuilDormantJours jours</span></div>
-                    <div class="tuile"><span class="tuile-libelle">Ruptures en cours</span><span class="tuile-valeur">@t.Stock.RupturesOfficine</span><span class="tuile-pied">à l’officine · @t.Stock.RupturesGrossistes produit(s) en rupture chez un grossiste</span></div>
+                    <TuileLien Lien="stock?rubrique=produits" Infobulle="Ouvre le stock › Produits"><span class="tuile-libelle">Valeur du stock (achat HT)</span><span class="tuile-valeur">@Libelles.Dinars(t.Stock.ValeurAchat)</span><span class="tuile-pied">@t.Stock.Produits produit(s) · hors lots périmés/bloqués</span><span class="tuile-pied" title="Non compté dans la valeur, la rotation ni la couverture">pour information, exclus : @Libelles.Dinars(t.Stock.ValeurExclue) (@t.Stock.LotsExclus lot(s))</span></TuileLien>
+                    <TuileLien Lien="pilotage-financier?rubrique=marges" Infobulle="Ouvre la rubrique Marges : coût d’achat des ventes par produit"><span class="tuile-libelle">Rotation · couverture</span><span class="tuile-valeur">@(t.Stock.RotationAnnuelle?.ToString("0.0") ?? "—") / an</span><span class="tuile-pied">couverture @(t.Stock.CouvertureJours?.ToString("0") ?? "—") jours · coût des ventes @Libelles.Dinars(t.Stock.CoutVentesPeriode)</span></TuileLien>
+                    @* Le détail du stock dormant est le tableau ci-dessous : la tuile l'affiche en entier (recherche effacée) *@
+                    <button type="button" class="tuile tuile-lien" title="Affiche tout le stock dormant dans le tableau ci-dessous (recherche effacée)" @onclick="ToutLeDormantAsync"><span class="tuile-libelle">Stock dormant</span><span class="tuile-valeur">@Libelles.Dinars(t.Stock.ValeurDormante)</span><span class="tuile-pied">@t.Stock.Dormants produit(s) sans vente depuis @t.Stock.SeuilDormantJours jours</span></button>
+                    <TuileLien Lien="./?rubrique=stock" Infobulle="Ouvre les alertes de stock (ruptures et stock critique)"><span class="tuile-libelle">Ruptures en cours</span><span class="tuile-valeur">@t.Stock.RupturesOfficine</span><span class="tuile-pied">à l’officine · @t.Stock.RupturesGrossistes produit(s) en rupture chez un grossiste</span></TuileLien>
                 </div>
                 <div class="achats-ligne" style="align-items: flex-end">
                     <div class="champ" style="flex: 0 0 200px">
@@ -240,10 +242,10 @@
 
             case "rejets":
                 <div class="tuiles">
-                    <div class="tuile"><span class="tuile-libelle">Taux de rejet</span><span class="tuile-valeur">@(t.Rejets.TauxRejetPct is { } tr ? $"{tr:0.0} %" : "—")</span>
-                        <span class="tuile-pied">@t.Rejets.Rejets rejet(s) sur @t.Rejets.VentesDeposees vente(s) déposée(s)</span></div>
-                    <div class="tuile"><span class="tuile-libelle">Montant rejeté</span><span class="tuile-valeur">@Libelles.Dinars(t.Rejets.MontantRejete)</span>
-                        <span class="tuile-pied">sur @Libelles.Dinars(t.Rejets.MontantDepose) déposés</span></div>
+                    <TuileLien Lien="bordereaux-chifa" Infobulle="Ouvre les bordereaux Chifa (rejets à traiter)"><span class="tuile-libelle">Taux de rejet</span><span class="tuile-valeur">@(t.Rejets.TauxRejetPct is { } tr ? $"{tr:0.0} %" : "—")</span>
+                        <span class="tuile-pied">@t.Rejets.Rejets rejet(s) sur @t.Rejets.VentesDeposees vente(s) déposée(s)</span></TuileLien>
+                    <TuileLien Lien="bordereaux-chifa" Infobulle="Ouvre les bordereaux Chifa (rejets à traiter)"><span class="tuile-libelle">Montant rejeté</span><span class="tuile-valeur">@Libelles.Dinars(t.Rejets.MontantRejete)</span>
+                        <span class="tuile-pied">sur @Libelles.Dinars(t.Rejets.MontantDepose) déposés</span></TuileLien>
                 </div>
                 <section class="tableau-cadre" aria-label="Rejets par motif">
                     <table class="tableau" style="min-width: 0">
@@ -289,7 +291,6 @@
     private static readonly (string Code, string Libelle)[] Periodes = [("jour", "Jour"), ("semaine", "Semaine"), ("mois", "Mois"), ("dates", "Dates choisies")];
 
     [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
-    [Inject] private NavigationManager Nav { get; set; } = default!;
     private string rubrique = "synthese";
 
     private TableauFinancierDto? tableau;
@@ -320,7 +321,8 @@
         return ChargerAsync();
     }
 
-    private void Aller(string id) => Nav.NavigateTo($"pilotage-financier?rubrique={id}");
+    /// <summary>Tuile « Stock dormant » : tout le stock dormant dans le tableau de la rubrique (recherche effacée, première page).</summary>
+    private Task ToutLeDormantAsync() { rechercheDormant = null; return ChargerDormantsAsync(1, tailleDormants); }
 
     private async Task ChargerAsync()
     {

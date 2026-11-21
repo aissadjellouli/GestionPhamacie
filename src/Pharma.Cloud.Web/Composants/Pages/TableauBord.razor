@@ -35,24 +35,24 @@
         <Message Erreur="@Erreur" Ok="@Ok" />
         @* Une seule grille (ventes, stock, synchronisation et contrôle) : deux rangées à 1366 px, aucun défilement *@
         <div class="tuiles tuiles-compactes" aria-label="Totaux de l'officine">
-            <TuileTableau Libelle="Chiffre d'affaires du jour" Valeur="@Montant("ca_jour")" Note="ventes validées moins retours" />
-            <TuileTableau Libelle="Ventes du jour" Valeur="@Nombre("ventes_jour")" Note="tickets validés" />
-            <TuileTableau Libelle="Chiffre d'affaires du mois" Valeur="@Montant("ca_mois")" Note="@(Valeur("ventes_mois") is int n ? $"{Tableau.Nombre(n)} ventes, moins les retours" : "ventes validées moins retours")" />
-            <TuileTableau Libelle="Mois précédent (entier)" Valeur="@Montant("ca_mois_precedent")" Note="ventes validées moins retours" />
-            <TuileTableau Libelle="Part Chifa du mois" Valeur="@Montant("part_chifa_mois")" Note="part organisme des ventes Chifa" />
-            <TuileTableau Libelle="Crédits en cours" Valeur="@Montant("credits_en_cours")" Note="somme des soldes des patients" />
+            <TuileTableau Lien="@Lien("ca_jour")" Libelle="Chiffre d'affaires du jour" Valeur="@Montant("ca_jour")" Note="ventes validées moins retours" />
+            <TuileTableau Lien="@Lien("ventes_jour")" Libelle="Ventes du jour" Valeur="@Nombre("ventes_jour")" Note="tickets validés" />
+            <TuileTableau Lien="@Lien("ca_mois")" Libelle="Chiffre d'affaires du mois" Valeur="@Montant("ca_mois")" Note="@(Valeur("ventes_mois") is int n ? $"{Tableau.Nombre(n)} ventes, moins les retours" : "ventes validées moins retours")" />
+            <TuileTableau Lien="@Lien("ca_mois_precedent")" Libelle="Mois précédent (entier)" Valeur="@Montant("ca_mois_precedent")" Note="ventes validées moins retours" />
+            <TuileTableau Lien="@Lien("part_chifa_mois")" Libelle="Part Chifa du mois" Valeur="@Montant("part_chifa_mois")" Note="part organisme des ventes Chifa" />
+            <TuileTableau Lien="@Lien("credits_en_cours")" Libelle="Crédits en cours" Valeur="@Montant("credits_en_cours")" Note="somme des soldes des patients" />
 
-            <TuileTableau Libelle="Alertes de stock" Valeur="@Nombre("alertes_stock")" Note="ruptures et stocks critiques non traités" Urgent="@Positif("alertes_stock")" />
-            <TuileTableau Libelle="Alertes de péremption" Valeur="@Nombre("alertes_peremption")" Note="péremptions et périmés non traités" Urgent="@Positif("alertes_peremption")" />
+            <TuileTableau Lien="@Lien("alertes_stock")" Libelle="Alertes de stock" Valeur="@Nombre("alertes_stock")" Note="ruptures et stocks critiques non traités" Urgent="@Positif("alertes_stock")" />
+            <TuileTableau Lien="@Lien("alertes_peremption")" Libelle="Alertes de péremption" Valeur="@Nombre("alertes_peremption")" Note="péremptions et périmés non traités" Urgent="@Positif("alertes_peremption")" />
 
-            <TuileTableau Libelle="Dernier contact" Valeur="@Rubriques.Afficher("dernier_contact", Valeur("dernier_contact"))"
+            <TuileTableau Lien="@Lien("dernier_contact")" Libelle="Dernier contact" Valeur="@Rubriques.Afficher("dernier_contact", Valeur("dernier_contact"))"
                           Note="@(Valeur("en_retard") is true ? "en retard : plus de 24 h sans contact" : "à l'heure")" Urgent="@(Valeur("en_retard") is true)" Petite="true" />
-            <TuileTableau Libelle="Dernier lot reçu" Valeur="@Nombre("dernier_lot")" Note="n° du lot de l'époque courante" />
-            <TuileTableau Libelle="Chargement complet" Valeur="@Rubriques.Afficher("chargement_complet_le", Valeur("chargement_complet_le"))"
+            <TuileTableau Lien="@Lien("dernier_lot")" Libelle="Dernier lot reçu" Valeur="@Nombre("dernier_lot")" Note="n° du lot de l'époque courante" />
+            <TuileTableau Lien="@Lien("chargement_complet")" Libelle="Chargement complet" Valeur="@Rubriques.Afficher("chargement_complet_le", Valeur("chargement_complet_le"))"
                           Note="@(Valeur("chargement_en_cours") is true ? "un chargement est en cours" : "dernier terminé")" Petite="true" />
-            <TuileTableau Libelle="Anomalies d'intégrité" Valeur="@Nombre("anomalies_ouvertes")" Note="non expliquées par une restauration" Urgent="@Positif("anomalies_ouvertes")" />
-            <TuileTableau Libelle="Ordres en attente" Valeur="@Nombre("ordres_en_attente")" Note="envoyés, pas encore appliqués" />
-            <TuileTableau Libelle="Lignes absentes" Valeur="@Tableau.Nombre(Absentes("lignes"))"
+            <TuileTableau Lien="@Lien("anomalies_ouvertes")" Libelle="Anomalies d'intégrité" Valeur="@Nombre("anomalies_ouvertes")" Note="non expliquées par une restauration" Urgent="@Positif("anomalies_ouvertes")" />
+            <TuileTableau Lien="@Lien("ordres_en_attente")" Libelle="Ordres en attente" Valeur="@Nombre("ordres_en_attente")" Note="envoyés, pas encore appliqués" />
+            <TuileTableau Lien="@Lien("lignes_absentes")" Libelle="Lignes absentes" Valeur="@Tableau.Nombre(Absentes("lignes"))"
                           Note="@(Absentes("tables") is int t && t > 0 ? $"{Tableau.Nombre(t)} table(s), gardées au central" : "gardées au central, jamais effacées")" />
         </div>
         <p class="pied-page">
@@ -79,8 +79,18 @@
         {
             Table = await Depot.TitulaireTableauAsync(jeton, Id, Contexte.RequestAborted);
             if (Ligne is not null) TableAbsentes = await Depot.TitulaireLignesAbsentesAsync(jeton, Id, Contexte.RequestAborted);
+            // Tuiles navigables : droits du compte sur l'officine (la tuile Ordres ne mène à l'écran des ordres qu'avec le droit « ordres »)
+            if (Ligne is not null)
+            {
+                var officines = await Depot.TitulaireOfficinesAsync(jeton, Contexte.RequestAborted);
+                Droits = officines.Lignes.Where(l => officines.Valeur(l, "id") is Guid g && g == Id)
+                    .SelectMany(l => officines.Valeur(l, "droits") is string d ? d.Split(',') : []).ToHashSet();
+            }
         }
     }
+
+    private IReadOnlyCollection<string> Droits { get; set; } = [];
+    private LienTuile Lien(string tuile) => LiensTuiles.Titulaire(tuile, Id, Droits);
 
     private object? Valeur(string colonne) => Ligne is null ? null : Table.Valeur(Ligne, colonne);
     private object? Absentes(string colonne) => TableAbsentes.Lignes.Count == 1 ? TableAbsentes.Valeur(TableAbsentes.Lignes[0], colonne) : null;

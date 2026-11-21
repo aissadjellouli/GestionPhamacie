@@ -35,6 +35,19 @@ public class NavigationTests
         Assert.True(ecarts.Count == 0, "Groupe « Autres écrans … » : les écrans du domaine sont déjà listés par NavDomaine : " + string.Join(", ", ecarts));
     }
 
+    [Fact]
+    public void L_aide_d_un_ecran_se_ferme_par_un_clic_a_l_exterieur()
+    {
+        // 2026-11-21 : un voile transparent sous le panneau d'aide le ferme au clic, en plus d'Échap et du bouton « Fermer »
+        var mise = Path.Combine(RacineDepot(), "src", "Pharma.Desktop");
+        var aide = File.ReadAllText(Path.Combine(mise, "Composants", "Mise", "AideEcran.razor"));
+        Assert.Contains("<div class=\"voile-aide\" aria-hidden=\"true\" @onclick=\"() => ouverte = false\"></div>", aide);
+        Assert.True(aide.IndexOf("voile-aide", StringComparison.Ordinal) < aide.IndexOf("<aside class=\"panneau-aide\"", StringComparison.Ordinal),
+            "Le voile doit précéder le panneau (le panneau reste au-dessus)");
+        var css = File.ReadAllText(Path.Combine(mise, "wwwroot", "css", "app.css"));
+        Assert.Contains(".voile-aide { position: fixed; inset: 0; z-index: 44;", css);
+    }
+
     private static string RacineDepot()
     {
         if (Environment.GetEnvironmentVariable("PHARMA_RACINE_DEPOT") is { Length: > 0 } racine) return racine;

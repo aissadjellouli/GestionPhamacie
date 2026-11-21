@@ -1,0 +1,27 @@
+@inject SessionPoste Session
+
+@* Tuile navigable (charte, 2026-11-21) : même balise que les tuiles de l'accueil (a.tuile.tuile-lien), toute la carte ouvre l'écran
+   qui détaille son chiffre ; l'infobulle dit où elle mène. Sans le droit d'ouvrir cet écran (AccesEcrans, même contrôle que le
+   menu), ou sans écran à ouvrir (Lien vide), la tuile reste un chiffre non cliquable : jamais de lien mort. *@
+@if (Lien is { Length: > 0 } lien && AccesEcrans.PeutOuvrir(Session, lien) && (DroitsRubrique is not { Length: > 0 } d || d.Any(Session.A)))
+{
+    <a href="@lien" class="tuile tuile-lien @Classe" title="@(Explication is null ? Infobulle : $"{Explication} · {Infobulle}")">@ChildContent</a>
+}
+else
+{
+    <div class="tuile @Classe" title="@Explication">@ChildContent</div>
+}
+
+@code {
+    /// <summary>Adresse de l'écran de détail (route réelle, rubrique ou filtre en paramètre) ; vide : rien à ouvrir.</summary>
+    [Parameter] public string? Lien { get; set; }
+    /// <summary>Droits propres à la rubrique visée (l'un d'eux suffit), en plus de ceux de l'écran : sans eux, l'écran ouvrirait une autre rubrique.</summary>
+    [Parameter] public string[]? DroitsRubrique { get; set; }
+    /// <summary>Où mène la tuile (« Ouvre … »), en infobulle.</summary>
+    [Parameter, EditorRequired] public string Infobulle { get; set; } = "";
+    /// <summary>Explication du chiffre, gardée en infobulle (devant la destination quand la tuile est un lien).</summary>
+    [Parameter] public string? Explication { get; set; }
+    /// <summary>Classes ajoutées (ex. « tuile-urgente »).</summary>
+    [Parameter] public string? Classe { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

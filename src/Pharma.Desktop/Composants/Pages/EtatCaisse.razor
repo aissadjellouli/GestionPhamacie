@@ -28,15 +28,16 @@
         <p class="detail" style="margin: 0">@e.Poste · ouverte le @Libelles.DateHeureLocale(e.OuverteLe)@(e.OuvertePar is { } par ? $" par {par}" : "") · fond de caisse @Libelles.Dinars(e.FondCaisse, 2)</p>
 
         <section class="tuiles tuiles-etat-caisse" aria-label="Récapitulatif depuis l’ouverture">
-            <div class="tuile"><span class="tuile-libelle">Ventes</span><span class="tuile-valeur">@e.NombreVentes</span><span class="tuile-note">ventes validées</span></div>
-            <div class="tuile"><span class="tuile-libelle">Carte</span><span class="tuile-valeur">@Libelles.Dinars(e.Carte, 2)</span><span class="tuile-note">net des remboursements</span></div>
-            <div class="tuile"><span class="tuile-libelle">Chèque</span><span class="tuile-valeur">@Libelles.Dinars(e.Cheque, 2)</span><span class="tuile-note">net des remboursements</span></div>
-            <div class="tuile"><span class="tuile-libelle">Crédit</span><span class="tuile-valeur">@Libelles.Dinars(e.Credit, 2)</span><span class="tuile-note">ventes à crédit</span></div>
-            <div class="tuile"><span class="tuile-libelle">Tiers payant</span><span class="tuile-valeur">@Libelles.Dinars(e.TiersPayant, 2)</span><span class="tuile-note">part des organismes</span></div>
+            @* Tuiles navigables (2026-11-21) : chacune ouvre l'écran qui la détaille, si l'employé peut l'ouvrir ; sinon chiffre seul *@
+            <TuileLien Lien="rapports?rubrique=ventes" Infobulle="Ouvre les rapports › Ventes"><span class="tuile-libelle">Ventes</span><span class="tuile-valeur">@e.NombreVentes</span><span class="tuile-note">ventes validées</span></TuileLien>
+            <TuileLien Lien="rapports?rubrique=ventes" Infobulle="Ouvre les rapports › Ventes"><span class="tuile-libelle">Carte</span><span class="tuile-valeur">@Libelles.Dinars(e.Carte, 2)</span><span class="tuile-note">net des remboursements</span></TuileLien>
+            <TuileLien Lien="tresorerie?rubrique=cheques" Infobulle="Ouvre la trésorerie › Chèques à remettre"><span class="tuile-libelle">Chèque</span><span class="tuile-valeur">@Libelles.Dinars(e.Cheque, 2)</span><span class="tuile-note">net des remboursements</span></TuileLien>
+            <TuileLien Lien="dettes?onglet=patient" Infobulle="Ouvre Dettes et créances › Patients"><span class="tuile-libelle">Crédit</span><span class="tuile-valeur">@Libelles.Dinars(e.Credit, 2)</span><span class="tuile-note">ventes à crédit</span></TuileLien>
+            <TuileLien Lien="factures" Infobulle="Ouvre les factures (part des organismes à facturer)"><span class="tuile-libelle">Tiers payant</span><span class="tuile-valeur">@Libelles.Dinars(e.TiersPayant, 2)</span><span class="tuile-note">part des organismes</span></TuileLien>
             @if (e.Avoir != 0)
             {
                 @* Avoirs des patients (script 106) : jamais des espèces, hors tiroir *@
-                <div class="tuile"><span class="tuile-libelle">Avoir</span><span class="tuile-valeur">@Libelles.Dinars(e.Avoir, 2)</span><span class="tuile-note">payé par avoir, hors tiroir</span></div>
+                <TuileLien Lien="rapports?rubrique=ventes" Infobulle="Ouvre les rapports › Ventes"><span class="tuile-libelle">Avoir</span><span class="tuile-valeur">@Libelles.Dinars(e.Avoir, 2)</span><span class="tuile-note">payé par avoir, hors tiroir</span></TuileLien>
             }
         </section>
         <div class="info-bandeau" role="note">

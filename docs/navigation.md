@@ -54,7 +54,7 @@
 - **Clavier** (`poste.js`) : à l'ouverture d'un écran ou d'une rubrique, le curseur va dans sa première recherche (sauf s'il est
   déjà dans un champ) ; Échap efface la recherche, sauf si une liste de propositions ou une fenêtre est ouverte (Échap la ferme).
 - **Aide « ? »** à côté du titre de chaque écran de domaine (`AideEcran`) : quelques lignes sur l'écran, les raccourcis et le lien
-  vers le Guide ; Échap ferme. La Caisse n'a pas de titre : « ? Aide de la caisse » en bas de son menu.
+  vers le Guide ; Échap ou un clic à l'extérieur du panneau ferme. La Caisse n'a pas de titre : « ? Aide de la caisse » en bas de son menu.
 - **Serveur lent** (`BarreChargement`, `Services/AppelsEnCours.cs`) : barre fine en haut dès 0,3 s d'appel ; au-delà de 5 s d'attente continue,
   bandeau « Le serveur met du temps à répondre… » ; au-delà de 20 s, bandeau rouge (vérifier le réseau et le PC serveur ; une sauvegarde
   ou un export peut être long). Chaque appel est abandonné à son délai : 30 s en général, 2 min pour un document (PDF, export,

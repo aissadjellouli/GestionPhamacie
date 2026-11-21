@@ -1670,6 +1670,7 @@ Lot 3 (M6b, conformité fiscale 2027), 2026-11-16. Le journal est séparé de la
 - **Le rapport quotidien contient : chiffre du jour, part tiers payant, annulations, écarts de caisse par employé, nouvelles alertes de péremption et ruptures.** — `src/Pharma.Application/Notifications/Notifications.cs`
 - **L'alerte d'écart de caisse part par e-mail pour tout écart non nul ; le SMS seulement si l'écart dépasse le seuil SMS réglé, sinon le seuil d'écart de la caisse** (2026-11-14). — `src/Pharma.Application/Notifications/Notifications.cs`
 - **L'alerte d'écart de caisse nomme l'employé qui a compté la caisse : celui qui l'a clôturée, ou qui a fait la relève, et non celui qui l'a ouverte** (2026-11-14) ; pour une relève, l'e-mail dit « à la relève » et « Relève faite par », le SMS « a la releve de » ; le journal des actions (`ecart_caisse`, au nom de celui qui a compté) porte « relève ». Auparavant (avant cette décision du 2026-11-14) : l'e-mail disait « Clôturée par » suivi du nom de celui qui avait ouvert la caisse. — `src/Pharma.Application/Caisse/Sessions.cs` (`CloturerSessionCaisse`, `ReleverCaisse`), `src/Pharma.Application/Notifications/Notifications.cs` (`EcartCaisseAsync`)
+- **Toute tuile du poste est navigable** (2026-11-21) : elle mène à l'écran qui détaille son chiffre, ou à l'écran le plus proche, avec une infobulle qui dit où ; elle ne devient un chiffre non cliquable que si l'employé n'a pas le droit d'ouvrir la cible (droits de l'écran et de la rubrique visée, même contrôle que le menu et la garde de la mise en page) ou qu'il n'y a encore rien à ouvrir (reprise : vérification pas encore affichée). Jamais de lien vers un écran refusé. — `src/Pharma.Desktop/Composants/Mise/AccesEcrans.cs`, `src/Pharma.Desktop/Composants/Mise/TuileLien.razor`, `tests/Pharma.Architecture.Tests/TuilesNavigablesTests.cs`
 - **Accueil : synthèse du jour sur un écran fixe** (2026-11-15) : rubrique « Aujourd'hui » sans défilement à 1 536 × 890, en trois sections ; chaque tuile ouvre l'écran concerné et n'apparaît que si l'employé peut l'ouvrir.
   - **Ventes du jour**, seulement avec `rapports.ventes` **et** `caisse.voir_ecart` (sans ce second droit, le chiffre du jour trahirait l'attendu du tiroir : comptage à l'aveugle ; refus aussi côté serveur) : chiffre d'affaires, nombre de ventes, panier moyen (chiffre ÷ ventes, arrondi au dinar), tiers payant à facturer, marge brute (seulement avec `rapports.marges`), puis crédits accordés, remises (manuelles et automatiques), dons partiels, annulations, retours. **Comparaison au même jour de la semaine précédente (J-7) arrêté à la même heure** (heure du serveur, journée comptée depuis minuit dans le fuseau de PostgreSQL comme les rapports) : un pourcentage n'est affiché que si J-7 n'est pas nul, sinon « — ».
   - **À faire aujourd'hui** : alertes urgentes, ruptures et stock critique, lots qui périment sous 6 mois, réceptions en attente, écarts d'inventaire à valider, règlements grossistes à préparer.
@@ -2293,6 +2294,17 @@ Règles appliquées par le script central `036_lignes_absentes_ecrans.sql` et le
   non expliquée n'ouvre **pas** d'anomalie (signaler et garder).
 - — `database/cloud/036_lignes_absentes_ecrans.sql`, `src/Pharma.Cloud.Web/Donnees/LignesAbsentes.cs`,
   `src/Pharma.Cloud.Web/Composants/Pages/Officine.razor`, `TableauBord.razor`, `VueEnsembleTitulaire.razor`
+
+## Tuiles navigables des écrans du central (2026-11-21)
+
+- **Chaque tuile** du central mène à l'écran qui détaille son chiffre ; s'il n'en existe pas pour le rôle (le titulaire n'a droit
+  qu'aux totaux), à l'écran permis le plus proche ; l'infobulle dit où elle mène (destinations : [ecrans-central.md](ecrans-central.md)
+  § 3 septies).
+- **Rôles étanches** : une tuile du titulaire ne mène jamais à un écran de l'éditeur, et inversement ; la tuile « Ordres en attente »
+  ne mène à l'écran des ordres qu'avec le droit « ordres », sinon à la vue d'ensemble.
+- **Cause probable** (éditeur) : Restauration → rubrique Restaurations ; Nouvelle époque → Changements d'époque ; Non expliquée → tableau
+  de la rubrique (aucune autre rubrique ne l'explique).
+- — `src/Pharma.Cloud.Web/Donnees/LiensTuiles.cs`, `Composants/Partages/TuileTableau.razor`, `TableauBord.razor`, `Officine.razor`
 
 ## Réglages communs proposés par le titulaire à distance (lot S7.4, 2026-11-21)
 

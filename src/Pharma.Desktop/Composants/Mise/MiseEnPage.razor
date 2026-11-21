@@ -277,18 +277,10 @@
 
     private ErrorBoundary? garde;
 
-    // Écrans réservés à un droit (comme le menu) : sans ce droit, retour à l'accueil avec le droit nécessaire
-    private static readonly (string Chemin, string[] Droits)[] EcransReserves =
-    [
-        ("rapports", ["rapports.ventes"]), ("pilotage-financier", ["role.titulaire", "rapports.marges"]), ("surveillance",["role.titulaire"]), ("financements", ["role.titulaire"]),("factures", ["factures.gerer"]), ("tresorerie", ["tresorerie.gerer"]), ("dettes", ["tresorerie.gerer"]),
-        ("achats", ["achats.commander", "achats.receptionner", "achats.retour_fournisseur"]), ("stock/registre", ["psychotropes.registre"]),
-        ("stock/etiquettes", ["stock.consulter", "achats.receptionner"]),
-        // Domaine Patients (fichier, droits Chifa, patients en attente) : droit de vendre, comme les routes de l'API
-        ("patients", ["caisse.vendre"]),
-        .. NavAdmin.Accessibles.Select(a => (a.Lien, new[] { a.Permission }))
-    ];
+    // Écrans réservés à un droit (comme le menu) : sans ce droit, retour à l'accueil avec le droit nécessaire.
+    // Liste commune avec les tuiles navigables (AccesEcrans, 2026-11-21) : une tuile n'est un lien que vers un écran permis.
+    private static string[] EcransSuperAdmin => AccesEcrans.EcransSuperAdmin;
     private string? messageAcces;
-    private static readonly string[] EcransSuperAdmin = ["admin/restauration", "admin/reprise", "admin/profils-reprise"];
 
     private bool VerifierAcces()
     {
@@ -300,7 +292,7 @@
             Nav.NavigateTo(EcransSuperAdmin[0], replace: true);
             return false;
         }
-        var (chemin, droits) = EcransReserves.FirstOrDefault(e => Chemin == e.Chemin || Chemin.StartsWith(e.Chemin + "/", StringComparison.Ordinal));
+        var (chemin, droits) = AccesEcrans.Reserve(Chemin);
         if (chemin is null || droits.Any(Session.A)) return true;
         messageAcces = droits.All(d => d == "role.titulaire")
             ? "Écran réservé au pharmacien titulaire."

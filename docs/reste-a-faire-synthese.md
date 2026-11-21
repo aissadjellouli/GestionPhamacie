@@ -1,8 +1,8 @@
 # Reste à faire : synthèse
 
-Point d'avancement du 2026-11-21 (après-midi) : tout le travail du jour est fait, passé sur les bases et vérifié ; travail commité
-jusqu'à `20c1ecf` ; **lot S7.4 (script central 035) non commité**, prêt pour « commit » ; **lot S7.5 (script central 036) fait en
-local le 2026-11-21 (soir), non commité, 036 à passer sur `pharmacie_cloud_dev`, écrans à mesurer**. Détail : [a-faire.md](a-faire.md),
+Point d'avancement du 2026-11-21 (soir) : travail commité jusqu'à `f399e6d` (S7.4 `4a0570f`, docs `d57df5c`, S7.5 et écrans
+`f399e6d`) ; scripts centraux 035 et 036 passés sur `pharmacie_cloud_dev` ; **non commités** (prêts pour « commit ») : tuiles
+navigables du poste et du central, fermeture de l'aide au clic extérieur, thème du central appliqué dès le choix (sans bouton). Détail : [a-faire.md](a-faire.md),
 [fonctionnalites.md](fonctionnalites.md) (inventaire complet) et documents cités. À mettre à jour à chaque point d'avancement.
 
 ## 1. En cours
@@ -15,20 +15,23 @@ dettes du patient 158, écran de retour et règles de caisse sans défilement), 
 écrans du central), `b5545fd` (barre d'état : liaisons), `fa24fc6` (S7.2b), `d1aaa7b` et `fad75d1` (barre d'état : éléments fixes,
 pastilles, nom du poste), `ea5ad15` (S7.3), `20c1ecf` (Accès à distance sans défilement).
 
-## 2. Fait, à commiter (2026-11-21, après-midi)
+## 2. Fait, à commiter (2026-11-21, soir)
 
-- **Synchronisation S7.5, lignes absentes** ([ecrans-central.md](ecrans-central.md) § 3 sexies) : rubrique « Lignes absentes » de la
-  fiche d'une officine (éditeur : 4 tuiles, tableau paginé par table et par chargement, cause probable), tuile du tableau de bord et
-  colonne de la vue d'ensemble du titulaire ; nombres seulement. Script central **036** (fonctions et index) : tests SQL réussis sur
-  base jetable ; **à passer** sur `pharmacie_cloud_dev` (après relecture). **À mesurer** : les trois écrans (1 366 × 768, 1 536 × 890,
-  clair et sombre). Écarts : pas de cause « purge », pas d'anomalie pour « non expliquée » (décision n° 8).
-- **Synchronisation S7.4, réglages communs proposés par le titulaire** ([ecrans-central.md](ecrans-central.md) § 3 quinquies) :
-  script central **035** passé deux fois sur `pharmacie_cloud_dev` après sauvegarde, tests SQL 034 et 035 réussis. Essai de bout en
-  bout réussi : `titulaire.dev` propose « Péremption : alerte orange 150 jours » à Essai (`pharmacie_test`) → reçue sur le poste
-  « 180 → 150 », acceptée avec le mot de passe, `parametre_alerte.jours_orange` = 150, statut « Accepté » au central une minute après.
-- **Défauts d'écran corrigés et mesurés** (charte, « Mesures du 2026-11-21 (après-midi) ») : `/mes-officines/reglages` du central
-  (défilait de 35 à 104 px) ; tableau « Propositions envoyées » (défilement horizontal) ; page de Connexion du poste (53 px à
-  1 366 × 768 avec le message « … a quitté le poste ») ; accord « 10 produits cochés chez 4 grossistes » de « Commander ».
+- **Tuiles navigables du poste** ([charte-graphique.md](charte-graphique.md), « Tuiles navigables ») : les tuiles (55 balises) qui n'étaient
+  que des chiffres (Alertes, Stock, Inventaire, Dettes, État de la caisse, Financements, fiche d'un prêt, Tableau de bord financier,
+  Rapports, Reprise) mènent à l'écran ou à la rubrique qui les détaille, ou filtrent le tableau de l'écran affiché ; lien seulement
+  avec le droit d'ouvrir la cible (`AccesEcrans`, liste commune avec la garde de la mise en page) ; test `TuilesNavigablesTests`.
+  Mesuré le 2026-11-21 (soir) dans le poste lancé : Alertes, Stock, Inventaire, Dettes, État de la caisse, Financements, Rapports,
+  Tableau de bord financier (4 rubriques) : 0 px aux deux tailles, clair et sombre ; tuiles rendues en liens ou boutons.
+  Non vérifiés : ancres de la Reprise (`#t-verif`), période gardée d'une rubrique à l'autre.
+- **Tuiles navigables du central** (titulaire : vue d'ensemble, « Mes officines », ordres si droit ; éditeur : rubriques de la fiche),
+  jamais de lien entre rôles ; tableau de bord à 14 tuiles-liens : marge intérieure 8 px, 0 px aux deux tailles ; tests 38/38.
+- **Thème du central** : appliqué dès le choix dans la liste (`ecrans.js`), bouton « Appliquer » retiré ; essayé dans les trois sens.
+- **Aide des écrans fermée par un clic à l'extérieur** (voile transparent sous le panneau, comme les menus) ; test dans
+  `NavigationTests`. Essayé sur le poste : Rapports (clic sur le contenu et sur le menu de gauche) et Caisse (clic sur le panier).
+- **S7.4, S7.5 et écrans de l'après-midi : commités** (`4a0570f`, `d57df5c`, `f399e6d`). Script 036 passé deux fois sur
+  `pharmacie_cloud_dev` après sauvegarde ; ligne absente provoquée (alerte fictive n° 99999901 de `pharmacie_test`, gardée au central),
+  constatée par le chargement n° 67 : rubrique de l'éditeur « 1 · alerte · n° 67 · Non expliquée », 0 px aux deux tailles.
 - **Écrans mesurés à 0 px** (1 366 × 768 et 1 536 × 890, clair et sombre) : Achats › Commander, Catalogues des grossistes,
   Ruptures chez les grossistes, Substitution, Contrôle interne › Intégrité des journaux, Sérialisation DataMatrix, 2e serveur ;
   Réglages mutualisés du poste avec une proposition en attente ; ordres à distance avec le droit accordé (1 366 × 768, statut « Appliqué »).
@@ -246,9 +249,9 @@ pastilles, nom du poste), `ea5ad15` (S7.3), `20c1ecf` (Accès à distance sans d
 - [x] **Synchronisation S7.4** (2026-11-21, en local) : réglages communs proposés par le titulaire à plusieurs officines, chaque
   officine décide sur son poste ([ecrans-central.md](ecrans-central.md) § 3 quinquies). Script central **035** passé deux fois sur
   `pharmacie_cloud_dev` après sauvegarde, tests SQL 034 et 035 réussis ; `/mes-officines/reglages` et Réglages mutualisés du poste
-  mesurés à 0 px ; essai de bout en bout réussi avec `pharmacie_test` (voir section 2). **Non commité.**
+  mesurés à 0 px ; essai de bout en bout réussi avec `pharmacie_test` ; commité `4a0570f`.
 - [x] **Synchronisation S7.5** (2026-11-21, en local) : lignes absentes vues au central, nombres seulement
-  ([ecrans-central.md](ecrans-central.md) § 3 sexies). Script central **036** à passer sur `pharmacie_cloud_dev` ; écrans à mesurer. **Non commité.**
+  ([ecrans-central.md](ecrans-central.md) § 3 sexies). Script central 036 passé, écrans mesurés, commité `f399e6d`.
 - [ ] **Synchronisation S7.3 (reste)** : ordre « message à afficher sur les postes » (la barre d’état est livrée ; surface d’affichage à décider).
 - [ ] **Synchronisation S7.2 (reste)** : SMS (fournisseur), remise à zéro d'un mot de passe par l'éditeur, retrait d'un rattachement depuis les écrans, alertes de refus en série.
 - [ ] **Mise en ligne des écrans du central** (après le choix de l'hébergeur) : domaine et certificat, proxy inverse (adresse réelle pour les limites de débit), connexion de production au rôle `pharma_cloud_ecrans`, SMTP, clé HMAC commune si plusieurs instances, comptes éditeur réels, test d'intrusion.

@@ -70,14 +70,14 @@
         {
             @* Lot S7.5 (maquette validée) : quatre tuiles puis le tableau paginé ; nombres seulement, jamais une ligne *@
             <div class="tuiles tuiles-compactes tuiles-absentes" aria-label="Lignes absentes de l'officine">
-                <TuileTableau Libelle="Lignes absentes au total" Valeur="@Tableau.Nombre(Absentes("lignes"))" Note="gardées au central" />
-                <TuileTableau Libelle="Tables concernées" Valeur="@Tableau.Nombre(Absentes("tables"))" Note="tables miroir" />
-                <TuileTableau Libelle="Dernier chargement complet" Valeur="@(Absentes("dernier_chargement") is int n ? $"n° {n}" : "aucun")"
+                <TuileTableau Lien="@LienAbsentes("total")" Libelle="Lignes absentes au total" Valeur="@Tableau.Nombre(Absentes("lignes"))" Note="gardées au central" />
+                <TuileTableau Lien="@LienAbsentes("tables")" Libelle="Tables concernées" Valeur="@Tableau.Nombre(Absentes("tables"))" Note="tables miroir" />
+                <TuileTableau Lien="@LienAbsentes("dernier_chargement")" Libelle="Dernier chargement complet" Valeur="@(Absentes("dernier_chargement") is int n ? $"n° {n}" : "aucun")"
                               Note="@(Absentes("dernier_chargement_le") is { } le ? Rubriques.Afficher("fin_le", le) : "aucun chargement terminé")" />
-                <TuileTableau Libelle="Cause probable la plus fréquente" Valeur="@LignesAbsentes.CauseCourte(Absentes("cause_frequente") as string)"
+                <TuileTableau Lien="@LienAbsentes("cause")" Libelle="Cause probable la plus fréquente" Valeur="@LignesAbsentes.CauseCourte(Absentes("cause_frequente") as string)"
                               Note="@NoteCause" Petite="true" />
             </div>
-            <TableauEcran Table="@Table" Vide="@(Absentes("dernier_chargement") is null ? "Aucun chargement complet terminé : aucune ligne ne peut encore être constatée absente." : "Aucune ligne absente.")" />
+            <TableauEcran Table="@Table" Id="@LiensTuiles.AncreAbsentes" Vide="@(Absentes("dernier_chargement") is null ? "Aucun chargement complet terminé : aucune ligne ne peut encore être constatée absente." : "Aucune ligne absente.")" />
             <PaginationEcran Page="@PageCourante" Taille="@Taille" Total="@Table.Total" Base="@($"officines/{Id}?rubrique={Choisie.Cle}")" />
             <p class="pied-page">@LignesAbsentes.PiedDePage</p>
         }
@@ -118,6 +118,8 @@
     private string NoteCause => Absentes("cause_frequente") is null ? "aucune ligne absente"
         : (Absentes("cause_lignes") is long n ? $"{Tableau.Nombre(n)} ligne(s)" : "")
           + (Absentes("retour_le") is DateTime r ? $" ; base revenue en arrière le {Rubriques.Afficher("jour", r)}" : "");
+    /// <summary>Tuiles navigables (éditeur) : tableau de la même rubrique, Chargements, Restaurations ou Changements d'époque.</summary>
+    private LienTuile LienAbsentes(string tuile) => LiensTuiles.Editeur(tuile, Id, Absentes("cause_frequente") as string, PageCourante);
 
     protected override async Task OnInitializedAsync()
     {

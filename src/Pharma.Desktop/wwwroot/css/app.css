@@ -135,6 +135,8 @@ input, select, button { font: inherit; }
 .panneau-aide { position: fixed; z-index: 45; top: 130px; right: 16px; width: 380px; max-width: calc(100vw - 32px); max-height: calc(100vh - 200px); overflow-y: auto;
   background: var(--surface); border: 1px solid var(--bordure); border-radius: 12px; box-shadow: 0 16px 40px rgba(16, 24, 40, 0.25); padding: 18px 20px;
   display: flex; flex-direction: column; gap: 10px; font-size: 14px; font-weight: 400; color: var(--texte); letter-spacing: 0; }
+/* Voile transparent sous le panneau d'aide : un clic à l'extérieur ferme l'aide (2026-11-21) */
+.voile-aide { position: fixed; inset: 0; z-index: 44; background: transparent; }
 .panneau-aide h2 { margin: 0; font-size: 17px; color: var(--accent-texte); }
 .panneau-aide ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 .panneau-aide .detail { margin: 0; }
@@ -738,6 +740,12 @@ details.avance[open] summary { margin-bottom: 8px; }
 a.tuile.tuile-lien { font-weight: 400; text-decoration: none; color: var(--texte); }
 a.tuile.tuile-lien .tuile-aller { text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
 a.tuile.tuile-lien:is(:hover, :focus-visible) { background: var(--surface); box-shadow: 0 0 0 1px var(--accent-texte); border-radius: 12px; border-color: var(--accent-texte); color: var(--texte); }
+/* Tuile qui filtre l'écran affiché (2026-11-21, toutes les tuiles sont navigables) : bouton au rendu exact du lien ci-dessus ;
+   le filtre appliqué garde la bordure verte (aria-pressed) */
+button.tuile.tuile-lien { font: inherit; font-weight: 400; text-align: left; color: var(--texte); cursor: pointer; margin: 0; }
+button.tuile.tuile-lien:is(:hover, :focus-visible) { background: var(--surface); box-shadow: 0 0 0 1px var(--accent-texte); border-radius: 12px; border-color: var(--accent-texte); color: var(--texte); outline: none; }
+button.tuile.tuile-lien[aria-pressed="true"] { border-color: var(--accent-texte); }
+.tuiles-reprise .tuile.tuile-lien:is(:hover, :focus-visible) { border-radius: 8px; }
 :is(.lien, .lien-bouton):disabled { color: var(--texte-inactif); text-decoration: none; cursor: default; }
 .entete :is(a, .lien, .lien-bouton):is(:hover, :focus-visible) { background: rgba(255, 255, 255, 0.16); box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.16); color: #FFFFFF; }
 .voile-contact { z-index: 60; }

@@ -194,6 +194,30 @@ l'officine (la purge S3 ne vide que la file locale `sync_sortie`) ; (2) la phras
 **Index** : `ix_abs_…` partiel par table miroir (lignes absentes seulement) ; une table miroir ajoutée plus tard (002 régénéré) n'a
 l'index qu'après un nouveau passage du 036 (le compte reste juste, plus lent).
 
+## 3 septies. Tuiles navigables (réalisé en local le 2026-11-21)
+
+Go du titulaire : **toutes les tuiles du central sont des liens** (`<a class="tuile tuile-lien">`, composant `TuileTableau`,
+paramètre `Lien`) vers l'écran qui détaille leur chiffre ; à défaut (le titulaire n'a droit qu'aux totaux), vers l'écran permis le
+plus proche. L'infobulle (`title`) dit où la tuile mène. Même apparence ; bordure verte au survol, contour de focus au clavier
+(clair et sombre). Règle pure `LiensTuiles` (Donnees), testée contre `ControleAcces` : **jamais un écran de l'autre rôle** ; un écran
+soumis à un droit (ordres) n'est visé que si le droit est accordé.
+
+| Écran | Tuile | Destination | Rôle |
+|---|---|---|---|
+| `/mes-officines/{officine}` | Chiffre d'affaires du jour, Ventes du jour, Chiffre d'affaires du mois, Mois précédent, Part Chifa du mois, Crédits en cours | `/mes-officines/ensemble` (même total officine par officine, total du groupe) | titulaire |
+| `/mes-officines/{officine}` | Alertes de stock, Alertes de péremption | `/mes-officines/ensemble` (colonnes Stock, Péremption) | titulaire |
+| `/mes-officines/{officine}` | Dernier contact, Dernier lot reçu, Chargement complet | `/mes-officines` (état, dernier contact et retard de chaque officine ; aucun écran du titulaire ne montre les lots ni les chargements) | titulaire |
+| `/mes-officines/{officine}` | Anomalies d'intégrité | `/mes-officines/ensemble` (colonne Anomalies) | titulaire |
+| `/mes-officines/{officine}` | Ordres en attente | `/mes-officines/{officine}/ordres` avec le droit « ordres » ; sinon `/mes-officines/ensemble` (colonne Ordres) | titulaire |
+| `/mes-officines/{officine}` | Lignes absentes | `/mes-officines/ensemble` (colonne Absentes ; la rubrique détaillée est réservée à l'éditeur) | titulaire |
+| `/officines/{officine}?rubrique=absentes` | Lignes absentes au total, Tables concernées | même rubrique, même page, ancre `#tableau-absentes` (tableau par table) | éditeur |
+| `/officines/{officine}?rubrique=absentes` | Dernier chargement complet | `?rubrique=chargements` | éditeur |
+| `/officines/{officine}?rubrique=absentes` | Cause probable la plus fréquente | Restauration → `?rubrique=restaurations` ; Nouvelle époque → `?rubrique=changements` (changements d'époque déclarés) ; Non expliquée ou aucune → ancre `#tableau-absentes` | éditeur |
+
+Le journal des accès de l'officine n'est visé par aucune tuile : il dit qui a ouvert l'officine à distance, pas d'où viennent les
+chiffres. Pour connaître le droit « ordres », le tableau de bord lit aussi `cloud_ecran_titulaire_officines` (une ligne
+« liste_officines_titulaire » de plus au journal des accès du compte à chaque ouverture du tableau de bord, comme l'écran des ordres).
+
 ## 4. Actions de l'éditeur
 
 Chaque action : **nouveau code de second facteur** (« Recevoir un code de confirmation », objet `action`, usage unique), **motif obligatoire**
@@ -335,6 +359,9 @@ Variables : `PHARMA_CLOUD_ECRANS_CONNEXION` (obligatoire), `PHARMA_CLOUD_DOSSIER
   absente, non disponible, non-fuite, rôles croisés ; bout en bout : tuile et colonne) ; `BoutEnBoutEcransTests` (rubrique « Lignes
   absentes » en HTTPS : tuiles, n° du chargement, cause, pied de page, aucune valeur de ligne) ; `031_…` : comptage des fonctions de
   l'éditeur sans celles du 036.
+- **Tuiles navigables** : `TuilesEcransTests` (chaque tuile, pour chaque jeu de droits et chaque cause, mène à une route `@page`
+  réelle permise à son rôle et refusée à l'autre par `ControleAcces` ; ordres seulement avec le droit « ordres » ; cause → rubrique ;
+  ancre du tableau avec la page gardée ; toutes les `<TuileTableau>` des écrans ont un `Lien` ; rendu HTML lien + infobulle ou bloc).
 
 ## 8. Reste à faire
 

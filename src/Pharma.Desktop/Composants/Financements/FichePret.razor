@@ -21,19 +21,25 @@ else
     @if (vue != "editer")
     {
         <div class="tuiles tuiles-compactes tuiles-pret">
-            <div class="tuile"><span class="tuile-libelle">Prêt @p.Reference · @p.Banque</span><span class="tuile-valeur">@Libelles.Dinars(p.Montant, 2)</span>
-                <span class="tuile-pied">du @p.DatePret.ToString("dd/MM/yyyy") · taux @Libelles.TauxPret(p.Taux) · durée @Libelles.DureePret(p.DureeMois)@(p.Objet is { } o ? $" · {o}" : "")</span></div>
+            @* Tuiles navigables (2026-11-21) : chacune ouvre l'onglet de la fiche qui la détaille (filtre appliqué : bordure verte) *@
+            <button type="button" class="tuile tuile-lien" aria-pressed="@(vue == "modifier" ? "true" : "false")" title="Ouvre l’onglet « Prêt et document »"
+                    @onclick='() => Ouvrir("modifier")'><span class="tuile-libelle">Prêt @p.Reference · @p.Banque</span><span class="tuile-valeur">@Libelles.Dinars(p.Montant, 2)</span>
+                <span class="tuile-pied">du @p.DatePret.ToString("dd/MM/yyyy") · taux @Libelles.TauxPret(p.Taux) · durée @Libelles.DureePret(p.DureeMois)@(p.Objet is { } o ? $" · {o}" : "")</span></button>
             @* Mensualité : montant de la prochaine échéance non payée, assurance comprise (tiré de l'échéancier) *@
-            <div class="tuile"><span class="tuile-libelle">Mensualité</span><span class="tuile-valeur">@(p.ProchainMontant is { } m ? Libelles.Dinars(m, 2) : "—")</span>
+            <button type="button" class="tuile tuile-lien" aria-pressed="@(vue == "echeancier" && filtreEcheances == "a_payer" ? "true" : "false")" title="Ouvre l’échéancier filtré sur les échéances à payer"
+                    @onclick='() => VoirEcheances("a_payer")'><span class="tuile-libelle">Mensualité</span><span class="tuile-valeur">@(p.ProchainMontant is { } m ? Libelles.Dinars(m, 2) : "—")</span>
                 <span class="tuile-pied">@(p.ProchainMontant is null ? (p.Echeances == 0 ? "échéancier à saisir" : "aucune échéance à payer")
-                    : $"prochaine échéance{(p.ProchaineEcheance is { } pe ? $" le {pe:dd/MM/yyyy}" : "")}{(p.ProchaineAssurance is > 0 ? $" · dont assurance {Libelles.Dinars(p.ProchaineAssurance.Value, 2)}" : "")}")</span></div>
-            <div class="tuile"><span class="tuile-libelle">Capital restant dû</span><span class="tuile-valeur">@Libelles.Dinars(p.ResteDu, 2)</span>
-                <span class="tuile-pied">@p.EcheancesPayees échéance(s) payée(s) sur @p.Echeances</span></div>
+                    : $"prochaine échéance{(p.ProchaineEcheance is { } pe ? $" le {pe:dd/MM/yyyy}" : "")}{(p.ProchaineAssurance is > 0 ? $" · dont assurance {Libelles.Dinars(p.ProchaineAssurance.Value, 2)}" : "")}")</span></button>
+            <button type="button" class="tuile tuile-lien" aria-pressed="@(vue == "echeancier" && filtreEcheances == "a_payer" ? "true" : "false")" title="Ouvre l’échéancier filtré sur les échéances restant à payer"
+                    @onclick='() => VoirEcheances("a_payer")'><span class="tuile-libelle">Capital restant dû</span><span class="tuile-valeur">@Libelles.Dinars(p.ResteDu, 2)</span>
+                <span class="tuile-pied">@p.EcheancesPayees échéance(s) payée(s) sur @p.Echeances</span></button>
             @* Coût du crédit : tout ce que l'échéancier fait payer en plus du capital *@
-            <div class="tuile"><span class="tuile-libelle">Coût total du crédit</span><span class="tuile-valeur">@(d.Echeances.Count == 0 ? "—" : Libelles.Dinars(cout.CoutTotal, 2))</span>
-                <span class="tuile-pied">intérêts @Libelles.Dinars(cout.Interets, 2) · assurance @Libelles.Dinars(cout.Assurance, 2)@(cout.Tva + cout.Marge > 0 ? $" · TVA et marge {Libelles.Dinars(cout.Tva + cout.Marge, 2)}" : "")</span></div>
-            <div class="tuile"><span class="tuile-libelle">Reste à employer</span><span class="tuile-valeur">@Libelles.Dinars(p.Montant - p.Utilise, 2)</span>
-                <span class="tuile-pied">versé, dépenses, factures et traites : @Libelles.Dinars(p.Utilise, 2)</span></div>
+            <button type="button" class="tuile tuile-lien" aria-pressed="@(vue == "echeancier" && filtreEcheances == "" ? "true" : "false")" title="Ouvre l’échéancier complet (intérêts, assurance, TVA et marge de chaque échéance)"
+                    @onclick='() => VoirEcheances("")'><span class="tuile-libelle">Coût total du crédit</span><span class="tuile-valeur">@(d.Echeances.Count == 0 ? "—" : Libelles.Dinars(cout.CoutTotal, 2))</span>
+                <span class="tuile-pied">intérêts @Libelles.Dinars(cout.Interets, 2) · assurance @Libelles.Dinars(cout.Assurance, 2)@(cout.Tva + cout.Marge > 0 ? $" · TVA et marge {Libelles.Dinars(cout.Tva + cout.Marge, 2)}" : "")</span></button>
+            <button type="button" class="tuile tuile-lien" aria-pressed="@(vue == "usages" ? "true" : "false")" title="Ouvre l’onglet « Usages de l’argent »"
+                    @onclick='() => Ouvrir("usages")'><span class="tuile-libelle">Reste à employer</span><span class="tuile-valeur">@Libelles.Dinars(p.Montant - p.Utilise, 2)</span>
+                <span class="tuile-pied">versé, dépenses, factures et traites : @Libelles.Dinars(p.Utilise, 2)</span></button>
         </div>
     }
     <div class="filtres" role="tablist" aria-label="Fiche du prêt">
@@ -246,6 +252,8 @@ else
     }
 
     private void Ouvrir(string code) => (vue, erreur, message) = (code, null, null);
+    /// <summary>Tuiles de la fiche : échéancier filtré (« a_payer », « payees » ou vide : toutes), première page.</summary>
+    private void VoirEcheances(string filtre) { Ouvrir("echeancier"); (filtreEcheances, pageEcheances) = (filtre, 1); }
 
     private async Task ModifierAsync()
     {

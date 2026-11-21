@@ -297,7 +297,20 @@ liens à gauche, rubrique active surlignée avec le filet ambre).
 majuscules), puis ses écrans ; l'écran affiché est écrit en vert, ses rubriques en retrait dessous (13 px), la rubrique affichée
 avec le bandeau ambre. Un écran garde ses rubriques et son résumé (`nav-resume`) en les passant à `NavDomaine` ; il ne liste
 jamais lui-même les autres écrans. Accueil : tuiles cliquables (`.tuile.tuile-lien` : toute la carte ouvre l'écran, bordure verte au
-survol, seul « … → » souligné).
+survol, seul « … → » souligné). Même règle pour les écrans du central : toutes leurs tuiles sont des liens `.tuile.tuile-lien`
+(bordure verte au survol, contour de focus au clavier, infobulle qui dit où la tuile mène ; ecrans-central.md § 3 septies).
+
+**Tuiles navigables (règle du 2026-11-21, tout le poste)** : toute tuile est navigable, vers son écran de détail ou l'écran le
+plus proche ; infobulle (`title`) qui dit où elle mène ; non cliquable seulement sans le droit d'ouvrir la cible. Trois écritures,
+même rendu que l'accueil (bordure verte au survol et au focus clavier, clair et sombre, aucun style en ligne) :
+- composant `TuileLien` (`Lien`, `Infobulle`, `Explication`, `Classe`, `DroitsRubrique`) : rend `a.tuile.tuile-lien` si
+  `AccesEcrans.PeutOuvrir` (même contrôle que le menu et la garde de la mise en page : droits de l'écran, écrans réservés,
+  écrans du super admin) et, s'il y a lieu, l'un des droits de la rubrique visée ; sinon un `div.tuile` (chiffre seul, pas de lien
+  mort). Rubrique ou filtre passés dans l'adresse quand l'écran cible en accepte (`?rubrique=`, `?onglet=`) ;
+- lien vers une rubrique de l'écran affiché (ex. Alertes « Ruptures » → `./?rubrique=stock`) : le filtre est appliqué ;
+- filtre d'un tableau du même écran, sans adresse : `button.tuile.tuile-lien` (`type="button"`, `title`, `aria-pressed` ; filtre
+  appliqué : bordure verte). Ex. résultat d'inventaire, compte du titulaire, fiche d'un prêt, stock dormant.
+Test d'architecture `TuilesNavigablesTests` : une tuile `class="tuile"` qui n'est ni l'un ni l'autre fait échouer la construction.
 
 Compléments (2026-11-13) : **compteurs** du travail en attente dans le menu du haut (fond blanc, chiffre vert ; rouge si urgent)
 et à gauche (`.compteur.neutre`, ou `.compteur` si urgent) ; le menu du haut reste sur une ligne (`nowrap`, 8 px de marge par

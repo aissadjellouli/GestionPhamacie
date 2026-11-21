@@ -2,6 +2,7 @@
 // 1. Écran fixe : chaque tableau (.tableau-cadre) prend la hauteur restante de la fenêtre et défile seul dans son cadre
 //    (même règle que poste.js du poste, en plus simple : pas de zoom, pas de caisse).
 // 2. Bouton « Copier » du code d'activation (data-copier = id de l'élément à copier).
+// 3. Choix de l'affichage (clair, sombre, automatique) appliqué dès qu'il change.
 (function () {
   "use strict";
   var MARGE = 16, MINIMUM = 140;
@@ -72,6 +73,11 @@
     window.addEventListener("resize", ajuster);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(ajuster);
     document.addEventListener("click", copier);
+    // 3. Affichage clair / sombre / automatique : appliqué dès le choix dans la liste (le bouton « Appliquer » reste pour un navigateur sans script)
+    document.addEventListener("change", function (e) {
+      var choix = e.target.closest ? e.target.closest("select.choix-theme") : null;
+      if (choix && choix.form) choix.form.submit();
+    });
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", demarrer); else demarrer();
 })();

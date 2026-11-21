@@ -1,11 +1,11 @@
 @* Tableau d'une fonction cloud_ecran_* : colonnes de la base (libellés français), seul le cadre défile (règle des listes) *@
 @if (Table.Lignes.Count == 0)
 {
-    <p class="vide">@Vide</p>
+    <p class="vide" id="@Id">@Vide</p>
 }
 else
 {
-    <div class="tableau-cadre">
+    <div class="tableau-cadre" id="@Id">
         <table class="tableau tableau-serre tableau-central">
             <thead>
                 <tr>
@@ -42,6 +42,8 @@ else
 @code {
     [Parameter, EditorRequired] public TableEcran Table { get; set; } = TableEcran.Vide;
     [Parameter] public string Vide { get; set; } = "Aucune ligne.";
+    /// <summary>Ancre du tableau (cible d'une tuile navigable) ; aucune si null.</summary>
+    [Parameter] public string? Id { get; set; }
     [Parameter] public RenderFragment<object?[]>? Action { get; set; }
 
     private IEnumerable<string> Colonnes => Table.Colonnes.Where(c => !Rubriques.Masquees.Contains(c));

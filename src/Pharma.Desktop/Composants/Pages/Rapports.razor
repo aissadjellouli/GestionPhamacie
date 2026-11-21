@@ -72,8 +72,9 @@
     {
         @if (rubrique == "synthese")
         {
+        @* Tuiles navigables (2026-11-21) : chacune ouvre la rubrique ou l'écran qui la détaille (période de cet écran gardée dans les rubriques) *@
         <div class="tuiles">
-            <div class="tuile">
+            <TuileLien Lien="rapports?rubrique=ventes" Infobulle="Ouvre la rubrique Ventes">
                 <span class="tuile-libelle">Chiffre d’affaires</span>
                 <span class="tuile-valeur">@Libelles.Dinars(r.Synthese.ChiffreAffaires)</span>
                 <span class="tuile-pied">@r.Synthese.NombreVentes vente(s) · remises @Libelles.Dinars(r.Synthese.Remises)@(r.Synthese.DonsPartiels > 0 ? $" · dons partiels {Libelles.Dinars(r.Synthese.DonsPartiels)}" : "")@(r.Synthese.RemisesAutomatiques > 0 ? $" (dont automatiques {Libelles.Dinars(r.Synthese.RemisesAutomatiques)})" : "")</span>
@@ -81,59 +82,60 @@
                 {
                     <span class="tuile-pied">dont SHP @Libelles.Dinars(r.Synthese.Shp, 2)</span>
                 }
-            </div>
+            </TuileLien>
             @* Répartition et retours dans leurs propres tuiles (2026-11-20) : dans la tuile du chiffre d'affaires, ils la faisaient
                passer à dix lignes et la vue Mois défilait de 102 px à 1 366 × 768 *@
             @if (r.Synthese.VentesParapharmacie > 0 || r.Synthese.VentesPrestations > 0)
             {
-                <div class="tuile" title="Parapharmacie : produits d’une catégorie non médicament ; prestations : lignes sans produit">
+                <TuileLien Lien="rapports?rubrique=ventes" Infobulle="Ouvre la rubrique Ventes" Explication="Parapharmacie : produits d’une catégorie non médicament ; prestations : lignes sans produit">
                     <span class="tuile-libelle">Parapharmacie</span>
                     <span class="tuile-valeur">@Libelles.Dinars(r.Synthese.VentesParapharmacie)</span>
                     <span class="tuile-pied">médicaments @Libelles.Dinars(r.Synthese.VentesMedicaments)@(r.Synthese.VentesPrestations > 0 ? $" · prestations {Libelles.Dinars(r.Synthese.VentesPrestations)}" : "")</span>
-                </div>
+                </TuileLien>
             }
             @if (r.Synthese.Retours > 0)
             {
-                <div class="tuile" title="Un retour client diminue le chiffre du jour où il est enregistré">
+                <TuileLien Lien="rapports?rubrique=retours" Infobulle="Ouvre la rubrique Retours clients" Explication="Un retour client diminue le chiffre du jour où il est enregistré">
                     <span class="tuile-libelle">Retours clients</span>
                     <span class="tuile-valeur">− @Libelles.Dinars(r.Synthese.MontantRetours, 2)</span>
                     <span class="tuile-pied">@r.Synthese.Retours retour(s), déduits du chiffre d’affaires</span>
-                </div>
+                </TuileLien>
             }
-            <div class="tuile">
+            <TuileLien Lien="bordereaux-chifa?rubrique=a-deposer" Infobulle="Ouvre les bordereaux Chifa › Ventes à déposer">
                 <span class="tuile-libelle">Part Chifa à recevoir</span>
                 <span class="tuile-valeur">@Libelles.Dinars(r.Synthese.PartOrganismes)</span>
                 <span class="tuile-pied">tiers payant (CNAS, CASNOS)</span>
-            </div>
-            <div class="tuile">
+            </TuileLien>
+            <TuileLien Lien="dettes?onglet=patient" Infobulle="Ouvre Dettes et créances › Patients (crédits non soldés)">
                 <span class="tuile-libelle">Crédits clients accordés</span>
                 <span class="tuile-valeur">@Libelles.Dinars(r.Synthese.CreditsAccordes)</span>
                 <span class="tuile-pied">@r.Synthese.Annulations vente(s) annulée(s)</span>
-            </div>
+            </TuileLien>
             @if (r.Marge is { } m)
             {
-                <div class="tuile">
+                <TuileLien Lien="pilotage-financier?rubrique=marges" Infobulle="Ouvre le tableau de bord financier › Marges (par produit ou laboratoire)">
                     <span class="tuile-libelle">Marge brute</span>
                     <span class="tuile-valeur">@Libelles.Dinars(m.Montant)</span>
                     <span class="tuile-pied">@(m.Taux is { } t ? $"{t:0.0} % du CA HT" : "pas de vente") · coût @Libelles.Dinars(m.CoutAchat)</span>
-                </div>
+                </TuileLien>
             }
             @if (r.Sorties is { } so)
             {
-                <div class="tuile">
+                <TuileLien Lien="rapports?rubrique=pertes" Infobulle="Ouvre la rubrique Pertes et dons › Récapitulatif">
                     <span class="tuile-libelle">Pertes et dons</span>
                     <span class="tuile-valeur">@(so.Total.Valeur is { } vs ? Libelles.Dinars(vs) : $"{so.Total.Boites} boîte(s)")</span>
                     <span class="tuile-pied">@so.Total.Perimes périmée(s) · @so.Total.Casses cassée(s) · @so.Total.Dons donnée(s)@(so.Total.Valeur is null ? "" : " · au prix d’achat HT")</span>
-                </div>
+                </TuileLien>
             }
             @if (r.ApresSorties is { } a)
             {
-                <div class="tuile" title="Marge brute moins la valeur d’achat HT des boîtes périmées, cassées ou données, moins la TVA à reverser sur ces boîtes">
+                <TuileLien Lien="@(r.Tva is not null ? "rapports?rubrique=tva" : "rapports?rubrique=pertes")" Infobulle="@(r.Tva is not null ? "Ouvre la rubrique TVA à reverser" : "Ouvre la rubrique Pertes et dons › Récapitulatif")"
+                           Explication="Marge brute moins la valeur d’achat HT des boîtes périmées, cassées ou données, moins la TVA à reverser sur ces boîtes">
                     <span class="tuile-libelle">Marge après pertes et dons</span>
                     <span class="tuile-valeur">@Libelles.Dinars(a.Montant)</span>
                     <span class="tuile-pied">marge brute @Libelles.Dinars(a.MargeBrute) − pertes et dons @Libelles.Dinars(a.PertesHt, 2)</span>
                     <span class="tuile-pied">− TVA à reverser @Libelles.Dinars(a.TvaAReverser, 2)@(r.Tva is { Perime: false, Casse: false, Don: false } ? " (aucun motif réglé)" : "")</span>
-                </div>
+                </TuileLien>
             }
         </div>
         <p class="pied-page">

@@ -289,16 +289,25 @@
                         }
                     </p>
                     </div>
-                    @* Écran fixe (2026-11-16) : les douze compteurs en deux lignes compactes (libellé et nombre côte à côte) *@
+                    @* Écran fixe (2026-11-16) : les douze compteurs en deux lignes compactes (libellé et nombre côte à côte).
+                       Tuiles navigables (2026-11-21) : seul écran ouvert au super admin, chaque compteur mène à la partie de cet écran qui
+                       le détaille (vérification ancien logiciel / Tracodex Officine, produits à confirmer) ; tant qu'elle n'est pas affichée,
+                       le compteur reste un chiffre (pas de lien mort). *@
+                    @{
+                        var lienVerif = et.Verification.Count > 0 ? "admin/reprise#t-verif" : null;
+                        var lienConfirmer = et.Session.Statut == "en_cours" && et.AConfirmer.Count > 0 ? "admin/reprise#t-confirmer" : lienVerif;
+                    }
                     <div class="tuiles tuiles-reprise">
                         @foreach (var (cle, lib) in new[] { ("produits", "Produits"), ("stock", "Lignes de stock"), ("grossistes", "Grossistes"), ("clients", "Clients"), ("historique_chifa", "Factures Chifa (historique)"), ("historique_mdn", "Factures MDN (historique)") })
                         {
-                            <div class="tuile"><span class="tuile-libelle">@lib</span><span class="tuile-valeur petite">@et.Lignes.GetValueOrDefault(cle)</span></div>
+                            <TuileLien Lien="@lienVerif" Infobulle="Va à la vérification ancien logiciel / Tracodex Officine"><span class="tuile-libelle">@lib</span><span class="tuile-valeur petite">@et.Lignes.GetValueOrDefault(cle)</span></TuileLien>
                         }
                         @foreach (var (cle, lib) in new[] { ("code_barre", "Par code-barres"), ("num_enregistrement", "Par n° d’enregistrement"), ("nom_a_confirmer", "Par nom, à confirmer"),
                                                              ("manuel", "Choisis à la main"), ("nouveau", "À créer"), ("aucune", "Sans correspondance") })
                         {
-                            <div class="tuile"><span class="tuile-libelle">@lib</span><span class="tuile-valeur petite @(cle is "nom_a_confirmer" or "aucune" && et.Rapprochement.GetValueOrDefault(cle) > 0 ? "attention" : null)">@et.Rapprochement.GetValueOrDefault(cle)</span></div>
+                            var aConfirmer = cle is "nom_a_confirmer" or "aucune";
+                            var lienRapprochement = aConfirmer ? lienConfirmer : lienVerif;
+                            <TuileLien Lien="@lienRapprochement" Infobulle="@(lienRapprochement == lienVerif ? "Va à la vérification ancien logiciel / Tracodex Officine" : "Va aux produits à confirmer par le pharmacien")"><span class="tuile-libelle">@lib</span><span class="tuile-valeur petite @(aConfirmer && et.Rapprochement.GetValueOrDefault(cle) > 0 ? "attention" : null)">@et.Rapprochement.GetValueOrDefault(cle)</span></TuileLien>
                         }
                     </div>
                 </section>

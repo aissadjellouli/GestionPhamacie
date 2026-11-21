@@ -41,7 +41,8 @@ public class DomainePatientsTests
     [Fact]
     public void Le_domaine_est_reserve_au_droit_de_vendre_comme_l_api()
     {
-        Assert.Contains("(\"patients\", [\"caisse.vendre\"])", Lire("Composants", "Mise", "MiseEnPage.razor"));
+        // Liste des écrans réservés : AccesEcrans (2026-11-21), lue par la garde de la mise en page et par les tuiles navigables
+        Assert.Contains("(\"patients\", [\"caisse.vendre\"])", Lire("Composants", "Mise", "AccesEcrans.cs"));
         var api = File.ReadAllText(Path.Combine(RacineDepot(), "src", "Pharma.Api", "Endpoints", "PatientsEndpoints.cs"));
         var route = api[api.IndexOf("\"/patients/fichier\"", StringComparison.Ordinal)..];
         Assert.Contains(".ExigerPermission(Permissions.CaisseVendre)", route[..route.IndexOf("api.Map", StringComparison.Ordinal)]);

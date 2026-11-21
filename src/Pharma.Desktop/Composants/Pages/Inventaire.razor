@@ -232,17 +232,22 @@
                 @if (bilan is not null)
                 {
                     <div class="tuiles" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr))">
-                        <div class="tuile"><span class="tuile-libelle">Lots comptés</span><span class="tuile-valeur petite">@bilan.Lignes</span></div>
-                        <div class="tuile"><span class="tuile-libelle">Conformes</span><span class="tuile-valeur petite">@bilan.Conformes</span></div>
-                        <div class="tuile"><span class="tuile-libelle">Corrigés tout de suite</span><span class="tuile-valeur petite">@bilan.Ajustes</span></div>
-                        <div class="tuile"><span class="tuile-libelle">À valider (titulaire)</span><span class="tuile-valeur petite @(bilan.AValider > 0 ? "attention" : null)">@bilan.AValider</span></div>
+                        @* Tuiles navigables (2026-11-21) : les trois premières filtrent le tableau du résultat ci-dessous (filtre appliqué :
+                           bordure verte), « À valider » ouvre les écarts à valider *@
+                        <button type="button" class="tuile tuile-lien" aria-pressed="@(fResultatStatut == "" ? "true" : "false")" title="Affiche tous les lots comptés dans le tableau ci-dessous"
+                                @onclick='() => FiltrerResultat("")'><span class="tuile-libelle">Lots comptés</span><span class="tuile-valeur petite">@bilan.Lignes</span></button>
+                        <button type="button" class="tuile tuile-lien" aria-pressed="@(fResultatStatut == "conforme" ? "true" : "false")" title="Affiche les lots conformes dans le tableau ci-dessous"
+                                @onclick='() => FiltrerResultat("conforme")'><span class="tuile-libelle">Conformes</span><span class="tuile-valeur petite">@bilan.Conformes</span></button>
+                        <button type="button" class="tuile tuile-lien" aria-pressed="@(fResultatStatut == "ajuste" ? "true" : "false")" title="Affiche les lots corrigés tout de suite dans le tableau ci-dessous"
+                                @onclick='() => FiltrerResultat("ajuste")'><span class="tuile-libelle">Corrigés tout de suite</span><span class="tuile-valeur petite">@bilan.Ajustes</span></button>
+                        <TuileLien Lien="inventaire?rubrique=ecarts" Infobulle="Ouvre les écarts à valider"><span class="tuile-libelle">À valider (titulaire)</span><span class="tuile-valeur petite @(bilan.AValider > 0 ? "attention" : null)">@bilan.AValider</span></TuileLien>
                     </div>
                 }
                 <div class="filtres-liste" role="search" aria-label="Filtrer le résultat">
                     <div class="champ" style="flex: 1 1 220px"><label for="fr-texte">Produit ou lot</label>
                         <input id="fr-texte" type="search" autocomplete="off" @bind="fLigneTexte" @bind:event="oninput" @bind:after="() => pageLignes = 1" /></div>
                     <label class="case" style="align-self: end"><input type="checkbox" @bind="fAvecEcart" @bind:after="() => pageLignes = 1" /><span>Avec un écart seulement</span></label>
-                    @if (fLigneTexte.Trim() != "" || fAvecEcart) { <button type="button" class="btn" @onclick="() => (fLigneTexte, fAvecEcart, pageLignes) = (string.Empty, false, 1)">Tout afficher</button> }
+                    @if (fLigneTexte.Trim() != "" || fAvecEcart || fResultatStatut != "") { <button type="button" class="btn" @onclick='() => (fLigneTexte, fAvecEcart, fResultatStatut, pageLignes) = (string.Empty, false, "", 1)'>Tout afficher</button> }
                     @* Écran fixe (2026-11-15) : le bouton est sur la ligne des filtres, plus sous le tableau *@
                     <button type="button" class="btn" style="margin-left: auto; align-self: end" @onclick="FermerResultatAsync">Rayon suivant</button>
                 </div>
@@ -372,6 +377,9 @@
     // Écarts à valider, feuille de comptage et résultat : à l'écran (listes complètes) ; historique : par le serveur
     private string fEcartTexte = "", fEcartRayon = "", fLigneTexte = "", fLigneEtat = "", fHistRayon = "", fHistStatut = "";
     private bool fAvecEcart;
+    // Tuiles du résultat (2026-11-21) : « conforme », « ajuste » ou vide (tous les lots comptés)
+    private string fResultatStatut = "";
+    private void FiltrerResultat(string statut) => (fResultatStatut, pageLignes) = (statut, 1);
     private DateOnly? fHistDu, fHistAu;
     private int pageEcarts = 1, tailleEcarts = Pagination.TailleParDefaut, pageLignes = 1, tailleLignes = Pagination.TailleParDefaut,
         pageHistorique = 1, tailleHistorique = Pagination.TailleParDefaut, totalHistorique;
@@ -382,7 +390,7 @@
     private List<LigneInventaireDto> LignesFiltrees => (inventaire?.Lignes ?? []).Where(l => RechercheTexte.Contient(fLigneTexte, l.Produit, l.NumeroLot, l.Emplacement)
         && fLigneEtat switch { "a_compter" => l.Compte is null, "comptes" => l.Compte is not null, "date" => l.DateAVerifier, _ => true }).ToList();
     private List<LigneInventaireDto> ResultatFiltre => (inventaire?.Lignes ?? []).Where(l => RechercheTexte.Contient(fLigneTexte, l.Produit, l.NumeroLot)
-        && (!fAvecEcart || l.Ecart is { } e && e != 0)).ToList();
+        && (!fAvecEcart || l.Ecart is { } e && e != 0) && (fResultatStatut == "" || l.Statut == fResultatStatut)).ToList();
 
     private bool FiltreHistoriqueActif => fHistRayon != "" || fHistStatut != "" || fHistDu is not null || fHistAu is not null;
     private Task PremierePageHistoriqueAsync() => ChargerHistoriqueAsync(1, tailleHistorique);
@@ -466,7 +474,7 @@
         // Filtres et page remis à zéro seulement pour une autre feuille ou le passage au résultat ;
         // une relecture après un comptage ou un scan garde filtres et page
         if (inventaire?.Id != d!.Id || inventaire.Statut != d.Statut)
-            (fLigneTexte, fLigneEtat, fAvecEcart, pageLignes) = ("", "", false, 1);
+            (fLigneTexte, fLigneEtat, fAvecEcart, fResultatStatut, pageLignes) = ("", "", false, "", 1);
         inventaire = d;
         if (rubrique != "comptage") Nav.NavigateTo("inventaire");
         if (d!.Statut == "termine")

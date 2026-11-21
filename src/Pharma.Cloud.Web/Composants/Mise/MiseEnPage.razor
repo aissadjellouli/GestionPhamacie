@@ -42,7 +42,7 @@
                         <option value="clair" selected="@(Theme == "clair")">Clair</option>
                         <option value="sombre" selected="@(Theme == "sombre")">Sombre</option>
                     </select>
-                    <button type="submit" class="lien-bouton">Appliquer</button>
+                    @* Pas de bouton « Appliquer » : ecrans.js envoie le formulaire dès que le choix change *@
                 </form>
                 <form method="post" action="actions/deconnexion" class="formulaire-ligne">
                     <AntiforgeryToken />

@@ -53,21 +53,22 @@
     else if (rubrique == "synthese")
     {
         <div class="tuiles">
-            <div class="tuile">
+            @* Tuiles navigables (2026-11-21) : chacune ouvre la rubrique qui la détaille *@
+            <TuileLien Lien="dettes?onglet=tout" Infobulle="Ouvre la liste de toutes les sommes dues (à recevoir et à payer)">
                 <span class="tuile-libelle">À recevoir</span>
                 <span class="tuile-valeur">@Libelles.Dinars(s.TotalCreances, 2)</span>
                 <span class="tuile-pied">@Nombre(s, "creance") somme(s) due(s) à la pharmacie</span>
-            </div>
-            <div class="tuile">
+            </TuileLien>
+            <TuileLien Lien="dettes?onglet=grossiste" Infobulle="Ouvre À payer › Grossistes (les traites sont dans « Traites à payer »)">
                 <span class="tuile-libelle">À payer aux grossistes</span>
                 <span class="tuile-valeur">@Libelles.Dinars(s.TotalDettes, 2)</span>
                 <span class="tuile-pied">@s.Lignes.Count(l => l.Categorie == "grossiste") somme(s) due(s) · @s.Lignes.Count(l => l.Categorie == "effet") traite(s) à payer</span>
-            </div>
-            <div class="tuile">
+            </TuileLien>
+            <TuileLien Lien="dettes?onglet=alertes" Infobulle="Ouvre les alertes des dettes et créances">
                 <span class="tuile-libelle">Alertes</span>
                 <span class="tuile-valeur">@s.Alertes.Sum(a => a.Nombre)</span>
                 <span class="tuile-pied">factures échues ou rejetées, dettes de plus de @s.DelaiJours jours, traites échues ou sous 7 jours</span>
-            </div>
+            </TuileLien>
         </div>
 
         <section class="panneau" aria-labelledby="t-echeancier">

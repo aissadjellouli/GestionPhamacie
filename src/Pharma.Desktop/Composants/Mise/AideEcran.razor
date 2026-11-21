@@ -1,7 +1,8 @@
 @inject NavigationManager Nav
 
 @* Aide en contexte (docs/navigation.md) : « ? » à côté du titre de l'écran ; quelques lignes sur ce qu'on y fait, les raccourcis,
-   et le lien vers le Guide. Placée dans le h1 de chaque écran de domaine (test NavigationTests). Échap ferme. *@
+   et le lien vers le Guide. Placée dans le h1 de chaque écran de domaine (test NavigationTests). Échap ferme ; un clic à l'extérieur aussi (voile transparent,
+   2026-11-21). *@
 @if (Textes.TryGetValue(Cle, out var aide))
 {
     @if (Libelle is null)
@@ -16,6 +17,8 @@
     }
     @if (ouverte)
     {
+        @* Clic à l'extérieur du panneau : le voile transparent sous le panneau le ferme *@
+        <div class="voile-aide" aria-hidden="true" @onclick="() => ouverte = false"></div>
         <aside class="panneau-aide" role="dialog" aria-label="@($"Aide : {aide.Titre}")" @onkeydown="Touche" tabindex="-1">
             <h2>Aide · @aide.Titre</h2>
             <ul>

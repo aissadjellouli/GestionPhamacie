@@ -1,12 +1,14 @@
-@* Tuile du tableau de bord du titulaire (charte : .tuile, .tuile-libelle, .tuile-valeur, .tuile-note) ; « non disponible » en petit *@
-<div class="tuile">
-    <span class="tuile-libelle">@Libelle</span>
-    <span class="@ClasseValeur">@Valeur</span>
-    @if (!string.IsNullOrEmpty(Note))
-    {
-        <span class="tuile-note">@Note</span>
-    }
-</div>
+@* Tuile du tableau de bord du titulaire (charte : .tuile, .tuile-libelle, .tuile-valeur, .tuile-note) ; « non disponible » en petit.
+   Tuile navigable (Lien) : lien <a class="tuile tuile-lien"> vers l'écran qui détaille son chiffre, infobulle « où elle mène » ;
+   survol et focus clavier visibles (app.css, a.tuile.tuile-lien), même apparence sinon. *@
+@if (Lien is null)
+{
+    <div class="tuile">@Contenu</div>
+}
+else
+{
+    <a class="tuile tuile-lien" href="@Lien.Adresse" title="@Lien.Infobulle">@Contenu</a>
+}
 
 @code {
     [Parameter, EditorRequired] public string Libelle { get; set; } = "";
@@ -14,9 +16,21 @@
     [Parameter] public string? Note { get; set; }
     [Parameter] public bool Urgent { get; set; }
     [Parameter] public bool Petite { get; set; }
+    /// <summary>Destination de la tuile (écran permis au rôle de la page) ; null = tuile non cliquable.</summary>
+    [Parameter] public LienTuile? Lien { get; set; }
 
     private string ClasseValeur => "tuile-valeur"
         + (Petite || Valeur == Tableau.NonDisponible ? " petite" : "")
         + (Urgent ? " urgent" : "")
         + (Valeur == Tableau.NonDisponible ? " non-disponible" : "");
+
+    private RenderFragment Contenu => __builder =>
+    {
+        <span class="tuile-libelle">@Libelle</span>
+        <span class="@ClasseValeur">@Valeur</span>
+        @if (!string.IsNullOrEmpty(Note))
+        {
+            <span class="tuile-note">@Note</span>
+        }
+    };
 }
