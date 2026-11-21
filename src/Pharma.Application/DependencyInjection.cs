@@ -321,6 +321,9 @@ public static class DependencyInjection
         // Synchronisation, lot S3 : bandeau, alertes au titulaire, réglages de supervision, purge de la file
         services.AddSingleton<Synchronisation.MemoireSupervisionSync>();
         services.AddScoped<Synchronisation.ConsulterAttenteSync>();
+        // Barre d'état : liaisons avec le serveur central et le 2e serveur (élément seulement en anomalie, tout employé connecté)
+        services.AddSingleton<Synchronisation.MemoireLiaisonsPoste>();
+        services.AddScoped<Synchronisation.ConsulterLiaisonsPoste>();
         services.AddScoped<Synchronisation.SurveillerSynchronisation>();
         // Lots S5.1 et S5.5 : ordres envoyés par le serveur central
         services.AddScoped<Synchronisation.IOrganismesCentraux, Synchronisation.OrganismesCentraux>();

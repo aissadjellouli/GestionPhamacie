@@ -119,7 +119,7 @@ Code : `src/Pharma.Desktop/Services/HistoriqueNavigation.cs` (historique), `Comp
 | Caisse | Clôture, Relevé | Caisse (vente reprise, partie « Encaisser une dette » rouverte) |
 | Contrôle interne | Pertes et vigilance | Contrôle interne (rubrique) |
 | Administration › Caisse | Imprimantes | Administration › Caisse (filtres et page du journal) |
-| Barre d'état (en bas) | Caisse ou Clôture, Sauvegardes | écran précédent |
+| Barre d'état (en bas) | Caisse ou Clôture, Sauvegardes, Administration › Synchronisation (élément « Central : … », droit admin.parametres), Administration › 2e serveur (élément « 2e serveur : … », titulaire) | écran précédent |
 | Nom d'un tiers cliquable (17 écrans) | sa fiche (fenêtre) | Échap ou « Fermer » referme la fiche |
 
 ### État retrouvé, écran par écran

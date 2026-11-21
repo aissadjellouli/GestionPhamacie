@@ -931,6 +931,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     /// <summary>Script 152 : secondes avant que l'encaissement soit permis (contrôle de démarrage du serveur central).</summary>
     public Task<(AttenteEncaissementDto?, string?)> AttenteEncaissementAsync() => GetAsync<AttenteEncaissementDto?>("api/caisse/attente-encaissement", null);
     public Task<(AttenteSynchronisationDto?, string?)> AttenteSynchronisationAsync() => GetAsync<AttenteSynchronisationDto?>("api/synchronisation/attente", null);
+    /// <summary>Barre d'état : liaison avec le serveur central et avec le 2e serveur (tout employé connecté ; élément seulement en anomalie).</summary>
+    public Task<(EtatLiaisonsPosteDto?, string?)> EtatLiaisonsPosteAsync() => GetAsync<EtatLiaisonsPosteDto?>("api/synchronisation/etat-poste", null);
     /// <summary>Mode démonstration du serveur (route sans connexion) : bandeau permanent de la barre d'état.</summary>
     public Task<(EtatDemoDto?, string?)> EtatDemoAsync() => GetAsync<EtatDemoDto?>("api/demo", null);
     // Lots S5.1 et S5.5 : ordres du serveur central (liste ; confirmation et refus par le titulaire)

@@ -5,7 +5,7 @@
 @inject ReglagesPoste Reglages
 
 @* Barre d'état en bas de la fenêtre (charte graphique, « Barre d'état ») : liaison au serveur, caisse du poste, dernière
-   sauvegarde, version, date et heure. Un clic ouvre l'écran correspondant.
+   sauvegarde, liaison avec le serveur central et le 2e serveur (seulement en anomalie), version, date et heure. Un clic ouvre l'écran correspondant.
    Avant la connexion : liaison au serveur et version seulement. *@
 @if (InjoignableTropLongtemps)
 {
@@ -65,9 +65,36 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
         {
             <span class="element-etat @ClasseSauvegarde">@LibelleSauvegarde</span>
         }
+        @* Liaisons (GET /api/synchronisation/etat-poste, tout employé connecté) : un élément seulement en anomalie ; rien si la liaison
+           n'est pas en place ou si elle est à jour. Lien vers l'écran seulement pour qui a le droit de l'ouvrir. *@
+        @if (liaisons?.Central is { } central)
+        {
+            @if (Session.A("admin.parametres"))
+            {
+                <button type="button" class="element-etat @Classe(central)" data-zone="liaison-central" title="@central.Detail"
+                        @onclick="@(() => Nav.NavigateTo("admin/synchronisation"))">@central.Libelle</button>
+            }
+            else
+            {
+                <span class="element-etat @Classe(central)" data-zone="liaison-central" title="@central.Detail">@central.Libelle</span>
+            }
+        }
+        @if (liaisons?.Second is { } second)
+        {
+            @if (Session.A("role.titulaire"))
+            {
+                <button type="button" class="element-etat @Classe(second)" data-zone="liaison-second" title="@second.Detail"
+                        @onclick="@(() => Nav.NavigateTo("admin/second-serveur"))">@second.Libelle</button>
+            }
+            else
+            {
+                <span class="element-etat @Classe(second)" data-zone="liaison-second" title="@second.Detail">@second.Libelle</span>
+            }
+        }
     }
 
-    <span class="element-etat droite">v@(Version) · @maintenant.ToString("ddd dd/MM/yyyy · HH:mm", Fr)</span>
+    @* Avec un élément de liaison affiché, la date se raccourcit (FormatDate) : la barre reste sur une ligne en 1366×768 *@
+    <span class="element-etat droite">v@(Version) · @maintenant.ToString(FormatDate, Fr)</span>
 </footer>
 
 @code {
@@ -105,6 +132,19 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
     }
     private EtatPosteDto? etat;
     private AttenteSynchronisationDto? attenteSync;
+    private EtatLiaisonsPosteDto? liaisons;
+
+    /// <summary>Seules les deux classes de la charte sont permises (toute autre valeur reçue : « attention »).</summary>
+    private static string Classe(AnomalieLiaisonDto a) => a.Niveau == "anormal" ? "anormal" : "attention";
+
+    // Date raccourcie avec un élément de liaison (jour et année retirés), heure seule avec les deux : la barre reste sur une ligne en
+    // 1366×768 même dans le cas le plus chargé (caisse d'un autre jour, sauvegarde en défaut, central et 2e serveur ; mesuré le 2026-11-21)
+    private string FormatDate => liaisons switch
+    {
+        { Central: not null, Second: not null } => "HH:mm",
+        { Central: not null } or { Second: not null } => "dd/MM · HH:mm",
+        _ => "ddd dd/MM/yyyy · HH:mm"
+    };
     private EtatDemoDto? demo;
     private DateTime maintenant = DateTime.Now;
     private PeriodicTimer? minuterie;
@@ -153,8 +193,11 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
             // Bandeau de synchronisation : lecture seule, une erreur de lecture le masque sans rien bloquer
             var (a, erreurSync) = await Api.AttenteSynchronisationAsync();
             attenteSync = erreurSync is null ? a : null;
+            // Liaisons central et 2e serveur : même rythme (tour complet) ; une erreur de lecture n'affiche rien
+            var (l, erreurLiaisons) = await Api.EtatLiaisonsPosteAsync();
+            liaisons = erreurLiaisons is null ? l : null;
         }
-        if (!Session.EstConnecte) (etat, attenteSync) = (null, null);
+        if (!Session.EstConnecte) (etat, attenteSync, liaisons) = (null, null, null);
     }
 
     private async Task VerifierServeurAsync()

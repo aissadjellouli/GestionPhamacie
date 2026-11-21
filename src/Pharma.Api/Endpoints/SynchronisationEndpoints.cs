@@ -18,6 +18,14 @@ public static class SynchronisationEndpoints
             return Results.Ok(new AttenteSynchronisationDto(b.Affiche, b.Depuis, b.Operations));
         }).ExigerConnexion();
 
+        // Barre d'état (2026-11-21) : liaison avec le serveur central et avec le 2e serveur, tout employé connecté (aucun droit
+        // d'administration) ; lecture minimale sans donnée personnelle ni réglage technique, gardée 30 secondes
+        api.MapGet("/synchronisation/etat-poste", async (ConsulterLiaisonsPoste consulter, CancellationToken ct) =>
+        {
+            var e = await consulter.ExecuterAsync(ct);
+            return Results.Ok(new EtatLiaisonsPosteDto(e.CentralActive, Dto(e.Central), e.LotsEnAttente, e.DernierEnvoiLe, e.SecondConfigure, Dto(e.Second)));
+        }).ExigerConnexion();
+
         // Script 152 : encaissement suspendu au démarrage jusqu'au contrôle du serveur central (bandeau de la Caisse)
         api.MapGet("/caisse/attente-encaissement", async (IEnvoiSyncDepot depot, CancellationToken ct) =>
             Results.Ok(new AttenteEncaissementDto(await depot.AttenteEncaissementAsync(ct)))).ExigerPermission(Permissions.CaisseVendre);
@@ -137,4 +145,6 @@ public static class SynchronisationEndpoints
             return Results.NoContent();
         });
     }
+
+    private static AnomalieLiaisonDto? Dto(AnomalieLiaison? a) => a is null ? null : new AnomalieLiaisonDto(a.Libelle, a.Niveau, a.Detail);
 }
