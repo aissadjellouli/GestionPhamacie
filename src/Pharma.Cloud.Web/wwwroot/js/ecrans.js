@@ -11,7 +11,10 @@
   function dessous(cadre) {
     var total = 0;
     for (var n = cadre; n && !n.classList.contains("page"); n = n.parentElement) {
-      for (var s = n.nextElementSibling; s; s = s.nextElementSibling) total += s.offsetHeight + 16;
+      // Seuls les éléments placés SOUS n comptent : une colonne voisine (grille à deux colonnes, ex. Comptes) est à côté, pas dessous
+      var bas = n.getBoundingClientRect().bottom - 1;
+      for (var s = n.nextElementSibling; s; s = s.nextElementSibling)
+        if (s.getBoundingClientRect().top >= bas) total += s.offsetHeight + 16;
       var st = n.parentElement ? getComputedStyle(n.parentElement) : null;
       if (st) total += parseFloat(st.paddingBottom) || 0;
     }

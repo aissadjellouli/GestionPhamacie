@@ -1092,7 +1092,7 @@ fieldset.panneau:disabled { opacity: 0.85; }
   padding-top: 12px; border-top: 1px solid var(--bordure); }
 .envoi-codes .liste-aide { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 /* Contacts des comptes (lot S7.6) : tableau paginé à gauche (seul le cadre défile), formulaire du compte choisi à droite */
-.comptes-contact { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr); gap: 20px; align-items: start; }
+.comptes-contact { display: grid; grid-template-columns: minmax(0, 2fr) minmax(360px, 1fr); gap: 20px; align-items: start; }
 .comptes-contact .colonne-comptes { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .comptes-contact .formulaire-contact { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; align-items: end; margin: 0; }
 .comptes-contact .formulaire-contact .champ input { width: 100%; }
