@@ -300,6 +300,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\155_retour_partiel_tiers_payant.sql = database\migration\155_retour_partiel_tiers_payant.sql
 		database\migration\156_reglage_taches_laissees_poste.sql = database\migration\156_reglage_taches_laissees_poste.sql
 		database\migration\157_rapprochement_volet_apres_retour.sql = database\migration\157_rapprochement_volet_apres_retour.sql
+		database\migration\158_retour_regularisation_dettes_patient.sql = database\migration\158_retour_regularisation_dettes_patient.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52-9A41-4B8E-A5F2-3C6D11B0E111}"
@@ -337,6 +338,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52
 		database\tests\155_retour_partiel_tiers_payant_tests.sql = database\tests\155_retour_partiel_tiers_payant_tests.sql
 		database\tests\156_reglage_taches_laissees_poste_tests.sql = database\tests\156_reglage_taches_laissees_poste_tests.sql
 		database\tests\157_rapprochement_volet_apres_retour_tests.sql = database\tests\157_rapprochement_volet_apres_retour_tests.sql
+		database\tests\158_retour_regularisation_dettes_patient_tests.sql = database\tests\158_retour_regularisation_dettes_patient_tests.sql
 		database\tests\117_registre_renforce_tests.sql = database\tests\117_registre_renforce_tests.sql
 		database\tests\101b_suppression_num_facture_chifa_tests.sql = database\tests\101b_suppression_num_facture_chifa_tests.sql
 		database\tests\rejeu_complet.ps1 = database\tests\rejeu_complet.ps1

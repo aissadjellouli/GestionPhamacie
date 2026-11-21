@@ -41,7 +41,17 @@ et son test SQL, `preparer_central_vs.ps1` (connexion `pharma_cloud_etat_vs`, va
       (vente en tiers payant hors bordereau, en préparation, déposée, taux 100 %) et Finances › Chifa › « Retours à corriger dans
       CHIFA-Officine ». Mention sur le ticket faite (2026-11-21 : réimprimer le ticket d'une vente avec un tel retour, imprimante et PDF).
       Restes : questions à la CNAS ([chifa.md](chifa.md)), journal fiscal à
-      faire vérifier par le comptable, régularisation « à la charge du patient » suivie d'un retour (à décider), voir [a-faire.md](a-faire.md).
+      faire vérifier par le comptable, régularisation « rendu au patient » suivie d'un retour (à décider), voir [a-faire.md](a-faire.md).
+
+- [ ] **Retour et dettes du patient** (décision du titulaire du 2026-11-21, script 158, non commité) : passer
+      `158_retour_regularisation_dettes_patient.sql` sur `pharmacie_dev` puis `pharmacie_test` (après 157, après sauvegarde), puis
+      `database/tests/158_retour_regularisation_dettes_patient_tests.sql` sur `pharmacie_test` ; repasser `database/cloud/002_tables_miroir.sql`
+      (régénéré : colonne `retour_client_ligne.montant_regularisation`) sur les bases centrales. `init/schema.sql` édité à la main (aucune
+      base touchée) : à confirmer par la régénération `pg_dump` habituelle. Mesurer à 1366 × 768 et 1536 × 890, clair et sombre :
+      Caisse › Annuler / retour (`caisse?rubrique=annulation`), retour d'une vente à un patient qui doit de l'argent (alerte, « Déduire de
+      ses dettes » choisi puis « Rendre quand même »), d'une vente régularisée « à la charge du patient » (ligne de la régularisation).
+      À confirmer par le titulaire : case « Le client accepte » gardée pour déduire ; imputation automatique sur les ventes les plus anciennes.
+      Journal fiscal (part de régularisation rendue dans le TTC) à faire vérifier par le comptable.
 
 - [ ] **Rapprochement d'un volet après un retour** (ajusté le 2026-11-21, non commité) : passer `157_rapprochement_volet_apres_retour.sql`
       sur `pharmacie_dev` puis `pharmacie_test` (après 155, après sauvegarde), puis `database/tests/157_rapprochement_volet_apres_retour_tests.sql`

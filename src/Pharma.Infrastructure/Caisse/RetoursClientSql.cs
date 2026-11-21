@@ -115,6 +115,19 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
             if ((decimal)(await cmd.ExecuteScalarAsync(ct))! < partOrganisme)
                 throw new RegleMetierException("La part de l’organisme de cette vente vient de changer (autre retour ou régularisation) : rechargez la vente.");
         }
+        // Part de la régularisation « à la charge du patient » rendue (script 158) : jamais plus que ce qui en reste (régularisation active)
+        var partRegularisation = a.Lignes.Sum(l => l.MontantRegularisation);
+        if (partRegularisation > 0)
+        {
+            await using var cmd = new NpgsqlCommand($"""
+                SELECT g.montant_patient - {AnnulationsVenteSql.RegularisationRendue}
+                FROM vente v JOIN regularisation_part_organisme g ON g.vente_id = v.id AND g.statut = 'active' AND g.sort = 'charge_patient'
+                WHERE v.id = $1
+                """, cx, tx);
+            cmd.Parameters.AddWithValue(a.VenteId);
+            if (await cmd.ExecuteScalarAsync(ct) is not decimal reste || reste < partRegularisation)
+                throw new RegleMetierException("La régularisation de part organisme de cette vente vient de changer : rechargez la vente.");
+        }
         // Sous le verrou de la vente : l'avoir recrédité ne dépasse jamais ce qui a été payé par avoir moins ce que les retours ont déjà recrédité
         if (a.AvoirRecredite > 0)
         {
@@ -144,11 +157,14 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
         // seule l'écriture de l'argent rendu sort de la caisse ou de la banque.
         // Part recréditée en avoir (script 109, vente payée en partie par avoir) : une écriture « avoir », qui ne sort ni de la caisse
         // ni de la banque, mais compte dans le « déjà rendu » de la vente.
-        var rendu = a.Montant - a.ReductionDette - a.AvoirRecredite;
-        var modeRendu = a.Mode == "credit" ? "especes" : a.Mode;
+        // Script 158 : la part impayée de la régularisation et l'argent imputé sur les dettes du patient sont aussi des écritures « credit »
+        // (rien ne sort du tiroir) ; l'argent rendu sans mode de paiement (part du patient nulle) sort en espèces.
+        var rendu = a.Rendu;
+        var modeRendu = a.Mode == "credit" || (a.Mode is null && rendu > 0) ? "especes" : a.Mode;
         var parts = new List<(string? Mode, decimal Montant)>();
         if (a.AvoirRecredite > 0) parts.Add((RegleAvoir.Mode, a.AvoirRecredite));
-        if (a.ReductionDette > 0) parts.Add(("credit", a.ReductionDette));
+        var dette = a.ReductionDette + a.ReductionRegularisation + a.ImputationDettes;
+        if (dette > 0) parts.Add(("credit", dette));
         if (rendu > 0 || parts.Count == 0) parts.Add((a.Mode == "credit" && rendu == 0 ? "credit" : modeRendu, rendu));
         // Les lignes rendues sont rattachées à la première écriture
         var retourId = await InsererRetourAsync(cx, tx, a, parts[0].Mode, parts[0].Montant, ct);
@@ -162,9 +178,9 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
         foreach (var l in a.Lignes)
         {
             await Executer(cx, tx, """
-                INSERT INTO retour_client_ligne (retour_id, ligne_vente_id, quantite, destination, montant, montant_organisme)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                """, ct, retourId, l.LigneVenteId, l.Quantite, l.Destination.Code(), l.Montant, l.MontantOrganisme);
+                INSERT INTO retour_client_ligne (retour_id, ligne_vente_id, quantite, destination, montant, montant_organisme, montant_regularisation)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                """, ct, retourId, l.LigneVenteId, l.Quantite, l.Destination.Code(), l.Montant, l.MontantOrganisme, l.MontantRegularisation);
 
             // La boîte revient à l'officine (lot et registre), puis repart à la destruction si le pharmacien l'a décidé
             await Executer(cx, tx, "UPDATE lot SET quantite_disponible = quantite_disponible + $2 WHERE id = $1", ct, l.LotId, l.Quantite);
@@ -220,7 +236,67 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
                 throw new RegleMetierException("La dette du patient vient de changer : rechargez la vente avant d’enregistrer le retour.");
         }
 
+        // Script 158 : part impayée de la régularisation des boîtes rendues retirée de la dette (mouvement « correction » rattaché à la
+        // vente, comme la régularisation elle-même) ; puis argent dû au patient imputé sur ses dettes, écrit comme « Encaisser une dette »
+        // (mouvement « remboursement », ventes à crédit les plus anciennes d'abord, au plus leur reste), sans paiement ni tiroir
+        if (a.ReductionRegularisation > 0)
+        {
+            await ReleveCredit.ContexteAsync(cx, tx, ReleveCredit.Correction, a.VenteId, a.UtilisateurId, a.Poste,
+                $"Retour client {a.Numero} : part de la régularisation Chifa des boîtes rendues", ct);
+            await DiminuerDetteVenteAsync(cx, tx, a.VenteId, a.ReductionRegularisation, ct);
+        }
+        if (a.ImputationDettes > 0) await ImputerSurDettesAsync(cx, tx, a, ct);
+
         await tx.CommitAsync(ct);
+    }
+
+    private static async Task DiminuerDetteVenteAsync(NpgsqlConnection cx, NpgsqlTransaction tx, long venteId, decimal montant, CancellationToken ct)
+    {
+        await using var cmd = new NpgsqlCommand("""
+            UPDATE patient SET solde_credit = solde_credit - $2
+            WHERE id = (SELECT patient_id FROM vente WHERE id = $1) AND solde_credit >= $2
+            """, cx, tx);
+        cmd.Parameters.AddWithValue(venteId);
+        cmd.Parameters.AddWithValue(montant);
+        if (await cmd.ExecuteNonQueryAsync(ct) == 0)
+            throw new RegleMetierException("La dette du patient vient de changer : rechargez la vente avant d’enregistrer le retour.");
+    }
+
+    /// <summary>
+    /// Argent dû au patient imputé sur ses dettes (script 158), sous verrou du patient : restes relus après les écritures du retour
+    /// (v_vente_credit), répartis comme le choix par défaut d'« Encaisser une dette » (plus anciennes d'abord, au plus leur reste ; le
+    /// surplus solde la dette la plus ancienne), mouvement « remboursement » au relevé et parts gardées dans credit_imputation (087).
+    /// </summary>
+    private static async Task ImputerSurDettesAsync(NpgsqlConnection cx, NpgsqlTransaction tx, RetourAEcrire a, CancellationToken ct)
+    {
+        long patient;
+        await using (var cmd = new NpgsqlCommand("""
+            SELECT p.id FROM patient p WHERE p.id = (SELECT patient_id FROM vente WHERE id = $1) FOR UPDATE
+            """, cx, tx))
+        {
+            cmd.Parameters.AddWithValue(a.VenteId);
+            patient = await cmd.ExecuteScalarAsync(ct) as long? ?? throw new RegleMetierException("Vente sans patient : aucune dette à solder.");
+        }
+        var restes = new List<(long, decimal)>();
+        await using (var cmd = new NpgsqlCommand("""
+            SELECT vente_id, reste FROM v_vente_credit WHERE patient_id = $1 AND reste > 0 ORDER BY date_vente, vente_id
+            """, cx, tx))
+        {
+            cmd.Parameters.AddWithValue(patient);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            while (await r.ReadAsync(ct)) restes.Add((r.GetInt64(0), r.GetDecimal(1)));
+        }
+        var parts = RegleReglementCredit.Imputer(a.ImputationDettes, restes);
+        await ReleveCredit.ContexteAsync(cx, tx, ReleveCredit.Remboursement, null, a.UtilisateurId, a.Poste,
+            $"Encaissement de dette (retour client {a.Numero}, sans argent : déduit du remboursement avec l’accord du client)", ct, a.SessionCaisseId);
+        await using (var cmd = new NpgsqlCommand("UPDATE patient SET solde_credit = solde_credit - $2 WHERE id = $1 AND solde_credit >= $2", cx, tx))
+        {
+            cmd.Parameters.AddWithValue(patient);
+            cmd.Parameters.AddWithValue(a.ImputationDettes);
+            if (await cmd.ExecuteNonQueryAsync(ct) == 0)
+                throw new RegleMetierException("La dette du patient vient de changer : rechargez la vente avant d’enregistrer le retour.");
+        }
+        foreach (var (vente, montant) in parts) await ReleveCredit.ImputerAsync(cx, tx, vente, montant, ct);
     }
 
     private static async Task<long> InsererRetourAsync(NpgsqlConnection cx, NpgsqlTransaction tx, RetourAEcrire a, string? mode, decimal montant,

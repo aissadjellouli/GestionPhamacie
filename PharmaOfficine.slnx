@@ -255,6 +255,7 @@
     <File Path="database/migration/155_retour_partiel_tiers_payant.sql" />
     <File Path="database/migration/156_reglage_taches_laissees_poste.sql" />
     <File Path="database/migration/157_rapprochement_volet_apres_retour.sql" />
+    <File Path="database/migration/158_retour_regularisation_dettes_patient.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
@@ -290,6 +291,7 @@
     <File Path="database/tests/155_retour_partiel_tiers_payant_tests.sql" />
     <File Path="database/tests/156_reglage_taches_laissees_poste_tests.sql" />
     <File Path="database/tests/157_rapprochement_volet_apres_retour_tests.sql" />
+    <File Path="database/tests/158_retour_regularisation_dettes_patient_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
     <File Path="database/tests/101b_suppression_num_facture_chifa_tests.sql" />
     <File Path="database/tests/rejeu_complet.ps1" />

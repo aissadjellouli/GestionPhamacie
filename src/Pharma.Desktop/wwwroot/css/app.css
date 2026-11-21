@@ -718,6 +718,10 @@ a.tuile.tuile-lien:is(:hover, :focus-visible) { background: var(--surface); box-
 .ligne-vente:hover:not(:disabled) { border-color: var(--accent); }
 .ligne-vente.annulee { color: var(--texte-inactif); text-decoration: line-through; cursor: default; }
 .ligne-retour { display: flex; flex-direction: column; gap: 8px; }
+/* Retour de produits (écran fixe, 2026-11-21) : produits, motif et montants dans un seul cadre défilant (hauteur posée par poste.js),
+   dettes du patient et validation au-dessus, « Enregistrer le retour » dessous, toujours visibles */
+.retour-cadre { display: flex; flex-direction: column; gap: 12px; flex-shrink: 0; }
+.retour-cadre > * { flex-shrink: 0; }
 .boites-retour { display: flex; flex-wrap: wrap; gap: 4px 16px; border: 1px solid var(--bordure); border-radius: 8px; padding: 6px 12px; margin: 0; }
 .boites-retour legend { font-size: 13px; color: var(--texte-2); padding: 0 4px; }
 

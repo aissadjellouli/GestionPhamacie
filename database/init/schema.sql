@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 157 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 158 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 157 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 158 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -1838,8 +1838,8 @@ BEGIN
     SELECT * INTO v FROM vente WHERE id = r.vente_id;
     SELECT array_agg(taux ORDER BY taux), array_agg(poids ORDER BY taux), COALESCE(sum(poids), 0), COALESCE(sum(pat), 0), COALESCE(sum(org), 0)
     INTO v_taux, v_poids, v_total, v_pat, v_org
-    FROM (SELECT journal_vente_taux_ligne(rl.ligne_vente_id) AS taux, sum(rl.montant + rl.montant_organisme) AS poids,
-                 sum(rl.montant) AS pat, sum(rl.montant_organisme) AS org
+    FROM (SELECT journal_vente_taux_ligne(rl.ligne_vente_id) AS taux, sum(rl.montant + rl.montant_regularisation + rl.montant_organisme) AS poids,
+                 sum(rl.montant + rl.montant_regularisation) AS pat, sum(rl.montant_organisme) AS org
           FROM retour_client_ligne rl WHERE rl.retour_id = r.id GROUP BY 1) g;
     SELECT * INTO v_vent FROM journal_vente_ventiler(v_taux, v_poids, -v_total);
     INSERT INTO journal_vente (evenement, numero_ticket, vente_id, retour_client_id, survenu_le, session_caisse_id, poste, utilisateur_id,
@@ -1888,11 +1888,12 @@ BEGIN
                 v.montant_total, v_vent.ht, v_vent.tva, v_vent.detail, v.part_patient, v.part_organisme, journal_vente_paiements(v.id, 1));
     END IF;
 
-    -- Annulation : nouvelle ligne (le ticket garde son numéro), au montant encore acquis (TTC déjà rendu par des retours exclu)
+    -- Annulation : nouvelle ligne (le ticket garde son numéro), au montant encore acquis (TTC déjà rendu par des retours exclu, part de
+    -- régularisation rendue comprise, script 158)
     IF v.statut = 'annulee' AND (TG_OP = 'INSERT' OR OLD.statut IS DISTINCT FROM 'annulee')
        AND NOT EXISTS (SELECT 1 FROM journal_vente WHERE vente_id = v.id AND evenement = 'annulation') THEN
         SELECT * INTO v_an FROM annulation_vente WHERE vente_id = v.id ORDER BY id DESC LIMIT 1;
-        SELECT COALESCE(sum(r.montant), 0), COALESCE(sum(r.montant_organisme), 0) INTO v_ret_pat, v_ret_org
+        SELECT COALESCE(sum(r.montant + r.montant_regularisation), 0), COALESCE(sum(r.montant_organisme), 0) INTO v_ret_pat, v_ret_org
         FROM retour_client_ligne r JOIN ligne_vente l ON l.id = r.ligne_vente_id WHERE l.vente_id = v.id;
         v_retour := v_ret_pat + v_ret_org;
         SELECT * INTO v_vent FROM journal_vente_ventiler(v_taux, v_poids, -(v.montant_total - v_retour));
@@ -2413,6 +2414,45 @@ $$;
 --
 
 COMMENT ON FUNCTION public.verifier_regularisation_rendue_avant() IS 'Refuse une régularisation dont la part rendue avant le rattachement ne correspond pas aux retours de la vente (script 157)';
+
+
+--
+-- Name: verifier_retour_regularisation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.verifier_retour_regularisation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_vente   bigint;
+    v_montant numeric;
+    v_rendu   numeric;
+BEGIN
+    IF NEW.montant_regularisation = 0 OR (TG_OP = 'UPDATE' AND NEW.montant_regularisation <= OLD.montant_regularisation) THEN
+        RETURN NEW;
+    END IF;
+    SELECT l.vente_id INTO v_vente FROM ligne_vente l WHERE l.id = NEW.ligne_vente_id;
+    SELECT g.montant_patient INTO v_montant FROM regularisation_part_organisme g
+    WHERE g.vente_id = v_vente AND g.statut = 'active' AND g.sort = 'charge_patient';
+    IF v_montant IS NULL THEN
+        RAISE EXCEPTION 'Cette vente n''a pas de régularisation à la charge du patient : rien à lui rendre à ce titre.' USING ERRCODE = 'P0001';
+    END IF;
+    SELECT COALESCE(sum(rl.montant_regularisation), 0) INTO v_rendu
+    FROM retour_client_ligne rl JOIN ligne_vente l ON l.id = rl.ligne_vente_id
+    WHERE l.vente_id = v_vente AND rl.id IS DISTINCT FROM NEW.id;
+    IF v_rendu + NEW.montant_regularisation > v_montant THEN
+        RAISE EXCEPTION 'La régularisation de part organisme de cette vente vient de changer : rechargez la vente.' USING ERRCODE = 'P0001';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION verifier_retour_regularisation(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.verifier_retour_regularisation() IS 'Refuse une part de régularisation rendue sans régularisation « à la charge du patient » active, ou au-delà de son montant (script 158)';
 
 
 --
@@ -10524,7 +10564,9 @@ CREATE TABLE public.retour_client_ligne (
     montant numeric(12,2) NOT NULL,
     officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     montant_organisme numeric(12,2) DEFAULT 0 NOT NULL,
+    montant_regularisation numeric(12,2) DEFAULT 0 NOT NULL,
     CONSTRAINT ck_retour_client_ligne_montant_organisme CHECK ((montant_organisme >= (0)::numeric)),
+    CONSTRAINT ck_retour_client_ligne_montant_regularisation CHECK ((montant_regularisation >= (0)::numeric)),
     CONSTRAINT retour_client_ligne_destination_check CHECK ((destination = ANY (ARRAY['stock'::text, 'destruction'::text]))),
     CONSTRAINT retour_client_ligne_montant_check CHECK ((montant >= (0)::numeric)),
     CONSTRAINT retour_client_ligne_quantite_check CHECK ((quantite > 0))
@@ -10536,6 +10578,13 @@ CREATE TABLE public.retour_client_ligne (
 --
 
 COMMENT ON COLUMN public.retour_client_ligne.montant_organisme IS 'Part de l''organisme des boîtes rendues, retirée de la créance (v_vente_part_organisme) : prorata de la part retenue (Chifa si régularisée), majoration non comprise (script 155)';
+
+
+--
+-- Name: COLUMN retour_client_ligne.montant_regularisation; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.retour_client_ligne.montant_regularisation IS 'Part de la régularisation « à la charge du patient » (rattachement du volet) des boîtes rendues, rendue au patient ; comprise dans retour_client.montant_rembourse (script 158)';
 
 
 --
@@ -12107,9 +12156,18 @@ CREATE VIEW public.v_credit_accorde AS
     v.patient_id,
     v.numero,
     v.date_vente,
-    (x.montant - COALESCE(( SELECT sum(rc.montant_rembourse) AS sum
-           FROM public.retour_client rc
-          WHERE (rc.vente_id = v.id)), (0)::numeric)) AS montant
+    (x.montant -
+        CASE
+            WHEN (EXISTS ( SELECT 1
+               FROM public.paiement p
+              WHERE ((p.vente_id = v.id) AND (p.mode = 'credit'::text)))) THEN COALESCE(( SELECT sum(rc.montant_rembourse) AS sum
+               FROM public.retour_client rc
+              WHERE (rc.vente_id = v.id)), (0)::numeric)
+            ELSE COALESCE(( SELECT sum(rl.montant_regularisation) AS sum
+               FROM (public.retour_client_ligne rl
+                 JOIN public.ligne_vente lr ON ((lr.id = rl.ligne_vente_id)))
+              WHERE (lr.vente_id = v.id)), (0)::numeric)
+        END) AS montant
    FROM (public.vente v
      JOIN LATERAL ( SELECT ((COALESCE(( SELECT sum(p.montant) AS sum
                    FROM public.paiement p
@@ -12119,6 +12177,13 @@ CREATE VIEW public.v_credit_accorde AS
                    FROM public.bordereau_vente bv
                   WHERE ((bv.vente_id = v.id) AND (bv.suite = 'patient'::text))), (0)::numeric)) AS montant) x ON ((x.montant > (0)::numeric)))
   WHERE ((v.statut = 'validee'::text) AND (v.patient_id IS NOT NULL));
+
+
+--
+-- Name: VIEW v_credit_accorde; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON VIEW public.v_credit_accorde IS 'Crédit accordé par vente : part à crédit, régularisation et rejet de bordereau à la charge du patient ; moins ce que les retours ont rendu (vente à crédit : tout ; vente payée : la part de régularisation rendue, script 158)';
 
 
 --
@@ -16898,6 +16963,13 @@ CREATE TRIGGER trg_retour_client_ligne_prestation BEFORE INSERT ON public.retour
 --
 
 CREATE TRIGGER trg_retour_client_ligne_organisme_depose BEFORE INSERT OR UPDATE OF montant_organisme ON public.retour_client_ligne FOR EACH ROW EXECUTE FUNCTION public.refuser_retour_organisme_depose();
+
+
+--
+-- Name: retour_client_ligne trg_retour_client_ligne_regularisation; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_retour_client_ligne_regularisation BEFORE INSERT OR UPDATE OF montant_regularisation ON public.retour_client_ligne FOR EACH ROW EXECUTE FUNCTION public.verifier_retour_regularisation();
 
 
 --

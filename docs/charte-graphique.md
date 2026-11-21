@@ -131,6 +131,17 @@ lignes : répartition médicaments · parapharmacie · prestations et retours cl
 (répartition) et « Retours clients » à part, affichées seulement quand elles ont une valeur. Mesuré 0 px en Jour, Semaine et Mois,
 1 366 × 768 et 1 536 × 890, clair et sombre. Écrans de la parapharmacie (Nomenclature › Produits à classer et Version et
 catégories, Stock › Produits avec la pastille Parapharmacie, Nouveau produit) : 0 px aux deux tailles, clair et sombre.
+**Caisse et contrôle › Règles, mesuré le 2026-11-21** après l'ajout du réglage « Facture et retour fournisseur laissés »
+(script 156) : 36 px de défilement à 1 366 × 768 ; intitulé et deux choix sur une ligne (libellés courts, détail dans la bulle),
+puis les deux choix du versement au coffre côte à côte de la même façon : 0 px à 1 366 × 768 et 1 536 × 890, clair et sombre,
+captures regardées. Mesurés le même jour, 0 px aux deux tailles, clair et sombre : fiche d'un prêt (quatre onglets), panneau de
+retour d'une vente en tiers payant, Chifa › « Retours à corriger dans CHIFA-Officine ».
+**Caisse › Annulation ou retour, panneau de retour, mesuré le 2026-11-21** (script 158, retour et dettes du patient) : avec
+l'alerte des dettes en bas, le panneau défilait de 218 px à 1 366 × 768 et de 112 px à 1 536 × 890, alerte sous le pli ;
+réorganisé : résumé de la vente, alerte des dettes et ses choix juste dessous (toujours visibles), lignes, motif et précision dans
+un seul `.cadre-defilant.retour-cadre`, bouton « Enregistrer le retour » sous le cadre. Mesuré 0 px, bouton visible, à
+1 366 × 768 et 1 536 × 890, clair et sombre, captures regardées : vente en tiers payant sans dette, patient endetté (« Déduire de
+ses dettes »), patient endetté (« Rendre quand même »).
 **Seuils par produit revu le 2026-11-20** (Administration › Alertes et seuils › Seuils par produit, demande du titulaire : 8 à 10
 lignes visibles à 1 366 × 768 ; avant : 2 lignes entières, lignes de 70 px) : titre du panneau retiré (il répétait celui de la
 page), explication en `.detail` dans la colonne de gauche (masquée quand un produit est choisi), tableau `tableau-serre`, cellules

@@ -218,11 +218,16 @@ public class RetourClientTests
         var r = await solder.ExecuterAsync(20, "Erreur", l, 8, "Caisse 1", null, null, solderDette: true, accordClient: true);
         Assert.True(stock.Ecrit!.AccordClient);
         Assert.Equal((150m, 200m, "especes"), (r.ARendre, r.DetteDiminuee, r.Mode));   // dette soldée, surplus rendu
-        Assert.Equal((350m, 200m), (stock.Ecrit!.Montant, stock.Ecrit.ReductionDette));
+        // Script 158 : imputé sur ses dettes comme un encaissement de dette
+        Assert.Equal((350m, 0m, 200m), (stock.Ecrit!.Montant, stock.Ecrit.ReductionDette, stock.Ecrit.ImputationDettes));
 
+        // Script 158 : patient endetté, le vendeur doit choisir ; « rendre quand même »
+        var (sansChoix, _) = Monter(endette);
+        var e2 = await Assert.ThrowsAsync<RegleMetierException>(() => sansChoix.ExecuterAsync(20, "Erreur", l, 8, "Caisse 1", null, null, solderDette: false));
+        Assert.Equal("dettes_patient", e2.Champ);
         var (rendre, stock2) = Monter(endette);
-        var r2 = await rendre.ExecuterAsync(20, "Erreur", l, 8, "Caisse 1", null, null, solderDette: false);
-        Assert.Equal((350m, 0m, 0m), (r2.ARendre, r2.DetteDiminuee, stock2.Ecrit!.ReductionDette));
+        var r2 = await rendre.ExecuterAsync(20, "Erreur", l, 8, "Caisse 1", null, null, dettes: RegleRetour.DettesRendre);
+        Assert.Equal((350m, 0m, 0m, 0m), (r2.ARendre, r2.DetteDiminuee, stock2.Ecrit!.ReductionDette, stock2.Ecrit.ImputationDettes));
     }
 
     [Fact]
@@ -258,9 +263,9 @@ public class RetourClientTests
         Assert.Equal((0m, 350m, (string?)null), (r.ARendre, r.DetteDiminuee, r.ValidePar));
         Assert.Equal(5L, stock.Ecrit!.ValidePar);
 
-        // Rendu en espèces : la validation reste demandée
+        // Rendu en espèces (« rendre quand même », script 158) : la validation reste demandée
         var (rendre, _) = Monter(endette);
-        await Assert.ThrowsAsync<RegleMetierException>(() => rendre.ExecuterAsync(20, "Erreur", l, 5, "Caisse 1", null, null, solderDette: false));
+        await Assert.ThrowsAsync<RegleMetierException>(() => rendre.ExecuterAsync(20, "Erreur", l, 5, "Caisse 1", null, null, dettes: RegleRetour.DettesRendre));
         // Dette plus petite que le retour : une partie est rendue en espèces, validation demandée
         var petite = vente with { Vente = vente.Vente with { Patient = "Patient Fictif", SoldeCreditPatient = 100 } };
         var (surplus, _) = Monter(petite);

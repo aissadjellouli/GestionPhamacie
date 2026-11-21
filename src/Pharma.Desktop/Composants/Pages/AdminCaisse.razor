@@ -54,22 +54,27 @@
                 </div>
                 <fieldset class="champ" style="border: 0; padding: 0; margin: 0">
                     <legend class="etiquette-champ">À la clôture d’une caisse, l’argent compté part au coffre :</legend>
-                    <label class="case"><input type="radio" name="versement" checked="@(parametres.VersementCloture == "manuel")" @onchange="@(() => parametres.VersementCloture = "manuel")" />
-                        <span>À la main : le versement se saisit dans Trésorerie (caisses à verser)</span></label>
-                    <label class="case"><input type="radio" name="versement" checked="@(parametres.VersementCloture == "automatique")" @onchange="@(() => parametres.VersementCloture = "automatique")" />
-                        <span>Automatiquement : le compté moins le fond de caisse (@Libelles.Dinars(parametres.FondCaisseDefaut)), qui reste dans le tiroir ; pas à la relève d’équipe</span></label>
+                    @* Deux choix sur une ligne, détail dans la bulle (2026-11-21 : la rubrique tient à 1 366 × 768 avec le réglage des tâches laissées) *@
+                    <div style="display: flex; flex-wrap: wrap; column-gap: 24px">
+                        <label class="case" title="Le versement au coffre se saisit dans Trésorerie (caisses à verser)."><input type="radio" name="versement" checked="@(parametres.VersementCloture == "manuel")" @onchange="@(() => parametres.VersementCloture = "manuel")" />
+                            <span>À la main (Trésorerie, caisses à verser)</span></label>
+                        <label class="case" title="@($"Le compté moins le fond de caisse ({Libelles.Dinars(parametres.FondCaisseDefaut)}), qui reste dans le tiroir ; pas à la relève d’équipe.")"><input type="radio" name="versement" checked="@(parametres.VersementCloture == "automatique")" @onchange="@(() => parametres.VersementCloture = "automatique")" />
+                            <span>Automatiquement (le compté moins le fond de caisse de @Libelles.Dinars(parametres.FondCaisseDefaut))</span></label>
+                    </div>
                 </fieldset>
                 @if (tachesLaissees is not null)
                 {
-                    @* Réglage de l'officine (script 156), titulaire seul : deux choix sur une ligne, l'écran tient à 1366 × 768 *@
+                    @* Réglage de l'officine (script 156), titulaire seul : intitulé et deux choix sur UNE ligne (libellés courts, détail dans la
+                       bulle) : sur deux lignes, la rubrique défilait de 36 px à 1 366 × 768 (mesure du 2026-11-21) *@
                     <fieldset class="champ" style="border: 0; padding: 0; margin: 0" data-champ="taches_laissees_poste"
-                              title="Facture en préparation et retour fournisseur laissés au « Changer d’utilisateur » : gardés sur chaque poste dans un fichier chiffré par le compte Windows (relus au redémarrage), ou en mémoire seulement (perdus à la fermeture du poste ; le fichier du poste est supprimé à sa prochaine connexion). Jamais en clair. Réservé au titulaire, inscrit au journal.">
-                        <legend class="etiquette-champ">Facture et retour fournisseur laissés au changement d’utilisateur@(Titulaire ? "" : " (réglé par le titulaire)") :</legend>
-                        <div style="display: flex; flex-wrap: wrap; column-gap: 24px">
-                            @foreach (var mode in new[] { ReglageTachesLaisseesDto.Chiffre, ReglageTachesLaisseesDto.Desactive })
+                              aria-label="Facture et retour fournisseur laissés au changement d’utilisateur"
+                              title="Facture en préparation et retour fournisseur laissés au « Changer d’utilisateur » : gardés sur chaque poste dans un fichier chiffré par le compte Windows (AES-256, relus au redémarrage), ou en mémoire seulement (perdus à la fermeture du poste ; le fichier du poste est supprimé à sa prochaine connexion). Jamais en clair. Réservé au titulaire, inscrit au journal.">
+                        <div style="display: flex; flex-wrap: wrap; align-items: center; column-gap: 24px">
+                            <span class="etiquette-champ">Facture et retour fournisseur laissés au changement d’utilisateur@(Titulaire ? "" : " (réglé par le titulaire)") :</span>
+                            @foreach (var (mode, court) in new[] { (ReglageTachesLaisseesDto.Chiffre, "Chiffré (AES-256)"), (ReglageTachesLaisseesDto.Desactive, "Désactivé (mémoire seulement)") })
                             {
                                 <label class="case"><input type="radio" name="taches-laissees" value="@mode" disabled="@(!Titulaire)" checked="@(tachesLaissees == mode)"
-                                                           @onchange="@(() => tachesLaissees = mode)" /><span>@Libelles.ConservationTachesLaissees(mode)</span></label>
+                                                           @onchange="@(() => tachesLaissees = mode)" /><span>@court</span></label>
                             }
                         </div>
                     </fieldset>

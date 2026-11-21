@@ -78,10 +78,11 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
 
     public async Task<decimal> PayeAuComptoirAsync(IReadOnlyList<long> ventes, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("""
+        // Retours : part du patient seulement (la part rendue d'une régularisation « à la charge du patient » n'a pas été payée au comptoir, script 158)
+        await using var cmd = db.CreateCommand($"""
             SELECT COALESCE(SUM(GREATEST(LEAST(
                      (SELECT COALESCE(SUM(x.montant), 0) FROM paiement x WHERE x.vente_id = v.id AND x.mode <> 'credit')
-                   - (SELECT COALESCE(SUM(rc.montant_rembourse), 0) FROM retour_client rc WHERE rc.vente_id = v.id),
+                   - {Pharma.Infrastructure.Caisse.AnnulationsVenteSql.DejaRenduPartPatient},
                    v.part_patient), 0)), 0)
             FROM vente v WHERE v.id = ANY($1)
             """);

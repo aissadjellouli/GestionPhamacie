@@ -15,8 +15,9 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                v.statut, COALESCE(s.fermee_le IS NULL, false),
             v.bordereau_id IS NOT NULL OR EXISTS (SELECT 1 FROM bordereau_vente bv JOIN bordereau bb ON bb.id = bv.bordereau_id
                                                   WHERE bv.vente_id = v.id AND bb.statut <> 'preparation'),
-               -- Déjà rendu par des retours (argent ou dette diminuée), dette actuelle du patient, facture en vigueur
-               (SELECT COALESCE(SUM(rc.montant_rembourse), 0) FROM retour_client rc WHERE rc.vente_id = v.id),
+               -- Déjà rendu par des retours (argent ou dette diminuée) sur la part du patient, part de la régularisation rendue exclue
+               -- (script 158), dette actuelle du patient, facture en vigueur
+               {DejaRenduPartPatient},
                COALESCE(pa.solde_credit, 0),
                (SELECT fc.numero FROM facture_client_ligne fl JOIN facture_client fc ON fc.id = fl.facture_id
                 WHERE fl.vente_id = v.id AND fc.type = 'facture' AND fc.statut IN ('emise', 'rejetee') ORDER BY fc.id LIMIT 1),
@@ -39,9 +40,10 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                {RemiseVenteSql.RemisA}, {RemiseVenteSql.Pour},
                -- Régularisation de part organisme active (097, 098) ; à la charge du patient : part déjà payée, la part à crédit de la
                -- vente étant réputée payée d'abord (v_vente_credit : crédit accordé de la vente = part à crédit + régularisation)
+               -- Script 158 : la part déjà rendue par des retours (boîtes rendues) n'est plus due ; la part payée porte sur ce qui reste
                g.id, g.sort, g.montant_patient,
                CASE WHEN g.sort = 'charge_patient' THEN COALESCE((
-                   SELECT LEAST(g.montant_patient, GREATEST(0, vc.regle - (vc.montant - g.montant_patient)))
+                   SELECT LEAST(g.montant_patient - rr.rendu, GREATEST(0, vc.regle - (vc.montant - (g.montant_patient - rr.rendu))))
                    FROM v_vente_credit vc WHERE vc.vente_id = v.id), 0) ELSE 0 END,
                -- Part payée par l'avoir du patient (script 106)
                (SELECT COALESCE(SUM(p.montant), 0) FROM paiement p WHERE p.vente_id = v.id AND p.mode = 'avoir'),
@@ -49,12 +51,29 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                (SELECT COALESCE(SUM(rc.montant_rembourse), 0) FROM retour_client rc WHERE rc.vente_id = v.id AND rc.mode = 'avoir'),
                -- Portée sur un bordereau déposé (sorti de « préparation ») : ni annulation ni retour avec part organisme (script 155)
                EXISTS (SELECT 1 FROM bordereau_vente bv JOIN bordereau bb ON bb.id = bv.bordereau_id
-                       WHERE bv.vente_id = v.id AND bb.statut <> 'preparation')
+                       WHERE bv.vente_id = v.id AND bb.statut <> 'preparation'),
+               -- Part de la régularisation à la charge du patient déjà rendue par des retours (script 158)
+               rr.rendu
         FROM vente v
         JOIN utilisateur u ON u.id = v.utilisateur_id
         LEFT JOIN patient pa ON pa.id = v.patient_id
         LEFT JOIN session_caisse s ON s.id = v.session_caisse_id
         LEFT JOIN regularisation_part_organisme g ON g.vente_id = v.id AND g.statut = 'active'
+        CROSS JOIN LATERAL (SELECT {RegularisationRendue} AS rendu) rr
+        """;
+
+    /// <summary>Part de la régularisation à la charge du patient rendue par les retours de la vente v (script 158).</summary>
+    internal const string RegularisationRendue = """
+        (SELECT COALESCE(SUM(rl.montant_regularisation), 0) FROM retour_client_ligne rl JOIN ligne_vente lr ON lr.id = rl.ligne_vente_id
+         WHERE lr.vente_id = v.id)
+        """;
+
+    /// <summary>
+    /// Déjà rendu par les retours de la vente v sur la part du patient (argent, dette diminuée, avoir, imputation sur ses dettes) : la part
+    /// de la régularisation rendue en est retirée (script 158), elle ne fait pas partie de ce que le patient a payé pour la vente.
+    /// </summary>
+    internal const string DejaRenduPartPatient = $"""
+        ((SELECT COALESCE(SUM(rc.montant_rembourse), 0) FROM retour_client rc WHERE rc.vente_id = v.id) - {RegularisationRendue})
         """;
 
     public async Task<VenteAnnulable?> TrouverAsync(long? venteId, string? numero, CancellationToken ct = default)
@@ -146,7 +165,7 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                     r.IsDBNull(8) ? null : r.GetString(8), r.GetString(9), r.GetBoolean(10), r.GetBoolean(11), [],
                     r.GetDecimal(12), r.GetDecimal(13), r.IsDBNull(14) ? null : r.GetString(14), r.GetInt64(15), r.IsDBNull(16) ? null : r.GetInt64(16), r.GetDecimal(17),
                     RemiseVente.Complement(r.IsDBNull(18) ? null : r.GetString(18), r.IsDBNull(19) ? null : r.GetString(19)),
-                    r.IsDBNull(20) ? null : new RegularisationVente(r.GetInt64(20), r.GetString(21), r.GetDecimal(22), r.GetDecimal(23)), r.GetDecimal(24), r.GetDecimal(25),
+                    r.IsDBNull(20) ? null : new RegularisationVente(r.GetInt64(20), r.GetString(21), r.GetDecimal(22), r.GetDecimal(23), r.GetDecimal(27)), r.GetDecimal(24), r.GetDecimal(25),
                     r.GetBoolean(26))));
         if (ventes.Count == 0) return [];
 
@@ -207,7 +226,7 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
         }
         // Vente verrouillée : un retour enregistré entre la lecture et l'annulation changerait le montant à rendre (double remboursement)
         if (a.DejaRenduLu is { } lu)
-            await using (var cmd = new NpgsqlCommand("SELECT COALESCE(SUM(montant_rembourse), 0) FROM retour_client WHERE vente_id = $1", cx, tx))
+            await using (var cmd = new NpgsqlCommand($"SELECT {DejaRenduPartPatient} FROM vente v WHERE v.id = $1", cx, tx))
             {
                 cmd.Parameters.AddWithValue(a.VenteId);
                 if ((decimal)(await cmd.ExecuteScalarAsync(ct))! != lu)

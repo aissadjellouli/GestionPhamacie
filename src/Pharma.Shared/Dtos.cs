@@ -926,13 +926,20 @@ public sealed record LigneRetourClientDto(long LigneVenteId, int Quantite, strin
 /// SolderDette : le patient doit de l'argent et le caissier a choisi de retirer le remboursement de sa dette (le surplus est rendu).
 /// PatientDetteId : vente sans patient, le patient s'est nommé au retour et c'est sa dette qui est diminuée.
 /// MotifCode (script 104) : motif obligatoire de la liste réglable « retour_client » ; Motif : précision facultative, obligatoire pour « Autre ».
+/// Dettes (script 158) : patient de la vente qui doit encore de l'argent, choix du vendeur : « deduire » (imputé sur ses dettes, avec
+/// AccordClient) ou « rendre » (rendu quand même, validation du droit caisse.retour_especes).
 /// </summary>
 public sealed record RetourClientRequete(string? Motif, IReadOnlyList<LigneRetourClientDto> Lignes, string? ValidateurIdentifiant, string? ValidateurCode,
-    bool SolderDette = false, long? PatientDetteId = null, bool AccordClient = false, string? MotifCode = null);
+    bool SolderDette = false, long? PatientDetteId = null, bool AccordClient = false, string? MotifCode = null, string? Dettes = null);
 
-/// <summary>PartOrganismeRetiree (script 155) : part de l'organisme retirée de sa créance ; Canal et factures : rappel affiché après le retour.</summary>
+/// <summary>
+/// PartOrganismeRetiree (script 155) : part de l'organisme retirée de sa créance ; Canal et factures : rappel affiché après le retour.
+/// Script 158 : ImputeSurDettes (argent dû imputé sur ses dettes), PartRegularisation (part de la régularisation à sa charge rendue),
+/// DetteRestante (ce que le patient doit encore).
+/// </summary>
 public sealed record RetourClientDto(string Numero, decimal ARendre, string? Mode, int RemisEnStock, int ADetruire, string? ValidePar, decimal DetteDiminuee = 0,
-    decimal AvoirRecredite = 0, decimal PartOrganismeRetiree = 0, string? Canal = null, string? FactureOrganisme = null, string? FactureChifa = null);
+    decimal AvoirRecredite = 0, decimal PartOrganismeRetiree = 0, string? Canal = null, string? FactureOrganisme = null, string? FactureChifa = null,
+    decimal ImputeSurDettes = 0, decimal PartRegularisation = 0, decimal DetteRestante = 0);
 
 /// <summary>Retour avec part organisme d'une vente Chifa, à corriger dans CHIFA-Officine (Finances › Chifa, script 155).</summary>
 public sealed record RetourACorrigerChifaDto(long RetourId, DateTime RetourLe, string RetourPar, long VenteId, string Numero, DateTime DateVente,

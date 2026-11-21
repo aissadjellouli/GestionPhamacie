@@ -24,7 +24,16 @@ public sealed record VenteAnnulable(
 /// Régularisation de part organisme active de la vente (script 097) : sort, montant mis à la charge du patient et part qu'il en a déjà
 /// payée (lue sur v_vente_credit : la part à crédit de la vente est réputée payée d'abord, la régularisation ensuite).
 /// </summary>
-public sealed record RegularisationVente(long Id, string Sort, decimal MontantPatient, decimal PayeParLePatient);
+/// RenduParRetours (script 158) : part de la régularisation à la charge du patient déjà rendue par des retours (boîtes rendues) ;
+/// PayeParLePatient porte sur ce qui en reste (Restante).
+public sealed record RegularisationVente(long Id, string Sort, decimal MontantPatient, decimal PayeParLePatient, decimal RenduParRetours = 0)
+{
+    /// <summary>Part de la régularisation encore à la charge du patient : montant moins ce que les retours en ont rendu.</summary>
+    public decimal Restante => Math.Max(MontantPatient - RenduParRetours, 0);
+
+    /// <summary>Part encore due (impayée) de ce qui reste.</summary>
+    public decimal Due => Math.Max(Restante - PayeParLePatient, 0);
+}
 
 /// <summary>
 /// Régularisation à annuler dans la transaction de l'annulation (script 098) : jamais supprimée, statut annulée. DetteAnnulee : part due
@@ -171,7 +180,8 @@ public sealed class AnnulerVente(IAnnulationsVente annulations, ISessionsCaisse 
         if (v.Regularisation is { } g0)
         {
             var detteRegul = v.PatientId is null ? 0 : Math.Max(0, v.SoldeCreditPatient - (patientDette is null ? reductionDette : 0));
-            var e = Pharma.Domain.Ventes.RegularisationPartOrganisme.Annuler(g0.Sort, g0.MontantPatient, g0.PayeParLePatient, detteRegul);
+            // Part déjà rendue par des retours (script 158) : seule celle qui reste est annulée ou répartie
+            var e = Pharma.Domain.Ventes.RegularisationPartOrganisme.Annuler(g0.Sort, g0.Restante, g0.PayeParLePatient, detteRegul);
             (detteRegulAnnulee, tropPayeRegul) = (e.DetteAnnulee, e.TropPaye);
         }
 
@@ -241,6 +251,7 @@ public sealed class AnnulerVente(IAnnulationsVente annulations, ISessionsCaisse 
                 {
                     ["ticket"] = v.Numero, ["regularisation"] = regul.Id, ["sort"] = regul.Sort, ["montant_patient"] = v.Regularisation!.MontantPatient,
                     ["paye_par_le_patient"] = v.Regularisation.PayeParLePatient, ["dette_annulee"] = regul.DetteAnnulee,
+                    ["rendu_par_retours"] = v.Regularisation.RenduParRetours > 0 ? v.Regularisation.RenduParRetours : null,
                     ["choix"] = new[] { regul.Impute > 0, regul.Rembourse > 0, regul.Avoir > 0 }.Count(x => x) > 1 ? "reparti"
                         : regul.Impute > 0 ? "solder_autres_dettes" : regul.Rembourse > 0 ? "rembourser" : regul.Avoir > 0 ? "avoir" : null,
                     ["trop_paye_impute"] = regul.Impute, ["ventes_soldees"] = regul.Imputations.Select(i => new { vente = i.VenteId, montant = i.Montant }).ToList(),

@@ -6,6 +6,15 @@ namespace Pharma.Domain.Ventes;
 public enum DestinationRetour { Stock, Destruction }
 
 /// <summary>
+/// Répartition de ce que le retour rend au patient (script 158) : DetteVenteDiminuee (part à crédit de la vente retirée de sa dette),
+/// RegularisationDiminuee (part impayée de la régularisation à sa charge retirée de sa dette), ImputeSurDettes (argent dû au patient
+/// imputé sur ses dettes, comme un encaissement de dette, sans passer par le tiroir), ARendre (argent rendu selon le mode d'origine),
+/// ChoixExige (le patient doit encore de l'argent : le vendeur a dû choisir), DetteRestante (dette avant l'imputation).
+/// </summary>
+public sealed record RemboursementRetour(decimal DetteVenteDiminuee, decimal RegularisationDiminuee, decimal ImputeSurDettes, decimal ARendre,
+    bool ChoixExige, decimal DetteRestante);
+
+/// <summary>
 /// Retour de médicaments par le patient après la vente, à l'appréciation du pharmacien : retour partiel possible,
 /// boîtes remises en stock ou à détruire, part payée par le patient rendue au prorata.
 /// Vente en tiers payant (décision du titulaire du 2026-11-21, option A, script 155) : avant tout dépôt (vente sur aucun bordereau),
@@ -90,6 +99,57 @@ public static class RegleRetour
     {
         var reste = Math.Max(partPatient - dejaRendu, 0);
         return toutRendu ? reste : Math.Min(calcule, reste);
+    }
+
+    /// <summary>
+    /// Part de la régularisation « à la charge du patient » (rattachement du volet) d'une ligne rendue (décision du titulaire du
+    /// 2026-11-21, script 158) : ce qui reste de l'écart mis à sa charge, au prorata de la part de la caisse des boîtes rendues sur
+    /// celle des boîtes remboursées encore chez le patient (même base que la part organisme), arrondi au centime.
+    /// </summary>
+    public static decimal MontantRegularisation(decimal montantOrganismeLigne, int quantiteVendue, int quantiteRendue, decimal regularisationRestante,
+        decimal partCaisseRestante) =>
+        quantiteVendue <= 0 || montantOrganismeLigne <= 0 || regularisationRestante <= 0 || partCaisseRestante <= 0 ? 0
+            : Math.Min(Math.Round(regularisationRestante * (montantOrganismeLigne * quantiteRendue / quantiteVendue) / partCaisseRestante, 2,
+                MidpointRounding.AwayFromZero), regularisationRestante);
+
+    /// <summary>Code du choix du vendeur quand le patient a des dettes : les déduire (recommandé) ou rendre quand même.</summary>
+    public const string DettesDeduire = "deduire";
+    public const string DettesRendre = "rendre";
+
+    /// <summary>
+    /// Ce que le retour rend au patient, hors avoir recrédité (décision du titulaire du 2026-11-21, script 158), en trois temps :
+    /// 1) ce qui n'a pas été payé est retiré de sa dette : part à crédit de la vente (calculée avant, <paramref name="detteVenteDiminuee"/>),
+    ///    puis part impayée de la régularisation mise à sa charge ;
+    /// 2) le reste est de l'argent réellement payé (<paramref name="renduPartPatient"/> + part payée de la régularisation) ;
+    /// 3) patient connu qui doit encore de l'argent après 1) : choix exigé du vendeur, « déduire » (imputé sur ses dettes comme un
+    ///    encaissement de dette, au plus ce qu'il doit ; le surplus est rendu) ou « rendre » quand même ; sans dette ou patient inconnu,
+    ///    tout est rendu selon le mode de paiement d'origine.
+    /// </summary>
+    /// <param name="detteVenteDiminuee">Part du patient de la vente à crédit retirée de sa dette (0 si la vente est payée).</param>
+    /// <param name="renduPartPatient">Part du patient réellement payée, à rendre (hors avoir).</param>
+    /// <param name="partRegularisation">Part de la régularisation à la charge du patient des boîtes rendues.</param>
+    /// <param name="regularisationImpayee">Part de la régularisation encore due (non payée) avant ce retour.</param>
+    /// <param name="dettePatient">Dette totale du patient avant ce retour (toutes ventes).</param>
+    /// <param name="choix">null : pas encore choisi ; <see cref="DettesDeduire"/> ou <see cref="DettesRendre"/>.</param>
+    public static RemboursementRetour Rembourser(decimal detteVenteDiminuee, decimal renduPartPatient, decimal partRegularisation,
+        decimal regularisationImpayee, decimal dettePatient, bool patientConnu, string? choix)
+    {
+        if (choix is not null and not DettesDeduire and not DettesRendre)
+            throw new RegleMetierException("Choix inconnu pour les dettes du patient.", "dettes_patient");
+        var dette = Math.Max(dettePatient, 0);
+        var r = Math.Max(partRegularisation, 0);
+        // Part impayée de la régularisation des boîtes rendues : retirée de sa dette, jamais rendue
+        var regulDiminuee = Math.Min(Math.Min(r, Math.Max(regularisationImpayee, 0)), Math.Max(dette - detteVenteDiminuee, 0));
+        var paye = Math.Max(renduPartPatient, 0) + r - regulDiminuee;
+        var detteRestante = Math.Max(dette - detteVenteDiminuee - regulDiminuee, 0);
+        var choixExige = patientConnu && paye > 0 && detteRestante > 0;
+        if (!choixExige) return new RemboursementRetour(detteVenteDiminuee, regulDiminuee, 0, paye, false, detteRestante);
+        if (choix is null)
+            throw new RegleMetierException(
+                $"Ce patient doit encore {detteRestante:N2} DA : proposez-lui de déduire les {paye:N2} DA du retour de ses dettes (recommandé), ou rendez-les quand même.",
+                "dettes_patient");
+        var impute = choix == DettesDeduire ? Math.Min(paye, detteRestante) : 0;
+        return new RemboursementRetour(detteVenteDiminuee, regulDiminuee, impute, paye - impute, true, detteRestante);
     }
 
     public static DestinationRetour Destination(string? code) => code switch
