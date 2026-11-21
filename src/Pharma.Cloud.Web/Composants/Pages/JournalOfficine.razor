@@ -1,0 +1,46 @@
+@page "/mes-officines/{Id:guid}/journal"
+@inject DepotEcrans Depot
+
+<PageTitle>Journal des accès de l'officine · écrans du central</PageTitle>
+
+<div class="page page-serree">
+    <div class="titre-page">
+        <div>
+            <h1>Journal des accès de l'officine</h1>
+            <p class="sous-titre">Qui a ouvert cette officine à distance, quand et pour quoi : vous, l'éditeur (support) ou la console du central. Ajout seul, chaîné.</p>
+        </div>
+        <div class="actions">
+            <a class="btn btn-contour" href="@($"mes-officines/{Id}")">Tableau de bord</a>
+            <a class="btn btn-contour" href="mes-officines">Mes officines</a>
+        </div>
+    </div>
+    @if (Table.Lignes.Count == 0 && Refuse)
+    {
+        <Message Erreur="officine_refusee" />
+    }
+    else
+    {
+        <TableauEcran Table="@Table" Vide="Aucun accès noté." />
+        <PaginationEcran Page="@PageCourante" Taille="@Taille" Total="@Table.Total" Base="@($"mes-officines/{Id}/journal")" />
+    }
+</div>
+
+@code {
+    private const int Taille = 20;
+
+    [Parameter] public Guid Id { get; set; }
+    [CascadingParameter] private HttpContext? Contexte { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] private int? Numero { get; set; }
+
+    private TableEcran Table { get; set; } = TableEcran.Vide;
+    private int PageCourante => Math.Clamp(Numero ?? 1, 1, 100_000);
+
+    // Aucune ligne en page 1 : l'ouverture a été refusée (la consultation elle-même est toujours notée au journal de l'officine)
+    private bool Refuse => PageCourante == 1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Contexte?.EmpreinteJeton() is { } jeton)
+            Table = await Depot.TitulaireJournalAsync(jeton, Id, PageCourante, Taille, Contexte.RequestAborted);
+    }
+}

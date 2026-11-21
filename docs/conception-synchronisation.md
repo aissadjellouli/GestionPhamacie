@@ -2083,4 +2083,21 @@ Détail, routes, sécurité et marche à suivre : [ecrans-central.md](ecrans-cen
 - **Comptes** : console du central `--creer-compte-editeur`, `--comptes-distants`, `--desactiver-compte`, `--deverrouiller-compte` (journalisées) ;
   BCrypt coût 12 ; mot de passe provisoire à changer ; verrouillage 5 échecs → 15 min doublées jusqu'à 24 h ; second facteur en **mode fichier**
   en développement seulement, e-mail par le SMTP du central en production, SMS sans fournisseur.
-- **Reste** : mise en ligne ; S7.2 (titulaire, multi-officines) ; mesure des écrans (écran fixe) ; voir [ecrans-central.md](ecrans-central.md) § 8.
+- **Reste** : mise en ligne ; S7.2b (rubrique « Accès à distance » du poste) ; mesure des écrans (écran fixe) ; voir [ecrans-central.md](ecrans-central.md) § 8.
+
+### 32.1 Lot S7.2a : écrans du titulaire, côté serveur central (réalisé en local le 2026-11-21, go du titulaire, recommandations S7 acceptées)
+
+Le poste ne change pas dans ce lot. Détail et routes : [ecrans-central.md](ecrans-central.md) § 3 bis.
+
+- **Script central `032_ecrans_titulaire.sql`** : `compte_officine.droits` (`consulter`, `journal_acces`) ; `code_rattachement` (empreinte
+  SHA-256 seule, un compte, une officine, 30 min, usage unique) ; `cloud_ecran_rattacher` ; lecture du titulaire `cloud_ecran_titulaire_officines`,
+  `_tableau` (**agrégats seulement** : chiffre d'affaires du jour, du mois et du mois précédent, nombre de ventes, part Chifa, crédits en cours,
+  alertes de stock et de péremption, synchronisation, anomalies, ordres en attente), `_journal` ; console `cloud_compte_distant_code_rattachement`.
+- **Officine posée par la base** (`cloud_ecran_ouvrir`, § 6 « cloisonnement ») et RLS forcée sur les tables miroir : un titulaire ne lit
+  jamais une autre officine (tests de non-fuite SQL et C#). L'éditeur n'a aucune fonction du titulaire (décision n° 4 inchangée : il ne
+  voit toujours aucune donnée de vente).
+- **Rien d'inventé** : une donnée non montée (table ou colonne absente, famille non envoyée, aucun chargement complet terminé comprenant la
+  table) est rendue NULL et affichée « non disponible ».
+- **Journal des accès consultable par le titulaire** (§ 6) : accès de ses officines, acteur « vous », « éditeur », « autre titulaire » ou
+  « console », sans identifiant ni nom.
+- **Console** : `--creer-compte-titulaire … --auteur`, `--code-rattachement <identifiant> <officine> --auteur` (développement, en attendant S7.2b).

@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Mvc;
 using Pharma.Cloud.Web.Codes;
@@ -37,6 +37,12 @@ public static class Messages
         ["aucun"] = "Demandez d'abord un code de confirmation.",
         ["autorite"] = "Certificat public de l'autorité introuvable : code d'activation impossible (voir docs/ecrans-central.md).",
         ["officine"] = "Officine introuvable.",
+        ["rattachement_inconnu"] = "Code de rattachement inconnu : vérifiez les 12 caractères, ou demandez un nouveau code.",
+        ["rattachement_expire"] = "Code de rattachement expiré (30 minutes) : demandez-en un nouveau.",
+        ["rattachement_utilise"] = "Code de rattachement déjà utilisé ou remplacé par un plus récent : demandez-en un nouveau.",
+        ["rattachement_partie"] = "Cette officine est partie : rattachement impossible.",
+        ["trop_d_essais"] = "Trop d'essais : attendez un quart d'heure avant de saisir un autre code.",
+        ["officine_refusee"] = "Officine introuvable ou non rattachée à votre compte (ou droit absent).",
     };
 
     public static readonly Dictionary<string, string> Succes = new()
@@ -45,6 +51,7 @@ public static class Messages
         ["code_envoye"] = "Code de confirmation envoyé : valable 5 minutes, usage unique.",
         ["certificat_revoque"] = "Certificat révoqué : refusé dès le prochain appel de l'officine.",
         ["serveur_revoque"] = "Certificats du serveur révoqués : refusés dès le prochain appel.",
+        ["rattachee"] = "Officine rattachée à votre compte : tableau de bord et journal des accès.",
     };
 
     public static string? Erreur(string? cle) => cle is not null && Erreurs.TryGetValue(cle, out var m) ? m : null;
@@ -106,7 +113,7 @@ public static class ActionsEcrans
             {
                 case "ok":
                     Jetons.Poser(ctx.Response, nouveau);
-                    return Results.Redirect(etape == "mot_de_passe" ? "/mot-de-passe" : "/officines");
+                    return Results.Redirect(etape == "mot_de_passe" ? "/mot-de-passe" : ControleAcces.Accueil(ctx.Session()!));
                 case "faux": return Results.Redirect("/code?erreur=code_faux");
                 case "expire": return Results.Redirect("/code?erreur=code_expire");
                 case "aucun": return Results.Redirect("/code?erreur=code_absent");
@@ -126,7 +133,7 @@ public static class ActionsEcrans
             if (ComptesDistants.RefusMotDePasse(nouveau, session.Identifiant) is not null) return Results.Redirect("/mot-de-passe?erreur=regle");
             if (BCrypt.Net.BCrypt.Verify(nouveau!, empreinte)) return Results.Redirect("/mot-de-passe?erreur=mdp_identique");
             var statut = await depot.ChangerMotDePasseAsync(ctx.EmpreinteJeton()!, BCrypt.Net.BCrypt.HashPassword(nouveau, ComptesDistants.CoutBcrypt), ct);
-            return Results.Redirect(statut == "ok" ? "/officines?ok=mdp" : "/connexion?erreur=session");
+            return Results.Redirect(statut == "ok" ? ControleAcces.Accueil(session) + "?ok=mdp" : "/connexion?erreur=session");
         }).RequireRateLimiting("code");
 
         g.MapPost("/deconnexion", async (HttpContext ctx, DepotEcrans depot) =>
@@ -140,8 +147,17 @@ public static class ActionsEcrans
         {
             if (theme is "clair" or "sombre") ctx.Response.Cookies.Append(Jetons.CookieTheme, theme, Jetons.Options());
             else ctx.Response.Cookies.Delete(Jetons.CookieTheme, Jetons.Options());
-            return Results.Redirect(RetourLocal(retour, "/officines"));
+            return Results.Redirect(RetourLocal(retour, ctx.Session() is { } s ? ControleAcces.Accueil(s) : "/connexion"));
         });
+
+        // Lot S7.2a : rattachement d'une officine au compte titulaire par un code (empreinte seule envoyée à la base ; refus comptés)
+        g.MapPost("/rattacher", async ([FromForm] string? code, HttpContext ctx, DepotEcrans depot) =>
+        {
+            var (statut, officine) = await depot.RattacherAsync(ctx.EmpreinteJeton()!, ComptesDistants.EmpreinteCodeRattachement(code), ctx.RequestAborted);
+            return statut == "ok" && officine is not null
+                ? Results.Redirect($"/mes-officines/{officine}?ok=rattachee")
+                : Results.Redirect($"/rattacher?erreur={(statut == "trop_d_essais" ? "trop_d_essais" : Cle("rattachement_" + statut))}");
+        }).RequireRateLimiting("code");
 
         // Code de confirmation d'une action (second facteur à chaque action sensible)
         g.MapPost("/code-action", async ([FromForm] string? retour, HttpContext ctx, DepotEcrans depot, CodesSecondFacteur codes, IEnvoiCodeDistant envoi,

@@ -81,3 +81,10 @@ Détail : [ecrans-central.md](ecrans-central.md) § 5. En local seulement à ce 
   revérifient le jeton de session ; l'officine courante est posée par la base après vérification du droit.
 - **Verrouillage** 5 échecs → 15 min, doublé jusqu'à 24 h ; même message pour un identifiant inconnu ou un mot de passe faux ; limites de débit.
 - **Journal des accès** au central : ajout seul, chaîné SHA-256, sans texte libre ni donnée nominative ; « Mon journal des accès » pour chaque compte.
+- **Titulaire (lot S7.2a, script central 032)** : compte créé par la console (`--creer-compte-titulaire … --auteur`), jamais par un écran ;
+  il ne voit que **ses** officines, rattachées par un **code de rattachement** (un compte, une officine, 30 minutes, usage unique, empreinte
+  seule en base ; 5 refus par quart d'heure ; code d'un autre compte : même réponse qu'un code inconnu). Droits par officine : `consulter`
+  (tableau de bord : **totaux seulement**, aucun patient, aucune vente détaillée) et `journal_acces` (journal des accès de l'officine, y
+  compris ceux de l'éditeur, sans identifiant ni nom). Sessions : 30 minutes d'inactivité, 8 heures au plus.
+- **Rôles étanches** : le titulaire n'ouvre aucun écran ni aucune action de l'éditeur, l'éditeur aucun écran du titulaire ; refus par les
+  écrans (« Accès refusé ») **et** par la base (rôle revérifié dans chaque fonction).

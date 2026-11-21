@@ -27,7 +27,10 @@ public sealed class OptionsServeurEcrans
 public static class ServeurEcrans
 {
     public const string Csp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; "
-                              + "form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
+                              // base-uri 'self' (et non 'none') : la balise <base href="/"> d'App.razor doit s'appliquer, sinon les adresses
+                              // relatives (css/, js/, img/, liens) sont cherchées sous /officines/… sur les pages imbriquées (404, script de
+                              // l'écran fixe absent ; constaté le 2026-11-21) ; une base vers un autre site reste interdite
+                              + "form-action 'self'; frame-ancestors 'none'; base-uri 'self'";
 
     public static async Task<int> LancerAsync(string[] args)
     {

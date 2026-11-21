@@ -6,7 +6,16 @@
     <div class="titre-page">
         <div>
             <h1>Accès refusé</h1>
-            <p class="sous-titre">Ces écrans sont réservés à l'éditeur. Les écrans du titulaire viendront avec le lot S7.2.</p>
+            <p class="sous-titre">Cet écran n'est pas ouvert à votre compte : l'éditeur et le titulaire ont chacun leurs écrans, jamais ceux de l'autre.</p>
+        </div>
+        <div class="actions">
+            <a class="btn btn-contour" href="@Accueil">Retour à l'accueil</a>
         </div>
     </div>
 </div>
+
+@code {
+    [CascadingParameter] private HttpContext? Contexte { get; set; }
+
+    private string Accueil => Contexte?.Session() is { Titulaire: true } ? "mes-officines" : Contexte?.Session() is { Editeur: true } ? "officines" : "connexion";
+}

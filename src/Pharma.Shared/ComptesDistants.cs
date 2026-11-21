@@ -46,6 +46,34 @@ public static partial class ComptesDistants
         return null;
     }
 
+    // ---- Lot S7.2a (script central 032) : code de rattachement d'une officine à un compte titulaire ----
+    public const int LongueurCodeRattachement = 12;
+
+    // 32 caractères sans ambiguïté (ni 0, O, 1, I) : 5 bits par caractère, 60 bits pour 12 caractères ; 256 est multiple de 32 (tirage uniforme)
+    private const string AlphabetRattachement = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+    /// <summary>Code de rattachement tiré au sort, affiché UNE fois par groupes de 4 (« ABCD-EFGH-JKLM ») ; seule son empreinte va en base.</summary>
+    public static string CodeRattachement()
+    {
+        var o = RandomNumberGenerator.GetBytes(LongueurCodeRattachement);
+        var c = new string(o.Select(b => AlphabetRattachement[b % AlphabetRattachement.Length]).ToArray());
+        return $"{c[..4]}-{c[4..8]}-{c[8..]}";
+    }
+
+    /// <summary>Code saisi ramené à sa forme canonique (majuscules, sans espace ni tiret), ou null s'il ne peut pas être un code.</summary>
+    public static string? NormaliserCodeRattachement(string? saisie)
+    {
+        if (saisie is null || saisie.Length > 40) return null;
+        var c = new string(saisie.Where(ch => ch is not (' ' or '-' or '\t')).Select(char.ToUpperInvariant).ToArray());
+        return c.Length == LongueurCodeRattachement && c.All(AlphabetRattachement.Contains) ? c : null;
+    }
+
+    /// <summary>Empreinte SHA-256 (hexadécimal) du code canonique, préfixée « rattachement-v1: » ; null si la saisie n'est pas un code.</summary>
+    public static string? EmpreinteCodeRattachement(string? saisie) =>
+        NormaliserCodeRattachement(saisie) is { } c
+            ? Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.ASCII.GetBytes("rattachement-v1:" + c)))
+            : null;
+
     [GeneratedRegex("^[a-z0-9][a-z0-9._-]{2,59}$")]
     private static partial Regex Identifiant();
 

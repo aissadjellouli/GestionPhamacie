@@ -35,6 +35,9 @@
            (réservé au compte courant), compte de test editeur.dev (mot de passe PROVISOIRE affiché une seule fois, à changer à la
            première connexion sur https://127.0.0.1:5094). Si 030 ou 031 ne sont pas passés sur pharmacie_cloud_dev, ou si pharma_app
            n'a pas l'option ADMIN sur pharma_cloud_ecrans : RIEN n'est fait pour les écrans (avertissement), le reste est préparé.
+       10. écrans du titulaire (lot S7.2a, script central 032) : compte de test titulaire.dev (mot de passe PROVISOIRE affiché une
+           seule fois) si 032 est passé sur pharmacie_cloud_dev, sinon avertissement (rien n'est fait). Rattacher une officine :
+           code de la console --code-rattachement titulaire.dev <officine> --auteur <nom> (affiché une fois, 30 minutes).
 
     -Activer   Visual Studio lancé (profil « API + Poste + Central ») : vérifie l'API (5080, /api/healthcheck) et le central (5090),
                affiche la marche à suivre à l'écran Administration > Synchronisation et un code neuf si besoin, puis l'état.
@@ -42,7 +45,7 @@
                (dont la page d'état 5092).
     -Retirer   retire les variables d'utilisateur, les rôles pharma_cloud_dev_vs, pharma_cloud_etat_vs et pharma_cloud_ecrans_dev_vs et
                le dossier %LOCALAPPDATA%\PharmaOfficine\central-dev (codes de second facteur compris).
-               Rien n'est supprimé dans les bases (l'officine et le compte editeur.dev restent au central, la synchronisation de
+               Rien n'est supprimé dans les bases (l'officine et les comptes editeur.dev et titulaire.dev restent au central, la synchronisation de
                pharmacie_dev reste réglée). A lancer d'abord avec -WhatIf ; refusé tant que le central écoute sur 5090 ou les écrans sur 5094.
 
     Mot de passe de pharma_app : variable PGPASSWORD déjà définie, ou pgpass.conf, ou saisie masquée (docs\poste-de-developpement.md).
@@ -103,6 +106,7 @@ $RoleEcrans = "pharma_cloud_ecrans_dev_vs"    # connexion des écrans du central
 $RoleGroupeEcrans = "pharma_cloud_ecrans"     # rôle sans connexion du script central 030 (fonctions cloud_ecran_* seulement)
 $PortEcrans = 5094                            # écrans du central (développement), lu seulement
 $CompteEditeur = "editeur.dev"                # compte de test des écrans (mot de passe provisoire affiché une fois)
+$CompteTitulaire = "titulaire.dev"            # compte de test du titulaire (lot S7.2a, script central 032 ; mot de passe provisoire affiché une fois)
 $LibelleOfficine = "Développement (pharmacie_dev)"
 $PortApi = 5080                               # lu seulement (santé), jamais pris
 $PortCentral = 5090
@@ -297,6 +301,7 @@ function Invoke-Preparer {
         Write-Simul "officine « $LibelleOfficine » créée au central si elle manque (code provisoire dans $FichierEtat), sinon nouveau code ; code affiché, jamais écrit"
         Write-Simul "écrans du central (seulement si les scripts centraux 030 et 031 sont passés) : rôle $RoleEcrans membre de $RoleGroupeEcrans,"
         Write-Simul "   variable PHARMA_CLOUD_ECRANS_CONNEXION, dossier $DossierCodes réservé, compte $CompteEditeur (mot de passe provisoire affiché une fois)"
+    Write-Simul "   compte $CompteTitulaire (lot S7.2a) seulement si le script central 032 est passé (mot de passe provisoire affiché une fois), sinon avertissement"
         Write-Simul "rien n'est créé, supprimé ni restauré dans $BaseOfficine ni $BaseCentrale (hors l'officine et son code au central)"
         return
     }
@@ -385,6 +390,8 @@ function Invoke-Preparer {
     if ($cxEcrans) {
         Write-Etape2 "Compte $CompteEditeur des écrans du central"
         Invoke-CompteEditeur $mdpAutorite
+        Write-Etape2 "Compte $CompteTitulaire des écrans du titulaire (lot S7.2a)"
+        Invoke-CompteTitulaire $mdpAutorite
     }
     Write-Etape2 "Suite"
     Write-Info "1. Fermer TOUTES les fenêtres de Visual Studio, puis le rouvrir (il lit les variables d'utilisateur à son démarrage)."
@@ -394,6 +401,7 @@ function Invoke-Preparer {
     if ($cxEcrans) {
         Write-Info "5. Écrans du central : profil « Central + Écrans » (ou « API + Poste + Central »), F5, puis https://${AdresseLocale}:$PortEcrans/"
         Write-Info "   compte $CompteEditeur ; code de second facteur dans $DossierCodes\$CompteEditeur.txt (développement seulement)."
+        Write-Info "   compte $CompteTitulaire (si 032 passé) : rattacher une officine avec un code de la console (--code-rattachement $CompteTitulaire <officine> --auteur <nom>)."
     }
 }
 
@@ -437,6 +445,27 @@ function Invoke-CompteEditeur([string]$MotDePasseAutorite) {
     $motProvisoire = ($r.Lignes | Where-Object { $_.Trim() } | Select-Object -Last 1).Trim()
     Write-Host ""
     Write-Host "   Compte $CompteEditeur : mot de passe PROVISOIRE (affiché une seule fois, à changer à la première connexion ; écrit nulle part) :" -ForegroundColor Cyan
+    Write-Host "   $motProvisoire" -ForegroundColor White
+}
+
+# Compte de test titulaire.dev (lot S7.2a) : créé par l'outil s'il manque et si le script central 032 est passé (sinon avertissement,
+# rien n'est fait) ; jamais recréé ni modifié. Mot de passe provisoire affiché UNE fois.
+function Invoke-CompteTitulaire([string]$MotDePasseAutorite) {
+    $s032 = Get-ScalaireCentral "SELECT (to_regprocedure('public.cloud_ecran_titulaire_tableau(text,uuid)') IS NOT NULL AND to_regprocedure('public.cloud_compte_distant_code_rattachement(text,uuid,text,text)') IS NOT NULL)::text"
+    if ($s032 -ne "true") {
+        Write-Avert "Script central 032 non passé sur $BaseCentrale (écrans du titulaire) : compte $CompteTitulaire non créé. Le passer (database\cloud\032_ecrans_titulaire.sql, après relecture), puis relancer -Preparer."
+        return
+    }
+    $present = Get-ScalaireCentral "SELECT count(*) FROM compte_distant WHERE identifiant = '$CompteTitulaire'"
+    if ($present -ne "0") {
+        Write-Ok "Compte $CompteTitulaire déjà présent : mot de passe inchangé (perdu : voir docs\ecrans-central.md, « Développement local »)."
+        return
+    }
+    $r = Invoke-Outil -Arguments @("--creer-compte-titulaire", $CompteTitulaire, "--nom", "Titulaire (développement)", "--email", "titulaire.dev@exemple.invalid", "--auteur", "preparer_central_vs") -Variables (Get-VariablesOutil $MotDePasseAutorite)
+    if ($r.Code -ne 0) { throw "--creer-compte-titulaire en échec :`n$($r.Texte)" }
+    $motProvisoire = ($r.Lignes | Where-Object { $_.Trim() } | Select-Object -Last 1).Trim()
+    Write-Host ""
+    Write-Host "   Compte $CompteTitulaire : mot de passe PROVISOIRE (affiché une seule fois, à changer à la première connexion ; écrit nulle part) :" -ForegroundColor Cyan
     Write-Host "   $motProvisoire" -ForegroundColor White
 }
 
@@ -580,6 +609,7 @@ function Invoke-Etat {
         $RoleEcrans, $(if ($role -ne "0") { "présent (LOGIN)" } else { "absent" }), $(if ($membre -ne "0") { "oui" } else { "non" }))
     if ((Get-ScalaireCentral "SELECT (to_regclass('public.compte_distant') IS NOT NULL)::text") -eq "true") {
         Write-Info ("Compte {0} : {1}" -f $CompteEditeur, $(if ((Get-ScalaireCentral "SELECT count(*) FROM compte_distant WHERE identifiant = '$CompteEditeur'") -ne "0") { "présent" } else { "absent" }))
+    Write-Info ("Compte {0} : {1}" -f $CompteTitulaire, $(if ((Get-ScalaireCentral "SELECT count(*) FROM compte_distant WHERE identifiant = '$CompteTitulaire'") -ne "0") { "présent" } else { "absent" }))
     }
     else { Write-Info "Script central 030 non passé : aucun compte distant." }
     Write-Etape2 "Central ($BaseCentrale) : officines"
@@ -625,7 +655,7 @@ function Invoke-Retirer {
         foreach ($n in $aRetirer) { Write-Simul "retrait de la variable d'utilisateur $n" }
         Write-Simul "retrait des rôles $RoleCentral, $RoleEtat et $RoleEcrans (aucun objet ni donnée en base ; $RoleGroupeEtat (029) et $RoleGroupeEcrans (030) restent)"
         if (Test-Path -LiteralPath $Racine) { Write-Simul "suppression du dossier $Racine (autorité, certificat, clé de synchronisation de pharmacie_dev, outil, codes de second facteur)" }
-        Write-Simul "rien n'est supprimé dans $BaseOfficine ni $BaseCentrale (le compte $CompteEditeur reste au central)"
+        Write-Simul "rien n'est supprimé dans $BaseOfficine ni $BaseCentrale (les comptes $CompteEditeur et $CompteTitulaire restent au central)"
         Write-Avert "Après retrait, pharmacie_dev garde ses réglages de synchronisation : décocher « Synchronisation activée » à l'écran avant, sur pharmacie_dev."
         return
     }

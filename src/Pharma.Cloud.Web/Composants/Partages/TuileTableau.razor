@@ -1,0 +1,22 @@
+@* Tuile du tableau de bord du titulaire (charte : .tuile, .tuile-libelle, .tuile-valeur, .tuile-note) ; « non disponible » en petit *@
+<div class="tuile">
+    <span class="tuile-libelle">@Libelle</span>
+    <span class="@ClasseValeur">@Valeur</span>
+    @if (!string.IsNullOrEmpty(Note))
+    {
+        <span class="tuile-note">@Note</span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Libelle { get; set; } = "";
+    [Parameter, EditorRequired] public string Valeur { get; set; } = "";
+    [Parameter] public string? Note { get; set; }
+    [Parameter] public bool Urgent { get; set; }
+    [Parameter] public bool Petite { get; set; }
+
+    private string ClasseValeur => "tuile-valeur"
+        + (Petite || Valeur == Tableau.NonDisponible ? " petite" : "")
+        + (Urgent ? " urgent" : "")
+        + (Valeur == Tableau.NonDisponible ? " non-disponible" : "");
+}

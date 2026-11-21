@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Crée la base d'un serveur central de synchronisation NEUF : scripts database\cloud 001 au dernier (031 à ce jour) dans l'ordre, contrôles, tests facultatifs.
+    Crée la base d'un serveur central de synchronisation NEUF : scripts database\cloud 001 au dernier (032 à ce jour) dans l'ordre, contrôles, tests facultatifs.
 
 .DESCRIPTION
     À utiliser pour le parcours E, étape 2 (serveur central). Ne sert jamais sur la base d'une officine.
@@ -13,7 +13,7 @@
 
     Étapes :
       1. création de la base (propriétaire = -Proprietaire, UTF8) par -CompteAdmin si elle n'existe pas ;
-      2. scripts 001 au dernier (031 à ce jour) de database\cloud, un par un, avec le compte propriétaire. Le script 001 crée le rôle
+      2. scripts 001 au dernier (032 à ce jour) de database\cloud, un par un, avec le compte propriétaire. Le script 001 crée le rôle
          applicatif pharma_cloud_api SANS connexion (non propriétaire des tables : la sécurité au niveau des lignes s'applique) ;
          le script 029 crée le rôle de lecture technique pharma_cloud_etat SANS connexion (aucune connexion créée ici) ; le script 030
          crée le rôle des écrans pharma_cloud_ecrans SANS connexion ni droit sur les tables (fonctions cloud_ecran_* seulement) ;
@@ -56,7 +56,7 @@
 
 .EXAMPLE
     .\scripts\mep\creer_base_centrale.ps1 -Base pharmacie_central -Proprietaire central_proprietaire
-    Crée la base et passe tous les scripts 001 à 031 (la suite numérotée sans trou).
+    Crée la base et passe tous les scripts 001 à 032 (la suite numérotée sans trou).
 
 .EXAMPLE
     .\scripts\mep\creer_base_centrale.ps1 -Base pharmacie_central -Proprietaire central_proprietaire -AvecTests -WhatIf

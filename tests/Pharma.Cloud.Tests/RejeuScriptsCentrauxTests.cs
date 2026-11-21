@@ -1,4 +1,4 @@
-﻿using Npgsql;
+using Npgsql;
 using BaseCentraleJetable = Pharma.Cloud.Tests.DescendantsMutuV1Tests.BaseCentraleJetable;
 
 namespace Pharma.Cloud.Tests;
@@ -13,7 +13,7 @@ public class RejeuScriptsCentrauxTests
 {
     /// <summary>
     /// Empreinte de l'état : fonctions (md5 de la définition), déclencheurs (table, nom, fonction appelée ; partitions de lot_recu exclues),
-    /// contraintes (md5 de la définition), droits d'exécution des fonctions (dont ceux des écrans, scripts 030 et 031, rôle pharma_cloud_ecrans)
+    /// contraintes (md5 de la définition), droits d'exécution des fonctions (dont ceux des écrans, scripts 030 à 032, rôle pharma_cloud_ecrans)
     /// et droits par colonnes (script 029, rôle pharma_cloud_etat).
     /// </summary>
     private const string Empreinte = """
@@ -40,7 +40,7 @@ public class RejeuScriptsCentrauxTests
         Assert.True(avant.Count > 200, $"empreinte trop courte ({avant.Count} lignes) : la requête ne lit pas la base");
 
         var scripts = Directory.GetFiles(Path.Combine(Depot.Racine(), "database", "cloud"), "0*.sql").Order(StringComparer.Ordinal).ToList();
-        Assert.True(scripts.Count >= 31, $"scripts attendus : au moins 31, trouvés {scripts.Count}");
+        Assert.True(scripts.Count >= 32, $"scripts attendus : au moins 32, trouvés {scripts.Count}");
         foreach (var script in scripts) base_.Rejouer(script);
 
         var apres = await Lire(db, ct);

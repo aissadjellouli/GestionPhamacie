@@ -46,7 +46,8 @@ public static class ContexteEcran
 /// <summary>
 /// Contrôle d'accès de chaque requête : session lue en base par l'empreinte du jeton, puis aiguillage selon l'étape.
 /// Sans session : seulement /connexion et les fichiers statiques. Étape « code » : /code. Étape « mot_de_passe » : /mot-de-passe.
-/// Session ouverte : écrans de l'éditeur (un titulaire n'a pas encore d'écran en S7.1 : page « accès refusé »).
+/// Session ouverte : écrans de l'éditeur (S7.1) ou écrans du titulaire (S7.2a), jamais ceux de l'autre rôle (page « accès refusé ») ;
+/// la base revérifie de toute façon le rôle dans chaque fonction cloud_ecran_*.
 /// </summary>
 public static class ControleAcces
 {
@@ -55,7 +56,24 @@ public static class ControleAcces
     private static readonly string[] EtapeCode = ["/code", "/actions/code", "/actions/renvoyer-code", "/actions/deconnexion", "/actions/theme"];
     private static readonly string[] EtapeMotDePasse = ["/mot-de-passe", "/actions/mot-de-passe", "/actions/deconnexion", "/actions/theme"];
 
+    /// <summary>Écrans communs aux deux rôles en session ouverte.</summary>
+    private static readonly string[] Communs = ["/mot-de-passe", "/actions/mot-de-passe", "/actions/deconnexion", "/actions/theme", "/mon-journal", "/acces-refuse"];
+
+    /// <summary>Écrans du titulaire (liste fermée) : ses officines, le rattachement, le tableau de bord et le journal d'une officine.</summary>
+    private static readonly string[] Titulaire = ["/mes-officines", "/rattacher", "/actions/rattacher"];
+
+    /// <summary>Accueil de chaque rôle (après la connexion, le code, le mot de passe).</summary>
+    public static string Accueil(SessionEcran session) => session.Titulaire ? "/mes-officines" : "/officines";
+
     public static bool Statique(PathString chemin) => Statiques.Any(s => chemin.Value?.StartsWith(s, StringComparison.OrdinalIgnoreCase) == true);
+
+    /// <summary>Tableau de bord ou journal d'une officine du titulaire : /mes-officines/{uuid} ou /mes-officines/{uuid}/journal.</summary>
+    public static bool EcranOfficineTitulaire(string chemin)
+    {
+        var morceaux = chemin.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return morceaux.Length is 2 or 3 && string.Equals(morceaux[0], "mes-officines", StringComparison.OrdinalIgnoreCase)
+               && Guid.TryParseExact(morceaux[1], "D", out _) && (morceaux.Length == 2 || string.Equals(morceaux[2], "journal", StringComparison.OrdinalIgnoreCase));
+    }
 
     /// <summary>Adresse de redirection, ou null si la requête peut passer (règle pure, testée).</summary>
     public static string? Redirection(PathString chemin, SessionEcran? session)
@@ -68,8 +86,11 @@ public static class ControleAcces
         {
             "code" => Parmi(EtapeCode) || Parmi(Publiques) ? null : "/code",
             "mot_de_passe" => Parmi(EtapeMotDePasse) || Parmi(Publiques) ? null : "/mot-de-passe",
-            _ when !session.Editeur => c is "/acces-refuse" or "/actions/deconnexion" or "/actions/theme" ? null : "/acces-refuse",
-            _ => c is "/connexion" or "/code" ? "/officines" : null,
+            _ when session.Titulaire => c is "/" or "/officines" or "/connexion" or "/code" ? "/mes-officines"
+                : Parmi(Communs) || Parmi(Titulaire) || EcranOfficineTitulaire(c) ? null : "/acces-refuse",
+            _ when session.Editeur => c is "/connexion" or "/code" ? "/officines"
+                : Parmi(Titulaire) || EcranOfficineTitulaire(c) || c.StartsWith("/mes-officines/", StringComparison.OrdinalIgnoreCase) ? "/acces-refuse" : null,
+            _ => Parmi(Communs) ? null : "/acces-refuse",
         };
     }
 

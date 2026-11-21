@@ -109,7 +109,56 @@ public class ReglesEcransTests
         Assert.Equal("/mot-de-passe", ControleAcces.Redirection("/actions/code-action", S("mot_de_passe")));
         Assert.Null(ControleAcces.Redirection("/officines", S("ouverte")));
         Assert.Equal("/officines", ControleAcces.Redirection("/connexion", S("ouverte")));
-        Assert.Equal("/acces-refuse", ControleAcces.Redirection("/officines", S("ouverte", "titulaire")));
+        Assert.Equal("/mes-officines", ControleAcces.Redirection("/officines", S("ouverte", "titulaire")));
+    }
+
+    [Fact]
+    public void Roles_croises_refuses_titulaire_et_editeur()
+    {
+        SessionEcran S(string role) => new(1, Guid.NewGuid(), "a.b", "A", role, "ouverte", DateTime.UtcNow.AddHours(1), false);
+        var officine = Guid.NewGuid();
+        // Titulaire : ses écrans et les écrans communs ; aucun écran ni aucune action de l'éditeur
+        foreach (var permis in new[] { "/mes-officines", "/rattacher", "/actions/rattacher", $"/mes-officines/{officine}", $"/mes-officines/{officine}/journal",
+                     "/mon-journal", "/mot-de-passe", "/actions/mot-de-passe", "/actions/deconnexion", "/actions/theme", "/acces-refuse" })
+            Assert.Null(ControleAcces.Redirection(permis, S("titulaire")));
+        foreach (var editeur in new[] { $"/officines/{officine}", "/officines/nouvelle", $"/officines/{officine}/nouveau-code", "/actions/creer-officine",
+                     "/actions/code-action", $"/actions/officines/{officine}/revoquer-serveur", $"/officines/{officine}/code-affiche", $"/mes-officines/{officine}/autre",
+                     "/mes-officines/pas-un-uuid" })
+            Assert.Equal("/acces-refuse", ControleAcces.Redirection(editeur, S("titulaire")));
+        Assert.Equal("/mes-officines", ControleAcces.Redirection("/", S("titulaire")));
+        Assert.Equal("/mes-officines", ControleAcces.Redirection("/connexion", S("titulaire")));
+        Assert.Equal("/mes-officines", ControleAcces.Accueil(S("titulaire")));
+        // Éditeur : aucun écran du titulaire (tableau de bord, journal d'une officine, rattachement)
+        foreach (var titulaire in new[] { "/mes-officines", "/rattacher", "/actions/rattacher", $"/mes-officines/{officine}", $"/mes-officines/{officine}/journal" })
+            Assert.Equal("/acces-refuse", ControleAcces.Redirection(titulaire, S("editeur")));
+        Assert.Null(ControleAcces.Redirection($"/officines/{officine}", S("editeur")));
+        Assert.Null(ControleAcces.Redirection("/mon-journal", S("editeur")));
+        Assert.Equal("/officines", ControleAcces.Accueil(S("editeur")));
+        // Rôle inconnu : écrans communs seulement
+        Assert.Equal("/acces-refuse", ControleAcces.Redirection("/officines", S("autre")));
+        Assert.Equal("/acces-refuse", ControleAcces.Redirection("/mes-officines", S("autre")));
+    }
+
+    [Fact]
+    public void Code_de_rattachement_et_valeurs_non_disponibles()
+    {
+        for (var i = 0; i < 100; i++)
+        {
+            var code = ComptesDistants.CodeRattachement();
+            Assert.Matches("^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$", code);
+            Assert.Equal(ComptesDistants.EmpreinteCodeRattachement(code), ComptesDistants.EmpreinteCodeRattachement(code.ToLowerInvariant().Replace("-", " ")));
+        }
+        Assert.Matches("^[0-9a-f]{64}$", ComptesDistants.EmpreinteCodeRattachement("ABCD-EFGH-JKLM")!);
+        Assert.NotEqual(ComptesDistants.EmpreinteCodeRattachement("ABCD-EFGH-JKLM"), ComptesDistants.EmpreinteCodeRattachement("ABCD-EFGH-JKLN"));
+        Assert.Null(ComptesDistants.EmpreinteCodeRattachement("ABCD-EFGH-JKL"));
+        Assert.Null(ComptesDistants.EmpreinteCodeRattachement("ABCD-EFGH-JKL0"));   // 0 hors alphabet
+        Assert.Null(ComptesDistants.EmpreinteCodeRattachement(null));
+        Assert.Null(ComptesDistants.EmpreinteCodeRattachement(new string('A', 60)));
+        // NULL de la base : « non disponible », jamais 0
+        Assert.Equal(Tableau.NonDisponible, Tableau.Montant(null));
+        Assert.Equal(Tableau.NonDisponible, Tableau.Nombre(null));
+        Assert.Equal("1 400,00 DA", Tableau.Montant(1400m).Replace(' ', ' ').Replace(' ', ' '));
+        Assert.Equal("0", Tableau.Nombre(0));
     }
 
     [Fact]
@@ -214,5 +263,19 @@ public class ArchitectureEcransTests
         var fonctions = Regex.Matches(depot, @"FROM (\w+)\(").Select(m => m.Groups[1].Value).Concat(Regex.Matches(depot, @"SELECT (cloud_\w+)\(").Select(m => m.Groups[1].Value));
         Assert.All(fonctions, f => Assert.StartsWith("cloud_ecran_", f));
         Assert.Null(typeof(DepotEcrans).GetMethod("Executer", BindingFlags.Public | BindingFlags.Instance));
+    }
+
+    [Fact]
+    public void La_balise_base_est_permise_pour_les_adresses_relatives_des_pages_imbriquees()
+    {
+        // Constaté le 2026-11-21 : avec base-uri 'none', <base href="/"> était ignorée ; sur /officines/{id}, css/, js/ et img/ étaient
+        // cherchés sous /officines/ (404) et le script de l'écran fixe ne tournait pas (rubrique « Lots reçus » défilant de 532 px)
+        Assert.Contains("base-uri 'self'", ServeurEcrans.Csp);
+        Assert.DoesNotContain("base-uri 'none'", ServeurEcrans.Csp);
+        var dossier = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dossier is not null && !File.Exists(Path.Combine(dossier.FullName, "PharmaOfficine.slnx"))) dossier = dossier.Parent;
+        Assert.NotNull(dossier);
+        var app = File.ReadAllText(Path.Combine(dossier!.FullName, "src", "Pharma.Cloud.Web", "Composants", "App.razor"));
+        Assert.Contains("<base href=\"/\" />", app);
     }
 }

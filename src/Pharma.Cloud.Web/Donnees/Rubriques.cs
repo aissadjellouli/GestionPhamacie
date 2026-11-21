@@ -46,6 +46,8 @@ public static class Rubriques
         ["premiere_date"] = "Première date", ["derniere_date"] = "Dernière date", ["constatee_le"] = "Constatée le", ["type"] = "Type",
         ["statut_le"] = "Statut le", ["le"] = "Le", ["evenement"] = "Événement", ["detail"] = "Détail", ["resultat"] = "Résultat",
         ["objet"] = "Objet", ["officine"] = "Officine",
+        // Titulaire (script central 032)
+        ["rattachee_le"] = "Rattachée le", ["droits"] = "Droits", ["acteur"] = "Par",
     };
 
     /// <summary>Colonnes jamais affichées (techniques internes : clés, total).</summary>
@@ -68,6 +70,30 @@ public static class Rubriques
         long or int or short => string.Format(CultureInfo.GetCultureInfo("fr-FR"), "{0:N0}", valeur),
         Guid g => g.ToString()[..8],
         string s when colonne == "etat" && Etats.TryGetValue(s, out var e) => e,
+        string s when colonne == "droits" => string.Join(", ", s.Split(',').Select(d => d switch { "consulter" => "tableau de bord", "journal_acces" => "journal des accès", _ => d })),
+        string s when colonne == "acteur" => s switch { "vous" => "Vous", "editeur" => "Éditeur (support)", "titulaire" => "Autre titulaire", "console" => "Console du central", _ => s },
         _ => Convert.ToString(valeur, CultureInfo.GetCultureInfo("fr-FR")) ?? "—",
+    };
+}
+
+/// <summary>Valeurs du tableau de bord du titulaire : NULL de la base = donnée non montée au central, affichée « non disponible » (jamais 0).</summary>
+public static class Tableau
+{
+    public const string NonDisponible = "non disponible";
+
+    private static readonly CultureInfo Fr = CultureInfo.GetCultureInfo("fr-FR");
+
+    public static string Montant(object? valeur) => valeur switch
+    {
+        decimal d => d.ToString("N2", Fr) + " DA",
+        null => NonDisponible,
+        _ => Convert.ToString(valeur, Fr) ?? NonDisponible,
+    };
+
+    public static string Nombre(object? valeur) => valeur switch
+    {
+        int or long or short => string.Format(Fr, "{0:N0}", valeur),
+        null => NonDisponible,
+        _ => Convert.ToString(valeur, Fr) ?? NonDisponible,
     };
 }

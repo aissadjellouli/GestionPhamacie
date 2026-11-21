@@ -1,8 +1,9 @@
 # Écrans du serveur central (lot S7)
 
 > **Statut (2026-11-21)** : lot **S7.1 réalisé en local** (écrans de l'éditeur), go du titulaire, toutes les recommandations de la
-> conception retenues. **Rien n'est en ligne** : la mise en ligne (hébergeur, certificat, SMTP, connexion de production) viendra plus tard.
-> Lots suivants : S7.2 (titulaire, multi-officines), voir « Reste à faire ».
+> conception retenues. Lot **S7.2a réalisé en local** (écrans du titulaire, **côté serveur central seulement**, go du titulaire,
+> recommandations S7 acceptées) : § 3 bis. **Rien n'est en ligne** : la mise en ligne (hébergeur, certificat, SMTP, connexion de production)
+> viendra plus tard. Lot suivant : **S7.2b** (rubrique « Accès à distance » du poste : le titulaire tire lui-même le code de rattachement), à faire.
 
 Documents liés : [conception-synchronisation.md](conception-synchronisation.md) § 1, § 6, § 6.1, § 6.2 et § 32 ;
 [securite-et-droits.md](securite-et-droits.md) ; [charte-graphique.md](charte-graphique.md) ; [database/cloud/README.md](../database/cloud/README.md) ;
@@ -15,17 +16,21 @@ Documents liés : [conception-synchronisation.md](conception-synchronisation.md)
 | Projet `src/Pharma.Cloud.Web` | Blazor en **rendu serveur statique** (formulaires classiques, aucun script Blazor, aucune interactivité) | Écrans ; **processus et port distincts** du serveur central (5090) |
 | Script central `030_comptes_distants.sql` | base centrale | Rôle `pharma_cloud_ecrans`, comptes, sessions, codes de second facteur, journal des accès |
 | Script central `031_ecrans_editeur.sql` | base centrale | Lecture de l'éditeur et actions |
-| Commandes de la console du central | `Pharma.Cloud.Api.exe` | `--creer-compte-editeur`, `--comptes-distants`, `--desactiver-compte`, `--deverrouiller-compte` |
-| Tests | `tests/Pharma.Cloud.Web.Tests`, `tests/Pharma.Cloud.Tests/ComptesDistantsConsoleTests.cs`, `database/cloud/tests/030_…`, `031_…` | Voir § 7 |
+| Script central `032_ecrans_titulaire.sql` (S7.2a) | base centrale | Droits par officine, codes de rattachement, lecture du titulaire (agrégats), journal des accès de ses officines |
+| Commandes de la console du central | `Pharma.Cloud.Api.exe` | `--creer-compte-editeur`, `--creer-compte-titulaire` (S7.2a), `--code-rattachement` (S7.2a), `--comptes-distants`, `--desactiver-compte`, `--deverrouiller-compte` |
+| Tests | `tests/Pharma.Cloud.Web.Tests`, `tests/Pharma.Cloud.Tests/ComptesDistantsConsoleTests.cs`, `database/cloud/tests/030_…`, `031_…`, `032_…` | Voir § 7 |
 
 ## 2. Rôles
 
 | Rôle | Écrans | Données vues |
 |---|---|---|
 | **Éditeur** (support, S7.1) | Officines, fiche d'une officine, mon journal des accès, actions techniques | **Jamais de donnée nominative** (décision n° 4) : état technique seulement |
-| **Titulaire** (S7.2, à venir) | Ses officines (table `compte_officine`, créée vide en S7.1) | À concevoir en S7.2 |
+| **Titulaire** (S7.2a) | Mes officines, rattacher une officine, tableau de bord d'une officine, journal des accès d'une officine, mon journal des accès | Ses officines seulement (`compte_officine`, droits `consulter` et `journal_acces`) ; **agrégats** seulement, aucune donnée nominative ni ligne de détail |
 
-Un compte titulaire qui se connecterait aujourd'hui voit « Accès refusé » (aucun écran en S7.1 ; aucun compte titulaire ne peut être créé par la console).
+Les rôles sont **étanches** : un titulaire n'ouvre aucun écran ni aucune action de l'éditeur (« Accès refusé » ; `/` et `/officines` le
+renvoient à « Mes officines ») et l'éditeur n'ouvre aucun écran du titulaire (tableau de bord, journal d'une officine, rattachement).
+La base le revérifie dans chaque fonction (`42501` : rôle `editeur` exigé par `031`, rôle `titulaire` par `032`). Écrans communs : mot de
+passe, mon journal des accès, déconnexion, thème.
 
 ## 3. Écrans S7.1 (éditeur)
 
@@ -44,6 +49,46 @@ Un compte titulaire qui se connecterait aujourd'hui voit « Accès refusé » (a
 | `/mon-journal` | Mon journal des accès | Accès du compte, paginé (20) |
 
 **Restent en console** (non exposés aux écrans) : départ et effacement d'une officine, purges, familles nominatives, autorité de certification, réglages mutualisés, ordres.
+
+## 3 bis. Écrans S7.2a (titulaire)
+
+| Route | Écran | Contenu |
+|---|---|---|
+| `/mes-officines` (et `/`, `/officines`) | Mes officines | Officines rattachées au compte (200 au plus, une ligne par officine) : officine, état, rattachée le, droits, dernier contact, en retard ; liens « Tableau de bord » et « Journal des accès » (si le droit `journal_acces` est accordé) |
+| `/rattacher` | Rattacher une officine | Saisie du code de rattachement (12 caractères, tirets et espaces ignorés, casse ignorée) ; succès → tableau de bord de l'officine |
+| `/mes-officines/{officine}` | Tableau de bord | 13 tuiles (`.tuiles.tuiles-compactes`, une seule grille, deux rangées à 1 366 px) : voir le tableau ci-dessous ; officine d'un autre compte, inconnue ou rattachement retiré : « Officine introuvable ou non rattachée » (refus noté au journal des accès) |
+| `/mes-officines/{officine}/journal` | Journal des accès de l'officine | Tous les accès notés pour l'officine (vous, l'éditeur, un autre titulaire, la console), paginé (20) : le, par, événement, résultat, objet ; **jamais** l'identifiant ni le nom d'un compte |
+| `/mon-journal` | Mon journal des accès | Comme pour l'éditeur (S7.1) |
+
+**Tableau de bord** (`cloud_ecran_titulaire_tableau`, une ligne d'agrégats ; mêmes définitions que le tableau de bord local, `PilotageSql`) :
+
+| Tuile | Calcul (tables miroir de l'officine, lignes `sync_absente_le` exclues) |
+|---|---|
+| Chiffre d'affaires du jour / du mois / mois précédent (entier) | `vente.montant_total` des ventes **validées** de la période, moins `retour_client.montant_rembourse` des retours de la période sur une vente validée |
+| Ventes du jour (et du mois, en note) | nombre de ventes validées |
+| Part Chifa du mois | `vente.part_organisme` des ventes validées du mois avec `canal_organisme = 'chifa'` |
+| Crédits en cours | somme des `patient.solde_credit` positifs (comme le pilotage financier) ; aucun patient désigné |
+| Alertes de stock / de péremption | nombre d'`alerte` au statut `nouvelle` ou `vue`, types `rupture` et `stock_critique` / `peremption` et `perime` |
+| Dernier contact, en retard | dernier lot reçu ou dernier certificat émis ; en retard : officine active sans contact depuis 24 h |
+| Dernier lot reçu, chargement complet | `officine_epoque` (époque la plus récente) ; dernier chargement complet terminé, chargement en cours |
+| Anomalies d'intégrité | `cloud_anomalie_integrite` non classées « remplacée après restauration » |
+| Ordres en attente | `ordre_central` aux statuts `en_attente` et `a_confirmer` |
+
+- **Jour et mois** au fuseau de l'officine : `parametre_fiscal.fuseau` s'il est monté et connu du serveur PostgreSQL, sinon
+  `Africa/Algiers` (réglage de la base locale, migration 083).
+- **« Non disponible »** (NULL de la base, jamais 0) : table ou colonne absente du catalogue du miroir ou de la base, colonne d'une famille
+  nominative non envoyée par l'officine, ou **aucun chargement complet terminé comprenant la table** (sans lui, une somme ne porterait que
+  sur les lignes modifiées depuis l'activation). Sans la table `retour_client`, le chiffre d'affaires reste non disponible (il serait faux) ;
+  le nombre de ventes est donné.
+- Les totaux sont ceux des données **reçues** : une vente faite depuis le dernier contact n'y figure pas encore (rappelé au pied de l'écran).
+
+**Rattachement** (`cloud_ecran_rattacher`) : le code (12 caractères tirés parmi 32 sans ambiguïté, 60 bits ; affiché une fois) ne vaut
+que pour **un** compte titulaire et **une** officine, **30 minutes**, **usage unique** ; un nouveau code pour le même compte et la même
+officine annule le précédent. La base ne garde que l'empreinte SHA-256 (`rattachement-v1:` + code canonique). Refusés : code inconnu ou
+destiné à un autre compte (**même réponse**, le motif réel `autre_compte` reste au journal), expiré, déjà utilisé ou annulé, officine
+partie ; au-delà de **5 refus par quart d'heure**, plus aucun essai (« Trop d'essais »). Réussite : `compte_officine` (droits `consulter`,
+`journal_acces`, « code de rattachement n° … »), note au journal des accès **et** au journal de sécurité de l'officine. En attendant
+S7.2b, le code est tiré par la console du central (`--code-rattachement`, développement).
 
 ## 4. Actions de l'éditeur
 
@@ -69,6 +114,11 @@ Le **code d'activation** est tiré par les écrans (`CodeActivationSync`, comme 
   est posée **par la base** dans `cloud_ecran_ouvrir(empreinte du jeton, officine)` après vérification de la session et du droit ; poser
   `app.officine_id` soi-même ne donne rien. Au démarrage, les écrans refusent une connexion superutilisateur, BYPASSRLS, propriétaire d'une table
   ou non membre de `pharma_cloud_ecrans`.
+- **Titulaire (S7.2a)** : chaque fonction du titulaire passe par `cloud_ecran_ouvrir` (session, rattachement non retiré), puis vérifie le
+  droit (`consulter` pour le tableau de bord, `journal_acces` pour le journal de l'officine) ; un refus rend **zéro ligne** et reste au
+  journal des accès (aucune erreur qui l'annulerait). Les tables miroir sont lues avec l'officine posée par la base (RLS forcée) : poser
+  `app.officine_id` sur une autre officine ne change rien. Aucune fonction du titulaire ne rend une colonne nominative (liste fermée
+  vérifiée par `032_ecrans_titulaire_tests.sql` et `TitulaireEcransTests`).
 - **Mots de passe** : BCrypt coût 12, calculé par l'application ; mot de passe **provisoire** (16 caractères tirés au sort, affiché une fois par
   la console) à changer à la première connexion ; nouveau mot de passe : 12 à 128 caractères, lettres et chiffres, sans l'identifiant,
   différent de l'actuel. Une vérification BCrypt est toujours faite (empreinte factice si le compte est inconnu ou bloqué) : même durée de réponse.
@@ -108,6 +158,20 @@ Le **code d'activation** est tiré par les écrans (`CodeActivationSync`, comme 
 5. `-Etat` montre le rôle, la variable, le dossier des codes, le port 5094 et le compte ; `-Retirer` (après `-WhatIf`) retire le rôle
    `pharma_cloud_ecrans_dev_vs` et la variable, le dossier des codes avec `central-dev` ; le compte `editeur.dev` **reste** au central.
 
+**Titulaire (S7.2a)** :
+
+1. Passer le script central **032** sur `pharmacie_cloud_dev` (après 030 et 031, propriétaire `pharma_app`, après relecture) :
+   ```powershell
+   & "C:\Program Files\PostgreSQL\18\bin\psql.exe" -U pharma_app -h localhost -d pharmacie_cloud_dev -v ON_ERROR_STOP=1 -f database\cloud\032_ecrans_titulaire.sql
+   ```
+2. `.\scripts\dev\preparer_central_vs.ps1 -Preparer` crée le compte **`titulaire.dev`** s'il manque (mot de passe provisoire affiché
+   **une fois**) ; sans 032 : avertissement, rien n'est fait pour lui. L'outil est recompilé d'office (source des comptes plus récente).
+3. Code de rattachement (développement, en attendant S7.2b), avec l'outil et la connexion du propriétaire (`PHARMA_CLOUD_ADMIN_CONNEXION`) :
+   `Pharma.Cloud.Api.exe --code-rattachement titulaire.dev <officine (uuid)> --auteur "<votre nom>"` → code affiché **une fois**, 30 minutes.
+   Un autre compte titulaire : `--creer-compte-titulaire <identifiant> --nom "…" (--telephone … | --email …) --auteur "<votre nom>"`.
+4. Connexion `titulaire.dev` sur https://127.0.0.1:5094/ (code dans `%LOCALAPPDATA%\PharmaOfficine\central-dev\codes\titulaire.dev.txt`),
+   changer le mot de passe provisoire, puis « Rattacher une officine ».
+
 Mot de passe de `editeur.dev` perdu : aucune commande ne remet un mot de passe en S7.1 ; `--desactiver-compte editeur.dev` puis créer un autre
 compte (`--creer-compte-editeur editeur.dev2 --nom "…" --email …`) avec l'outil (`%LOCALAPPDATA%\PharmaOfficine\central-dev\outil`).
 
@@ -124,12 +188,20 @@ Variables : `PHARMA_CLOUD_ECRANS_CONNEXION` (obligatoire), `PHARMA_CLOUD_DOSSIER
   base jetable : verrouillage, code faux / réutilisé / expiré, sessions (déconnexion, expiration), aucune colonne ni valeur interdite ;
   **bout en bout HTTPS** (serveur démarré sur un port libre de 127.0.0.1) : connexion, code, mot de passe provisoire, liste, toutes les
   rubriques, création d'une officine et code affiché une seule fois, déconnexion, chaîne du journal intacte.
-- `tests/Pharma.Cloud.Tests/ComptesDistantsConsoleTests.cs` : commandes de la console.
+- `tests/Pharma.Cloud.Tests/ComptesDistantsConsoleTests.cs` : commandes de la console (dont `--creer-compte-titulaire` et `--code-rattachement` :
+  `--auteur` obligatoire, empreinte seule en base, refus pour un éditeur ou une officine inconnue), puis les tests SQL 030 à 032 sur la même base jetable.
+- **S7.2a** : `database/cloud/tests/032_ecrans_titulaire_tests.sql` ; `tests/Pharma.Cloud.Web.Tests/TitulaireEcransTests.cs` (dépôt : deux
+  titulaires, deux officines, non-fuite, rattachement, agrégats exacts, « non disponible », rôles croisés refusés par la base ; **bout en bout
+  HTTPS** : connexion du titulaire, rattachement, tableau de bord, journal, officine d'un autre compte refusée, écrans de l'éditeur refusés au
+  titulaire et écrans du titulaire refusés à l'éditeur) ; `ReglesEcransTests` (aiguillage par rôle, code de rattachement, « non disponible »).
 
 ## 8. Reste à faire
 
 - **Mise en ligne** (plus tard) : hébergeur, nom de domaine et certificat, proxy inverse (adresse réelle pour les limites de débit), connexion de
   production rattachée à `pharma_cloud_ecrans`, compte SMTP, clé HMAC commune si plusieurs instances, comptes éditeur réels, test d'intrusion.
-- **S7.2** : écrans du titulaire (multi-officines, `compte_officine`, création des comptes titulaires, rattachement aux officines, ce que le
-  titulaire voit de ses données), SMS (fournisseur à choisir), remise à zéro d'un mot de passe par l'éditeur, alertes (refus en série).
-- Mesure des écrans à 1 366 × 768 et 1 536 × 890, clair et sombre (règle de l'écran fixe) : **à faire** (voir le rapport du lot).
+- **S7.2b** (à faire) : rubrique « Accès à distance » du **poste** (le titulaire tire lui-même le code de rattachement de son officine,
+  voit et retire les comptes rattachés) ; la commande `--code-rattachement` de la console reste pour le développement.
+- Reste de S7.2 : SMS (fournisseur à choisir), remise à zéro d'un mot de passe par l'éditeur, retrait d'un rattachement depuis les écrans,
+  alertes (refus en série).
+- Mesure des écrans à 1 366 × 768 et 1 536 × 890, clair et sombre (règle de l'écran fixe) : **à faire**, S7.1 et S7.2a
+  (`/mes-officines`, `/rattacher`, `/mes-officines/{officine}`, `/mes-officines/{officine}/journal`).

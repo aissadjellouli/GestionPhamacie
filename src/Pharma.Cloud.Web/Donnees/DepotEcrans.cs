@@ -9,6 +9,7 @@ public sealed record SessionEcran(long Id, Guid Compte, string Identifiant, stri
 {
     public bool Ouverte => Etape == "ouverte";
     public bool Editeur => Role == "editeur";
+    public bool Titulaire => Role == "titulaire";
 }
 
 /// <summary>Résultat tabulaire d'une fonction cloud_ecran_* : noms de colonnes (ceux de la base) et valeurs.</summary>
@@ -118,6 +119,26 @@ public sealed class DepotEcrans(NpgsqlDataSource db)
             ? ($"SELECT * FROM {rubrique.Fonction}($1, $2, $3)", [Texte(empreinteJeton), Entier(page), Entier(taille)])
             : ($"SELECT * FROM {rubrique.Fonction}($1)", [Texte(empreinteJeton)]), ct);
 
+    // ------------------------------------------------------------------ titulaire (script central 032)
+    // L'officine est ouverte PAR LA BASE dans chaque fonction (cloud_ecran_ouvrir, rattachement et droit vérifiés) : aucune ligne si refusé.
+    public Task<TableEcran> TitulaireOfficinesAsync(string empreinteJeton, CancellationToken ct) =>
+        LireAsync(null, null, "SELECT * FROM cloud_ecran_titulaire_officines($1)", [Texte(empreinteJeton)], ct);
+
+    public Task<TableEcran> TitulaireTableauAsync(string empreinteJeton, Guid officine, CancellationToken ct) =>
+        LireAsync(null, null, "SELECT * FROM cloud_ecran_titulaire_tableau($1, $2)", [Texte(empreinteJeton), Uuid(officine)], ct);
+
+    public Task<TableEcran> TitulaireJournalAsync(string empreinteJeton, Guid officine, int page, int taille, CancellationToken ct) =>
+        LireAsync(null, null, "SELECT * FROM cloud_ecran_titulaire_journal($1, $2, $3, $4)", [Texte(empreinteJeton), Uuid(officine), Entier(page), Entier(taille)], ct);
+
+    /// <summary>Rattachement par code : seule l'empreinte du code saisi part vers la base (null si la saisie n'est pas un code : refus compté).</summary>
+    public async Task<(string Statut, Guid? Officine)> RattacherAsync(string empreinteJeton, string? empreinteCode, CancellationToken ct)
+    {
+        await using var cmd = Commande("SELECT statut, officine_id FROM cloud_ecran_rattacher($1, $2)", empreinteJeton, empreinteCode);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        await r.ReadAsync(ct);
+        return (r.GetString(0), r.IsDBNull(1) ? null : r.GetGuid(1));
+    }
+
     // ------------------------------------------------------------------ actions
     public async Task<(string Statut, Guid? Officine)> CreerOfficineAsync(string jeton, string? code, string? motif, string? libelle, string? confirmation,
         string serveur, string empreinteActivation, CancellationToken ct)
@@ -202,4 +223,6 @@ public sealed class DepotEcrans(NpgsqlDataSource db)
     private static NpgsqlParameter Texte(string? v) => new() { Value = (object?)v ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text };
 
     private static NpgsqlParameter Entier(int v) => new() { Value = v, NpgsqlDbType = NpgsqlDbType.Integer };
+
+    private static NpgsqlParameter Uuid(Guid v) => new() { Value = v, NpgsqlDbType = NpgsqlDbType.Uuid };
 }

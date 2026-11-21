@@ -1,0 +1,35 @@
+@page "/rattacher"
+
+<PageTitle>Rattacher une officine · écrans du central</PageTitle>
+
+<div class="page page-serree">
+    <div class="titre-page">
+        <div>
+            <h1>Rattacher une officine</h1>
+            <p class="sous-titre">Saisissez le code de rattachement reçu (12 caractères, valable 30 minutes, usage unique). Il ne sert qu'à votre compte.</p>
+        </div>
+        <div class="actions">
+            <a class="btn btn-contour" href="mes-officines">Annuler</a>
+        </div>
+    </div>
+    <Message Erreur="@Erreur" Ok="@Ok" />
+    <section class="panneau" aria-labelledby="t-code-rattachement">
+        <h2 id="t-code-rattachement">Code de rattachement</h2>
+        <form method="post" action="actions/rattacher" class="formulaire-action">
+            <AntiforgeryToken />
+            <div class="champ">
+                <label for="code" class="requis">Code (par exemple ABCD-EFGH-JKLM)</label>
+                <input id="code" name="code" required minlength="12" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+            </div>
+            <div class="actions">
+                <button type="submit" class="btn btn-principal">Rattacher l'officine</button>
+            </div>
+        </form>
+        <p class="pied-page">Droits accordés : consulter le tableau de bord (totaux seulement) et le journal des accès de l'officine. Cinq codes faux par quart d'heure au plus.</p>
+    </section>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "erreur")] private string? Erreur { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] private string? Ok { get; set; }
+}

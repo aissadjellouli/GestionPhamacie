@@ -3,17 +3,25 @@
 @* En-tête de la charte (docs/charte-graphique.md) : logo et nom à gauche, écrans au centre, compte et déconnexion à droite *@
 <header class="entete">
     <div class="entete-interieur">
-        <a class="marque" href="@(Ouverte ? "officines" : "connexion")" title="Tracodex Réseau · écrans du central">
+        <a class="marque" href="@(Ouverte ? Accueil : "connexion")" title="Tracodex Réseau · écrans du central">
             <img class="logo" src="img/logo.svg" alt="" aria-hidden="true" />
             <div class="marque-textes">
                 <span class="marque-nom">Tracodex Réseau</span>
-                <span class="marque-poste">Écrans du central@(Session is { Editeur: true } ? " · éditeur" : "")</span>
+                <span class="marque-poste">Écrans du central@(Session is { Editeur: true } ? " · éditeur" : Session is { Titulaire: true } ? " · titulaire" : "")</span>
             </div>
         </a>
         @if (Ouverte && Session!.Editeur)
         {
             <nav class="nav" aria-label="Navigation des écrans du central">
                 <a href="officines" class="@Actif("officines")" aria-current="@Courant("officines")">Officines</a>
+                <a href="mon-journal" class="@Actif("mon-journal")" aria-current="@Courant("mon-journal")">Mon journal des accès</a>
+            </nav>
+        }
+        else if (Ouverte && Session!.Titulaire)
+        {
+            <nav class="nav" aria-label="Navigation des écrans du titulaire">
+                <a href="mes-officines" class="@Actif("mes-officines")" aria-current="@Courant("mes-officines")">Mes officines</a>
+                <a href="rattacher" class="@Actif("rattacher")" aria-current="@Courant("rattacher")">Rattacher une officine</a>
                 <a href="mon-journal" class="@Actif("mon-journal")" aria-current="@Courant("mon-journal")">Mon journal des accès</a>
             </nav>
         }
@@ -54,10 +62,11 @@
     private SessionEcran? Session => Contexte?.Session();
     private bool Ouverte => Session is { Ouverte: true };
     private string Chemin => Contexte?.Request.Path.Value?.Trim('/') ?? "";
-    private string Retour => Contexte is null ? "/officines" : Contexte.Request.Path + Contexte.Request.QueryString;
+    private string Accueil => Session is { Titulaire: true } ? "mes-officines" : "officines";
+    private string Retour => Contexte is null ? "/" + Accueil : Contexte.Request.Path + Contexte.Request.QueryString;
     private string? Theme => Contexte?.Request.Cookies[Jetons.CookieTheme] is "clair" or "sombre" ? Contexte.Request.Cookies[Jetons.CookieTheme] : null;
 
-    private bool EstActif(string ecran) => Chemin == ecran || Chemin.StartsWith(ecran + "/", StringComparison.Ordinal) || (ecran == "officines" && Chemin == "");
+    private bool EstActif(string ecran) => Chemin == ecran || Chemin.StartsWith(ecran + "/", StringComparison.Ordinal) || (ecran == Accueil && Chemin == "");
     private string? Actif(string ecran) => EstActif(ecran) ? "active" : null;
     private string? Courant(string ecran) => EstActif(ecran) ? "page" : null;
 }

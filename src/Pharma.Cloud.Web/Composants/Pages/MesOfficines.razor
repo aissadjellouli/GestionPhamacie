@@ -1,0 +1,42 @@
+@page "/mes-officines"
+@inject DepotEcrans Depot
+
+<PageTitle>Mes officines · écrans du central</PageTitle>
+
+<div class="page page-serree">
+    <div class="titre-page">
+        <div>
+            <h1>Mes officines</h1>
+            <p class="sous-titre">Officines rattachées à votre compte. Le tableau de bord ne montre que des totaux, jamais un patient ni une vente.</p>
+        </div>
+        <div class="actions">
+            <a class="btn btn-principal" href="rattacher">Rattacher une officine</a>
+        </div>
+    </div>
+    <Message Erreur="@Erreur" Ok="@Ok" />
+    <TableauEcran Table="@Table" Vide="Aucune officine rattachée. Demandez un code de rattachement, puis « Rattacher une officine ».">
+        <Action Context="ligne">
+            <a class="lien" href="@($"mes-officines/{Table.Valeur(ligne, "id")}")">Tableau de bord</a>
+            @if (Table.Valeur(ligne, "droits") is string d && d.Split(',').Contains("journal_acces"))
+            {
+                <span aria-hidden="true"> · </span>
+                <a class="lien" href="@($"mes-officines/{Table.Valeur(ligne, "id")}/journal")">Journal des accès</a>
+            }
+        </Action>
+    </TableauEcran>
+    <p class="pied-page">« En retard » : officine active sans lot ni certificat reçu depuis 24 heures. Chaque ouverture est notée au journal des accès.</p>
+</div>
+
+@code {
+    [CascadingParameter] private HttpContext? Contexte { get; set; }
+    [SupplyParameterFromQuery(Name = "erreur")] private string? Erreur { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] private string? Ok { get; set; }
+
+    private TableEcran Table { get; set; } = TableEcran.Vide;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Contexte?.EmpreinteJeton() is { } jeton)
+            Table = await Depot.TitulaireOfficinesAsync(jeton, Contexte.RequestAborted);
+    }
+}
