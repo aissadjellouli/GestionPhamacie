@@ -2277,6 +2277,23 @@ Règles appliquées par le script central `032_ecrans_titulaire.sql`, la console
   terminé comprenant la table, table ou colonne non envoyée, colonne d'une famille nominative non envoyée) ; sans les retours clients, le
   chiffre d'affaires reste non disponible. Les totaux sont ceux des données reçues au dernier contact.
 
+## Lignes absentes vues au serveur central (lot S7.5, 2026-11-21)
+
+Règles appliquées par le script central `036_lignes_absentes_ecrans.sql` et les écrans du central ([ecrans-central.md](ecrans-central.md)
+§ 3 sexies) :
+
+- **Ligne absente** : ligne reçue par le serveur central que l'officine n'a plus à la fin d'un chargement complet ; elle reste au
+  central, **jamais effacée** ; si l'officine l'envoie de nouveau, elle n'est plus comptée.
+- **Affichage** : des **nombres** seulement (par table, par chargement, date de la première constatation, cause probable) ; jamais le
+  contenu d'une ligne ni une donnée nominative. L'éditeur les voit dans la fiche de l'officine ; le titulaire voit le nombre total
+  (tableau de bord, vue d'ensemble), « non disponible » tant qu'aucun chargement complet n'est terminé.
+- **Cause probable** (jamais devinée) : « Restauration d'une sauvegarde » si la ligne date d'une époque antérieure et que la
+  vérification d'intégrité a constaté une restauration pour la nouvelle époque ; « Nouvelle époque » si la ligne date d'une époque
+  antérieure sans restauration constatée ; sinon « Non expliquée ». Aucune cause « purge » (le central n'en connaît aucune) ; une cause
+  non expliquée n'ouvre **pas** d'anomalie (signaler et garder).
+- — `database/cloud/036_lignes_absentes_ecrans.sql`, `src/Pharma.Cloud.Web/Donnees/LignesAbsentes.cs`,
+  `src/Pharma.Cloud.Web/Composants/Pages/Officine.razor`, `TableauBord.razor`, `VueEnsembleTitulaire.razor`
+
 ## Réglages communs proposés par le titulaire à distance (lot S7.4, 2026-11-21)
 
 Règles appliquées par le script central `035_reglages_communs_titulaire.sql`, l'écran « Réglages communs » du central et

@@ -670,3 +670,20 @@ sous le tableau, est amenée dans le cadre (`pharma.voirZone`) et reste entière
   accordé (1 366 × 768, essai de bout en bout, statut « Appliqué »).
 - **Non mesurés** : `/admin/reprise` et `/admin/profils-reprise` à 1 366 × 768 (mot de passe noté du compte `super.essai` refusé ; ne
   pas réessayer, risque de blocage ; à demander au titulaire).
+
+### Mesures du 2026-11-21 (fin d'après-midi : reprise, cadres du poste, S7.5)
+
+- **Reprise de données** (super admin `super.essai`, API lancée avec `SuperAdmin__Fichier`) : défilait de 55 px à 1 366 × 768 →
+  en-tête resserré (`.page-reprise`), aide d'une ligne, tableau « Reprises précédentes » à 160 px au plus bas (`data-hauteur-min`) :
+  **0 px** ; Profils de reprise : 0 px ; 1 536 × 890 : 0 px ; clair et sombre.
+- **`poste.js`, correction des cadres** : quand l'écran déborde encore, la réduction part de la hauteur **réelle** du cadre (et non de
+  sa hauteur permise, parfois plus grande que son contenu : la réduction restait sans effet) et passe au cadre suivant si le plus grand
+  est à son minimum (8 essais au plus). Contre-mesure sur 20 écrans (accueil, caisse, stock, achats, finances, patients, pilotage,
+  synchronisation, sauvegardes, utilisateurs…) aux deux tailles : 0 px, sauf deux défauts anciens corrigés ci-dessous.
+- **Caisse › État de la caisse** : la 5e tuile passait seule en 2e ligne (65 px à 1 366) → toutes les tuiles sur une ligne
+  (`.tuiles-etat-caisse`) : 0 px.
+- **Pilotage financier › Synthèse** : 9 px à 1 366 × 768 → histogramme de 76 px sous 800 px de haut : 0 px.
+- **S7.5, lignes absentes** (central) : rubrique de l'éditeur (`?rubrique=absentes`, les deux officines), tableau de bord du titulaire
+  (14 tuiles sur deux rangées) : 0 px aux deux tailles, clair et sombre ; vue d'ensemble : le tableau à 11 colonnes défilait de 51 px
+  sur le côté → cellules resserrées (`.tableau-ensemble`, 5 px) : 0 px horizontal et vertical. Aucune ligne absente sur les deux
+  officines de développement (état « 0 » vu, état avec lignes non provoqué).

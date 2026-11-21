@@ -52,6 +52,8 @@
                           Note="@(Valeur("chargement_en_cours") is true ? "un chargement est en cours" : "dernier terminé")" Petite="true" />
             <TuileTableau Libelle="Anomalies d'intégrité" Valeur="@Nombre("anomalies_ouvertes")" Note="non expliquées par une restauration" Urgent="@Positif("anomalies_ouvertes")" />
             <TuileTableau Libelle="Ordres en attente" Valeur="@Nombre("ordres_en_attente")" Note="envoyés, pas encore appliqués" />
+            <TuileTableau Libelle="Lignes absentes" Valeur="@Tableau.Nombre(Absentes("lignes"))"
+                          Note="@(Absentes("tables") is int t && t > 0 ? $"{Tableau.Nombre(t)} table(s), gardées au central" : "gardées au central, jamais effacées")" />
         </div>
         <p class="pied-page">
             « Non disponible » : la donnée n'est pas montée au serveur central (aucun chargement complet terminé, table ou colonne non envoyée) ;
@@ -67,15 +69,21 @@
     [SupplyParameterFromQuery(Name = "ok")] private string? Ok { get; set; }
 
     private TableEcran Table { get; set; } = TableEcran.Vide;
+    /// <summary>Lot S7.5 : lignes absentes de l'officine (nombres seulement, script central 036).</summary>
+    private TableEcran TableAbsentes { get; set; } = TableEcran.Vide;
     private object?[]? Ligne => Table.Lignes.Count == 1 ? Table.Lignes[0] : null;
 
     protected override async Task OnInitializedAsync()
     {
         if (Contexte?.EmpreinteJeton() is { } jeton)
+        {
             Table = await Depot.TitulaireTableauAsync(jeton, Id, Contexte.RequestAborted);
+            if (Ligne is not null) TableAbsentes = await Depot.TitulaireLignesAbsentesAsync(jeton, Id, Contexte.RequestAborted);
+        }
     }
 
     private object? Valeur(string colonne) => Ligne is null ? null : Table.Valeur(Ligne, colonne);
+    private object? Absentes(string colonne) => TableAbsentes.Lignes.Count == 1 ? TableAbsentes.Valeur(TableAbsentes.Lignes[0], colonne) : null;
     private string Texte(string colonne) => Valeur(colonne) as string ?? "—";
     private string Montant(string colonne) => Tableau.Montant(Valeur(colonne));
     private string Nombre(string colonne) => Tableau.Nombre(Valeur(colonne));

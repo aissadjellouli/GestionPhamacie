@@ -238,6 +238,30 @@ public class ReglesEcransTests
     }
 
     [Fact]
+    public void Lot_s7_5_lignes_absentes_libelles_causes_de_la_base_et_vue_d_ensemble()
+    {
+        // Rubrique de la fiche (éditeur), paginée, lue par la fonction du script 036
+        var r = Rubriques.Trouver(LignesAbsentes.Rubrique);
+        Assert.Equal(("cloud_ecran_lignes_absentes", true), (r.Fonction, r.Pagine));
+        Assert.Equal("n° 66", Rubriques.Afficher("chargement", 66));
+        Assert.Equal("Première constatation", Rubriques.Libelle("premiere_constatation"));
+        Assert.Equal("Non expliquée", Rubriques.Afficher("cause", "non_expliquee"));
+        Assert.Equal("inconnue", LignesAbsentes.Cause("inconnue"));   // jamais devinée
+        // Causes de l'écran = causes rendues par la base (liste fermée du script 036), aucune « purge » inventée
+        var sql = File.ReadAllText(Path.Combine(Depot.Racine(), "database", "cloud", "036_lignes_absentes_ecrans.sql"));
+        foreach (var cause in LignesAbsentes.Causes.Keys) Assert.Contains($"'{cause}'", sql);
+        Assert.DoesNotContain(LignesAbsentes.Causes.Keys, c => c.Contains("purge", StringComparison.Ordinal));
+        Assert.Equal(LignesAbsentes.Causes.Keys.Order(), LignesAbsentes.CausesCourtes.Keys.Order());
+        // Vue d'ensemble : rapprochement par officine ; une officine sans valeur reste « non disponible » (total partiel, jamais 0)
+        Guid a = Guid.NewGuid(), b = Guid.NewGuid(), c = Guid.NewGuid();
+        var ensemble = new TableEcran(["id", "ca_jour"], [[a, 1m], [b, 2m], [c, 3m]], 3);
+        var absentes = new TableEcran(["id", "lignes", "tables"], [[a, 5L, 2], [b, null, null]], 2);
+        var t = VueEnsemble.AvecLignesAbsentes(ensemble, absentes);
+        Assert.Equal(new object?[] { 5L, null, null }, t.Lignes.Select(l => t.Valeur(l, VueEnsemble.LignesAbsentesColonne)));
+        Assert.Equal(new TotalGroupe(5m, 1, 2), VueEnsemble.Total(t, VueEnsemble.LignesAbsentesColonne));
+    }
+
+    [Fact]
     public void Acteur_poste_de_l_officine_au_journal_des_acces()
     {
         // Lot S7.2b (script central 033) : demandes de code faites par le poste de l'officine

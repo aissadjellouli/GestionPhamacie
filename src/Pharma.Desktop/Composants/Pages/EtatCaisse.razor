@@ -27,7 +27,7 @@
     {
         <p class="detail" style="margin: 0">@e.Poste · ouverte le @Libelles.DateHeureLocale(e.OuverteLe)@(e.OuvertePar is { } par ? $" par {par}" : "") · fond de caisse @Libelles.Dinars(e.FondCaisse, 2)</p>
 
-        <section class="tuiles" aria-label="Récapitulatif depuis l’ouverture">
+        <section class="tuiles tuiles-etat-caisse" aria-label="Récapitulatif depuis l’ouverture">
             <div class="tuile"><span class="tuile-libelle">Ventes</span><span class="tuile-valeur">@e.NombreVentes</span><span class="tuile-note">ventes validées</span></div>
             <div class="tuile"><span class="tuile-libelle">Carte</span><span class="tuile-valeur">@Libelles.Dinars(e.Carte, 2)</span><span class="tuile-note">net des remboursements</span></div>
             <div class="tuile"><span class="tuile-libelle">Chèque</span><span class="tuile-valeur">@Libelles.Dinars(e.Cheque, 2)</span><span class="tuile-note">net des remboursements</span></div>

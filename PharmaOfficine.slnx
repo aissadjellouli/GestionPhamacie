@@ -367,6 +367,8 @@
     <File Path="database/cloud/tests/034_titulaire_multi_officines_ordres_tests.sql" />
     <File Path="database/cloud/035_reglages_communs_titulaire.sql" />
     <File Path="database/cloud/tests/035_reglages_communs_titulaire_tests.sql" />
+    <File Path="database/cloud/036_lignes_absentes_ecrans.sql" />
+    <File Path="database/cloud/tests/036_lignes_absentes_ecrans_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

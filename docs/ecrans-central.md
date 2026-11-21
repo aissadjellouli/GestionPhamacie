@@ -7,6 +7,8 @@
 > rattachement, go du titulaire, recommandations acceptées) : § 3 ter. Lot **S7.3 réalisé en local** (multi-officines : vue d'ensemble ; droit
 > `ordres` accordé depuis le poste, comptes rattachés et retrait ; ordres à distance du titulaire en liste fermée) : § 3 quater. Lot **S7.4
 > réalisé en local** (réglages communs proposés par le titulaire à plusieurs officines, chaque officine décide sur son poste) : § 3 quinquies.
+> Lot **S7.5 réalisé en local** (lignes absentes : rubrique de la fiche d'une officine pour l'éditeur, compteur du titulaire, nombres
+> seulement) : § 3 sexies.
 
 Documents liés : [conception-synchronisation.md](conception-synchronisation.md) § 1, § 6, § 6.1, § 6.2 et § 32 ;
 [securite-et-droits.md](securite-et-droits.md) ; [charte-graphique.md](charte-graphique.md) ; [database/cloud/README.md](../database/cloud/README.md) ;
@@ -23,11 +25,12 @@ Documents liés : [conception-synchronisation.md](conception-synchronisation.md)
 | Script central `033_code_rattachement_poste.sql` (S7.2b) | base centrale | Code de rattachement demandé par le poste (`cloud_poste_code_rattachement`, rôle `pharma_cloud_api`), enregistrement commun avec la console, acteur « poste » au journal de l'officine |
 | Script central `034_titulaire_multi_officines_ordres.sql` (S7.3) | base centrale | Droit `ordres`, vue d'ensemble, ordres du titulaire (liste fermée, 24 h), comptes rattachés vus, changés et retirés par le poste |
 | Script central `035_reglages_communs_titulaire.sql` (S7.4) | base centrale | Liste fermée et bornes des réglages communs, type d'ordre `reglages`, envoi à plusieurs officines, suivi des envois |
+| Script central `036_lignes_absentes_ecrans.sql` (S7.5) | base centrale | Lignes absentes par table, chargement et cause probable (nombres seulement), index partiels ; lecture de l'éditeur et compteur du titulaire |
 | Routes `GET /api/v1/acces-distants`, `POST …/droits`, `POST …/retrait` (S7.3) | API centrale (mTLS) | Comptes rattachés de l'officine du certificat, droits, retrait |
 | Route `POST /api/v1/rattachement` (S7.2b) | API centrale (`Pharma.Cloud.Api`, mTLS) | Code de rattachement de l'officine du certificat, montré une fois |
 | Rubrique « Accès à distance » (S7.2b) | poste, Administration › Synchronisation | Le titulaire génère le code (mot de passe ressaisi) |
 | Commandes de la console du central | `Pharma.Cloud.Api.exe` | `--creer-compte-editeur`, `--creer-compte-titulaire` (S7.2a), `--code-rattachement` (S7.2a), `--comptes-distants`, `--desactiver-compte`, `--deverrouiller-compte` |
-| Tests | `tests/Pharma.Cloud.Web.Tests`, `tests/Pharma.Cloud.Tests/ComptesDistantsConsoleTests.cs`, `database/cloud/tests/030_…` à `035_…` | Voir § 7 |
+| Tests | `tests/Pharma.Cloud.Web.Tests`, `tests/Pharma.Cloud.Tests/ComptesDistantsConsoleTests.cs`, `database/cloud/tests/030_…` à `036_…` | Voir § 7 |
 
 ## 2. Rôles
 
@@ -49,7 +52,7 @@ passe, mon journal des accès, déconnexion, thème.
 | `/code` | Code de confirmation | 6 chiffres, 5 minutes, 5 essais ; « Recevoir un nouveau code » ; « Abandonner » |
 | `/mot-de-passe` | Mot de passe | Obligatoire tant que le mot de passe est **provisoire** ; ensuite accessible depuis l'en-tête (les autres sessions sont fermées) |
 | `/officines` (et `/`) | Officines | Filtres au-dessus (nom, état : liste bornée), tableau paginé (20) : officine, état, créée le, dernier contact, en retard (plus de 24 h sans contact, officine active), dernier lot, époque, chargement en cours, échéance de certificat la plus proche, anomalies |
-| `/officines/{code}?rubrique=…` | Fiche d'une officine | Rubriques à gauche : `resume`, `certificats`, `codes` (sans le code), `chargements` (20), `lots` (50 derniers, sans contenu), `epoques`, `changements`, `volumes` (31 jours), `integrite` (chaînes), `anomalies` (nature et rang, sans détail, paginé), `restaurations` (sans montant), `ordres` (type et statut, sans données, paginé), `journal` (journal de sécurité, paginé) |
+| `/officines/{code}?rubrique=…` | Fiche d'une officine | Rubriques à gauche : `resume`, `certificats`, `codes` (sans le code), `chargements` (20), `absentes` (lignes absentes, S7.5 : § 3 sexies), `lots` (50 derniers, sans contenu), `epoques`, `changements`, `volumes` (31 jours), `integrite` (chaînes), `anomalies` (nature et rang, sans détail, paginé), `restaurations` (sans montant), `ordres` (type et statut, sans données, paginé), `journal` (journal de sécurité, paginé) |
 | `/officines/nouvelle` | Créer une officine | Action (§ 4) ; serveur principal ou second |
 | `/officines/{code}/nouveau-code?serveur=principal\|second` | Nouveau code d'activation | Action (§ 4) |
 | `/officines/{code}/revoquer-certificat?empreinte=<12 caractères>` | Révoquer un certificat | Action (§ 4), confirmation par le début d'empreinte |
@@ -65,7 +68,7 @@ passe, mon journal des accès, déconnexion, thème.
 |---|---|---|
 | `/mes-officines` (et `/`, `/officines`) | Mes officines | Officines rattachées au compte (200 au plus, une ligne par officine) : officine, état, rattachée le, droits, dernier contact, en retard ; liens « Tableau de bord » et « Journal des accès » (si le droit `journal_acces` est accordé) |
 | `/rattacher` | Rattacher une officine | Saisie du code de rattachement (12 caractères, tirets et espaces ignorés, casse ignorée) ; succès → tableau de bord de l'officine |
-| `/mes-officines/{officine}` | Tableau de bord | 13 tuiles (`.tuiles.tuiles-compactes`, une seule grille, deux rangées à 1 366 px) : voir le tableau ci-dessous ; officine d'un autre compte, inconnue ou rattachement retiré : « Officine introuvable ou non rattachée » (refus noté au journal des accès) |
+| `/mes-officines/{officine}` | Tableau de bord | 14 tuiles (lignes absentes depuis S7.5) (`.tuiles.tuiles-compactes`, une seule grille, deux rangées à 1 366 px) : voir le tableau ci-dessous ; officine d'un autre compte, inconnue ou rattachement retiré : « Officine introuvable ou non rattachée » (refus noté au journal des accès) |
 | `/mes-officines/{officine}/journal` | Journal des accès de l'officine | Tous les accès notés pour l'officine (vous, l'éditeur, un autre titulaire, la console), paginé (20) : le, par, événement, résultat, objet ; **jamais** l'identifiant ni le nom d'un compte |
 | `/mon-journal` | Mon journal des accès | Comme pour l'éditeur (S7.1) |
 
@@ -82,6 +85,7 @@ passe, mon journal des accès, déconnexion, thème.
 | Dernier lot reçu, chargement complet | `officine_epoque` (époque la plus récente) ; dernier chargement complet terminé, chargement en cours |
 | Anomalies d'intégrité | `cloud_anomalie_integrite` non classées « remplacée après restauration » |
 | Ordres en attente | `ordre_central` aux statuts `en_attente` et `a_confirmer` |
+| Lignes absentes (S7.5) | lignes marquées `sync_absente_le` dans les tables miroir (nombre et tables ; `cloud_ecran_titulaire_lignes_absentes`) ; « non disponible » sans chargement complet terminé |
 
 - **Jour et mois** au fuseau de l'officine : `parametre_fiscal.fuseau` s'il est monté et connu du serveur PostgreSQL, sinon
   `Africa/Algiers` (réglage de la base locale, migration 083).
@@ -152,6 +156,43 @@ Go du titulaire, recommandations S7 acceptées. Script central **035** ; **aucun
 alerte orange et rouge de péremption (1 à 1 095 j), risque d'écoulement (1 à 1 095 j), délai de livraison (0 à 90 j), stock de sécurité
 (0 à 180 j), stock visé (1 à 365 j), produit dormant (1 à 1 095 j), ancien lot délaissé (1 à 1 000 boîtes, deux seuils). **Jamais** prix,
 TVA, droits, comptes, rien de fiscal ni de nominatif ; revérifiée par la contrainte `ck_ordre_central_titulaire` (central) et par le poste.
+
+## 3 sexies. Lot S7.5 : lignes absentes (réalisé en local le 2026-11-21)
+
+Go du titulaire, maquette validée (section 3 des maquettes du central). Script central **036** (lecture seulement : fonctions et
+index) ; **aucun script local**, `002_tables_miroir.sql` inchangé. Une **ligne absente** est une ligne reçue par le central que
+l'officine n'a plus à la fin d'un chargement complet (`sync_absente_le`, posée par `cloud_fin_chargement`, conception § 13.3) : elle
+reste au central, **jamais effacée** (décision n° 8) ; reçue de nouveau, elle perd sa marque et n'est plus comptée.
+
+| Route / maillon | Où | Règle |
+|---|---|---|
+| `/officines/{officine}?rubrique=absentes` (« Lignes absentes », éditeur) | fiche d'une officine | Quatre tuiles (`.tuiles-absentes`) : lignes absentes au total, tables concernées, dernier chargement complet (n° et date), cause probable la plus fréquente (avec son nombre de lignes et, s'il est connu, « base revenue en arrière le … »). Puis tableau paginé (20) : Table, Lignes absentes, Constatées au chargement (n°), Première constatation, Cause probable ; une ligne par table, chargement et cause (plus nombreuses d'abord). Pied : « Les lignes absentes restent au central (jamais effacées) ; aucune ligne n'est montrée. » Sans chargement complet terminé : « aucune ligne ne peut encore être constatée absente » |
+| Tuile « Lignes absentes » (titulaire) | `/mes-officines/{officine}` (14e tuile, même grille) | Nombre de lignes absentes, note « n table(s), gardées au central » ; « non disponible » sans chargement complet terminé |
+| Colonne « Absentes » (titulaire) | `/mes-officines/ensemble` | Une valeur par officine, total du groupe (partiel si une officine n'a pas la valeur, jamais 0) |
+| Base centrale | `cloud_ecran_lignes_absentes` (paginé), `cloud_ecran_lignes_absentes_resume` (éditeur, après `cloud_ecran_ouvrir`) ; `cloud_ecran_titulaire_lignes_absentes` (titulaire, droit `consulter`, une officine ou toutes celles du compte) | **Nombres seulement** : seules `officine_id`, `sync_epoque`, `sync_absente_le` et `count(*)` sont lues ; jamais une colonne métier ni une clé de ligne. Regroupement interne `cloud_lignes_absentes_groupes` jamais accordé |
+
+**Chargement qui a constaté** : celui dont la fin (`chargement.fin_le`) est la date posée sur la ligne (même transaction) ; une ligne
+dont la date ne correspond à aucun chargement terminé est montrée sans n° (« — »), cause « Non expliquée ».
+
+**Cause probable** (jamais inventée : seulement ce que le central sait déjà) :
+
+| Cause | Condition |
+|---|---|
+| Restauration d'une sauvegarde | ligne d'une époque **antérieure** à celle du chargement qui l'a constatée **et** restauration constatée par la vérification d'intégrité pour cette époque (`cloud_integrite_bifurcation`) ; date du retour en arrière : changement d'époque déclaré (détecté, sinon décidé) |
+| Nouvelle époque (retour en arrière ou bascule) | ligne d'une époque antérieure, sans restauration constatée (S6-D1 : nouvelle époque après restauration ou bascule) |
+| Non expliquée | tout le reste (même époque, chargement non retrouvé) |
+
+**Écarts avec la maquette** : (1) « Purge locale » **n'est pas** une cause rendue : le central ne connaît aucune purge des données de
+l'officine (la purge S3 ne vide que la file locale `sync_sortie`) ; (2) la phrase « Une cause « non expliquée » ouvre une anomalie »
+**n'est pas** reprise : la conception (décision n° 8) dit « signaler et garder », sans anomalie ; aucune anomalie n'est créée ;
+(3) une table peut occuper plusieurs lignes du tableau (une par chargement et par cause), comme l'annonce le texte de la maquette
+(« par table et par chargement »).
+
+**Écart avec S7.1** : l'en-tête du script 031 disait « aucune table miroir » pour l'éditeur ; le 036 lit les tables miroir pour **compter**
+(colonnes techniques `sync_*` seulement, aucune valeur rendue) : décision n° 4 respectée (aucune donnée nominative), testée.
+
+**Index** : `ix_abs_…` partiel par table miroir (lignes absentes seulement) ; une table miroir ajoutée plus tard (002 régénéré) n'a
+l'index qu'après un nouveau passage du 036 (le compte reste juste, plus lent).
 
 ## 4. Actions de l'éditeur
 
@@ -240,6 +281,9 @@ Le **code d'activation** est tiré par les écrans (`CodeActivationSync`, comme 
 **Réglages communs (S7.4)** : passer le script central **035** sur `pharmacie_cloud_dev` (après 034, propriétaire `pharma_app`, après
 relecture). Voir [poste-de-developpement.md](poste-de-developpement.md).
 
+**Lignes absentes (S7.5)** : passer le script central **036** sur `pharmacie_cloud_dev` (après 035, propriétaire `pharma_app`,
+après relecture). Voir [poste-de-developpement.md](poste-de-developpement.md).
+
 **Multi-officines et ordres (S7.3)** : passer le script central **034** sur `pharmacie_cloud_dev` (après 033, propriétaire `pharma_app`,
 après relecture). Dans le poste (titulaire), Accès à distance › Comptes rattachés : « Droits », cocher « Ordres à distance », mot de
 passe → le lien « Ordres » apparaît dans « Mes officines ». Voir [poste-de-developpement.md](poste-de-developpement.md).
@@ -253,7 +297,7 @@ Variables : `PHARMA_CLOUD_ECRANS_CONNEXION` (obligatoire), `PHARMA_CLOUD_DOSSIER
 
 ## 7. Tests
 
-- SQL (transaction annulée) : `database/cloud/tests/030_comptes_distants_tests.sql`, `031_ecrans_editeur_tests.sql` ; `032_…` à `035_…` : voir S7.2a à S7.4 ci-dessous.
+- SQL (transaction annulée) : `database/cloud/tests/030_comptes_distants_tests.sql`, `031_ecrans_editeur_tests.sql` ; `032_…` à `036_…` : voir S7.2a à S7.5 ci-dessous.
 - `tests/Pharma.Cloud.Web.Tests` : réglages (adresse non locale refusée, mode fichier refusé hors développement, SMS, clé de l'autorité),
   second facteur, contrôle d'accès, mots de passe ; architecture (aucun style en ligne, aucune route de l'API des officines, jamais la clé de
   l'autorité, aucun script Blazor ni interactivité, anti-falsification sur chaque formulaire, lecture par `cloud_ecran_*` seulement) ;
@@ -285,7 +329,19 @@ Variables : `PHARMA_CLOUD_ECRANS_CONNEXION` (obligatoire), `PHARMA_CLOUD_DOSSIER
   acceptation, mot de passe faux, hors liste et hors bornes refusés à la réception, table fixée par le central, rouge combiné, refus,
   expiration, rejeu) ; `tests/Pharma.Domain.Tests/ReglagesCommunsTests.cs`.
 
+- **S7.5** : `database/cloud/tests/036_lignes_absentes_ecrans_tests.sql` (droits, index, causes, résumé, ligne reçue de nouveau,
+  aucune valeur de ligne, non-fuite : B ne voit jamais O1, « non disponible », rôles croisés, journal) ; `ReglesEcransTests` (rubrique,
+  libellés, causes de l'écran = causes de la base, aucune « purge », vue d'ensemble rapprochée) ; `TitulaireEcransTests` (dépôt : 1 ligne
+  absente, non disponible, non-fuite, rôles croisés ; bout en bout : tuile et colonne) ; `BoutEnBoutEcransTests` (rubrique « Lignes
+  absentes » en HTTPS : tuiles, n° du chargement, cause, pied de page, aucune valeur de ligne) ; `031_…` : comptage des fonctions de
+  l'éditeur sans celles du 036.
+
 ## 8. Reste à faire
+
+- **S7.5** : script central 036 **à passer** sur `pharmacie_cloud_dev` (après relecture) ; écrans **à mesurer** (1 366 × 768 et
+  1 536 × 890, clair et sombre) : `/officines/{officine}?rubrique=absentes` (14 rubriques dans le menu de gauche, avec et sans lignes
+  absentes), `/mes-officines/{officine}` (14 tuiles), `/mes-officines/ensemble` (11 colonnes : défilement horizontal à surveiller).
+  Non fait : cause « purge » (aucune purge connue du central), anomalie pour une cause non expliquée (non prévue par la conception).
 
 - **S7.4** : script central 035 passé deux fois sur `pharmacie_cloud_dev`, essai de bout en bout réussi le 2026-11-21 (proposition
   « Péremption : alerte orange 150 jours » reçue, acceptée sur le poste, « Accepté » au central). Mesurés à 0 px (1 366 × 768 et

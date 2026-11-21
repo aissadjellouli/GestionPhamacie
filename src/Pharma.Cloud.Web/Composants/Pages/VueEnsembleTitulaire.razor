@@ -62,7 +62,7 @@
     }
     <p class="pied-page">
         « Non disponible » : donnée non montée au serveur central pour cette officine ; elle n'est jamais comptée comme 0 : le total devient
-        « partiel » et dit combien d'officines il compte. Totaux des données reçues (une vente faite depuis le dernier contact n'y figure pas
+        « partiel » et dit combien d'officines il compte. « Absentes » : lignes reçues que l'officine n'a plus (gardées au central). Totaux des données reçues (une vente faite depuis le dernier contact n'y figure pas
         encore). Chaque officine ouverte ici est notée à son journal des accès.
     </p>
 </div>
@@ -76,6 +76,7 @@
         ("ca_jour", "CA jour"), ("ventes_jour", "Ventes jour"), ("ca_mois", "CA mois"), ("ca_mois_precedent", "Mois préc."),
         ("part_chifa_mois", "Chifa mois"), ("credits_en_cours", "Crédits"), ("alertes_stock", "Stock"),
         ("alertes_peremption", "Péremption"), ("anomalies_ouvertes", "Anomalies"), ("ordres_en_attente", "Ordres"),
+        (VueEnsemble.LignesAbsentesColonne, "Absentes"),
     ];
 
     [CascadingParameter] private HttpContext? Contexte { get; set; }
@@ -88,7 +89,12 @@
     protected override async Task OnInitializedAsync()
     {
         if (Contexte?.EmpreinteJeton() is { } jeton)
-            Table = await Depot.TitulaireEnsembleAsync(jeton, Contexte.RequestAborted);
+        {
+            var ensemble = await Depot.TitulaireEnsembleAsync(jeton, Contexte.RequestAborted);
+            // Lot S7.5 : lignes absentes de chaque officine (nombres seulement), même droit « consulter »
+            Table = ensemble.Lignes.Count == 0 ? ensemble
+                : VueEnsemble.AvecLignesAbsentes(ensemble, await Depot.TitulaireLignesAbsentesAsync(jeton, null, Contexte.RequestAborted));
+        }
     }
 
     private string Valeur(object?[] ligne, string colonne) =>

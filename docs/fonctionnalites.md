@@ -16,15 +16,15 @@ Légende des états :
 
 | État | Nombre de fonctions |
 | --- | --- |
-| Fait | 190 |
+| Fait | 191 |
 | En cours | 1 |
 | En attente | 47 |
 | Bloqué | 9 |
 | Non proposé | 1 |
 | À vérifier | 0 |
-| **Total** | **248** |
+| **Total** | **249** |
 
-Recompté le 2026-11-21 (après-midi) à partir des lignes ci-dessous (248 lignes ; « Fait en local » compté dans « Fait ») ; « En cours » : démonstration cloud (Docker absent du poste).
+Recompté le 2026-11-21 (soir, lot S7.5) à partir des lignes ci-dessous (249 lignes ; « Fait en local » compté dans « Fait ») ; « En cours » : démonstration cloud (Docker absent du poste).
 
 ## Caisse et ventes
 
@@ -353,6 +353,7 @@ Recompté le 2026-11-21 (après-midi) à partir des lignes ci-dessous (248 ligne
 | S7.3 : vue d’ensemble du titulaire (officines côte à côte, total du groupe « partiel » si une valeur manque) ; droit « ordres à distance » accordé et retiré depuis le poste (comptes rattachés, retrait immédiat, mot de passe ressaisi) ; ordres du titulaire en liste fermée (essai, sauvegarde confirmée sur le poste, vérification d’intégrité), code de confirmation, 24 heures, statut visible ; script central 034 | Fait en local (2026-11-21 ; 034 passé ; écrans mesurés à 0 px, ordres avec le droit accordé compris) | ecrans-central.md § 3 quater |
 | S7.4 : réglages communs du titulaire : seuils d’alerte de stock et de péremption (liste fermée, bornes) proposés depuis le central à une ou plusieurs officines (droit « ordres » sur chacune, tout ou rien, code de confirmation) ; chaque titulaire accepte ou refuse sur son poste (avant / après, mot de passe ressaisi), rien sans acceptation ; suivi Proposé / Accepté / Refusé / Expiré au central | Fait en local (2026-11-21 ; 035 passé ; essai de bout en bout réussi) | ecrans-central.md § 3 quinquies |
 | S7.4 (reste) : motifs, catégories et textes de ticket en réglages communs | Non proposé (texte de ticket inexistant ; motifs jugés trop risqués) | conception-synchronisation.md § 32.4 |
+| S7.5 : lignes absentes vues au central (nombres seulement, jamais une ligne) : rubrique « Lignes absentes » de la fiche d’une officine pour l’éditeur (4 tuiles, tableau paginé par table et par chargement : n° du chargement, première constatation, cause probable « Restauration d’une sauvegarde » / « Nouvelle époque » / « Non expliquée », dérivée de ce que le central sait) ; tuile « Lignes absentes » du tableau de bord du titulaire et colonne « Absentes » de la vue d’ensemble (« non disponible » sans chargement complet) ; script central 036 | Fait en local (2026-11-21 ; 036 à passer sur le central de développement, écrans à mesurer) | ecrans-central.md § 3 sexies |
 | S7.3 (reste) : ordre « message à afficher sur les postes » | En attente (surface d’affichage sur les postes à décider ; barre d’état livrée) | ecrans-central.md § 8 |
 | S7.2 (reste) : SMS (fournisseur), remise à zéro d’un mot de passe par l’éditeur, retrait d’un rattachement depuis les écrans, alertes de refus en série | En attente (après l’hébergeur) | ecrans-central.md § 8 |
 | Mise en ligne des écrans du central (domaine, certificat, SMTP, connexion de production, comptes réels) | En attente (après le choix de l’hébergeur) | ecrans-central.md § 8 |

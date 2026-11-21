@@ -14,6 +14,8 @@ public static class Rubriques
         new("certificats", "Certificats", "cloud_ecran_certificats", false, "Certificats des serveurs de l'officine (début d'empreinte seulement)."),
         new("codes", "Codes d'activation", "cloud_ecran_codes_activation", false, "Codes émis pour l'officine : dates seulement, jamais le code."),
         new("chargements", "Chargements", "cloud_ecran_chargements", false, "20 derniers chargements complets."),
+        new(LignesAbsentes.Rubrique, "Lignes absentes", "cloud_ecran_lignes_absentes", true,
+            "Lignes reçues par le central que l'officine n'a plus (constatées à la fin d'un chargement complet) : nombres seulement."),
         new("lots", "Lots reçus", "cloud_ecran_lots", false, "50 derniers lots reçus, sans leur contenu."),
         new("epoques", "Époques", "cloud_ecran_epoques", false, "Dernier lot reçu par époque."),
         new("changements", "Changements d'époque", "cloud_ecran_changements_epoque", false, "Changements d'époque déclarés par l'officine (restauration)."),
@@ -48,6 +50,9 @@ public static class Rubriques
         ["objet"] = "Objet", ["officine"] = "Officine",
         // Titulaire (script central 032)
         ["rattachee_le"] = "Rattachée le", ["droits"] = "Droits", ["acteur"] = "Par",
+        // Lignes absentes (script central 036)
+        ["nom_table"] = "Table", ["lignes"] = "Lignes absentes", ["chargement"] = "Constatées au chargement",
+        ["premiere_constatation"] = "Première constatation", ["cause"] = "Cause probable",
     };
 
     /// <summary>Lot S7.3 : ordres que le titulaire peut envoyer (liste fermée, même liste que cloud_ordre_titulaire_permis, script 034).</summary>
@@ -89,7 +94,9 @@ public static class Rubriques
         DateTime d => (d.Kind == DateTimeKind.Utc ? d.ToLocalTime() : d).ToString(colonne == "jour" ? "dd/MM/yyyy" : "dd/MM/yyyy HH:mm", CultureInfo.GetCultureInfo("fr-FR")),
         DateOnly j => j.ToString("dd/MM/yyyy", CultureInfo.GetCultureInfo("fr-FR")),
         bool b => b ? "oui" : "non",
+        int n when colonne == "chargement" => "n° " + n.ToString(CultureInfo.GetCultureInfo("fr-FR")),
         long or int or short => string.Format(CultureInfo.GetCultureInfo("fr-FR"), "{0:N0}", valeur),
+        string s when colonne == "cause" => LignesAbsentes.Cause(s),
         Guid g => g.ToString()[..8],
         string s when colonne == "etat" && Etats.TryGetValue(s, out var e) => e,
         string s when colonne == "droits" => string.Join(", ", s.Split(',').Select(d => d switch { "consulter" => "tableau de bord", "journal_acces" => "journal des accès", "ordres" => "ordres à distance", _ => d })),

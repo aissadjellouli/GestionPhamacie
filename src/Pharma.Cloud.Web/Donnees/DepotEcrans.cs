@@ -119,6 +119,11 @@ public sealed class DepotEcrans(NpgsqlDataSource db)
             ? ($"SELECT * FROM {rubrique.Fonction}($1, $2, $3)", [Texte(empreinteJeton), Entier(page), Entier(taille)])
             : ($"SELECT * FROM {rubrique.Fonction}($1)", [Texte(empreinteJeton)]), ct);
 
+    /// <summary>Lot S7.5 (script central 036) : résumé des lignes absentes de l'officine (une ligne : nombres, dernier chargement, cause
+    /// la plus fréquente) ; null si l'ouverture est refusée par la base.</summary>
+    public Task<TableEcran?> LignesAbsentesResumeAsync(string empreinteJeton, Guid officine, CancellationToken ct) =>
+        LireOuvertAsync(empreinteJeton, officine, ("SELECT * FROM cloud_ecran_lignes_absentes_resume($1)", [Texte(empreinteJeton)]), ct);
+
     // ------------------------------------------------------------------ titulaire (script central 032)
     // L'officine est ouverte PAR LA BASE dans chaque fonction (cloud_ecran_ouvrir, rattachement et droit vérifiés) : aucune ligne si refusé.
     public Task<TableEcran> TitulaireOfficinesAsync(string empreinteJeton, CancellationToken ct) =>
@@ -133,6 +138,12 @@ public sealed class DepotEcrans(NpgsqlDataSource db)
     // Lot S7.3 (script central 034) : vue d'ensemble (une ligne par officine, total fait par VueEnsemble) et ordres du titulaire
     public Task<TableEcran> TitulaireEnsembleAsync(string empreinteJeton, CancellationToken ct) =>
         LireAsync(null, null, "SELECT * FROM cloud_ecran_titulaire_ensemble($1)", [Texte(empreinteJeton)], ct);
+
+    /// <summary>Lot S7.5 (script central 036) : lignes absentes et tables concernées, d'une officine ou (null) de toutes celles du compte
+    /// avec le droit « consulter » ; NULL de la base = non disponible (aucun chargement complet terminé).</summary>
+    public Task<TableEcran> TitulaireLignesAbsentesAsync(string empreinteJeton, Guid? officine, CancellationToken ct) =>
+        LireAsync(null, null, "SELECT id, lignes, tables FROM cloud_ecran_titulaire_lignes_absentes($1, $2)",
+            [Texte(empreinteJeton), new NpgsqlParameter { Value = officine is { } o ? (object)o : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Uuid }], ct);
 
     public Task<TableEcran> TitulaireOrdresAsync(string empreinteJeton, Guid officine, int page, int taille, CancellationToken ct) =>
         LireAsync(null, null, "SELECT * FROM cloud_ecran_titulaire_ordres($1, $2, $3, $4)", [Texte(empreinteJeton), Uuid(officine), Entier(page), Entier(taille)], ct);

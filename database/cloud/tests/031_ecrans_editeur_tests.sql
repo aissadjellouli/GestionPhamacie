@@ -21,8 +21,9 @@ DO $$ BEGIN
         'colonne interdite rendue par une fonction des écrans';
     ASSERT (SELECT count(*) FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND has_function_privilege('pharma_cloud_ecrans', p.oid, 'EXECUTE')
             AND p.proname LIKE 'cloud\_ecran\_%'
-            -- Fonctions du titulaire (script 032) comptées par son propre test
-            AND p.proname NOT LIKE 'cloud\_ecran\_titulaire\_%' AND p.proname <> 'cloud_ecran_rattacher') = 27, 'fonctions des écrans : 8 (030) + 19 (031)';
+            -- Fonctions du titulaire (script 032) et des lignes absentes (script 036) comptées par leur propre test
+            AND p.proname NOT LIKE 'cloud\_ecran\_titulaire\_%' AND p.proname <> 'cloud_ecran_rattacher'
+            AND p.proname NOT LIKE 'cloud\_ecran\_lignes\_absentes%') = 27, 'fonctions des écrans : 8 (030) + 19 (031)';
 END $$;
 
 -- Données d'essai : deux officines (A active avec un lot, une anomalie et un ordre ; B en attente), un éditeur et un titulaire

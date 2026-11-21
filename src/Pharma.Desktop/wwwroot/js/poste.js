@@ -442,22 +442,27 @@ window.pharma.tableaux = (function () {
     });
     // Correction : tant qu'il reste un débordement de l'écran (marges, notes, ligne de filtres ajoutée…), le plus grand cadre le reprend
     const d = document.scrollingElement;
-    for (let essai = 0; essai < 4; essai++) {
+    for (let essai = 0; essai < 8; essai++) {
       // Fractions de pixel comprises : un dépassement de 0,4 px suffit à faire apparaître la barre de défilement de la fenêtre
       const hauteurPage = document.documentElement.getBoundingClientRect().height;
       const deborde = Math.ceil(Math.max(d.scrollHeight - d.clientHeight, hauteurPage - window.innerHeight) / zoom);
       if (deborde <= 0) break;
       const cadres = Array.from(document.querySelectorAll(".tableau-cadre, .cadre-defilant")).filter(function (c) { return !c.closest(".voile, .suggestions") && !interieur(c); });
       // Un cadre marqué « prioritaire » (le panier de la caisse) reprend le débordement avant les autres
-      const grand = cadres.sort(function (a, b) {
+      const tries = cadres.sort(function (a, b) {
         const pa = a.classList.contains('cadre-prioritaire') ? 1 : 0, pb = b.classList.contains('cadre-prioritaire') ? 1 : 0;
         return pb - pa || b.clientHeight - a.clientHeight;
-      })[0];
-      if (!grand) break;
-      const actuel = parseFloat(grand.style.maxHeight) || grand.clientHeight;
-      const h = Math.max(minimum(grand), actuel - deborde);
-      if (h >= actuel) break;   // plus rien à reprendre : l'écran est trop chargé (à découper en rubriques)
-      poser(grand, h);
+      });
+      // Le plus grand cadre qui peut encore céder de la place (hauteur réelle au-dessus de son minimum) reprend le débordement ;
+      // hauteur réelle, car le contenu peut être plus court que la hauteur permise (sinon la réduction reste sans effet)
+      let reduit = false;
+      for (const grand of tries) {
+        const permise = parseFloat(grand.style.maxHeight) || grand.clientHeight;
+        const actuel = Math.min(permise, grand.clientHeight);
+        const h = Math.max(minimum(grand), actuel - deborde);
+        if (h < actuel) { poser(grand, h); reduit = true; break; }
+      }
+      if (!reduit) break;   // plus rien à reprendre : l'écran est trop chargé (à découper en rubriques)
     }
     // Panier de la caisse : il descend jusqu'au-dessus de la barre d'état (écran fixe, rien d'autre ne défile)
     const prioritaire = document.querySelector('.cadre-prioritaire');

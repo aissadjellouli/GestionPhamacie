@@ -97,6 +97,10 @@ Détail : [ecrans-central.md](ecrans-central.md) § 5. En local seulement à ce 
   à chaque envoi, 5 envois par heure ; jamais prix, TVA, droits, comptes ni rien de fiscal (refusé par l'écran, la base et le poste).
   **Rien ne s'applique** sans l'acceptation du titulaire de l'officine sur son poste, **mot de passe ressaisi** (aussi pour refuser) ; un
   autre employé ne décide pas. Le titulaire à distance ne voit que ses propres envois et leur état, jamais le motif d'un refus local.
+- **Lignes absentes (lot S7.5, script central 036)** : l'éditeur (fiche d'une officine) et le titulaire (ses officines, droit
+  `consulter`) ne voient que des **nombres** : lignes absentes par table, n° du chargement qui les a constatées, date, cause probable ;
+  jamais le contenu ni la clé d'une ligne. Les fonctions comptent dans les tables miroir avec l'officine posée par la base (RLS forcée)
+  et ne lisent que `officine_id`, `sync_epoque` et `sync_absente_le` ; le regroupement interne n'est accordé à aucun rôle.
 - **Multi-officines et ordres du titulaire (lot S7.3, script central 034)** : le droit `ordres` d'un compte distant sur une officine ne
   s'accorde (et ne se retire) que **depuis le poste** de l'officine, par le titulaire, mot de passe ressaisi ; le retrait d'un compte
   coupe l'accès **tout de suite** et annule ses ordres encore ouverts. Ordres du titulaire : liste fermée (essai, sauvegarde, vérification

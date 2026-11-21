@@ -66,6 +66,21 @@
                 </Action>
             </TableauEcran>
         }
+        else if (Choisie.Cle == LignesAbsentes.Rubrique)
+        {
+            @* Lot S7.5 (maquette validée) : quatre tuiles puis le tableau paginé ; nombres seulement, jamais une ligne *@
+            <div class="tuiles tuiles-compactes tuiles-absentes" aria-label="Lignes absentes de l'officine">
+                <TuileTableau Libelle="Lignes absentes au total" Valeur="@Tableau.Nombre(Absentes("lignes"))" Note="gardées au central" />
+                <TuileTableau Libelle="Tables concernées" Valeur="@Tableau.Nombre(Absentes("tables"))" Note="tables miroir" />
+                <TuileTableau Libelle="Dernier chargement complet" Valeur="@(Absentes("dernier_chargement") is int n ? $"n° {n}" : "aucun")"
+                              Note="@(Absentes("dernier_chargement_le") is { } le ? Rubriques.Afficher("fin_le", le) : "aucun chargement terminé")" />
+                <TuileTableau Libelle="Cause probable la plus fréquente" Valeur="@LignesAbsentes.CauseCourte(Absentes("cause_frequente") as string)"
+                              Note="@NoteCause" Petite="true" />
+            </div>
+            <TableauEcran Table="@Table" Vide="@(Absentes("dernier_chargement") is null ? "Aucun chargement complet terminé : aucune ligne ne peut encore être constatée absente." : "Aucune ligne absente.")" />
+            <PaginationEcran Page="@PageCourante" Taille="@Taille" Total="@Table.Total" Base="@($"officines/{Id}?rubrique={Choisie.Cle}")" />
+            <p class="pied-page">@LignesAbsentes.PiedDePage</p>
+        }
         else
         {
             <TableauEcran Table="@Table" />
@@ -97,11 +112,20 @@
     private object? Valeur(string c) => Fiche is null ? null : Resume!.Valeur(Fiche, c);
     private string Afficher(string c) => Rubriques.Afficher(c, Valeur(c));
 
+    /// <summary>Lot S7.5 : résumé des lignes absentes (une ligne), lu seulement pour cette rubrique.</summary>
+    private TableEcran? ResumeAbsentes { get; set; }
+    private object? Absentes(string c) => ResumeAbsentes?.Lignes.FirstOrDefault() is { } l ? ResumeAbsentes.Valeur(l, c) : null;
+    private string NoteCause => Absentes("cause_frequente") is null ? "aucune ligne absente"
+        : (Absentes("cause_lignes") is long n ? $"{Tableau.Nombre(n)} ligne(s)" : "")
+          + (Absentes("retour_le") is DateTime r ? $" ; base revenue en arrière le {Rubriques.Afficher("jour", r)}" : "");
+
     protected override async Task OnInitializedAsync()
     {
         if (Contexte?.EmpreinteJeton() is not { } jeton) return;
         var ct = Contexte.RequestAborted;
         Resume = await Depot.RubriqueAsync(jeton, Id, Rubriques.Toutes[0], 1, Taille, ct);
         Table = Choisie.Cle == "resume" ? Resume : Resume is null ? null : await Depot.RubriqueAsync(jeton, Id, Choisie, PageCourante, Taille, ct);
+        if (Table is not null && Choisie.Cle == LignesAbsentes.Rubrique)
+            ResumeAbsentes = await Depot.LignesAbsentesResumeAsync(jeton, Id, ct);
     }
 }

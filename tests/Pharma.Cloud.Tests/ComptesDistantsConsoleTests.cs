@@ -77,7 +77,7 @@ public class ComptesDistantsConsoleTests
     }
 
     [Fact]
-    public async Task Titulaire_et_code_de_rattachement_sur_une_base_jetable_puis_tests_sql_030_a_035()
+    public async Task Titulaire_et_code_de_rattachement_sur_une_base_jetable_puis_tests_sql_030_a_036()
     {
         using var base_ = BaseCentraleJetable.Creer();
         if (base_ is null) return;   // pas de serveur, de psql ou de droit CREATEDB : rien à vérifier ici
@@ -123,9 +123,10 @@ public class ComptesDistantsConsoleTests
         Assert.Contains("n'est pas un compte titulaire", sortie.ToString());
         Assert.Equal(1, await ComptesDistantsAdministration.ExecuterAsync(db, ["--code-rattachement", "titulaire.console", Guid.NewGuid().ToString(), "--auteur", "A"], new StringWriter()));
 
-        // Tests SQL des écrans (transaction annulée) sur la même base : 030 à 035
+        // Tests SQL des écrans (transaction annulée) sur la même base : 030 à 036
         foreach (var t in new[] { "030_comptes_distants_tests.sql", "031_ecrans_editeur_tests.sql", "032_ecrans_titulaire_tests.sql", "033_code_rattachement_poste_tests.sql",
-                     "034_titulaire_multi_officines_ordres_tests.sql", "035_reglages_communs_titulaire_tests.sql" })
+                     "034_titulaire_multi_officines_ordres_tests.sql", "035_reglages_communs_titulaire_tests.sql",
+                     "036_lignes_absentes_ecrans_tests.sql" })
             base_.Rejouer(Path.Combine(Depot.Racine(), "database", "cloud", "tests", t));
     }
 }

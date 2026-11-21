@@ -1053,6 +1053,8 @@ fieldset.panneau:disabled { opacity: 0.85; }
 .tuile-valeur.non-disponible { color: var(--texte-2); font-weight: 500; }
 /* Vue d'ensemble du titulaire : montants sur une ligne, en-têtes courts (titre complet dans le pied de page) */
 .tableau-ensemble td.nombre, .tableau-ensemble th.nombre { white-space: nowrap; }
+/* 11 colonnes depuis S7.5 (« Absentes ») : cellules resserrées pour tenir sans défilement horizontal à 1 366 px */
+.tableau.tableau-serre.tableau-ensemble th, .tableau.tableau-serre.tableau-ensemble td { padding-left: 5px; padding-right: 5px; }
 /* Réglages communs du titulaire (lot S7.4) : formulaire à gauche, mes envois à droite ; hauteur prise sur la fenêtre (écran fixe,
    aucun défilement de page), chaque colonne défile seule (.cadre-defilant) */
 .reglages-communs { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 20px; min-height: 260px; } /* hauteur posée par ecrans.js (data-hauteur-restante) */
@@ -1072,3 +1074,6 @@ fieldset.panneau:disabled { opacity: 0.85; }
 .reglages-communs .ligne-reglage { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; align-items: end; }
 .reglages-communs .ligne-reglage select, .reglages-communs .ligne-reglage input { width: 100%; }
 .reglages-communs .champ-bouton { justify-content: flex-end; }
+/* Lignes absentes (lot S7.5, maquette validée) : quatre tuiles sur une rangée dans la fiche d'une officine, puis le tableau paginé */
+.tuiles-compactes.tuiles-absentes { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 900px) { .tuiles-compactes.tuiles-absentes { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

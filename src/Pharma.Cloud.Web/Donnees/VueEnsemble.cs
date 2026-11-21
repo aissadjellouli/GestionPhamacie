@@ -19,7 +19,27 @@ public static class VueEnsemble
 {
     /// <summary>Indicateurs additionnés (colonnes de cloud_ecran_titulaire_tableau) : montants puis nombres.</summary>
     public static readonly IReadOnlyList<string> Montants = ["ca_jour", "ca_mois", "ca_mois_precedent", "part_chifa_mois", "credits_en_cours"];
-    public static readonly IReadOnlyList<string> Nombres = ["ventes_jour", "ventes_mois", "alertes_stock", "alertes_peremption", "anomalies_ouvertes", "ordres_en_attente"];
+    public static readonly IReadOnlyList<string> Nombres = ["ventes_jour", "ventes_mois", "alertes_stock", "alertes_peremption", "anomalies_ouvertes", "ordres_en_attente", LignesAbsentesColonne];
+
+    /// <summary>Lot S7.5 : colonne ajoutée par l'écran (lue par cloud_ecran_titulaire_lignes_absentes, script central 036).</summary>
+    public const string LignesAbsentesColonne = "lignes_absentes";
+
+    /// <summary>
+    /// Ajoute à la vue d'ensemble le nombre de lignes absentes de chaque officine (rapproché par l'identifiant). Une officine absente
+    /// de la seconde lecture (refus, rattachement retiré entre les deux lectures) ou sans chargement complet terminé reste « non
+    /// disponible » (NULL), jamais 0.
+    /// </summary>
+    public static TableEcran AvecLignesAbsentes(TableEcran ensemble, TableEcran absentes)
+    {
+        var parOfficine = new Dictionary<Guid, object?>();
+        foreach (var l in absentes.Lignes)
+            if (absentes.Valeur(l, "id") is Guid g) parOfficine[g] = absentes.Valeur(l, "lignes");
+        var colonnes = ensemble.Colonnes.Append(LignesAbsentesColonne).ToList();
+        var lignes = ensemble.Lignes
+            .Select(l => l.Append(ensemble.Valeur(l, "id") is Guid g && parOfficine.TryGetValue(g, out var n) ? n : null).ToArray())
+            .ToList();
+        return new TableEcran(colonnes, lignes, ensemble.Total);
+    }
 
     private static readonly CultureInfo Fr = CultureInfo.GetCultureInfo("fr-FR");
 

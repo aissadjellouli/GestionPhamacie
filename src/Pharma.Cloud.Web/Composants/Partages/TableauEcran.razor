@@ -48,7 +48,7 @@ else
 
     private static string? Classe(string colonne, object? valeur) => valeur switch
     {
-        long or int or short when colonne is not "derniere_epoque" and not "epoque" => "nombre",
+        long or int or short when colonne is not "derniere_epoque" and not "epoque" and not "chargement" => "nombre",
         true when colonne is "en_retard" => "texte-urgent",
         _ => null,
     };

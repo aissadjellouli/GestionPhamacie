@@ -2,7 +2,7 @@
 @inject ApiClient Api
 @inject SessionPoste Session
 
-<div class="page admin">
+<div class="page admin page-reprise">
     <NavAdmin Actif="admin/reprise" />
 
     <div class="admin-contenu">
@@ -45,8 +45,7 @@
                         <button type="button" class="btn" disabled="@enCours" @onclick="ChercherAsync">Chercher les bases</button>
                     </div>
                     <p class="detail" style="margin: 0">
-                        Le dossier doit être lisible par le PC serveur : ce PC s’il fait aussi serveur, sinon un partage réseau (\\SERVEUR\…).
-                        Sans dossier, seules les sources ODBC déjà déclarées sur le PC serveur sont listées.
+                        Dossier lisible par le PC serveur (ce PC ou un partage \\SERVEUR\…) ; sans dossier : sources ODBC déjà déclarées.
                     </p>
 
                     @if (sources.Count > 0)
@@ -158,7 +157,7 @@
 
                 @if (sessions.Count > 0)
                 {
-                    <section class="tableau-cadre" aria-label="Reprises précédentes">
+                    <section class="tableau-cadre" aria-label="Reprises précédentes" data-hauteur-min="160">
                         <table class="tableau" style="min-width: 0">
                             <thead><tr><th scope="col">N°</th><th scope="col">Ancien logiciel</th><th scope="col">Extraction</th><th scope="col">État</th><th scope="col">Import réalisé</th><th scope="col"></th></tr></thead>
                             <tbody>

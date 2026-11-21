@@ -195,7 +195,8 @@ DO $$ BEGIN
     ASSERT EXISTS (SELECT 1 FROM journal_acces_distant WHERE evenement = 'envoi_reglages_titulaire' AND resultat = 'refus' AND objet = 'code:faux'), 'code faux noté';
     ASSERT EXISTS (SELECT 1 FROM journal_acces_distant WHERE evenement = 'reglages_titulaire' AND resultat = 'refus' AND objet = 'deja_en_cours'), 'rejeu noté';
     ASSERT EXISTS (SELECT 1 FROM journal_acces_distant WHERE evenement = 'envoi_reglages_titulaire' AND resultat = 'ok' AND objet = 'officines:2'), 'envoi noté';
-    ASSERT (SELECT count(*) FROM journal_acces_distant WHERE evenement = 'reglages_titulaire' AND resultat = 'ok') = 3, 'un ordre noté par officine';
+    ASSERT (SELECT count(*) FROM journal_acces_distant WHERE evenement = 'reglages_titulaire' AND resultat = 'ok'
+            AND officine_id::text LIKE '%-000000000350') = 3, 'un ordre noté par officine';   -- officines du test seulement (base réelle : d''autres envois existent)
     ASSERT NOT EXISTS (SELECT 1 FROM journal_securite WHERE detail LIKE '%titulaire.a350%'), 'jamais l''identifiant au journal de sécurité';
     ASSERT (SELECT premiere_rupture FROM cloud_ecran_verifier_journal_acces()) IS NULL, 'chaîne intacte';
 END $$;

@@ -49,7 +49,9 @@ public class TitulaireEcransTests
             "INSERT INTO vente (officine_id, id, sync_epoque, sync_numero, numero, date_vente, montant_total, part_organisme, canal_organisme, statut, patient_id) VALUES ($1, 1, 1, 1, 'NOMINATIF_S72', now(), 1200, 700, 'chifa', 'validee', 'P-NOMINATIF_S72'), ($1, 2, 1, 2, 'T2', now(), 300, 0, 'logiciel', 'annulee', NULL)",
             "INSERT INTO retour_client (officine_id, id, sync_epoque, sync_numero, vente_id, montant_rembourse, cree_le, motif_texte) VALUES ($1, 1, 1, 3, 1, 200, now(), 'NOMINATIF_S72')",
             "INSERT INTO patient (officine_id, id, sync_epoque, sync_numero, solde_credit) VALUES ($1, 1, 1, 4, 450)",
-            "INSERT INTO alerte (officine_id, id, sync_epoque, sync_numero, type, niveau, statut, message) VALUES ($1, 1, 1, 5, 'rupture', 'urgent', 'nouvelle', 'NOMINATIF_S72')");
+            "INSERT INTO alerte (officine_id, id, sync_epoque, sync_numero, type, niveau, statut, message) VALUES ($1, 1, 1, 5, 'rupture', 'urgent', 'nouvelle', 'NOMINATIF_S72')",
+            // Lot S7.5 : une alerte constatée absente à la fin du chargement 1 (jamais comptée dans les alertes ; une ligne absente)
+            "INSERT INTO alerte (officine_id, id, sync_epoque, sync_numero, type, niveau, statut, message, sync_absente_le) SELECT $1, 2, 1, 6, 'rupture', 'urgent', 'nouvelle', 'NOMINATIF_S72', c.fin_le FROM chargement c WHERE c.officine_id = $1 AND c.numero = 1");
         await Officine(db, o,
             "INSERT INTO vente (officine_id, id, sync_epoque, sync_numero, numero, date_vente, montant_total, part_organisme, canal_organisme, statut) VALUES ($1, 1, 1, 1, 'B1', now(), 98765.43, 9876.54, 'chifa', 'validee')",
             "INSERT INTO patient (officine_id, id, sync_epoque, sync_numero, solde_credit) VALUES ($1, 1, 1, 2, 87654.32)");
@@ -135,6 +137,19 @@ public class TitulaireEcransTests
         Assert.Empty((await depot.TitulaireJournalAsync(sa, e.B, 1, 20, ct)).Lignes);
         Assert.Empty((await depot.TitulaireTableauAsync(sa, Guid.NewGuid(), ct)).Lignes);
 
+        // Lot S7.5 : lignes absentes, nombres seulement ; A : 1 ligne, 1 table ; B sans chargement terminé : non disponible ; non-fuite
+        var absA = await depot.TitulaireLignesAbsentesAsync(sa, e.A, ct);
+        var lAbs = Assert.Single(absA.Lignes);
+        Assert.Equal((1L, 1), ((long)absA.Valeur(lAbs, "lignes")!, (int)absA.Valeur(lAbs, "tables")!));
+        Assert.Equal(["id", "lignes", "tables"], absA.Colonnes);
+        var absB = await depot.TitulaireLignesAbsentesAsync(sb, null, ct);
+        Assert.Equal(e.B, (Guid)absB.Valeur(Assert.Single(absB.Lignes), "id")!);
+        Assert.Null(absB.Valeur(absB.Lignes[0], "lignes"));
+        Assert.Empty((await depot.TitulaireLignesAbsentesAsync(sb, e.A, ct)).Lignes);
+        Assert.Empty((await depot.TitulaireLignesAbsentesAsync(sa, e.B, ct)).Lignes);
+        var ensembleAbs = VueEnsemble.AvecLignesAbsentes(await depot.TitulaireEnsembleAsync(sa, ct), await depot.TitulaireLignesAbsentesAsync(sa, null, ct));
+        Assert.Equal(1L, ensembleAbs.Valeur(Assert.Single(ensembleAbs.Lignes), VueEnsemble.LignesAbsentesColonne));
+
         // Agrégats sans colonne nominative, aucune valeur nominative ni valeur de l'autre officine
         var tables = new[] { t, listeA, await depot.TitulaireJournalAsync(sa, e.A, 1, 100, ct) };
         foreach (var x in tables)
@@ -152,6 +167,8 @@ public class TitulaireEcransTests
                      () => depot.TitulaireOfficinesAsync(se, ct), () => depot.TitulaireTableauAsync(se, e.A, ct), () => depot.TitulaireJournalAsync(se, e.A, 1, 20, ct),
                      () => depot.RattacherAsync(se, ComptesDistants.EmpreinteCodeRattachement(codeA), ct),
                      () => depot.OfficinesAsync(sa, null, "toutes", 1, 20, ct), () => depot.RubriqueAsync(sa, e.A, Rubriques.Trouver("lots"), 1, 20, ct),
+                     () => depot.TitulaireLignesAbsentesAsync(se, null, ct), () => depot.LignesAbsentesResumeAsync(sa, e.A, ct),
+                     () => depot.RubriqueAsync(sa, e.A, Rubriques.Trouver(LignesAbsentes.Rubrique), 1, 20, ct),
                  })
             Assert.Equal(PostgresErrorCodes.InsufficientPrivilege, (await Assert.ThrowsAsync<PostgresException>(appel)).SqlState);
         Assert.Equal(DBNull.Value, await b.ScalaireAsync("SELECT premiere_rupture FROM cloud_ecran_verifier_journal_acces()"));
@@ -212,6 +229,7 @@ public class TitulaireEcransTests
             Assert.Contains("class=\"tuiles tuiles-compactes\"", tableau);
             Assert.Contains("1 000,00 DA", tableau);
             Assert.Contains("450,00 DA", tableau);
+            Assert.Contains("Lignes absentes", tableau);   // lot S7.5 : tuile du compteur
             Assert.DoesNotContain("NOMINATIF_S72", tableau);
             Assert.DoesNotContain("98 765,43", tableau);
             Assert.DoesNotContain("style=\"", tableau);
@@ -221,6 +239,7 @@ public class TitulaireEcransTests
             // Lot S7.3 : vue d'ensemble (officines du compte seulement, total du groupe) ; ordres refusés sans le droit « ordres »
             var ensemble = (await Texte(client, "/mes-officines/ensemble")).Replace(' ', ' ').Replace(' ', ' ');
             Assert.Contains("Total du groupe", ensemble);
+            Assert.Contains(">Absentes<", ensemble);   // lot S7.5 : colonne des lignes absentes
             Assert.Contains("1 000,00 DA", ensemble);
             Assert.DoesNotContain("98 765", ensemble);
             Assert.DoesNotContain("NOMINATIF_S72", ensemble);

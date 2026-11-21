@@ -380,7 +380,7 @@ signalées, bouton « Recharger toutes les données » avec confirmation (droit 
 - ~~**Restauration de la base de l'officine** (n° de lots revenus en arrière) : nouvelle époque + chargement~~ **réalisé** (lot S6, § 30.5 à 30.8 ; intégrité après restauration : § 31).
 - Gros volumes : durée de l'instantané et taille de la transaction à mesurer sur une vraie base **[À VÉRIFIER]** ; débit plafonné par la
   limite de dépôts et le quota journalier.
-- ~~Purge de `sync_sortie` après accusé (S3)~~ **réalisée (§ 20)** ; écran central de consultation des lignes absentes (S7).
+- ~~Purge de `sync_sortie` après accusé (S3)~~ **réalisée (§ 20)** ; ~~écran central de consultation des lignes absentes (S7)~~ **réalisé en local (S7.5, § 32.5)**.
 - Sous-rubrique propre « Chargement » de l'écran : demande une modification de `NavAdmin.razor` (non touché ici).
 
 ## 14. Réglages du serveur central (2026-11-16, GO du titulaire)
@@ -2158,3 +2158,23 @@ Détail : [ecrans-central.md](ecrans-central.md) § 3 quinquies.
 - **Script central `035_reglages_communs_titulaire.sql`** ; aucun script local, `002_tables_miroir.sql` inchangé. Passé deux fois sur
   `pharmacie_cloud_dev` après sauvegarde (2026-11-21), tests SQL 034 et 035 réussis ; essai de bout en bout réussi avec `pharmacie_test`
   (« Péremption : alerte orange 150 jours » proposée, acceptée sur le poste, `parametre_alerte.jours_orange` = 150, « Accepté » au central).
+
+
+### 32.5 Lot S7.5 : lignes absentes vues au central (réalisé en local le 2026-11-21, go du titulaire, maquette validée)
+
+Détail, routes et causes : [ecrans-central.md](ecrans-central.md) § 3 sexies. Suite du § 13.3 (« compte par table renvoyé à l'officine
+et affiché ») et du § 13.6 (« écran central de consultation des lignes absentes (S7) »).
+
+- **Script central `036_lignes_absentes_ecrans.sql`** (lecture seulement : fonctions et index partiels `(officine_id, sync_absente_le)
+  WHERE sync_absente_le IS NOT NULL`) ; aucun script local, `002_tables_miroir.sql` inchangé.
+- **État actuel, pas l'historique** : on compte les lignes qui portent `sync_absente_le` **aujourd'hui** (une ligne reçue de nouveau
+  perd sa marque, § 13.3), pas `chargement.absentes_par_table` (compte figé à la fin de chaque chargement, toujours visible dans la
+  rubrique « Chargements »). Chargement qui a constaté : `chargement.fin_le` = `sync_absente_le` (même transaction de
+  `cloud_fin_chargement`) ; la marque n'est jamais avancée par un chargement suivant (`coalesce`) : c'est la **première** constatation.
+- **Cause probable**, seulement ce que le central sait : `restauration` (ligne d'une époque antérieure et `cloud_integrite_bifurcation`
+  pour l'époque du chargement), `nouvelle_epoque` (ligne d'une époque antérieure, S6-D1), sinon `non_expliquee`. **Pas de cause
+  « purge »** : le central ne connaît aucune purge des données de l'officine (§ 20 : seule la file `sync_sortie` est purgée).
+- **Aucune anomalie** pour une cause non expliquée : la décision n° 8 dit « signaler et garder » (alerte `chargement_absentes` au
+  journal, compte rendu à l'officine) ; la maquette proposait une anomalie : **non suivie** (écart signalé au titulaire).
+- **Nombres seulement** (décision n° 4) : éditeur (fiche d'une officine) et titulaire (tuile du tableau de bord, colonne de la vue
+  d'ensemble) ; jamais une colonne métier ni une clé de ligne.

@@ -201,6 +201,19 @@ passe « Accepté ». À vérifier aussi : mot de passe faux → reste à confir
 deuxième proposition tant que la première attend → « Rien n’est envoyé » ; rouge 200 (orange actuel 150) → « Accepter » puis refus
 avec le motif ; employé non titulaire → proposition visible sans boutons ; non décidé en 24 heures → « Expiré ».
 
+**Lignes absentes (lot S7.5) : comment voir l'écran.** `pharmacie_test` est reliée au central de développement (officine
+`142d3c7d-c7a3-4e40-84dc-04d4440af2dc`). Prérequis : script central `036` passé sur `pharmacie_cloud_dev` (après 035, après
+relecture). Éditeur : https://127.0.0.1:5094/ (`editeur.dev`) → Officines → l'officine → rubrique « Lignes absentes »
+(`/officines/142d3c7d-c7a3-4e40-84dc-04d4440af2dc?rubrique=absentes`) : quatre tuiles et tableau. Titulaire (`titulaire.dev`) :
+`/mes-officines/142d3c7d-c7a3-4e40-84dc-04d4440af2dc` (tuile « Lignes absentes ») et `/mes-officines/ensemble` (colonne
+« Absentes »). Sans aucune ligne absente : 0 et « Aucune ligne absente. ». **Provoquer des lignes absentes** (à faire seulement
+avec l'accord du titulaire, de préférence sur un central jetable : la ligne ajoutée reste au central) : ajouter au central, par le
+propriétaire et dans une transaction qui pose `app.officine_id`, une ligne « fantôme » dans une table miroir de l'officine (par exemple
+`alerte`, `id` inexistant au poste, `sync_epoque` = époque courante, `sync_numero` ≤ dernier lot reçu), puis au poste (titulaire)
+Administration › Synchronisation › État › « Recharger toutes les données » : à la fin du chargement, la ligne est marquée absente
+(cause « Non expliquée », n° du chargement). Une restauration réelle (nouvelle époque, § 30 de la conception) donne les causes
+« Nouvelle époque » puis « Restauration d'une sauvegarde » après la vérification d'intégrité.
+
 **5. Retirer** (central arrêté) : `.\scripts\dev\preparer_central_vs.ps1 -Retirer -WhatIf`, puis sans `-WhatIf`. Retire les variables
 posées par le script, les rôles `pharma_cloud_dev_vs` et `pharma_cloud_etat_vs` et le dossier `%LOCALAPPDATA%\PharmaOfficine\central-dev` ; rien n'est supprimé en
 base (l'officine reste au central, les réglages de synchronisation restent dans `pharmacie_dev` : décocher **Synchronisation activée**

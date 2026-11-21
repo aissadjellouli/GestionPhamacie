@@ -43,6 +43,9 @@ public class BoutEnBoutEcransTests
                      "SELECT set_config('app.officine_id', $1::text, true)",
                      "INSERT INTO cloud_anomalie_integrite (officine_id, journal, cle_chaine, rang, cle_ligne, nature, detail, attendu, trouve) VALUES ($1, 'journal_vente', 'global', 3, 'SECRET_S71', 'chainage_rompu', 'SECRET_S71', 'SECRET_S71', 'SECRET_S71')",
                      "INSERT INTO ordre_central (officine_id, type, cible, donnees, auteur, expire_le) VALUES ($1, 'essai', 'SECRET_S71', '{\"nom\":\"SECRET_S71\"}', 'SECRET_S71', now() + interval '7 days')",
+                     // Lot S7.5 : chargement complet terminé et une vente constatée absente (même époque : cause non expliquée) ; jamais montrée
+                     "INSERT INTO chargement (officine_id, numero, epoque, repere, motif, tables, etat, fin_le) VALUES ($1, 1, 1, 5, 'activation', '{vente}', 'termine', now())",
+                     "INSERT INTO vente (officine_id, id, sync_epoque, sync_numero, numero, statut, sync_absente_le) SELECT $1, 1, 1, 1, 'SECRET_S71', 'validee', fin_le FROM chargement WHERE officine_id = $1",
                  })
         {
             await using var cmd = new NpgsqlCommand(sql, cnx, tx);
@@ -197,6 +200,11 @@ public class BoutEnBoutEcransTests
                 Assert.DoesNotContain("style=\"", html);
             }
             Assert.Contains("Mon journal des accès", await Texte(client, "/mon-journal"));
+            // Lot S7.5 : rubrique « Lignes absentes » : tuiles, groupe (table, n° du chargement, cause), pied de page ; aucune valeur de ligne
+            var absentes = (await Texte(client, $"/officines/{a}?rubrique=absentes")).Replace(' ', ' ').Replace(' ', ' ');
+            foreach (var attendu in new[] { "Lignes absentes au total", "Tables concernées", "Dernier chargement complet", "Cause probable la plus fréquente",
+                                            "n° 1", "Non expliquée", "aucune ligne n'est montrée", "tuiles-absentes" })
+                Assert.Contains(attendu, absentes);
 
             // Créer une officine : code de confirmation, motif, ressaisie du nom ; code d'activation affiché une seule fois
             var demandeCode = await Poster(client, "/officines/nouvelle", "/actions/code-action", new() { ["retour"] = "/officines/nouvelle" });

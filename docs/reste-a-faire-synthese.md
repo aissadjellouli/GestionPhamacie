@@ -1,7 +1,8 @@
 # Reste à faire : synthèse
 
 Point d'avancement du 2026-11-21 (après-midi) : tout le travail du jour est fait, passé sur les bases et vérifié ; travail commité
-jusqu'à `20c1ecf` ; **lot S7.4 (script central 035) non commité**, prêt pour « commit ». Détail : [a-faire.md](a-faire.md),
+jusqu'à `20c1ecf` ; **lot S7.4 (script central 035) non commité**, prêt pour « commit » ; **lot S7.5 (script central 036) fait en
+local le 2026-11-21 (soir), non commité, 036 à passer sur `pharmacie_cloud_dev`, écrans à mesurer**. Détail : [a-faire.md](a-faire.md),
 [fonctionnalites.md](fonctionnalites.md) (inventaire complet) et documents cités. À mettre à jour à chaque point d'avancement.
 
 ## 1. En cours
@@ -16,6 +17,11 @@ pastilles, nom du poste), `ea5ad15` (S7.3), `20c1ecf` (Accès à distance sans d
 
 ## 2. Fait, à commiter (2026-11-21, après-midi)
 
+- **Synchronisation S7.5, lignes absentes** ([ecrans-central.md](ecrans-central.md) § 3 sexies) : rubrique « Lignes absentes » de la
+  fiche d'une officine (éditeur : 4 tuiles, tableau paginé par table et par chargement, cause probable), tuile du tableau de bord et
+  colonne de la vue d'ensemble du titulaire ; nombres seulement. Script central **036** (fonctions et index) : tests SQL réussis sur
+  base jetable ; **à passer** sur `pharmacie_cloud_dev` (après relecture). **À mesurer** : les trois écrans (1 366 × 768, 1 536 × 890,
+  clair et sombre). Écarts : pas de cause « purge », pas d'anomalie pour « non expliquée » (décision n° 8).
 - **Synchronisation S7.4, réglages communs proposés par le titulaire** ([ecrans-central.md](ecrans-central.md) § 3 quinquies) :
   script central **035** passé deux fois sur `pharmacie_cloud_dev` après sauvegarde, tests SQL 034 et 035 réussis. Essai de bout en
   bout réussi : `titulaire.dev` propose « Péremption : alerte orange 150 jours » à Essai (`pharmacie_test`) → reçue sur le poste
@@ -241,6 +247,8 @@ pastilles, nom du poste), `ea5ad15` (S7.3), `20c1ecf` (Accès à distance sans d
   officine décide sur son poste ([ecrans-central.md](ecrans-central.md) § 3 quinquies). Script central **035** passé deux fois sur
   `pharmacie_cloud_dev` après sauvegarde, tests SQL 034 et 035 réussis ; `/mes-officines/reglages` et Réglages mutualisés du poste
   mesurés à 0 px ; essai de bout en bout réussi avec `pharmacie_test` (voir section 2). **Non commité.**
+- [x] **Synchronisation S7.5** (2026-11-21, en local) : lignes absentes vues au central, nombres seulement
+  ([ecrans-central.md](ecrans-central.md) § 3 sexies). Script central **036** à passer sur `pharmacie_cloud_dev` ; écrans à mesurer. **Non commité.**
 - [ ] **Synchronisation S7.3 (reste)** : ordre « message à afficher sur les postes » (la barre d’état est livrée ; surface d’affichage à décider).
 - [ ] **Synchronisation S7.2 (reste)** : SMS (fournisseur), remise à zéro d'un mot de passe par l'éditeur, retrait d'un rattachement depuis les écrans, alertes de refus en série.
 - [ ] **Mise en ligne des écrans du central** (après le choix de l'hébergeur) : domaine et certificat, proxy inverse (adresse réelle pour les limites de débit), connexion de production au rôle `pharma_cloud_ecrans`, SMTP, clé HMAC commune si plusieurs instances, comptes éditeur réels, test d'intrusion.
