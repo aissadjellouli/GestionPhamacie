@@ -3,10 +3,14 @@
 @inject SessionPoste Session
 @inject NavigationManager Nav
 @inject ReglagesPoste Reglages
+@inject ConfigurationPoste Configuration
+@inject ImprimanteTickets Tickets
+@inject IJSRuntime JS
 
-@* Barre d'état en bas de la fenêtre (charte graphique, « Barre d'état ») : liaison au serveur, caisse du poste, dernière
-   sauvegarde, liaison avec le serveur central et le 2e serveur (seulement en anomalie), version, date et heure. Un clic ouvre l'écran correspondant.
-   Avant la connexion : liaison au serveur et version seulement. *@
+@* Barre d'état en bas de la fenêtre (charte graphique, « Barre d'état », maquette validée le 2026-11-21). Fixes, toujours affichés : liaison
+   au serveur, poste et vendeur connecté, date et heure (version dans l'infobulle). Ponctuelles, au centre, seulement s'il y a une
+   information : pastilles (PastillesBarre) ; un clic ouvre l'écran correspondant pour qui y a droit. Avant la connexion : fixes seulement
+   (et l'imprimante de tickets en échec). *@
 @if (InjoignableTropLongtemps)
 {
     @* Serveur injoignable plus de N secondes (poste.json, DelaiServeurInjoignableSecondes) : consigne claire (2026-11-16) *@
@@ -37,64 +41,51 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
     </div>
 }
 <footer class="barre-etat" aria-label="État du poste">
-    <button type="button" class="element-etat @(serveurJoignable == false ? "anormal" : null)" title="Vérifier la liaison avec le serveur maintenant"
+    @* Éléments fixes, toujours affichés (texte gris) : liaison au serveur, poste et vendeur connecté, date et heure à droite *@
+    <button type="button" class="element-etat @(serveurJoignable == false ? "anormal" : null)" data-zone="serveur" title="Vérifier la liaison avec le serveur maintenant"
             @onclick="VerifierServeurAsync">
         <span class="voyant @(serveurJoignable switch { true => "ok", false => "ko", _ => null })" aria-hidden="true"></span>
-        @(serveurJoignable switch { true => "Serveur connecté", false => "Serveur injoignable", _ => "Serveur…" })
+        @(serveurJoignable switch { true => "Connecté", false => "Serveur injoignable", _ => "Serveur…" })
     </button>
+    @if (Identite is { Length: > 0 } identite)
+    {
+        <span class="element-etat identite-etat" data-zone="identite" title="@identite">@identite</span>
+    }
     @if (demo is { Actif: true })
     {
         @* Serveur de démonstration (GET /api/demo) : mention permanente, sans bouton pour la masquer, avant comme après la connexion *@
         <span class="element-etat demo" role="status" data-zone="demonstration" title="Serveur de démonstration : toutes les données sont fictives">@(demo.Libelle ?? "Démonstration — données fictives")</span>
     }
 
-    @if (Session.EstConnecte && etat is { } e)
+    @* Pastilles (PastillesBarre) : seulement s'il y a une information ; cliquables vers l'écran pour qui a le droit de l'ouvrir. Dès qu'une
+       pastille orange ou rouge s'affiche, les grises se regroupent dans « À traiter (N) » (liste fermée par Échap ou un clic dehors). *@
+    <div class="pastilles-etat" data-zone="pastilles">
+        @foreach (var p in affichage.Visibles)
+        {
+            @Rendu(p)
+        }
+    </div>
+    @if (affichage.Regroupe)
     {
-        @if (Session.A("caisse.vendre"))
-        {
-            <button type="button" class="element-etat @(CaisseAncienne ? "attention" : null)" title="@(e.CaisseSessionId is null ? "Ouvrir la caisse" : "Relève et clôture de la caisse")"
-                    @onclick="@(() => Nav.NavigateTo(e.CaisseSessionId is null ? "caisse" : "cloture"))">
-                @LibelleCaisse
-            </button>
-        }
-        @if (Session.A("admin.sauvegardes"))
-        {
-            <button type="button" class="element-etat @ClasseSauvegarde" title="Sauvegardes" @onclick="@(() => Nav.NavigateTo("admin/sauvegardes"))">@LibelleSauvegarde</button>
-        }
-        else
-        {
-            <span class="element-etat @ClasseSauvegarde">@LibelleSauvegarde</span>
-        }
-        @* Liaisons (GET /api/synchronisation/etat-poste, tout employé connecté) : un élément seulement en anomalie ; rien si la liaison
-           n'est pas en place ou si elle est à jour. Lien vers l'écran seulement pour qui a le droit de l'ouvrir. *@
-        @if (liaisons?.Central is { } central)
-        {
-            @if (Session.A("admin.parametres"))
+        @* Hors de la zone des pastilles (qui coupe ce qui dépasse) : la liste s'ouvre au-dessus de la barre sans être coupée *@
+        <span class="groupe-etat" @onkeydown="ToucheGroupeAsync">
+            <button type="button" class="pastille groupe @affichage.NiveauGroupe" data-zone="a-traiter" aria-haspopup="dialog" aria-controls="liste-a-traiter"
+                    aria-expanded="@(listeOuverte ? "true" : "false")" @ref="boutonGroupe" @onclick="BasculerListe">À traiter (@affichage.ATraiter.Count) ▾</button>
+            @if (listeOuverte)
             {
-                <button type="button" class="element-etat @Classe(central)" data-zone="liaison-central" title="@central.Detail"
-                        @onclick="@(() => Nav.NavigateTo("admin/synchronisation"))">@central.Libelle</button>
+                <span class="fond-liste-etat" aria-hidden="true" @onclick="FermerListe"></span>
+                <span id="liste-a-traiter" class="liste-etat" role="dialog" aria-label="À traiter">
+                    @foreach (var p in affichage.ATraiter)
+                    {
+                        @Rendu(p)
+                    }
+                </span>
             }
-            else
-            {
-                <span class="element-etat @Classe(central)" data-zone="liaison-central" title="@central.Detail">@central.Libelle</span>
-            }
-        }
-        @if (liaisons?.Second is { } second)
-        {
-            @if (Session.A("role.titulaire"))
-            {
-                <button type="button" class="element-etat @Classe(second)" data-zone="liaison-second" title="@second.Detail"
-                        @onclick="@(() => Nav.NavigateTo("admin/second-serveur"))">@second.Libelle</button>
-            }
-            else
-            {
-                <span class="element-etat @Classe(second)" data-zone="liaison-second" title="@second.Detail">@second.Libelle</span>
-            }
-        }
+        </span>
     }
 
-    @* Avec un élément de liaison affiché, la date se raccourcit (FormatDate) : la barre reste sur une ligne en 1366×768 *@
-    <span class="element-etat droite">v@(Version) · @maintenant.ToString(FormatDate, Fr)</span>
+    @* Date et heure, raccourcies quand les pastilles sont regroupées (la barre reste sur une ligne en 1366×768) ; version dans l'infobulle *@
+    <span class="element-etat droite" data-zone="date" title="Tracodex Officine v@(Version)">@PastillesBarre.Date(maintenant, affichage.Regroupe)</span>
 </footer>
 
 @code {
@@ -133,18 +124,57 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
     private EtatPosteDto? etat;
     private AttenteSynchronisationDto? attenteSync;
     private EtatLiaisonsPosteDto? liaisons;
+    private CompteursBarreDto? compteurs;
+    private int? secondesAvantDeconnexion;
 
-    /// <summary>Seules les deux classes de la charte sont permises (toute autre valeur reçue : « attention »).</summary>
-    private static string Classe(AnomalieLiaisonDto a) => a.Niveau == "anormal" ? "anormal" : "attention";
+    // Pastilles recalculées à chaque rendu (état du serveur, du poste, droits de l'employé connecté)
+    private AffichageBarre affichage = new([], []);
+    private bool listeOuverte;
+    private ElementReference boutonGroupe;
 
-    // Date raccourcie avec un élément de liaison (jour et année retirés), heure seule avec les deux : la barre reste sur une ligne en
-    // 1366×768 même dans le cas le plus chargé (caisse d'un autre jour, sauvegarde en défaut, central et 2e serveur ; mesuré le 2026-11-21)
-    private string FormatDate => liaisons switch
+    /// <summary>Poste (s'il est nommé) et vendeur connecté ; avant la connexion : le poste seul.</summary>
+    private string Identite => PastillesBarre.Identite(Configuration.PosteDeclare, Session.EstConnecte ? Session.NomComplet : null);
+
+    protected override void OnParametersSet() => Recalculer();
+
+    protected override bool ShouldRender() { Recalculer(); return true; }
+
+    private void Recalculer()
     {
-        { Central: not null, Second: not null } => "HH:mm",
-        { Central: not null } or { Second: not null } => "dd/MM · HH:mm",
-        _ => "ddd dd/MM/yyyy · HH:mm"
-    };
+        var connecte = Session.EstConnecte;
+        affichage = PastillesBarre.Calculer(new EtatBarre(serveurJoignable == true && connecte, maintenant, Session.A,
+            connecte ? etat : null, connecte ? liaisons : null, connecte ? compteurs : null, connecte ? secondesAvantDeconnexion : null,
+            Tickets.DerniereErreur));
+        if (!affichage.Regroupe) listeOuverte = false;
+    }
+
+    private RenderFragment Rendu(Pastille p) =>
+        @<text>@if (p.Lien is { } lien)
+        {
+            <button type="button" class="pastille @p.Niveau" data-zone="pastille-@p.Cle" title="@p.Titre" @onclick="() => Aller(lien)">@p.Libelle</button>
+        }
+        else
+        {
+            <span class="pastille @p.Niveau" data-zone="pastille-@p.Cle" title="@p.Titre">@p.Libelle</span>
+        }</text>;
+
+    private void Aller(string lien)
+    {
+        listeOuverte = false;
+        Nav.NavigateTo(lien);
+    }
+
+    private void BasculerListe() => listeOuverte = !listeOuverte;
+    private void FermerListe() => listeOuverte = false;
+
+    private async Task ToucheGroupeAsync(KeyboardEventArgs k)
+    {
+        if (k.Key != "Escape" || !listeOuverte) return;
+        listeOuverte = false;
+        try { await boutonGroupe.FocusAsync(); }
+        catch (Exception e) when (e is JSException or JSDisconnectedException or InvalidOperationException) { }
+    }
+
     private EtatDemoDto? demo;
     private DateTime maintenant = DateTime.Now;
     private PeriodicTimer? minuterie;
@@ -155,6 +185,7 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
         Nav.LocationChanged += SurNavigation;
         Session.Changee += SurSession;
         Session.CaisseChangee += SurSession;
+        Tickets.EtatChange += SurImprimante;
         await ActualiserAsync(complet: true);
         _ = BouclerAsync();
     }
@@ -164,10 +195,12 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
         Nav.LocationChanged -= SurNavigation;
         Session.Changee -= SurSession;
         Session.CaisseChangee -= SurSession;
+        Tickets.EtatChange -= SurImprimante;
         minuterie?.Dispose();
     }
 
-    // Serveur et heure toutes les 15 secondes ; caisse et sauvegarde toutes les minutes (et à chaque changement d'écran)
+    // Serveur, heure et déconnexion automatique toutes les 15 secondes ; caisse, sauvegarde, liaisons et compteurs toutes les minutes
+    // (et à chaque changement d'écran)
     private async Task BouclerAsync()
     {
         minuterie = new PeriodicTimer(TimeSpan.FromSeconds(15));
@@ -196,9 +229,29 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
             // Liaisons central et 2e serveur : même rythme (tour complet) ; une erreur de lecture n'affiche rien
             var (l, erreurLiaisons) = await Api.EtatLiaisonsPosteAsync();
             liaisons = erreurLiaisons is null ? l : null;
+            // Compteurs des pastilles (une seule lecture, filtrée par les droits au serveur) ; super admin : aucun compteur d'employé
+            if (!Session.SuperAdmin)
+            {
+                var (c, erreurCompteurs) = await Api.CompteursBarreAsync();
+                compteurs = erreurCompteurs is null ? c : null;
+            }
         }
-        if (!Session.EstConnecte) (etat, attenteSync, liaisons) = (null, null, null);
+        if (!Session.EstConnecte) (etat, attenteSync, liaisons, compteurs) = (null, null, null, null);
+        secondesAvantDeconnexion = await SecondesAvantDeconnexionAsync();
     }
+
+    /// <summary>
+    /// Temps restant avant la déconnexion automatique (même mesure que MiseEnPage : inactivité vue par la page) ; null sans déconnexion
+    /// automatique ou si la page ne répond pas.
+    /// </summary>
+    private async Task<int?> SecondesAvantDeconnexionAsync()
+    {
+        if (!Session.EstConnecte || Session.DeconnexionMinutes <= 0) return null;
+        try { return Session.DeconnexionMinutes * 60 - await JS.InvokeAsync<int>("pharma.inactiviteSecondes"); }
+        catch (Exception e) when (e is JSException or JSDisconnectedException or InvalidOperationException or TaskCanceledException) { return null; }
+    }
+
+    private void SurImprimante() => _ = InvokeAsync(StateHasChanged);
 
     private async Task VerifierServeurAsync()
     {
@@ -215,43 +268,6 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
     // ---- Libellés ----
     private static DateTime Local(DateTime d) => d.Kind == DateTimeKind.Utc ? d.ToLocalTime() : d;
 
-    /// <summary>Caisse ouverte un autre jour qu'aujourd'hui : signalée (clôture oubliée).</summary>
-    private bool CaisseAncienne => etat?.CaisseOuverteLe is { } o && Local(o).Date < DateTime.Today;
-
-    private string LibelleCaisse => etat?.CaisseOuverteLe is { } o
-        ? Local(o).Date == DateTime.Today ? $"Caisse ouverte depuis {Local(o):HH:mm}" : $"Caisse ouverte depuis le {Local(o):dd/MM à HH:mm}"
-        : "Caisse fermée";
-
-    private string LibelleSauvegarde
-    {
-        get
-        {
-            if (etat is null) return "";
-            var quand = etat.DerniereSauvegarde is { } d ? Quand(Local(d)) : null;
-            return (etat.SauvegardeActive, etat.StatutSauvegarde) switch
-            {
-                (_, null) => etat.SauvegardeActive ? "Sauvegarde : jamais faite" : "Sauvegarde automatique désactivée",
-                (_, "reussie") => $"Sauvegarde : {quand} ✓" + (etat.SauvegardeActive ? "" : " (automatique désactivée)"),
-                (_, "disque_absent") => $"Sauvegarde : disque absent {quand}",
-                _ => $"Sauvegarde échouée {quand}"
-            };
-        }
-    }
-
-    private string? ClasseSauvegarde => etat switch
-    {
-        null => null,
-        { StatutSauvegarde: "echouee" or "disque_absent" } => "anormal",
-        { StatutSauvegarde: null } or { SauvegardeActive: false } => "attention",
-        { DerniereSauvegarde: { } d } when Local(d).Date < DateTime.Today.AddDays(-1) => "attention",   // plus vieille qu'hier
-        _ => null
-    };
-
     private static string QuandSync(DateTime d) =>
         DateTime.Now - d < TimeSpan.FromHours(24) ? $"{d:HH:mm}" : $"le {d:dd/MM à HH:mm}";
-
-    private static string Quand(DateTime d) =>
-        d.Date == DateTime.Today ? $"aujourd’hui {d:HH:mm}"
-        : d.Date == DateTime.Today.AddDays(-1) ? $"hier {d:HH:mm}"
-        : $"le {d:dd/MM à HH:mm}";
 }

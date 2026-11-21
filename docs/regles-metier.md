@@ -1406,7 +1406,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 - **Hors poste de développement, le serveur refuse de démarrer si sa clé de signature est absente, trop courte (moins de 64 caractères) ou restée à la valeur d'exemple.** — `src/Pharma.Api/Securite/JetonService.cs`
 - **La déconnexion automatique après inactivité se règle entre 0 (désactivée) et 240 minutes.** : réglage des paramètres de caisse ; 0 par défaut. — `src/Pharma.Application/Caisse/Sessions.cs`
 - **Chaque poste envoie son nom au serveur ; ce nom identifie la caisse du poste.** — `src/Pharma.Api/Securite/PermissionsComptoir.cs`
-- **La barre d'état du poste (dernière sauvegarde, caisse ouverte) est visible par tout employé connecté, sans montant ni message d'erreur.** — `src/Pharma.Application/Administration/EtatPoste.cs`
+- **La barre d'état du poste (dernière sauvegarde, caisse ouverte) est visible par tout employé connecté, sans montant ni message d'erreur.** Depuis le 2026-11-21, la sauvegarde n'y apparaît plus qu'en retard ou en échec (« Barre d'état : éléments fixes et pastilles »). — `src/Pharma.Application/Administration/EtatPoste.cs`
 - **Chaque employé choisit son affichage (automatique, clair ou sombre) sans droit particulier, même connecté par code comptoir.** — `src/Pharma.Application/Securite/Affichage.cs`
 
 ### Code comptoir
@@ -2320,5 +2320,51 @@ Règles appliquées par `GenererCodeAccesDistant` (API locale), la route `POST /
   (connexion seule), état gardé 30 secondes au serveur, relu par le poste au même rythme que la caisse et la sauvegarde (chaque minute
   et à chaque changement d'écran). **Lien** vers Administration › Synchronisation pour qui a le droit `admin.parametres`, vers
   Administration › 2e serveur pour le titulaire ; sinon texte simple. Une lecture impossible n'affiche rien.
-- **Une ligne en 1 366 × 768** : avec un élément de liaison, la date de la barre devient « jj/mm · hh:mm » ; avec les deux, l'heure seule.
-  — `src/Pharma.Desktop/Composants/Mise/BarreEtat.razor`
+- **Une ligne en 1 366 × 768** : voir « Barre d'état : éléments fixes et pastilles » (la date se raccourcit quand les pastilles
+  sont regroupées). Les liaisons sont deux pastilles de la barre (orange ou rouge). — `src/Pharma.Desktop/Services/PastillesBarre.cs`
+
+## Barre d'état : éléments fixes et pastilles (2026-11-21, maquette validée par le titulaire)
+
+- **Éléments fixes, toujours affichés**, en texte gris : voyant « Connecté » ou « Serveur injoignable » (un clic revérifie le
+  serveur) ; **poste · vendeur connecté** (« Caisse 1 · Karim » : nom du poste seulement s'il est déclaré par `PHARMA_POSTE`, sinon
+  le vendeur seul ; avant la connexion, le poste seul ; nom trop long coupé par « … », complet dans l'infobulle) ; **date et heure** à
+  droite (« sam. 21/11 · 10:42 », « 21/11 · 10:42 » quand les pastilles sont regroupées) ; la version du logiciel est dans
+  l'infobulle de la date. La mention « Démonstration — données fictives » reste permanente sur un serveur de démonstration.
+- **Pastilles, seulement s'il y a une information** (rien sinon : 0 vente en attente, sauvegarde à jour, liaisons à jour…).
+  Gris : à traiter ; orange : à surveiller ; rouge : anomalie. Un clic ouvre l'écran concerné **pour qui a le droit de l'ouvrir**,
+  sinon c'est du texte simple :
+  - « Caisse depuis 08:02 » (droit de vendre ; clôture) — orange « Caisse depuis le 20/11 à 08:00 » si elle a été ouverte un autre
+    jour ; rien quand la caisse est fermée (changement : « Caisse fermée » n'est plus affiché) ;
+  - « 3 ventes en attente » (ventes mises de côté sur ce poste ; droit de vendre ; Caisse) ;
+  - « 2 produits revenus » (patients à prévenir et produits dus des ventes en attente redevenus disponibles ; droit de vendre ;
+    Patients en attente) ;
+  - « 5 volets Chifa » (ventes Chifa en attente de volet ; droit de vendre ; Chifa) et « 12 Chifa à déposer » (ventes à mettre en
+    bordereau ; droit `chifa.bordereaux` ; Bordereaux Chifa › À déposer) ;
+  - « 2 traites à payer » (échues ou à échéance sous 7 jours ; droit `achats.regler` ; Achats › Traites à payer) ;
+  - « Déconnexion dans N min » (orange, tous les employés) : dans les 5 dernières minutes avant la déconnexion automatique
+    (paramètre de caisse ; 10 min pour le super admin) ; une touche ou un clic la repousse ;
+  - sauvegarde **seulement en retard ou en échec** (changement : rien quand elle est à jour) : « Sauvegarde échouée » et
+    « Sauvegarde : disque absent » en rouge ; « Sauvegarde jamais faite », « Sauvegarde désactivée » (automatique désactivée) et
+    « Sauvegarde en retard » (dernière réussie plus vieille qu'hier) en orange ; lien vers Sauvegardes avec le droit `admin.sauvegardes` ;
+  - liaisons « Central : … » et « 2e serveur : … » (section précédente) ;
+  - « Journaux : anomalie » (rouge, titulaire seul) : la dernière vérification d'une chaîne de journaux est rompue ou en erreur ;
+    Administration › Contrôle interne › Intégrité des journaux ;
+  - « Imprimante tickets : échec » (rouge, **visible par tous, vendeurs compris**, demande du titulaire) : le dernier ticket ou reçu
+    de ce poste n'a pas pu être envoyé à l'imprimante par Windows (message dans l'infobulle) ; effacée dès qu'un ticket repart ; le
+    ticket d'essai d'Administration › Imprimantes n'y touche pas. Le logiciel ne sait pas qu'une imprimante est éteinte quand Windows
+    accepte le ticket dans sa file d'impression : cette pastille ne signale que l'échec constaté.
+- **Regroupement** : dès qu'une pastille orange ou rouge s'affiche, les pastilles grises passent dans « À traiter (N) ▾ », une petite
+  liste ouverte au clic au-dessus de la barre (fermée par Échap, par un clic dehors ou en choisissant un écran) ; les anomalies restent
+  visibles. Au-delà de **4 anomalies**, les rouges restent visibles (dans l'ordre de la barre) et les autres passent aussi dans la
+  liste ; le bouton « À traiter » prend alors la couleur de l'anomalie la plus grave qu'elle contient.
+- **Serveur de la pharmacie injoignable** : seuls restent les éléments fixes et les pastilles qui ne dépendent pas du serveur
+  (imprimante de tickets, déconnexion automatique).
+- **Une seule lecture groupée** pour les compteurs : `GET /api/etat-poste/compteurs`, ouverte à tout employé connecté (aucun droit
+  d'administration), des nombres seulement (ni nom, ni montant) ; **chaque compteur n'est rendu qu'à l'employé qui a le droit de
+  l'écran** (0 sinon ; journaux : titulaire seul ; par code comptoir, seulement les droits du comptoir) ; compteurs de l'officine et
+  ventes en attente de chaque poste gardés 30 secondes au serveur ; une lecture impossible laisse le compteur à 0 sans rien bloquer.
+  Relue par le poste au même rythme que la caisse et la sauvegarde (chaque minute et à chaque changement d'écran).
+- **Pas de pastille « Mise à jour disponible »** : le logiciel ne sait pas aujourd'hui qu'une nouvelle version existe (aucune source).
+  — `src/Pharma.Desktop/Services/PastillesBarre.cs`, `src/Pharma.Desktop/Composants/Mise/BarreEtat.razor`,
+  `src/Pharma.Application/Administration/CompteursBarre.cs`, `src/Pharma.Api/Endpoints/EtatPosteEndpoints.cs`,
+  `src/Pharma.Desktop/Services/ImprimanteTickets.cs` (`DerniereErreur`)

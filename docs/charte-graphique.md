@@ -573,14 +573,26 @@ Seule exception de taille : « Encaisser » à la caisse (`.btn-large`, 52 px).
 
 ## Barre d'état
 
-- Une bande fixe de 32 px en bas de la fenêtre, sur tous les écrans et tous les postes (`Composants/Mise/BarreEtat.razor`) : liaison
-  avec le serveur, caisse du poste, dernière sauvegarde, version, date et heure. Le nom de la base n'y figure pas : il est affiché à
-  titre d'information dans Administration › Sauvegardes. Avant la connexion :
-  liaison au serveur et version seulement.
-- Texte en 13 px gris (information secondaire) ; seuls les états anormaux ressortent : serveur injoignable et sauvegarde échouée
-  en rouge, caisse ouverte depuis un autre jour, sauvegarde absente, désactivée ou plus vieille qu'hier en orange.
-- Un clic ouvre l'écran correspondant, selon les droits : caisse (ouverte : relève et clôture ; fermée : caisse), sauvegarde
-  (Administration › Sauvegardes) ; un clic sur le serveur le revérifie aussitôt.
+- Une bande fixe de 32 px en bas de la fenêtre, sur tous les écrans et tous les postes (`Composants/Mise/BarreEtat.razor`, maquette
+  validée le 2026-11-21). **Éléments fixes**, toujours affichés, en texte 13 px gris (`.element-etat`) : voyant « Connecté » /
+  « Serveur injoignable » à gauche, poste · vendeur connecté (`.identite-etat`, 260 px au plus, « … » au-delà), date et heure à droite
+  (`.element-etat.droite`, version dans l'infobulle). Le nom de la base n'y figure pas (Administration › Sauvegardes).
+- **Pastilles** (`.pastille` dans `.barre-etat`, zone `.pastilles-etat` qui coupe ce qui dépasse) : seulement s'il y a une
+  information ; 22 px de haut, rayon 11 px, 12,5 px. Trois niveaux, jetons de la charte (clair et sombre, aucune couleur écrite en dur) :
+  gris « à traiter » (fond `--texte-2` à 12 %, texte `--texte`, 500) ; orange `.attention` « à surveiller » (`--attention-fond`,
+  `--attention`, 600) ; rouge `.anormal` « anomalie » (`--urgent-fond`, `--urgent`, 600). Bouton quand l'employé a le droit d'ouvrir
+  l'écran (souligné et contour `--accent-texte` au survol et au clavier), texte simple sinon. Règles d'affichage : regles-metier.md
+  « Barre d'état : éléments fixes et pastilles ».
+- **« À traiter (N) ▾ »** (`.pastille.groupe`, hors de la zone des pastilles) : dès qu'une pastille orange ou rouge s'affiche, les
+  grises y sont regroupées ; petite liste (`.liste-etat`, `role="dialog"`, `aria-expanded`, `aria-controls`) posée au-dessus de la
+  barre, alignée à droite du bouton, fermée par Échap (le curseur revient sur le bouton), un clic dehors (`.fond-liste-etat`
+  transparent sur toute la fenêtre) ou le choix d'un écran. Au plus 4 anomalies visibles ; le bouton prend la couleur de l'anomalie la
+  plus grave rangée dans la liste.
+- La barre ne passe jamais à la ligne : `white-space: nowrap`, `overflow-x: clip` (la liste peut s'ouvrir au-dessus). Aucun style en
+  ligne (taille, couleur, hauteur) dans la barre. **Mesurée le 2026-11-21** (page de mesure avec le vrai app.css et les polices Poppins)
+  : une ligne à 1 366 × 768 et 1 536 × 890, clair et sombre, dans le cas le plus chargé de la maquette (4 anomalies et « À traiter (4) » :
+  205 px libres à 1 366), avec 4 anomalies rouges et « À traiter (8) » (4 px libres à 1 366) et avec 6 pastilles grises sans regroupement
+  et un nom long (17 px libres à 1 366).
 
 ## Tiers et fiche contact
 
@@ -612,3 +624,11 @@ espacé), couleurs par variables (`--surface-2`, `--accent-texte`, `--bordure`) 
 Compte `titulaire.dev`, officine de développement rattachée par un code de la console ; Edge sans fenêtre, 1 366 × 768 et 1 536 × 890,
 clair et sombre : « Mes officines », « Rattacher une officine », tableau de bord (13 tuiles sur deux rangées), journal des accès de
 l'officine : **0 px** partout ; un titulaire renvoyé de `/officines` (écran de l'éditeur) arrive sur « Mes officines ».
+
+### Mesures du 2026-11-21 (barre d'état : éléments fixes et pastilles, application lancée)
+
+Poste lancé sur `pharmacie_test` (API 5081), comptes `titulaire` et `vendeur`, 1 366 × 768 et 1 536 × 890, clair et sombre :
+barre de 32 px sur une ligne, **0 px** de débordement, 0 px de défilement de page. Titulaire : « Sauvegarde : disque absent »
+(rouge), « Caisse depuis le 18/11 à 20:44 » (orange), « À traiter (4) » (10 ventes en attente, 1 produit revenu, 12 Chifa à
+déposer, 2 traites à payer). Vendeur : mêmes alertes, « À traiter (2) » (ventes en attente, produit revenu), sauvegarde en texte
+simple (pas de droit sur l'écran). Liste « À traiter » ouverte vers le haut dans la fenêtre ; Échap la ferme et rend la main au bouton.

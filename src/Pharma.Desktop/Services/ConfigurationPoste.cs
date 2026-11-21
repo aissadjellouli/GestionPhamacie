@@ -8,7 +8,9 @@ public sealed class ConfigurationPoste
 {
     public string NomLogiciel { get; } = "Tracodex Officine";
     public string? Pharmacie { get; } = Lire("PHARMA_PHARMACIE");
-    public string Poste { get; } = Lire("PHARMA_POSTE") ?? $"Poste {Environment.MachineName}";
+    /// <summary>Nom donné au poste (PHARMA_POSTE), null s'il n'est pas déclaré (barre d'état : vendeur seul).</summary>
+    public string? PosteDeclare { get; } = Lire("PHARMA_POSTE");
+    public string Poste => PosteDeclare ?? $"Poste {Environment.MachineName}";
 
     /// <summary>Ligne affichée sous le nom du logiciel : « Pharmacie X · Poste Y ».</summary>
     public string SousTitre => Pharmacie is null ? Poste : $"{Pharmacie} · {Poste}";

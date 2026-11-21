@@ -510,7 +510,8 @@ input[aria-invalid="true"], select[aria-invalid="true"], textarea[aria-invalid="
 /* Barre d'état en bas de la fenêtre (BarreEtat.razor) : information secondaire, seuls les états anormaux ressortent */
 body { padding-bottom: 32px; }
 .barre-etat { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; height: 32px; box-sizing: border-box; display: flex; align-items: center; gap: 4px;
-  padding: 0 16px; background: var(--surface); border-top: 1px solid var(--bordure); font-size: 13px; color: var(--texte-2); white-space: nowrap; overflow: hidden; }
+  padding: 0 16px; background: var(--surface); border-top: 1px solid var(--bordure); font-size: 13px; color: var(--texte-2); white-space: nowrap;
+  overflow-x: clip; overflow-y: visible; }
 .element-etat { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; height: 24px; border: none; border-radius: 6px; background: none;
   font: inherit; color: inherit; }
 .element-etat + .element-etat { border-left: 1px solid var(--bordure); border-radius: 0; }
@@ -521,6 +522,25 @@ button.element-etat:hover, button.element-etat:focus-visible { color: var(--text
 .element-etat.droite { margin-left: auto; border-left: none; }
 /* Serveur de démonstration (GET /api/demo) : mention permanente de la barre d'état, couleurs « attention » (clair et sombre) */
 .element-etat.demo, .element-etat + .element-etat.demo { background: var(--attention-fond); color: var(--attention); font-weight: 700; border-left: none; border-radius: 6px; }
+/* Poste et vendeur connecté : élément fixe, raccourci par des points de suspension s'il est trop long (nom complet dans l'infobulle) */
+.element-etat.identite-etat { display: inline-block; max-width: 260px; overflow: hidden; text-overflow: ellipsis; line-height: 24px; }
+/* Pastilles de la barre d'état (maquette du 2026-11-21) : au centre, seulement s'il y a une information. Gris : à traiter ; orange
+   (.attention) : à surveiller ; rouge (.anormal) : anomalie. Jetons de la charte, clair et sombre. */
+.barre-etat .pastilles-etat { display: flex; align-items: center; align-self: stretch; gap: 6px; min-width: 0; padding: 0 6px; overflow: hidden; }
+.barre-etat .pastille { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border: none; border-radius: 11px; font: inherit;
+  font-size: 12.5px; font-weight: 500; line-height: 1; white-space: nowrap; background: color-mix(in srgb, var(--texte-2) 12%, transparent); color: var(--texte); }
+.barre-etat button.pastille { cursor: pointer; }
+.barre-etat button.pastille:hover, .barre-etat button.pastille:focus-visible { text-decoration: underline; outline: 2px solid var(--accent-texte); outline-offset: 1px; }
+.barre-etat .pastille.attention { background: var(--attention-fond); color: var(--attention); font-weight: 600; }
+.barre-etat .pastille.anormal { background: var(--urgent-fond); color: var(--urgent); font-weight: 600; }
+.barre-etat .pastille.groupe { text-decoration: underline; }
+/* « À traiter (N) ▾ » : petite liste au-dessus de la barre, fermée par Échap ou un clic dehors (fond transparent sur toute la fenêtre) */
+.barre-etat .groupe-etat { position: relative; display: inline-flex; align-items: center; flex: none; }
+.barre-etat .fond-liste-etat { position: fixed; inset: 0; z-index: 1; background: transparent; }
+.barre-etat .liste-etat { position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 2; display: flex; flex-direction: column; align-items: stretch;
+  gap: 4px; min-width: 220px; padding: 6px; background: var(--surface); border: 1px solid var(--bordure); border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(16, 24, 40, 0.25); }
+.barre-etat .liste-etat .pastille { height: 28px; border-radius: 6px; justify-content: flex-start; }
 .voyant { width: 8px; height: 8px; border-radius: 50%; background: var(--texte-2); }
 .voyant.ok { background: #12B76A; }
 .voyant.ko { background: var(--urgent-vif); }

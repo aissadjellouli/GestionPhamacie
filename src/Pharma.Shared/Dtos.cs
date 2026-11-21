@@ -1047,6 +1047,13 @@ public sealed record SuiviDettesLignesDto(PageDto<LigneSuiviDto> Page, decimal T
 public sealed record EtatPosteDto(bool SauvegardeActive, DateTime? DerniereSauvegarde, string? StatutSauvegarde,
     long? CaisseSessionId, DateTime? CaisseOuverteLe);
 
+/// <summary>
+/// GET /api/etat-poste/compteurs (tout employé connecté) : compteurs des pastilles de la barre d'état, chacun seulement pour l'employé qui a
+/// le droit de l'écran (0 ou faux sinon). Des nombres seulement : ni nom, ni montant.
+/// </summary>
+public sealed record CompteursBarreDto(int VentesEnAttente, int ProduitsDisponibles, int VoletsChifa, int ChifaADeposer, int TraitesAPayer,
+    bool JournauxEnAnomalie);
+
 // ---- Fiche contact d'un tiers --------------------------------------------------------------
 
 /// <summary>Genre : « telephone », « email » (lien d'appel ou de courrier), « montant_du » (somme due mise en avant), sinon texte.</summary>

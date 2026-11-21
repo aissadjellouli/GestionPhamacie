@@ -78,6 +78,9 @@ public static class DependencyInjection
         services.AddScoped<Ordonnances.EnregistrerScanOrdonnance>();
         services.AddScoped<Administration.ObtenirSeuils>();
         services.AddScoped<Administration.ObtenirEtatPoste>();
+        // Barre d'état : compteurs des pastilles (ventes en attente, Chifa, traites…), filtrés par les droits, gardés 30 s
+        services.AddSingleton<Administration.MemoireCompteursBarre>();
+        services.AddScoped<Administration.ConsulterCompteursBarre>();
         services.AddScoped<Administration.EnregistrerSeuils>();
         services.AddScoped<Administration.ObtenirDroits>();
         services.AddScoped<Administration.CreerUtilisateur>();

@@ -1278,6 +1278,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     }
 
     public Task<(EtatPosteDto?, string?)> EtatPosteAsync() => GetAsync<EtatPosteDto?>("api/etat-poste", null);
+    /// <summary>Compteurs des pastilles de la barre d'état (filtrés par les droits au serveur).</summary>
+    public Task<(CompteursBarreDto?, string?)> CompteursBarreAsync() => GetAsync<CompteursBarreDto?>("api/etat-poste/compteurs", null);
 
     /// <summary>Fiche contact d'un tiers : type patient, grossiste, organisme, client ou employe.</summary>
     public Task<(FicheContactDto?, string?)> ContactAsync(string type, long id) => GetAsync<FicheContactDto?>($"api/contacts/{type}/{id}", null);

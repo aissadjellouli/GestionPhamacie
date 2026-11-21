@@ -44,8 +44,18 @@ public sealed class ImprimanteTickets(ReglagesPoste reglages)
         catch (Exception e) when (e is PrintQueueException or InvalidOperationException) { return []; }
     }
 
+    /// <summary>
+    /// Barre d'état (2026-11-21) : message du dernier ticket (ou reçu) que Windows n'a pas pu imprimer sur ce poste, effacé dès qu'un
+    /// ticket repart. Seul état d'imprimante que le logiciel connaît : un ticket accepté par Windows peut encore rester bloqué dans la
+    /// file d'impression (imprimante éteinte), ce que le poste ne voit pas. Le ticket d'essai (réglages en cours de saisie) n'y touche pas.
+    /// </summary>
+    public string? DerniereErreur { get; private set; }
+
+    /// <summary>Levé quand <see cref="DerniereErreur"/> change (la barre d'état se redessine aussitôt).</summary>
+    public event Action? EtatChange;
+
     /// <summary>Ticket fictif pour vérifier l'imprimante et la largeur du rouleau.</summary>
-    public Task<string?> ImprimerEssaiAsync(string? pharmacie) => ImprimerAsync(new TicketDto(
+    public Task<string?> ImprimerEssaiAsync(string? pharmacie) => ImprimerFileAsync(new TicketDto(
         "ESSAI", DateTime.Now, "Ticket d’essai", null, "validee", "CNAS", 80m,
         [new LigneTicketDto("Produit d’essai 500 mg cp", 2, 120m, 240m, 0m), new LigneTicketDto("Produit d’essai sirop 125 ml", 1, 350m, 350m, 0m)],
         590m, 0m, 0m, 590m, "especes", pharmacie, null, null, null), 410m);
@@ -67,8 +77,19 @@ public sealed class ImprimanteTickets(ReglagesPoste reglages)
         }
     }
 
-    /// <summary>Imprime le ticket ; renvoie un message d'erreur lisible, ou null si l'impression est partie.</summary>
-    public Task<string?> ImprimerAsync(TicketDto ticket, decimal? rendu = null) =>
+    /// <summary>Imprime le ticket ; renvoie un message d'erreur lisible, ou null si l'impression est partie (état gardé pour la barre d'état).</summary>
+    public async Task<string?> ImprimerAsync(TicketDto ticket, decimal? rendu = null)
+    {
+        var erreur = await ImprimerFileAsync(ticket, rendu);
+        if (erreur != DerniereErreur)
+        {
+            DerniereErreur = erreur;
+            EtatChange?.Invoke();
+        }
+        return erreur;
+    }
+
+    private Task<string?> ImprimerFileAsync(TicketDto ticket, decimal? rendu = null) =>
         Application.Current.Dispatcher.InvokeAsync(() =>
         {
             try

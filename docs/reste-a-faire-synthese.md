@@ -37,6 +37,14 @@ rapprochement 157, ticket, tâches laissées et réglage 156, fiche du prêt, mo
   le cas le plus chargé (5 éléments) : une ligne à 1 366 × 768 et 1 536 × 890, clair et sombre (page de mesure, pas l'application lancée).
   À voir sur un poste relié à un vrai central et avec un vrai 2e serveur ; à confirmer par le titulaire : seuils repris de la supervision
   (attention au seuil du bandeau, anormal au seuil d'alerte de retard).
+- **Barre d'état : éléments fixes et pastilles** (maquette validée « ok maquette », 2026-11-21) : fixes (Connecté, poste · vendeur,
+  date et heure, version en infobulle) ; pastilles seulement s'il y a une information, cliquables selon les droits ; regroupement
+  « À traiter (N) ▾ » dès qu'une anomalie s'affiche (au plus 4 anomalies visibles) ; route `GET /api/etat-poste/compteurs` (tout
+  employé connecté, compteurs filtrés par les droits, gardée 30 s). Aucun script. Mesurée sur page de mesure (vrai app.css, Poppins) :
+  une ligne à 1 366 × 768 et 1 536 × 890, clair et sombre. **Non faites** (pas de source fiable) : « Mise à jour disponible » ;
+  « Imprimante injoignable » en direct (seul l'échec d'envoi d'un ticket est signalé). À voir dans l'application lancée ; à confirmer
+  par le titulaire : regroupement dès une seule anomalie même pour 1 pastille grise, seuil de 4 anomalies visibles, déconnexion
+  gardée quand le serveur est injoignable, libellés « 5 volets Chifa » et « 12 Chifa à déposer » en deux pastilles.
 - **Mesures** (charte, « Mesures du 2026-11-21 ») : fenêtre « Changement d'utilisateur impossible » de la Caisse (serveur arrêté),
   0 px, panier gardé par « Rester sur la vente ».
 - Compilation : 0 erreur, 0 avertissement ; tests : 2 936 réussis, 1 ignoré (déjà ignoré), 0 échec.

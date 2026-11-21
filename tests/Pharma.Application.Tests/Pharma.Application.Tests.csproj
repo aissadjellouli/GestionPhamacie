@@ -22,5 +22,7 @@
     <Compile Include="..\..\src\Pharma.Desktop\Services\CodeComptoirSaisie.cs" Link="Poste\CodeComptoirSaisie.cs" />
     <!-- Fichier des tâches laissées du poste (chiffré DPAPI utilisateur) : écriture, relecture, purge, fichier abîmé -->
     <Compile Include="..\..\src\Pharma.Desktop\Services\FichierTachesLaissees.cs" Link="Poste\FichierTachesLaissees.cs" />
+    <!-- Règles d'affichage de la barre d'état du poste (pastilles, regroupement, serveur injoignable) -->
+    <Compile Include="..\..\src\Pharma.Desktop\Services\PastillesBarre.cs" Link="Poste\PastillesBarre.cs" />
   </ItemGroup>
 </Project>
