@@ -595,7 +595,7 @@ label.requis::after, .etiquette-champ.requis::after { content: " *"; color: var(
 
 /* ---- Reprise de données -------------------------------------------------------- */
 /* Reprise (super admin) : en-tête resserré pour tenir à 1 366 × 768 (deux colonnes déjà à leur hauteur minimale) */
-.page.page-reprise { padding-top: 16px; padding-bottom: 12px; }
+.page.page-reprise { padding-top: 16px; padding-bottom: 6px; }
 .page-reprise .admin-contenu { gap: 12px; }
 .etapes-reprise { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px; flex-wrap: wrap; }
 .etapes-reprise li { padding: 6px 12px; border-radius: 999px; background: var(--info-fond); color: var(--info); font-size: 14px; }

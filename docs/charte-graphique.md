@@ -700,3 +700,11 @@ sous le tableau, est amenée dans le cadre (`pharma.voirZone`) et reste entière
   (14 tuiles sur deux rangées) : 0 px aux deux tailles, clair et sombre ; vue d'ensemble : le tableau à 11 colonnes défilait de 51 px
   sur le côté → cellules resserrées (`.tableau-ensemble`, 5 px) : 0 px horizontal et vertical. Aucune ligne absente sur les deux
   officines de développement (état « 0 » vu, état avec lignes non provoqué).
+
+### Vérifications du 2026-11-21 (soir) : tuiles de la Reprise et des Rapports
+
+- **Reprise, étape 5 (Vérification)** : 3 px de défilement à 1 366 × 768 (colonne sans cadre) → marge du bas de la page Reprise 6 px :
+  0 px aux deux tailles, clair et sombre. La tuile vers `#t-verif` amène la section en haut de son cadre, sans faire défiler la
+  page, l'assistant reste sur sa reprise et son étape. À l'étape 4 (section non affichée), les tuiles restent des chiffres.
+- **Période gardée** : Rapports en « Mois » → tuile Retours → `?rubrique=retours` toujours en novembre 2026 ; Pilotage financier en
+  « Semaine » → tuile Marge → `?rubrique=marges` sur la même semaine.

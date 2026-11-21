@@ -23,7 +23,7 @@ pastilles, nom du poste), `ea5ad15` (S7.3), `20c1ecf` (Accès à distance sans d
   avec le droit d'ouvrir la cible (`AccesEcrans`, liste commune avec la garde de la mise en page) ; test `TuilesNavigablesTests`.
   Mesuré le 2026-11-21 (soir) dans le poste lancé : Alertes, Stock, Inventaire, Dettes, État de la caisse, Financements, Rapports,
   Tableau de bord financier (4 rubriques) : 0 px aux deux tailles, clair et sombre ; tuiles rendues en liens ou boutons.
-  Non vérifiés : ancres de la Reprise (`#t-verif`), période gardée d'une rubrique à l'autre.
+  Vérifiés le 2026-11-21 (soir) : ancre de la Reprise (`#t-verif`) et période gardée d'une rubrique à l'autre.
 - **Tuiles navigables du central** (titulaire : vue d'ensemble, « Mes officines », ordres si droit ; éditeur : rubriques de la fiche),
   jamais de lien entre rôles ; tableau de bord à 14 tuiles-liens : marge intérieure 8 px, 0 px aux deux tailles ; tests 38/38.
 - **Thème du central** : appliqué dès le choix dans la liste (`ecrans.js`), bouton « Appliquer » retiré ; essayé dans les trois sens.
@@ -184,8 +184,8 @@ pastilles, nom du poste), `ea5ad15` (S7.3), `20c1ecf` (Accès à distance sans d
       titulaire « fichier du poste » : `%LOCALAPPDATA%\PharmaOfficine\taches-laissees.dat`, chiffré DPAPI utilisateur, relu au
       démarrage, 7 jours au plus (regles-metier.md « Facture et retour fournisseur laissés »). **Reste : essai sur le poste**
       (facture en préparation, « ⇄ Changer », fermer et relancer le logiciel, le suivant reprend la facture).
-- [ ] Non mesurés à 1 366 × 768 : Reprise de données et profils de reprise (super admin) : le mot de passe noté du compte
-      d'essai `super.essai` est refusé (2026-11-21) ; ne pas réessayer (risque de blocage) : **à demander au titulaire**.
+- [x] Reprise de données et profils de reprise (super admin) : mesurés le 2026-11-21 (API lancée avec `SuperAdmin__Fichier`,
+      compte `super.essai`) ; Reprise corrigée (55 px → 0 px à 1 366 × 768), commité `f399e6d`.
 - [x] **Bulle « À renseigner » trop tôt** (2026-11-20, corrigé, commité `d4dbe40`, vérifié à l'écran) : porteur de l'ordonnance (curseur dans le nom à la coche),
       n° de facture et « motif sans n° » Chifa, motif du rattachement d'un volet, confirmation du mot de passe (Synchronisation) ;
       règle ajoutée à la charte graphique (« Bulle seulement après une tentative »).
