@@ -1,5 +1,6 @@
 @page "/admin/synchronisation"
 @inject ApiClient Api
+@inject IJSRuntime JS
 @inject SessionPoste Session
 @inject HistoriqueNavigation Historique
 
@@ -455,6 +456,8 @@
             @* Lot S7.2b : le titulaire tire lui-même le code de rattachement de l'officine (celle du certificat de ce serveur) à son compte
                distant ; mot de passe ressaisi ; code montré une fois, effacé de l'écran au changement de rubrique, jamais gardé. Sans
                synchronisation activée : explication, aucun bouton. Aucun style en ligne (classes de la charte). *@
+            @* Deux panneaux dans un cadre défilant (hauteur posée par poste.js) : la page reste fixe (docs/charte-graphique.md, écran fixe) *@
+            <div class="cadre-defilant cadre-empile" data-zone="acces-distant-cadre">
             <section class="panneau" aria-labelledby="s-acces-distant" data-zone="acces-distant">
                 <h2 id="s-acces-distant">Accès à distance</h2>
                 <p class="detail">Le titulaire consulte le tableau de bord de l’officine et le journal des accès depuis les écrans du serveur central, avec son compte distant. Pour rattacher l’officine à ce compte, générez ici un code à usage unique.</p>
@@ -545,6 +548,7 @@
                     }
                 </section>
             }
+            </div>
         }
     </div>
 </div>
@@ -859,10 +863,13 @@
         return null;
     });
 
-    private void OuvrirCompte(CompteDistantRattacheDto c, bool retrait)
+    private async Task OuvrirCompte(CompteDistantRattacheDto c, bool retrait)
     {
         (compteOuvert, retraitCompte, motDePasseCompte) = (c, retrait, "");
         (droitConsulter, droitJournal, droitOrdres) = (c.Droits.Contains("consulter"), c.Droits.Contains("journal_acces"), c.Droits.Contains("ordres"));
+        // La zone s'ouvre sous le tableau, dans le cadre défilant : elle est amenée à l'écran (la page, elle, ne bouge pas)
+        StateHasChanged();
+        await JS.InvokeVoidAsync("pharma.voirZone", "[data-zone=compte-distant-edition]");
     }
 
     private void FermerCompte() => (compteOuvert, motDePasseCompte) = (null, "");

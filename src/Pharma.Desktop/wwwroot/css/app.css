@@ -493,6 +493,7 @@ select, .panneau input[type="date"] { height: 44px; padding: 0 10px; border-radi
 .achats-ligne > .champ.champ-compte-distant { flex: 1 1 260px; }
 .achats-ligne > .champ.champ-bouton { flex: 0 0 auto; }
 /* Lot S7.3 : comptes distants rattachés (Accès à distance) : seul le cadre défile (écran fixe), pied « Actualiser » sur une ligne */
+.cadre-defilant.cadre-empile { display: flex; flex-direction: column; gap: 20px; }
 .tableau-cadre.comptes-distants { max-height: 168px; }
 .tableau-cadre.comptes-distants .tableau { min-width: 0; }
 [data-zone="comptes-distants"] > .actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

@@ -17,6 +17,12 @@ window.pharma = {
     setTimeout(voir, 150);
     setTimeout(voir, 500);
   },
+  // Amène une zone ouverte (formulaire sous un tableau) dans son cadre défilant, sans faire défiler l'écran
+  voirZone: function (selecteur) {
+    function voir() { var z = document.querySelector(selecteur); if (z) z.scrollIntoView({ block: 'nearest' }); }
+    setTimeout(voir, 150);
+    setTimeout(voir, 500);
+  },
 
   // Liste de propositions (.suggestions, flèches haut et bas) : amène l'option active dans le cadre de la liste, en ne faisant
   // défiler que la liste, jamais l'écran

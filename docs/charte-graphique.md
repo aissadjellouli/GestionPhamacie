@@ -640,3 +640,10 @@ Compte `titulaire.dev`, 1 366 × 768 et 1 536 × 890, clair et sombre : « Mes o
 1 366 px, colonne « Ordres en attente » coupée → dernier contact sous le nom de l'officine, en-têtes courts (« CA jour », « Mois préc. »,
 « Péremption »…), montants sur une ligne (`.tableau-ensemble`) : 0 px horizontal et vertical. Non mesurés : ordres avec le droit accordé
 et rubrique « Accès à distance » du poste (synchronisation non activée sur `pharmacie_test`).
+
+### Mesures du 2026-11-21 (Synchronisation › Accès à distance, poste relié au central)
+
+`pharmacie_test` reliée au central de développement, compte `titulaire`, 1 366 × 768 et 1 536 × 890, clair et sombre. Défaut
+corrigé : la page défilait (205 px à 1 366, 99 px à 1 536) → les deux panneaux (code, comptes rattachés) dans un cadre défilant
+(`.cadre-defilant.cadre-empile`, comme les autres sous-rubriques) : **0 px** de page ; la zone « Droits » ou « Retirer », ouverte
+sous le tableau, est amenée dans le cadre (`pharma.voirZone`) et reste entièrement visible aux deux tailles.
