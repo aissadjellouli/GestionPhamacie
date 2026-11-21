@@ -132,8 +132,8 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
     private bool listeOuverte;
     private ElementReference boutonGroupe;
 
-    /// <summary>Poste (s'il est nommé) et vendeur connecté ; avant la connexion : le poste seul.</summary>
-    private string Identite => PastillesBarre.Identite(Configuration.PosteDeclare, Session.EstConnecte ? Session.NomComplet : null);
+    /// <summary>Poste (nom déclaré, sinon nom de l'ordinateur, comme la caisse) et vendeur connecté ; avant la connexion : le poste seul.</summary>
+    private string Identite => PastillesBarre.Identite(Configuration.NomCourt, Session.EstConnecte ? Session.NomComplet : null);
 
     protected override void OnParametersSet() => Recalculer();
 

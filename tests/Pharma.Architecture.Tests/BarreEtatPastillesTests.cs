@@ -41,7 +41,7 @@ public class BarreEtatPastillesTests
         // Poste et vendeur : affiché dès qu'il y a un nom (poste déclaré ou vendeur connecté)
         Assert.Contains("@if (Identite is { Length: > 0 } identite)", pied);
         Assert.Contains("data-zone=\"identite\"", pied);
-        Assert.Contains("PastillesBarre.Identite(Configuration.PosteDeclare, Session.EstConnecte ? Session.NomComplet : null)", Barre());
+        Assert.Contains("PastillesBarre.Identite(Configuration.NomCourt, Session.EstConnecte ? Session.NomComplet : null)", Barre());
         // Version : dans l'infobulle seulement
         Assert.DoesNotMatch(new Regex(">v@\\(Version\\)"), pied);
     }
