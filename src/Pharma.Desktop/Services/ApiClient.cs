@@ -1291,6 +1291,15 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(EtatPosteDto?, string?)> EtatPosteAsync() => GetAsync<EtatPosteDto?>("api/etat-poste", null);
     /// <summary>Compteurs des pastilles de la barre d'état (filtrés par les droits au serveur).</summary>
     public Task<(CompteursBarreDto?, string?)> CompteursBarreAsync() => GetAsync<CompteursBarreDto?>("api/etat-poste/compteurs", null);
+    /// <summary>Reste du lot S7.3 : message du titulaire à distance à afficher dans la barre d'état (null : rien).</summary>
+    public async Task<(MessageCentralDto?, string?)> MessageCentralAsync()
+    {
+        var (etat, erreur) = await GetAsync<MessageCentralEtatDto?>("api/etat-poste/message-central", null);
+        return (etat?.Message, erreur);
+    }
+    /// <summary>Fermeture du message par le titulaire de l'officine (il disparaît de tous les postes).</summary>
+    public async Task<string?> FermerMessageCentralAsync(Guid id) =>
+        (await EnvoyerCorpsAsync<object?, object>(HttpMethod.Post, $"api/etat-poste/message-central/{id}/fermer", null)).Item2;
 
     /// <summary>Fiche contact d'un tiers : type patient, grossiste, organisme, client ou employe.</summary>
     public Task<(FicheContactDto?, string?)> ContactAsync(string type, long id) => GetAsync<FicheContactDto?>($"api/contacts/{type}/{id}", null);

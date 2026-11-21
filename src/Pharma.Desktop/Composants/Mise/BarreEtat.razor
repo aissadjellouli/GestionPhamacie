@@ -84,6 +84,34 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
         </span>
     }
 
+    @if (messageOuvert && message is { } m)
+    {
+        @* Reste du lot S7.3 : petite fenêtre du message du titulaire à distance (pastille « Message »), posée au-dessus de la barre comme la
+           liste « À traiter » ; fermée par Échap, un clic dehors ou « Fermer ». « Ne plus afficher » : titulaire de l'officine seulement. *@
+        <span class="fond-liste-etat" aria-hidden="true" @onclick="FermerFenetreMessage"></span>
+        <div id="fenetre-message-etat" class="fenetre-message-etat" role="dialog" aria-labelledby="titre-message-etat" data-zone="fenetre-message"
+             @onkeydown="ToucheMessageAsync">
+            <strong id="titre-message-etat">Message du titulaire (à distance)</strong>
+            <p class="texte-message-etat" data-zone="texte-message">@m.Texte</p>
+            <span class="detail-message-etat">Affiché sur tous les postes jusqu’au @Local(m.JusquAu).ToString("dddd dd/MM à HH:mm", Fr) · reçu le @Local(m.RecuLe).ToString("dd/MM à HH:mm", Fr)</span>
+            @if (erreurMessage is { } erreur)
+            {
+                <span class="erreur-message-etat" role="alert">@erreur</span>
+            }
+            <span class="actions-message-etat">
+                @if (Session.A("admin.parametres"))
+                {
+                    <button type="button" class="btn btn-contour" @onclick='() => Aller("admin/synchronisation?rubrique=ordres")'>Ordres du central</button>
+                }
+                @if (m.PeutFermer)
+                {
+                    <button type="button" class="btn btn-contour" data-zone="ne-plus-afficher" disabled="@fermetureEnCours" @onclick="NePlusAfficherAsync">Ne plus afficher</button>
+                }
+                <button type="button" class="btn btn-principal" @ref="boutonFermerMessage" @onclick="FermerFenetreMessage">Fermer</button>
+            </span>
+        </div>
+    }
+
     @* Date et heure, raccourcies quand les pastilles sont regroupées (la barre reste sur une ligne en 1366×768) ; version dans l'infobulle *@
     <span class="element-etat droite" data-zone="date" title="Tracodex Officine v@(Version)">@PastillesBarre.Date(maintenant, affichage.Regroupe)</span>
 </footer>
@@ -144,8 +172,9 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
         var connecte = Session.EstConnecte;
         affichage = PastillesBarre.Calculer(new EtatBarre(serveurJoignable == true && connecte, maintenant, Session.A,
             connecte ? etat : null, connecte ? liaisons : null, connecte ? compteurs : null, connecte ? secondesAvantDeconnexion : null,
-            Tickets.DerniereErreur));
+            Tickets.DerniereErreur, connecte ? message : null));
         if (!affichage.Regroupe) listeOuverte = false;
+        if (!connecte || message is null) messageOuvert = false;
     }
 
     private RenderFragment Rendu(Pastille p) =>
@@ -161,7 +190,51 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
     private void Aller(string lien)
     {
         listeOuverte = false;
+        // Pastille du message : sa petite fenêtre, sans changer d'écran
+        if (lien == PastillesBarre.LienMessage)
+        {
+            (messageOuvert, erreurMessage, focaliserMessage) = (true, null, true);
+            return;
+        }
+        messageOuvert = false;
         Nav.NavigateTo(lien);
+    }
+
+    // ---- Reste du lot S7.3 : message du titulaire à distance ----
+    private MessageCentralDto? message;
+    private bool messageOuvert;
+    private bool fermetureEnCours;
+    private string? erreurMessage;
+    private ElementReference boutonFermerMessage;
+    private bool focaliserMessage;
+
+    private void FermerFenetreMessage() => messageOuvert = false;
+
+    private void ToucheMessageAsync(KeyboardEventArgs k)
+    {
+        if (k.Key == "Escape") messageOuvert = false;
+    }
+
+    /// <summary>Fenêtre du message tout juste ouverte : le curseur va sur « Fermer » (Échap la ferme ensuite).</summary>
+    protected override async Task OnAfterRenderAsync(bool premierRendu)
+    {
+        if (!focaliserMessage || !messageOuvert) return;
+        focaliserMessage = false;
+        try { await boutonFermerMessage.FocusAsync(); }
+        catch (Exception e) when (e is JSException or JSDisconnectedException or InvalidOperationException) { }
+    }
+
+    /// <summary>Titulaire de l'officine : le message n'est plus affiché sur aucun poste (journal des actions au serveur).</summary>
+    private async Task NePlusAfficherAsync()
+    {
+        if (message is not { } m) return;
+        fermetureEnCours = true;
+        try
+        {
+            erreurMessage = await Api.FermerMessageCentralAsync(m.Id);
+            if (erreurMessage is null) (message, messageOuvert) = (null, false);
+        }
+        finally { fermetureEnCours = false; }
     }
 
     private void BasculerListe() => listeOuverte = !listeOuverte;
@@ -234,9 +307,13 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
             {
                 var (c, erreurCompteurs) = await Api.CompteursBarreAsync();
                 compteurs = erreurCompteurs is null ? c : null;
+                // Message du titulaire à distance : même rythme ; une erreur de lecture garde le message connu (pas de clignotement)
+                var (mc, erreurMessageLu) = await Api.MessageCentralAsync();
+                if (erreurMessageLu is null) message = mc;
             }
         }
         if (!Session.EstConnecte) (etat, attenteSync, liaisons, compteurs) = (null, null, null, null);
+        if (!Session.EstConnecte) message = null;
         secondesAvantDeconnexion = await SecondesAvantDeconnexionAsync();
     }
 

@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Pharma.Api.Endpoints;
-using Pharma.Api.Journalisation;
+using Pharma.Shared.Journalisation;
 using Pharma.Api.Securite;
 using Pharma.Domain.Commun;
 using Pharma.Shared;

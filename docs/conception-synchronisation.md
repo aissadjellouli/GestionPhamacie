@@ -2129,7 +2129,7 @@ Détail : [ecrans-central.md](ecrans-central.md) § 3 quater.
   (`ordre_central`, colonnes `origine` et `compte_id`), journal, publication `ordre-v1` et retour (`sync_ordre_resultat`) que S5.
   **Écart signalé** : la décision 3 (§ 0) permet prix, réglages, commandes et employés aux ordres du **propriétaire du central** (S5) ;
   pour le titulaire à distance, la consigne du lot (aucun ordre sur les ventes, stocks, prix, comptes) est appliquée. Le « message à
-  afficher sur les postes » n'est **pas** fait (surface d'affichage commune aux postes à décider ; la barre d'état est livrée).
+  afficher sur les postes » est fait depuis le script 038 (§ 32.6 : pastille de la barre d'état).
 - **Script central `034_titulaire_multi_officines_ordres.sql`** (garde de rejeu ajoutée à 013 pour `cloud_expirer_ordres`) ; aucun
   script local, `002_tables_miroir.sql` inchangé.
 
@@ -2178,3 +2178,22 @@ et affiché ») et du § 13.6 (« écran central de consultation des lignes abse
   journal, compte rendu à l'officine) ; la maquette proposait une anomalie : **non suivie** (écart signalé au titulaire).
 - **Nombres seulement** (décision n° 4) : éditeur (fiche d'une officine) et titulaire (tuile du tableau de bord, colonne de la vue
   d'ensemble) ; jamais une colonne métier ni une clé de ligne.
+
+### 32.6 Reste de S7.2 et S7.3 : remise à zéro d'un mot de passe, retrait d'un rattachement, message aux postes (réalisé en local le 2026-11-21, go du titulaire, hors SMS)
+
+Détail, routes et décisions : [ecrans-central.md](ecrans-central.md) § 3 nonies.
+
+- **Script central `038_remise_mot_de_passe_retrait_message.sql`** : `cloud_ecran_remise_mot_de_passe` (éditeur, jamais son propre
+  compte ; empreinte BCrypt d'un mot de passe provisoire tiré par les écrans et montré une fois à l'éditeur, jamais envoyé par e-mail :
+  le code de connexion part déjà sur ce canal ; sessions fermées, codes annulés, verrou levé), `cloud_ecran_titulaire_retirer_officine`
+  (titulaire ; effet immédiat, ordres ouverts du compte annulés et republiés comme au 034), ordre **`message`** du titulaire (données
+  `message-v1` : texte simple de 200 caractères au plus, sans lien, fin d'affichage 1 à 7 jours ; `cloud_message_poste_controle` dans la
+  fonction d'envoi **et** dans `ck_ordre_central_titulaire`) ; `cloud_ecran_titulaire_envoyer_message` (droit `ordres`, code, un message
+  en attente par officine, 10 ordres par heure, 24 h pour être relevé).
+- **Surface d'affichage décidée** : une **pastille de la barre d'état** (livrée le 2026-11-21) sur tous les postes, cliquable vers une petite
+  fenêtre ; « Ne plus afficher » pour le titulaire local (script local **160** : `sync_ordre_recu.message_ferme_le`, `message_ferme_par`,
+  `sync_message_central_fermer`). Le message suit le mécanisme existant (`ordre-v1`, `sync_ordre_recu`, retour `sync_ordre_resultat` :
+  « appliqué » = affiché) ; `sync_ordre_recu` n'est jamais envoyée : `002_tables_miroir.sql` **inchangé**.
+- **Retrait par l'éditeur** : non fait ; la conception ne le prévoit pas (§ 32.3 : retrait par le poste ; depuis 038 aussi par le
+  titulaire lui-même).
+- **Reste** : SMS (fournisseur), alertes de refus en série, mise en ligne ; mesure des écrans et essai de bout en bout poste ↔ central.

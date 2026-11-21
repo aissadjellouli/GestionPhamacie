@@ -13,7 +13,9 @@ DO $$ BEGIN
     ASSERT NOT EXISTS (
         SELECT 1 FROM pg_proc p, unnest(p.proargnames) WITH ORDINALITY AS a(nom, n)
         WHERE p.pronamespace = 'public'::regnamespace AND has_function_privilege('pharma_cloud_ecrans', p.oid, 'EXECUTE')
-          AND p.proname NOT IN ('cloud_ecran_debut_connexion', 'cloud_ecran_creer_code', 'cloud_ecran_session')
+          AND p.proname NOT IN ('cloud_ecran_debut_connexion', 'cloud_ecran_creer_code', 'cloud_ecran_session',
+                                -- Script 037 : nouveau code (contact du compte lui-même, pour l'envoi) ; comptes vus par l'éditeur (contact MASQUÉ)
+                                'cloud_ecran_facteur_demander_code', 'cloud_ecran_facteur_comptes')
           AND p.proargmodes IS NOT NULL AND p.proargmodes[a.n] IN ('o', 't')
           AND a.nom IN ('donnees', 'contenu', 'attendu', 'trouve', 'cle_ligne', 'empreinte_code', 'code', 'empreinte', 'motif_revocation',
                         'motif', 'cible', 'auteur', 'fins_chaine', 'titulaire_id', 'montant_ttc', 'telephone', 'email', 'nom',
@@ -23,7 +25,13 @@ DO $$ BEGIN
             AND p.proname LIKE 'cloud\_ecran\_%'
             -- Fonctions du titulaire (script 032) et des lignes absentes (script 036) comptées par leur propre test
             AND p.proname NOT LIKE 'cloud\_ecran\_titulaire\_%' AND p.proname <> 'cloud_ecran_rattacher'
-            AND p.proname NOT LIKE 'cloud\_ecran\_lignes\_absentes%') = 27, 'fonctions des écrans : 8 (030) + 19 (031)';
+            AND p.proname NOT LIKE 'cloud\_ecran\_lignes\_absentes%'
+            -- Envoi des codes et comptes (script 037) : comptées par leur propre test
+            AND p.proname NOT LIKE 'cloud\_ecran\_facteur\_%'
+            -- Remise à zéro d'un mot de passe par l'éditeur (script 038) : comptée par son propre test
+            AND p.proname <> 'cloud_ecran_remise_mot_de_passe'
+            -- Création d'un compte par l'éditeur (script 039) : comptée par son propre test
+            AND p.proname <> 'cloud_ecran_compte_creer') = 27, 'fonctions des écrans : 8 (030) + 19 (031)';
 END $$;
 
 -- Données d'essai : deux officines (A active avec un lot, une anomalie et un ordre ; B en attente), un éditeur et un titulaire

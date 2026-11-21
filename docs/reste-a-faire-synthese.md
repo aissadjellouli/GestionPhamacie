@@ -2,7 +2,7 @@
 
 Point d'avancement du 2026-11-21 (soir) : travail commité jusqu'à `f399e6d` (S7.4 `4a0570f`, docs `d57df5c`, S7.5 et écrans
 `f399e6d`) ; scripts centraux 035 et 036 passés sur `pharmacie_cloud_dev` ; **non commités** (prêts pour « commit ») : tuiles
-navigables du poste et du central, fermeture de l'aide au clic extérieur, thème du central appliqué dès le choix (sans bouton). Détail : [a-faire.md](a-faire.md),
+navigables du poste et du central, fermeture de l'aide au clic extérieur, thème du central appliqué dès le choix (sans bouton), S7.6 (envoi des codes réglé dans l'administration du site, script 037). Détail : [a-faire.md](a-faire.md),
 [fonctionnalites.md](fonctionnalites.md) (inventaire complet) et documents cités. À mettre à jour à chaque point d'avancement.
 
 ## 1. En cours
@@ -17,6 +17,14 @@ pastilles, nom du poste), `ea5ad15` (S7.3), `20c1ecf` (Accès à distance sans d
 
 ## 2. Fait, à commiter (2026-11-21, soir)
 
+- **S7.6, envoi des codes réglé dans l'administration du site central** (go « codes gmail », [ecrans-central.md](ecrans-central.md)
+  § 3 octies) : script central **037** (réglage unique, mot de passe SMTP chiffré par l'application, e-mail ET téléphone d'un compte,
+  canal `les_deux`), écrans éditeur « Envoi des codes » et « Comptes », canal relu en base à chaque envoi (SMS indisponible signalé,
+  les deux : l'e-mail part quand même), mode fichier gardé pour le développement, départ d'une officine par le même compte si les
+  variables SMTP manquent ; Gmail documenté ([poste-de-developpement.md](poste-de-developpement.md)). Tests verts (écrans 41/41,
+  central 128 + 1 ignoré, architecture 386, tests SQL 030 à 037 et rejeu 001 → 037 sur base jetable). **À faire** : passer 037 sur
+  `pharmacie_cloud_dev` (après relecture), mesurer `/envoi-codes` et `/comptes` (1 366 × 768, 1 536 × 890, clair et sombre),
+  essai réel avec un compte Gmail (mot de passe d'application).
 - **Tuiles navigables du poste** ([charte-graphique.md](charte-graphique.md), « Tuiles navigables ») : les tuiles (55 balises) qui n'étaient
   que des chiffres (Alertes, Stock, Inventaire, Dettes, État de la caisse, Financements, fiche d'un prêt, Tableau de bord financier,
   Rapports, Reprise) mènent à l'écran ou à la rubrique qui les détaille, ou filtrent le tableau de l'écran affiché ; lien seulement
@@ -252,8 +260,14 @@ pastilles, nom du poste), `ea5ad15` (S7.3), `20c1ecf` (Accès à distance sans d
   mesurés à 0 px ; essai de bout en bout réussi avec `pharmacie_test` ; commité `4a0570f`.
 - [x] **Synchronisation S7.5** (2026-11-21, en local) : lignes absentes vues au central, nombres seulement
   ([ecrans-central.md](ecrans-central.md) § 3 sexies). Script central 036 passé, écrans mesurés, commité `f399e6d`.
-- [ ] **Synchronisation S7.3 (reste)** : ordre « message à afficher sur les postes » (la barre d’état est livrée ; surface d’affichage à décider).
-- [ ] **Synchronisation S7.2 (reste)** : SMS (fournisseur), remise à zéro d'un mot de passe par l'éditeur, retrait d'un rattachement depuis les écrans, alertes de refus en série.
+- [x] **Synchronisation S7.3 (reste)** (2026-11-21, en local) : ordre « message à afficher sur les postes » : pastille « Message » de la
+  barre d'état, fenêtre, fermeture par le titulaire local ([ecrans-central.md](ecrans-central.md) § 3 nonies). Scripts central **038** et
+  local **160** à passer (après relecture et sauvegarde) ; écrans à mesurer ; essai de bout en bout poste ↔ central à faire.
+- [x] **Synchronisation S7.6** (2026-11-21, en local) : envoi des codes de second facteur réglé dans l'administration du site
+  (canal, serveur d'e-mail, mot de passe chiffré, contacts des comptes) ; script 037 à passer, écrans à mesurer, essai Gmail réel à faire.
+- [x] **Synchronisation S7.2 (reste)** (2026-11-21, en local) : remise à zéro d'un mot de passe par l'éditeur (montré une fois, jamais par
+  e-mail), retrait d'un rattachement par le titulaire depuis les écrans (script central 038 à passer, écrans à mesurer).
+- [ ] **Synchronisation S7.2 (reste)** : SMS (fournisseur), alertes de refus en série.
 - [ ] **Mise en ligne des écrans du central** (après le choix de l'hébergeur) : domaine et certificat, proxy inverse (adresse réelle pour les limites de débit), connexion de production au rôle `pharma_cloud_ecrans`, SMTP, clé HMAC commune si plusieurs instances, comptes éditeur réels, test d'intrusion.
 - [ ] Découpage par officine des grandes tables du central.
 - [ ] Script 101b (suppression de `vente.num_facture_chifa`) : à exécuter à la mise à jour de l'officine, conflits tranchés.

@@ -1,0 +1,64 @@
+@page "/mes-officines/{Id:guid}/retirer"
+@inject DepotEcrans Depot
+
+<PageTitle>Retirer une officine · écrans du central</PageTitle>
+
+@* Script central 038 : le titulaire retire lui-même le rattachement d'une de ses officines (nom de l'officine ressaisi, code de
+   confirmation). Effet immédiat ; ses ordres encore ouverts pour l'officine sont annulés (même règle que le retrait depuis le poste).
+   Pour revenir : un nouveau code de rattachement tiré sur le poste de l'officine. *@
+<div class="page page-serree">
+    <div class="titre-page">
+        <div>
+            <h1>Retirer une officine</h1>
+            <p class="sous-titre">L'officine ne sera plus accessible depuis votre compte (tableau de bord, journal, ordres).</p>
+        </div>
+        <div class="actions">
+            <a class="btn btn-contour" href="mes-officines">Mes officines</a>
+        </div>
+    </div>
+    <Message Erreur="@Erreur" Ok="@Ok" />
+    @if (Libelle is null)
+    {
+        <Message Erreur="officine_refusee" />
+    }
+    else
+    {
+        <section class="panneau retrait-officine" aria-labelledby="t-retrait">
+            <h2 id="t-retrait">@Libelle</h2>
+            <p class="detail">Effet immédiat : plus aucun écran de cette officine depuis votre compte ; vos ordres encore en attente pour elle sont
+                annulés. Rien ne change dans l'officine elle-même. Pour la rattacher de nouveau, il faudra un nouveau code tiré sur son poste
+                (Administration › Synchronisation › Accès à distance).</p>
+            <DemandeCode Retour="@($"/mes-officines/{Id}/retirer")" />
+            <form method="post" action="@($"actions/mes-officines/{Id}/retrait")" class="formulaire-action">
+                <AntiforgeryToken />
+                <div class="champ">
+                    <label for="confirmation" class="requis">Nom de l'officine, ressaisi</label>
+                    <input id="confirmation" name="confirmation" maxlength="200" autocomplete="off" required />
+                </div>
+                <div class="champ">
+                    <label for="code" class="requis">Code de confirmation reçu</label>
+                    <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required />
+                </div>
+                <div class="actions">
+                    <button type="submit" class="btn btn-danger">Retirer cette officine de mon compte</button>
+                </div>
+            </form>
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    [CascadingParameter] private HttpContext? Contexte { get; set; }
+    [SupplyParameterFromQuery(Name = "erreur")] private string? Erreur { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] private string? Ok { get; set; }
+
+    private string? Libelle { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Contexte?.EmpreinteJeton() is not { } jeton) return;
+        var t = await Depot.TitulaireOfficinesAsync(jeton, Contexte.RequestAborted);
+        Libelle = t.Lignes.Where(l => t.Valeur(l, "id") is Guid g && g == Id).Select(l => t.Valeur(l, "libelle") as string).FirstOrDefault();
+    }
+}

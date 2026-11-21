@@ -257,6 +257,7 @@
     <File Path="database/migration/157_rapprochement_volet_apres_retour.sql" />
     <File Path="database/migration/158_retour_regularisation_dettes_patient.sql" />
     <File Path="database/migration/159_retour_regularisation_rendu_patient.sql" />
+    <File Path="database/migration/160_message_central_postes.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
@@ -294,6 +295,7 @@
     <File Path="database/tests/157_rapprochement_volet_apres_retour_tests.sql" />
     <File Path="database/tests/158_retour_regularisation_dettes_patient_tests.sql" />
     <File Path="database/tests/159_retour_regularisation_rendu_patient_tests.sql" />
+    <File Path="database/tests/160_message_central_postes_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
     <File Path="database/tests/101b_suppression_num_facture_chifa_tests.sql" />
     <File Path="database/tests/rejeu_complet.ps1" />
@@ -369,6 +371,12 @@
     <File Path="database/cloud/tests/035_reglages_communs_titulaire_tests.sql" />
     <File Path="database/cloud/036_lignes_absentes_ecrans.sql" />
     <File Path="database/cloud/tests/036_lignes_absentes_ecrans_tests.sql" />
+    <File Path="database/cloud/037_envoi_codes_reglage.sql" />
+    <File Path="database/cloud/tests/037_envoi_codes_reglage_tests.sql" />
+    <File Path="database/cloud/038_remise_mot_de_passe_retrait_message.sql" />
+    <File Path="database/cloud/tests/038_remise_mot_de_passe_retrait_message_tests.sql" />
+    <File Path="database/cloud/039_creation_compte_ecran.sql" />
+    <File Path="database/cloud/tests/039_creation_compte_ecran_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

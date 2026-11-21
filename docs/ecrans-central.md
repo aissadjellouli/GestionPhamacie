@@ -8,7 +8,8 @@
 > `ordres` accordé depuis le poste, comptes rattachés et retrait ; ordres à distance du titulaire en liste fermée) : § 3 quater. Lot **S7.4
 > réalisé en local** (réglages communs proposés par le titulaire à plusieurs officines, chaque officine décide sur son poste) : § 3 quinquies.
 > Lot **S7.5 réalisé en local** (lignes absentes : rubrique de la fiche d'une officine pour l'éditeur, compteur du titulaire, nombres
-> seulement) : § 3 sexies.
+> seulement) : § 3 sexies. **Reste de S7.2 et S7.3 réalisé en local** (remise à zéro d'un mot de passe par l'éditeur, retrait d'un
+> rattachement par le titulaire, message à afficher sur les postes ; hors SMS, aucun fournisseur) : § 3 nonies.
 
 Documents liés : [conception-synchronisation.md](conception-synchronisation.md) § 1, § 6, § 6.1, § 6.2 et § 32 ;
 [securite-et-droits.md](securite-et-droits.md) ; [charte-graphique.md](charte-graphique.md) ; [database/cloud/README.md](../database/cloud/README.md) ;
@@ -26,11 +27,16 @@ Documents liés : [conception-synchronisation.md](conception-synchronisation.md)
 | Script central `034_titulaire_multi_officines_ordres.sql` (S7.3) | base centrale | Droit `ordres`, vue d'ensemble, ordres du titulaire (liste fermée, 24 h), comptes rattachés vus, changés et retirés par le poste |
 | Script central `035_reglages_communs_titulaire.sql` (S7.4) | base centrale | Liste fermée et bornes des réglages communs, type d'ordre `reglages`, envoi à plusieurs officines, suivi des envois |
 | Script central `036_lignes_absentes_ecrans.sql` (S7.5) | base centrale | Lignes absentes par table, chargement et cause probable (nombres seulement), index partiels ; lecture de l'éditeur et compteur du titulaire |
+| Script central `037_envoi_codes_reglage.sql` (S7.6) | base centrale | Réglage unique de l'envoi des codes (canal, SMTP, mot de passe **chiffré**), e-mail ET téléphone d'un compte, canal `les_deux` ; fonctions `cloud_ecran_facteur_*` |
+| Écrans « Envoi des codes » et « Comptes » (S7.6) | écrans du central, éditeur | Canal et serveur d'e-mail des codes, e-mail d'essai ; contact (e-mail, téléphone) de chaque compte |
+| Script central `038_remise_mot_de_passe_retrait_message.sql` (reste S7.2 / S7.3) | base centrale | Remise à zéro du mot de passe d'un compte par l'éditeur, retrait d'un rattachement par le titulaire, ordre « message » (contrôle `cloud_message_poste_controle`) |
+| Script local `160_message_central_postes.sql` (reste S7.3) | base de l'officine | Fermeture du message par le titulaire de l'officine (`sync_ordre_recu.message_ferme_le`, `sync_message_central_fermer`) |
+| Pastille « Message » de la barre d'état (reste S7.3) | poste, tous les employés connectés | Message du titulaire à distance, petite fenêtre ; « Ne plus afficher » pour le titulaire de l'officine |
 | Routes `GET /api/v1/acces-distants`, `POST …/droits`, `POST …/retrait` (S7.3) | API centrale (mTLS) | Comptes rattachés de l'officine du certificat, droits, retrait |
 | Route `POST /api/v1/rattachement` (S7.2b) | API centrale (`Pharma.Cloud.Api`, mTLS) | Code de rattachement de l'officine du certificat, montré une fois |
 | Rubrique « Accès à distance » (S7.2b) | poste, Administration › Synchronisation | Le titulaire génère le code (mot de passe ressaisi) |
-| Commandes de la console du central | `Pharma.Cloud.Api.exe` | `--creer-compte-editeur`, `--creer-compte-titulaire` (S7.2a), `--code-rattachement` (S7.2a), `--comptes-distants`, `--desactiver-compte`, `--deverrouiller-compte` |
-| Tests | `tests/Pharma.Cloud.Web.Tests`, `tests/Pharma.Cloud.Tests/ComptesDistantsConsoleTests.cs`, `database/cloud/tests/030_…` à `036_…` | Voir § 7 |
+| Commandes de la console du central | `Pharma.Cloud.Api.exe` | `--creer-compte-editeur`, `--creer-compte-titulaire` (S7.2a), `--code-rattachement` (S7.2a), `--comptes-distants`, `--desactiver-compte`, `--deverrouiller-compte`, `--envoi-codes` (compte e-mail des codes réglé sur le serveur, 2026-11-21), `--contact-compte` (e-mail / téléphone d'un compte changé sur le serveur, 2026-11-21) |
+| Tests | `tests/Pharma.Cloud.Web.Tests`, `tests/Pharma.Cloud.Tests/ComptesDistantsConsoleTests.cs`, `…/EnvoiCodesReglageTests.cs`, `database/cloud/tests/030_…` à `037_…` | Voir § 7 |
 
 ## 2. Rôles
 
@@ -133,7 +139,7 @@ Go du titulaire, recommandations S7 acceptées. Script central **034** ; aucun s
 | Application à l'officine | API locale (`ExecuterOrdreCentral`) | `essai` : rien ne change ; `verification_integrite` : appliquée tout de suite (lecture seule, comme la vérification de la nuit), résultat remonté en nombres (« n chaîne(s) vérifiée(s) : … intacte(s), … rupture(s), … en erreur ») ; `sauvegarde` : **à confirmer** par le titulaire local (Ordres du central), lancée à sa confirmation comme « Sauvegarder maintenant » ; disque absent ou échec : l'ordre reste à confirmer. Ordre échu (horloge de l'officine aussi) : expiré, jamais appliqué |
 
 **Liste fermée** : la conception ne définissait pas d'ordres du titulaire (la décision 3 du § 0 vise les ordres du propriétaire du
-central, S5) : la liste la plus prudente est retenue, **sans** le « message à afficher sur les postes » (voir § 8). Aucun ordre ne modifie
+central, S5) : la liste la plus prudente est retenue ; le « message à afficher sur les postes » s'y ajoute depuis le script 038 (§ 3 nonies). Aucun ordre ne modifie
 une vente, un stock, un prix ni un compte ; la base le revérifie (`cloud_ordre_titulaire_permis`, contrainte `ck_ordre_central_titulaire`).
 
 **Signature** : l'ordre suit le mécanisme existant (voie descendante sur HTTPS avec certificat client de l'officine, `ordre-v1`) ; il n'est
@@ -218,6 +224,87 @@ Le journal des accès de l'officine n'est visé par aucune tuile : il dit qui a 
 chiffres. Pour connaître le droit « ordres », le tableau de bord lit aussi `cloud_ecran_titulaire_officines` (une ligne
 « liste_officines_titulaire » de plus au journal des accès du compte à chaque ouverture du tableau de bord, comme l'écran des ordres).
 
+## 3 octies. Lot S7.6 : envoi des codes réglé dans l'administration du site (réalisé en local le 2026-11-21)
+
+Go du titulaire (« go codes gmail ») : le canal et le serveur d'e-mail des codes de second facteur se règlent **dans les écrans du
+central** (éditeur), plus dans des variables Windows. Script central **037** (`parametre_envoi_codes`, une seule ligne).
+
+| Écran | Accès | Contenu |
+|---|---|---|
+| `/envoi-codes` « Envoi des codes » | éditeur seulement (titulaire : « accès refusé », la base revérifie) | **Canal** (liste bornée : E-mail, SMS, E-mail et SMS ; « SMS » seul est grisé et refusé tant qu'aucun fournisseur SMS n'existe, et « E-mail et SMS » envoie alors l'e-mail seul : un canal indisponible ne bloque jamais les connexions), **serveur SMTP**, **port**, **sécurité** (STARTTLS ou TLS direct ; jamais sans chiffrement), **identifiant**, **expéditeur**, **mot de passe** (champ toujours vide : vide = **inchangé**, jamais réaffiché ; « Renseigné » ou « Non renseigné » seulement), **code de confirmation** exigé pour enregistrer ; « Envoyer un e-mail d'essai » à une adresse saisie, avec les valeurs du formulaire (mot de passe saisi, sinon celui déjà enregistré, et seulement si le serveur, le port, la sécurité et l'identifiant n'ont pas changé : sinon le mot de passe est à ressaisir ; rien n'est enregistré, aucun code exigé ; résultat « envoyé » ou « pas parti », sans détail technique). À droite : réglage en service, « Recevoir un code de confirmation », aide Gmail. |
+| `/comptes` « Contacts des comptes » | éditeur seulement | Tableau paginé des comptes distants (identifiant, rôle, actif, e-mail et téléphone **masqués** `a***@domaine`, `***12`, dernière connexion) ; « Modifier » : nouvel e-mail, nouveau téléphone (vide = inchangé, « - » = retirer ; **au moins un** reste), code de confirmation. |
+
+**Envoi d'un code** (connexion, action sensible) : le réglage est **relu en base à chaque envoi** (gardé 10 secondes en mémoire, oublié
+à chaque enregistrement) : `courriel` → e-mail à l'adresse du compte ; `sms` → SMS, **aucun fournisseur** : refus clair (« Envoi des codes
+par SMS non disponible… ») noté au journal des accès (`code_envoi`, `sms:indisponible`) ; `les_deux` → e-mail **et** SMS, le SMS
+indisponible n'empêche pas l'e-mail (refus seulement si aucun canal n'est parti). Résultat de chaque canal au journal des accès
+(`fichier|email|sms:ok|echec|indisponible|sans_contact`), jamais le code, l'adresse ni le numéro.
+
+**Amorçage (2026-11-21) : `--envoi-codes` sur le serveur.** Avant la première connexion, aucun code ne peut partir (le réglage exige
+lui-même un code). L'installateur règle donc le compte e-mail **sur le serveur**, comme on règle le poste devant le PC de l'officine :
+`Pharma.Cloud.Api.exe --envoi-codes --serveur smtp.gmail.com --port 587 --tls starttls --identifiant <adresse> [--expediteur <adresse>]
+--operateur <nom> [--essai <adresse>]` (connexion du propriétaire `PHARMA_CLOUD_ADMIN_CONNEXION`, clés du dossier du central). Le mot de
+passe d'application est **demandé au clavier, sans écho** ; `--essai` envoie d'abord un e-mail d'essai (sans code) et **n'enregistre rien**
+s'il échoue (« identifiant ou mot de passe refusé » reconnu, y compris la réponse 535 de Gmail). Canal « E-mail » ; mot de passe chiffré
+avec les mêmes clés que les écrans ; journal de sécurité « console (opérateur …) », serveur, port et sécurité seulement. Les écrans
+l'utilisent au plus tard 10 secondes après. Le premier code de l'éditeur part alors par e-mail : plus besoin des variables
+`PHARMA_CLOUD_SMTP_*` (gardées comme secours) ni du fichier. Compte créé avec son adresse (`--creer-compte-editeur … --email …`) ; adresse à
+changer sans pouvoir recevoir de code (perdue, erronée) : `--contact-compte <identifiant> --email <adresse> --auteur <nom>` sur le
+serveur (« - » retire, au moins un contact reste ; journaux sans l'adresse).
+
+**Mode fichier** (développement) : `Ecrans:ModeCodes=fichier` (appsettings.Development.json) : chaque code est écrit dans le fichier **et** envoyé par l'e-mail du réglage en base s'il est complet (un e-mail en échec ne bloque pas, le fichier suffit) ; réglage incomplet : fichier seul. Hors développement, le mode fichier reste prioritaire (la base n'est pas lue).
+`Ecrans:ModeCodes=reglage` (défaut ; `courriel`, l'ancien nom, vaut `reglage`) : réglage en base. **Réglage incomplet** (canal e-mail sans
+SMTP complet, mot de passe illisible, dossier des clés absent) : fichier en développement ; en production, variables `PHARMA_CLOUD_SMTP_*`
+si elles sont complètes (amorçage, comportement d'avant S7.6), sinon **refus clair** (« Envoi des codes non réglé… ») noté au journal
+(`reglage:incomplet`). Les écrans ne refusent plus de démarrer faute de SMTP.
+
+**Mot de passe SMTP** : chiffré par l'application (protection des données d'ASP.NET Core, usage `PharmaOfficine.Central.EnvoiCodes.MotDePasseSmtp.v1`)
+avant d'aller en base ; la base ne garde que le texte chiffré (contrainte : base64url de 40 caractères au moins, un mot de passe en clair
+est refusé). Clés dans `<PHARMA_CLOUD_DOSSIER>\cles-protection` (ou `Ecrans:DossierCles`), hors dépôt (refusé dans un dossier qui contient
+`.git` ou la solution) ; sous Windows, clés protégées par DPAPI machine. Jamais réaffiché, jamais dans une adresse, un journal ou la
+console. Perte du dossier de clés : le mot de passe ne se relit plus → ressaisir le mot de passe dans l'écran.
+
+**Comptes** : e-mail ET téléphone possibles depuis le 030 (contrainte `ck_compte_distant_contact` : au moins un) ; le 037 le constate,
+ne modifie aucune ligne ; la console accepte `--telephone` et `--email` ensemble.
+
+**Départ d'une officine** (console) : les variables `PHARMA_CLOUD_SMTP_*` restent prioritaires ; absentes, le mot de passe de l'archive
+part par le compte SMTP du réglage « Envoi des codes » (mêmes clés du dossier du central).
+
+**Gmail** : voir [poste-de-developpement.md](poste-de-developpement.md) § « Codes du central par Gmail » (mot de passe d'application).
+
+## 3 nonies. Reste de S7.2 et S7.3 : remise à zéro d'un mot de passe, retrait d'un rattachement, message aux postes (réalisé en local le 2026-11-21)
+
+Go du titulaire (« reste de S7.2 et S7.3 », hors SMS : aucun fournisseur). Script central **038** ; script local **160** (fermeture du
+message) ; `002_tables_miroir.sql` **inchangé** (`sync_ordre_recu` n'est jamais envoyée). Aucun écran n'est en ligne.
+
+| Route / maillon | Où | Règle |
+|---|---|---|
+| `/comptes?compte=…&action=mot-de-passe` (bouton « Mot de passe » du compte choisi) | écrans du central, **éditeur** | Motif (5 à 300 caractères), identifiant du compte **ressaisi**, code de confirmation ; « Remettre à zéro le mot de passe ». Son **propre** compte : aucun formulaire (« votre mot de passe se change par « Mot de passe » ») et refus par l'écran et par la base (`soi_meme`). Compte désactivé : refusé |
+| `POST /actions/comptes/{compte}/mot-de-passe` | écrans du central | Mot de passe **provisoire** tiré par les écrans (16 caractères, même tirage que la console) ; seule l'empreinte BCrypt (coût 12) part vers `cloud_ecran_remise_mot_de_passe` : contrôles **avant** le code, puis empreinte remplacée, mot de passe **provisoire** (étape « mot de passe » obligatoire à la connexion suivante), échecs et verrouillage remis à zéro, **sessions ouvertes du compte fermées** (`revoquee`), codes en cours annulés ; journal des accès (éditeur, et compte remis à zéro : visible dans « Mon journal des accès ») et journal de sécurité (n° du compte, motif, sessions fermées) ; **jamais** le mot de passe ni son empreinte |
+| `/comptes/mot-de-passe-affiche?compte=…&ref=…` | écrans du central, éditeur | Mot de passe provisoire montré **une seule fois** (mémoire du processus, 2 minutes, même session ; « Copier ») ; ensuite « déjà été affiché ». Jamais sur la page du code d'activation |
+| `/comptes?action=creer` (« Ajouter un compte ») et `POST /actions/comptes/creer` (script central 039, 2026-11-21) | écrans du central, **éditeur** | Rôle (titulaire ou éditeur), identifiant (3 à 60 caractères, minuscules, chiffres, « . _ - »), nom, e-mail et/ou téléphone (au moins un : les codes du compte y partent), code de confirmation ; contrôles avant le code (identifiant pris, formes). Mot de passe **provisoire** tiré par les écrans, empreinte BCrypt seule en base, montré **une fois** sur `/comptes/mot-de-passe-affiche?…&cree=1` (« Compte créé ») ; changement obligatoire à la première connexion. Journaux : n° du compte et rôle seulement. Un titulaire est ensuite rattaché à son officine par le code tiré du poste. |
+| `/mes-officines/{officine}/retirer` (lien « Retirer » de « Mes officines ») et `POST /actions/mes-officines/{officine}/retrait` | écrans du central, **titulaire** | Nom de l'officine **ressaisi** (casse ignorée), code de confirmation ; `cloud_ecran_titulaire_retirer_officine` : officine d'un autre compte, inconnue ou déjà retirée refusée (ouverture par la base), contrôles **avant** le code ; **effet immédiat** (chaque fonction revérifie le rattachement) ; ordres encore ouverts de ce compte pour l'officine **annulés et republiés** (même règle que le retrait depuis le poste, 034 ; auteur « titulaire à distance (rattachement retiré) ») ; journaux des accès et de sécurité. Pour revenir : nouveau code tiré sur le poste. **L'éditeur ne retire aucun rattachement** (la conception ne le prévoit pas : constaté, § 32.3 ne parle que du poste) |
+| `/mes-officines/{officine}/ordres` › panneau « Message sur les postes » et `POST /actions/mes-officines/{officine}/message` | écrans du central, titulaire (droit `ordres`) | Message (200 caractères au plus, texte simple sur une ligne, sans lien), « Affiché jusqu'au » (liste bornée : 1 à 7 jours, la date exacte est fixée par la base à l'envoi), code de confirmation. Contrôlé par l'écran (`MessagePostes`), par la base (`cloud_message_poste_controle` dans `cloud_ecran_titulaire_envoyer_message` **et** dans la contrainte `ck_ordre_central_titulaire`) puis par le poste. Un seul message en attente par officine, 10 ordres par heure (messages compris), 24 heures pour être relevé ; publié par `ordre-v1`. Journal de sécurité : longueur et fin d'affichage, **jamais le texte** ; après un refus, le texte ne revient pas dans l'adresse |
+| Réception au poste | API locale (`ExecuterOrdreCentral`) | Règles revérifiées (`MessagePostes.Lire`) ; fin déjà passée à l'horloge de l'officine : **refusé** ; sinon **appliqué tout de suite** (aucune confirmation) : « Appliqué » au central = **affiché** (résultat « affiché sur les postes jusqu'au … UTC ») |
+| Pastille « Message » | poste, barre d'état, **tous les employés connectés** | `GET /api/etat-poste/message-central` (connexion seule) : le plus récent message appliqué, non fermé et pas échu (horloge de l'officine). Pastille grise (information) cliquable → petite fenêtre au-dessus de la barre (texte, « affiché jusqu'au … », reçu le ; « Ordres du central » avec le droit `admin.parametres` ; « Ne plus afficher » pour le **titulaire** de l'officine ; Échap, clic dehors ou « Fermer »). Regroupement « À traiter » respecté (voir regles-metier.md) |
+| Fermeture | API locale `POST /api/etat-poste/message-central/{id}/fermer` | Titulaire seulement (403 sinon) ; `sync_message_central_fermer` (script 160) : le message disparaît de **tous** les postes ; journal des actions `message_central_ferme` (sans le texte) ; la fermeture ne remonte pas au central (le statut reste « Appliqué ») |
+
+**Décisions (les plus sûres, prises sans question, go du titulaire)** :
+
+1. **Mot de passe provisoire montré une fois à l'éditeur, jamais envoyé par le canal des codes du compte** : le code de connexion part
+   déjà sur ce canal (e-mail) ; y envoyer aussi le mot de passe mettrait les deux facteurs dans la même boîte (une boîte compromise
+   suffirait). Montré à l'éditeur seul, il se transmet de vive voix après vérification de l'identité ; l'éditeur ne peut pas s'en servir
+   seul (le code part sur le contact du compte). SMS : aucun fournisseur.
+2. **Verrou levé** par la remise à zéro (sinon le mot de passe provisoire resterait inutilisable jusqu'à 24 heures) ; compte désactivé :
+   refusé (la remise ne réactive pas un compte).
+3. Un éditeur peut remettre à zéro le mot de passe d'un **autre** éditeur (comme le contact d'un compte, S7.6), jamais le sien.
+4. Message : **durée en liste bornée** (1 à 7 jours) plutôt qu'une date libre ; « lien » = protocole (`http:`, `mailto:`, `javascript:`…),
+   `://`, `www.` ou nom de domaine courant (`.com`, `.net`, `.org`, `.fr`, `.dz`, `.info`, `.io`, `.app`, `.biz`, `.me`, `.co`, `.ly`,
+   `.gl`, `.link`, `.xyz`) ; un autre domaine n'est pas reconnu, mais le texte est toujours affiché **en texte simple** (jamais cliquable).
+5. Un nouveau message **remplace** le précédent sur les postes (le plus récent encore valable est affiché).
+6. Libellé court « **Message** » (texte complet dans l'infobulle et la fenêtre) ; **au-delà de 6 pastilles grises** (6 + le message), toutes
+   passent dans « À traiter » : la barre garde le cas le plus chargé mesuré le 2026-11-21.
+
 ## 4. Actions de l'éditeur
 
 Chaque action : **nouveau code de second facteur** (« Recevoir un code de confirmation », objet `action`, usage unique), **motif obligatoire**
@@ -248,7 +335,7 @@ Le **code d'activation** est tiré par les écrans (`CodeActivationSync`, comme 
   `app.officine_id` sur une autre officine ne change rien. Aucune fonction du titulaire ne rend une colonne nominative (liste fermée
   vérifiée par `032_ecrans_titulaire_tests.sql` et `TitulaireEcransTests`).
 - **Mots de passe** : BCrypt coût 12, calculé par l'application ; mot de passe **provisoire** (16 caractères tirés au sort, affiché une fois par
-  la console) à changer à la première connexion ; nouveau mot de passe : 12 à 128 caractères, lettres et chiffres, sans l'identifiant,
+  la console, ou par les écrans à l'éditeur qui le remet à zéro, script 038) à changer à la connexion suivante ; nouveau mot de passe : 12 à 128 caractères, lettres et chiffres, sans l'identifiant,
   différent de l'actuel. Une vérification BCrypt est toujours faite (empreinte factice si le compte est inconnu ou bloqué) : même durée de réponse.
 - **Verrouillage** : 5 échecs → 15 minutes, puis durée **doublée** à chaque nouveau blocage, 24 heures au plus ; remis à zéro par une connexion
   complète ou `--deverrouiller-compte`.
@@ -257,7 +344,8 @@ Le **code d'activation** est tiré par les écrans (`CodeActivationSync`, comme 
   (pas de fixation de session).
 - **Sessions** : jeton de 32 octets dans un cookie `__Host-pharma-ecrans` (Secure, HttpOnly, SameSite=Strict, Path=/, sans domaine ni date) ; la
   base n'en garde que l'**empreinte SHA-256**. Éditeur : 2 heures ; titulaire (S7.2) : 30 minutes d'inactivité, 8 heures au plus. Déconnexion,
-  changement de mot de passe (autres sessions) et désactivation du compte ferment les sessions.
+  changement de mot de passe (autres sessions), remise à zéro par l'éditeur (toutes les sessions du compte, script 038) et désactivation
+  du compte ferment les sessions.
 - **HTTP** : HTTPS seulement (TLS 1.2 ou 1.3), jeton anti-falsification sur chaque formulaire (cookie `__Host-pharma-ecrans-af`),
   `Cache-Control: no-store`, CSP stricte (`default-src 'none'; script-src 'self'; style-src 'self'; …; frame-ancestors 'none'`), `X-Frame-Options: DENY`,
   `Referrer-Policy: no-referrer`, HSTS hors développement, hôtes permis `127.0.0.1` et `localhost` (`AllowedHosts`), limites de débit par adresse
@@ -266,7 +354,13 @@ Le **code d'activation** est tiré par les écrans (`CodeActivationSync`, comme 
   vérifiable par `SELECT * FROM cloud_ecran_verifier_journal_acces()`), sans texte libre ni donnée nominative : n° du compte, n° de session,
   officine, événement, résultat, objet technique borné. Le code n'est **jamais** écrit dans un journal ni sur la console.
 - **Démarrage refusé** : adresse hors boucle locale en développement ; mode « fichier » des codes hors développement ou hors boucle locale ;
-  SMS (aucun fournisseur) ; SMTP incomplet en production ; connexion absente ; certificat de l'autorité autre qu'un `.crt` ; port 5090.
+  `Ecrans:ModeCodes=sms` ; connexion absente ; certificat de l'autorité autre qu'un `.crt` ; port 5090. Depuis S7.6, un SMTP incomplet
+  n'empêche plus le démarrage : chaque envoi de code est refusé clairement tant que le réglage « Envoi des codes » n'est pas complet.
+- **Envoi des codes (S7.6)** : réglage modifiable par l'**éditeur seulement**, avec un code de confirmation ; noté au journal des accès
+  (`envoi_codes_lu`, `envoi_codes_modifie`, `envoi_codes_essai`, `liste_comptes`, `compte_contact_modifie`, `code_envoi`) et, pour une
+  modification, au journal de sécurité (canal, serveur, port, sécurité, « mot de passe remplacé / inchangé » ; jamais le mot de passe,
+  l'identifiant, l'expéditeur, une adresse ni un numéro). Un éditeur peut changer le contact d'un autre compte, éditeur compris : chaque
+  changement est noté (n° du compte seulement).
 
 ## 6. Développement local
 
@@ -312,12 +406,19 @@ après relecture). Voir [poste-de-developpement.md](poste-de-developpement.md).
 après relecture). Dans le poste (titulaire), Accès à distance › Comptes rattachés : « Droits », cocher « Ordres à distance », mot de
 passe → le lien « Ordres » apparaît dans « Mes officines ». Voir [poste-de-developpement.md](poste-de-developpement.md).
 
-Mot de passe de `editeur.dev` perdu : aucune commande ne remet un mot de passe en S7.1 ; `--desactiver-compte editeur.dev` puis créer un autre
-compte (`--creer-compte-editeur editeur.dev2 --nom "…" --email …`) avec l'outil (`%LOCALAPPDATA%\PharmaOfficine\central-dev\outil`).
+**Reste S7.2 / S7.3** : passer le script central **038** sur la base centrale de développement (après 037, propriétaire `pharma_app`,
+après relecture et sauvegarde), et le script local **160** sur les bases de l'officine (après 159). Voir [poste-de-developpement.md](poste-de-developpement.md).
+
+Mot de passe de `editeur.dev` perdu : depuis le script 038, un **autre** éditeur le remet à zéro dans « Comptes » (« Mot de passe ») ; sans
+autre éditeur : `--desactiver-compte editeur.dev` puis créer un autre compte (`--creer-compte-editeur editeur.dev2 --nom "…" --email …`)
+avec l'outil (`%LOCALAPPDATA%\PharmaOfficine\central-dev\outil`).
 
 Réglages (`appsettings*.json`, jamais de secret) : `Ecrans:Adresse` (127.0.0.1), `Ecrans:Port` (5094), `Ecrans:ModeCodes` (`fichier` en
-développement, `courriel` sinon), `Ecrans:CertificatAutorite` (sinon `%PHARMA_CLOUD_DOSSIER%\autorite.crt`), `Ecrans:DossierCodes`.
-Variables : `PHARMA_CLOUD_ECRANS_CONNEXION` (obligatoire), `PHARMA_CLOUD_DOSSIER` (certificat public), `PHARMA_CLOUD_SMTP_*` (production).
+développement, `reglage` sinon : canal et SMTP de l'écran « Envoi des codes »), `Ecrans:CertificatAutorite` (sinon `%PHARMA_CLOUD_DOSSIER%\autorite.crt`),
+`Ecrans:DossierCodes`, `Ecrans:DossierCles` (S7.6, sinon `%PHARMA_CLOUD_DOSSIER%\cles-protection`).
+Variables : `PHARMA_CLOUD_ECRANS_CONNEXION` (obligatoire), `PHARMA_CLOUD_DOSSIER` (certificat public, clés du mot de passe SMTP),
+`PHARMA_CLOUD_SMTP_*` (facultatives : repli de production si le réglage en base est incomplet ; départ d'une officine).
+Passer du mode fichier au Gmail en local : [poste-de-developpement.md](poste-de-developpement.md) § « Codes du central par Gmail ».
 
 ## 7. Tests
 
@@ -359,11 +460,41 @@ Variables : `PHARMA_CLOUD_ECRANS_CONNEXION` (obligatoire), `PHARMA_CLOUD_DOSSIER
   absente, non disponible, non-fuite, rôles croisés ; bout en bout : tuile et colonne) ; `BoutEnBoutEcransTests` (rubrique « Lignes
   absentes » en HTTPS : tuiles, n° du chargement, cause, pied de page, aucune valeur de ligne) ; `031_…` : comptage des fonctions de
   l'éditeur sans celles du 036.
+- **Envoi des codes (S7.6)** : `037_envoi_codes_reglage_tests.sql` (droits, une seule ligne, mot de passe en clair refusé, lecture sans
+  mot de passe, titulaire refusé, contrôles avant le code, SMTP complet exigé, vide = inchangé, journaux sans secret, `les_deux`,
+  contact d'un compte) ; `EnvoiCodesEcransTests` (canal respecté : e-mail, SMS indisponible, les deux ; réglage incomplet : fichier en
+  développement, refus en production ; mode fichier prioritaire ; écrans refusés au titulaire ; **bout en bout HTTPS** : e-mail d'essai,
+  enregistrement avec code, mot de passe chiffré jamais rendu par la page ni écrit au journal, champ vide = inchangé, contact d'un compte,
+  canal relu en base à chaque connexion) ; `EnvoiCodesReglageTests` (migration sans perte des comptes et des codes depuis l'état d'avant
+  037, rejeu, réglage relu par la console, protection des données hors dépôt) ; rejeu 001 → 037 (`RejeuScriptsCentrauxTests`).
+- **Reste S7.2 / S7.3 (script 038)** : `038_remise_mot_de_passe_retrait_message_tests.sql` (droits ; contrôle du message dans la fonction
+  et dans la table ; non-fuite : B n'envoie pas de message à O1 et ne retire pas O1 ; hors bornes refusé avant le code ; retrait : accès
+  coupé, ordres annulés et republiés ; remise à zéro : titulaire refusé, jamais son propre compte, motif, confirmation, code, sessions
+  fermées, provisoire, verrou levé, compte désactivé, empreinte jamais au journal) ; `ResteS7EcransTests` (accès par rôle, règles du
+  message identiques à la base, messages de chaque refus ; **bout en bout HTTPS** : son propre compte refusé, mot de passe provisoire
+  montré une fois et jamais au journal, session du titulaire fermée, ancien mot de passe refusé, changement obligatoire ; message hors
+  bornes refusé, envoyé avec le code ; B refusé sur O1 ; retrait avec confirmation, accès coupé, message annulé) ;
+  `tests/Pharma.Domain.Tests/MessagePostesTests.cs` ; poste : `OrdresCentrauxTests` (message appliqué tout de suite, hors bornes et
+  échu refusés), `MessageCentralTests` (plus récent valable, jamais un échu, fermeture par le titulaire seul, pastille pour tous,
+  regroupement « À traiter ») ; `database/tests/160_message_central_postes_tests.sql` ; rejeu 001 → 038 (`RejeuScriptsCentrauxTests`).
 - **Tuiles navigables** : `TuilesEcransTests` (chaque tuile, pour chaque jeu de droits et chaque cause, mène à une route `@page`
   réelle permise à son rôle et refusée à l'autre par `ControleAcces` ; ordres seulement avec le droit « ordres » ; cause → rubrique ;
   ancre du tableau avec la page gardée ; toutes les `<TuileTableau>` des écrans ont un `Lien` ; rendu HTML lien + infobulle ou bloc).
 
 ## 8. Reste à faire
+
+- **Reste S7.2 / S7.3 (script 038, local 160)** : scripts **à passer** (central 038 sur la base centrale de développement, local 160 sur
+  les bases de l'officine, après relecture et sauvegarde ; `schema.sql` déjà à jour) ; écrans **à mesurer** (1 366 × 768 et 1 536 × 890,
+  clair et sombre) : `/comptes?compte=…&action=mot-de-passe` (avec et sans message, son propre compte), `/comptes/mot-de-passe-affiche`,
+  `/mes-officines/{officine}/retirer`, `/mes-officines/{officine}/ordres` (deux panneaux côte à côte et le tableau : défilement à
+  surveiller) ; au poste, la barre d'état avec la pastille « Message » (seule, regroupée dans « À traiter », 7 grises) et sa fenêtre
+  ouverte (titulaire et vendeur). Essai de bout en bout poste ↔ central **non fait**. Restent : SMS (fournisseur à choisir), alertes
+  de refus en série (non demandées dans ce lot).
+
+- **S7.6** : script central 037 **à passer** sur la base centrale de développement (après relecture) ; écrans **à mesurer**
+  (1 366 × 768 et 1 536 × 890, clair et sombre) : `/envoi-codes` (sans message et avec un message), `/comptes` et `/comptes?compte=…`
+  (formulaire ouvert) ; essai réel avec un compte Gmail (mot de passe d'application) **non fait** ; SMS : aucun fournisseur.
+  Hors Windows, les clés de la protection des données ne sont protégées que par les droits du dossier (à décider à la mise en ligne).
 
 - **S7.5** : script central 036 **à passer** sur `pharmacie_cloud_dev` (après relecture) ; écrans **à mesurer** (1 366 × 768 et
   1 536 × 890, clair et sombre) : `/officines/{officine}?rubrique=absentes` (14 rubriques dans le menu de gauche, avec et sans lignes
@@ -381,11 +512,10 @@ Variables : `PHARMA_CLOUD_ECRANS_CONNEXION` (obligatoire), `PHARMA_CLOUD_DOSSIER
   production rattachée à `pharma_cloud_ecrans`, compte SMTP, clé HMAC commune si plusieurs instances, comptes éditeur réels, test d'intrusion.
 - **S7.2b** : génération du code par le poste **réalisée en local** (§ 3 ter) ; comptes rattachés vus et retirés depuis le poste : **S7.3**
   (§ 3 quater) ; la commande `--code-rattachement` de la console reste pour le développement.
-- **S7.3, non fait** : ordre « message à afficher sur les postes » (surface d'affichage commune aux postes à décider ; la barre d'état
-  est livrée). Écrans S7.3 mesurés à 0 px le 2026-11-21 : `/mes-officines/ensemble`, `/mes-officines/{officine}/ordres` sans le droit
+- **S7.3** : ordre « message à afficher sur les postes » **réalisé en local** (§ 3 nonies : pastille de la barre d'état). Écrans S7.3 mesurés à 0 px le 2026-11-21 : `/mes-officines/ensemble`, `/mes-officines/{officine}/ordres` sans le droit
   et avec le droit accordé (1 366 × 768, statut « Appliqué »), rubrique « Accès à distance » avec la zone de droits ou de retrait ouverte.
-- Reste de S7.2 : SMS (fournisseur à choisir), remise à zéro d'un mot de passe par l'éditeur, retrait d'un rattachement depuis les écrans,
-  alertes (refus en série).
+- Reste de S7.2 : SMS (fournisseur à choisir), alertes (refus en série). Remise à zéro d'un mot de passe par l'éditeur et retrait d'un
+  rattachement depuis les écrans : **réalisés en local** (§ 3 nonies).
 - Mesure des écrans à 1 366 × 768 et 1 536 × 890, clair et sombre (règle de l'écran fixe) : **faite le 2026-11-21** pour S7.1
   (19 pages), S7.2a (`/mes-officines`, `/rattacher`, `/mes-officines/{officine}`, `/mes-officines/{officine}/journal`), S7.3, S7.4 et la
   rubrique « Accès à distance » du poste ([charte-graphique.md](charte-graphique.md)).

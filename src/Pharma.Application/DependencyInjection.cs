@@ -339,6 +339,9 @@ public static class DependencyInjection
         services.AddScoped<Synchronisation.AppliquerOrdresCentraux>();
         services.AddScoped<Synchronisation.ConfirmerOrdreCentral>();
         services.AddScoped<Synchronisation.RefuserOrdreCentral>();
+        // Reste du lot S7.3 : message du titulaire à distance (barre d'état de tous les postes, fermeture par le titulaire local)
+        services.AddScoped<Synchronisation.LireMessageCentral>();
+        services.AddScoped<Synchronisation.FermerMessageCentral>();
         services.AddScoped<Synchronisation.ReglerSupervisionSync>();
         services.AddScoped<Synchronisation.PurgerSortieSync>();
         // Registre des psychotropes renforcé (lot 8) : alertes et forçage, annulations, concordance, scellement mensuel, antibiotiques

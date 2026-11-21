@@ -574,6 +574,13 @@ Seule exception de taille : « Encaisser » à la caisse (`.btn-large`, 52 px).
 - **Tout champ obligatoire** (libellé `requis`) porte `aria-invalid` (contrôle sur le poste) ou `data-champ` (désigné par le
   serveur) ; et tout nom de champ utilisé par le serveur existe en `data-champ` sur un écran. Les deux règles sont vérifiées par
   `tests/Pharma.Architecture.Tests/ChampsObligatoiresTests.cs`.
+- **Une saisie refusée ne vide jamais les champs (2026-11-21, demande du titulaire)** : après un refus (« Enregistrer », e-mail
+  d'essai, contact, ordre, message…), l'écran revient avec ce qui avait été saisi ; seuls le **mot de passe** et le **code de
+  confirmation** sont à ressaisir. Poste : les formulaires Blazor gardent leurs valeurs (ne pas les remettre à zéro sur une erreur).
+  Écrans du central (formulaires envoyés puis page rechargée) : `wwwroot/js/ecrans.js` garde les valeurs du formulaire envoyé pour
+  l'onglet (`sessionStorage`, jamais dans l'adresse, jamais au serveur ni au journal) et les remet si la page revient avec
+  `?erreur=` ; `?ok=` les efface. Jamais gardés : champs `password`, cachés, `code`, `mot_de_passe`, `confirmation`, jeton
+  anti-falsification.
 
 ## Chargement
 
@@ -607,6 +614,11 @@ Seule exception de taille : « Encaisser » à la caisse (`.btn-large`, 52 px).
   barre, alignée à droite du bouton, fermée par Échap (le curseur revient sur le bouton), un clic dehors (`.fond-liste-etat`
   transparent sur toute la fenêtre) ou le choix d'un écran. Au plus 4 anomalies visibles ; le bouton prend la couleur de l'anomalie la
   plus grave rangée dans la liste.
+- **Pastille « Message »** (reste du lot S7.3, 2026-11-21) : pastille grise, toujours cliquable ; elle ouvre une petite fenêtre
+  (`.fenetre-message-etat`, `role="dialog"`) posée au centre au-dessus de la barre, 520 px au plus, fond `--surface`, bordure
+  `--bordure`, texte sur plusieurs lignes (`white-space: normal`), boutons de la charte (« Fermer » principal, « Ne plus afficher » et
+  « Ordres du central » en contour) ; fermée par Échap (curseur posé sur « Fermer » à l'ouverture), un clic dehors ou « Fermer ». Au-delà
+  de 6 pastilles grises, toutes passent dans « À traiter ». **Non mesurée** à ce jour.
 - La barre ne passe jamais à la ligne : `white-space: nowrap`, `overflow-x: clip` (la liste peut s'ouvrir au-dessus). Aucun style en
   ligne (taille, couleur, hauteur) dans la barre. **Mesurée le 2026-11-21** (page de mesure avec le vrai app.css et les polices Poppins)
   : une ligne à 1 366 × 768 et 1 536 × 890, clair et sombre, dans le cas le plus chargé de la maquette (4 anomalies et « À traiter (4) » :
@@ -708,3 +720,11 @@ sous le tableau, est amenée dans le cadre (`pharma.voirZone`) et reste entière
   page, l'assistant reste sur sa reprise et son étape. À l'étape 4 (section non affichée), les tuiles restent des chiffres.
 - **Période gardée** : Rapports en « Mois » → tuile Retours → `?rubrique=retours` toujours en novembre 2026 ; Pilotage financier en
   « Semaine » → tuile Marge → `?rubrique=marges` sur la même semaine.
+
+### Mesures du 2026-11-21 (soir) : envoi des codes et contacts des comptes (central, éditeur)
+
+- `/envoi-codes` : avec un message, la page défilait de 101 px à 1 366 × 768 (colonne des consignes Gmail) → zone à deux colonnes
+  dont la hauteur est posée par `ecrans.js` (`data-hauteur-restante`), chaque panneau défilant en lui-même ; `ecrans.js` rend en
+  outre à la zone l'espace resté libre sous la page. **0 px** aux deux tailles, clair et sombre, avec et sans message.
+- `/comptes` et `/comptes?compte=…` (formulaire ouvert) : 0 px ; en-tête de l'éditeur à 4 liens sur une ligne.
+- Contre-mesure de `/mes-officines/reglages` (même mécanisme) : 0 px avec et sans message.

@@ -40,6 +40,7 @@
 
     protected override void OnInitialized()
     {
-        if (Contexte?.Session() is { } s && Codes.Prendre(Reference, s.Id) is { } a && a.Officine == Id) Affiche = a;
+        if (Contexte?.Session() is { } s && Codes.Prendre(Reference, s.Id) is { } a && a.Officine == Id
+            && a.Serveur != CodesAffiches.MotDePasse) Affiche = a;   // jamais un mot de passe provisoire (script central 038) sur cette page
     }
 }

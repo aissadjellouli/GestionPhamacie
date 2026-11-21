@@ -1,0 +1,129 @@
+@page "/envoi-codes"
+@inject DepotEcrans Depot
+@inject Pharma.Cloud.Web.Codes.ChoixEnvoiCodes Choix
+
+@* Lot S7.6 (script central 037) : réglage de l'envoi des codes de second facteur, administration du site, ÉDITEUR seulement.
+   Le mot de passe SMTP n'est jamais réaffiché (champ toujours vide : vide = inchangé) ; enregistrer exige un code de confirmation. *@
+<PageTitle>Envoi des codes · écrans du central</PageTitle>
+
+<div class="page page-serree">
+    <div class="titre-page">
+        <div>
+            <h1>Envoi des codes</h1>
+            <p class="sous-titre">Canal et serveur d'e-mail des codes de second facteur (connexion et actions sensibles) des écrans du central.</p>
+        </div>
+        <div class="actions">
+            <a class="btn btn-contour" href="comptes">Contacts des comptes</a>
+        </div>
+    </div>
+    <Message Erreur="@Erreur" Ok="@Ok" />
+    <div class="envoi-codes" data-hauteur-restante>
+        <section class="panneau" aria-labelledby="t-reglage">
+            <h2 id="t-reglage">Réglage</h2>
+            <form method="post" action="actions/envoi-codes" class="grille-envoi">
+                <AntiforgeryToken />
+                <div class="champ">
+                    <label for="canal" class="requis">Canal des codes</label>
+                    <select id="canal" name="canal">
+                        @foreach (var (cle, libelle) in Canaux)
+                        {
+                            @* SMS seul : non proposé tant qu'aucun fournisseur n'existe (l'action le refuse aussi) *@
+                            <option value="@cle" selected="@(Canal == cle)" disabled="@(cle == "sms" && !Choix.SmsDisponible)">@libelle</option>
+                        }
+                    </select>
+                </div>
+                <div class="champ">
+                    <label for="serveur">Serveur d'e-mail (SMTP)</label>
+                    <input id="serveur" name="serveur" value="@Texte("smtp_serveur")" maxlength="253" placeholder="smtp.gmail.com" autocomplete="off" />
+                </div>
+                <div class="champ">
+                    <label for="port">Port</label>
+                    <input id="port" name="port" value="@Texte("smtp_port")" inputmode="numeric" pattern="[0-9]{1,5}" maxlength="5" placeholder="587" autocomplete="off" />
+                </div>
+                <div class="champ">
+                    <label for="tls" class="requis">Sécurité</label>
+                    <select id="tls" name="tls">
+                        @foreach (var (cle, libelle) in Securites)
+                        {
+                            <option value="@cle" selected="@(Tls == cle)">@libelle</option>
+                        }
+                    </select>
+                </div>
+                <div class="champ">
+                    <label for="identifiant">Identifiant (adresse du compte d'envoi)</label>
+                    <input id="identifiant" name="identifiant" value="@Texte("smtp_identifiant")" maxlength="254" autocomplete="off" />
+                </div>
+                <div class="champ">
+                    <label for="expediteur">Expéditeur</label>
+                    <input id="expediteur" name="expediteur" type="email" value="@Texte("smtp_expediteur")" maxlength="254" autocomplete="off" />
+                </div>
+                <div class="champ">
+                    <label for="mot_de_passe">Mot de passe (d'application)</label>
+                    <input id="mot_de_passe" name="mot_de_passe" type="password" maxlength="256" autocomplete="new-password"
+                           placeholder="@(Renseigne ? "Renseigné : vide = inchangé" : "Non renseigné")" />
+                </div>
+                <div class="champ">
+                    <label for="code" class="requis">Code de confirmation reçu</label>
+                    <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required />
+                </div>
+                <div class="actions bouton-bas">
+                    <button type="submit" class="btn btn-principal">Enregistrer</button>
+                </div>
+                <div class="essai">
+                    <div class="champ">
+                        <label for="adresse_essai">Adresse de l'e-mail d'essai (rien n'est enregistré)</label>
+                        <input id="adresse_essai" name="adresse_essai" type="email" maxlength="254" autocomplete="off" />
+                    </div>
+                    <div class="actions bouton-bas">
+                        <button type="submit" class="btn btn-contour" formaction="actions/envoi-codes/essai" formnovalidate>Envoyer un e-mail d'essai</button>
+                    </div>
+                </div>
+            </form>
+        </section>
+        <aside class="panneau" aria-labelledby="t-etat">
+            <h2 id="t-etat">Réglage en service</h2>
+            <dl class="fiche-infos">
+                <dt>Canal</dt>
+                <dd>@(Canaux.FirstOrDefault(c => c.Cle == Canal).Libelle ?? "—")</dd>
+                <dt>Serveur d'e-mail</dt>
+                <dd>@(Texte("smtp_serveur") is { } s ? $"{s}:{Texte("smtp_port")} ({(Tls == "ssl" ? "TLS direct" : "STARTTLS")})" : "non renseigné")</dd>
+                <dt>Mot de passe</dt>
+                <dd>@(Renseigne ? "renseigné (jamais réaffiché)" : "non renseigné")</dd>
+                <dt>Complet</dt>
+                <dd class="@(Complet ? null : "texte-attention")">@(Complet ? "oui" : "non : les codes ne partent pas par ce réglage")</dd>
+                <dt>Modifié le</dt>
+                <dd>@Rubriques.Afficher("modifie_le", Valeur("modifie_le"))</dd>
+            </dl>
+            <DemandeCode Retour="/envoi-codes" />
+            <ol class="detail liste-aide" aria-label="Compte Gmail">
+                <li>Gmail : activer la validation en deux étapes du compte Google, puis créer un « mot de passe d'application » (16 caractères).</li>
+                <li>Ici : smtp.gmail.com, port 587, STARTTLS, identifiant et expéditeur = l'adresse Gmail, mot de passe = celui de l'application.</li>
+                <li>Envoyer un e-mail d'essai avant d'enregistrer. Le mot de passe est chiffré par le central, jamais réaffiché ni noté au journal.</li>
+            </ol>
+        </aside>
+    </div>
+</div>
+
+@code {
+    private static readonly (string Cle, string Libelle)[] Canaux =
+        [("courriel", "E-mail"), ("sms", "SMS (aucun fournisseur : indisponible)"), ("les_deux", "E-mail et SMS")];
+
+    private static readonly (string Cle, string Libelle)[] Securites = [("starttls", "STARTTLS (port 587, Gmail)"), ("ssl", "TLS direct (port 465)")];
+
+    [CascadingParameter] private HttpContext? Contexte { get; set; }
+    [SupplyParameterFromQuery(Name = "erreur")] private string? Erreur { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] private string? Ok { get; set; }
+
+    private TableEcran Table { get; set; } = TableEcran.Vide;
+    private object? Valeur(string c) => Table.Lignes.FirstOrDefault() is { } l ? Table.Valeur(l, c) : null;
+    private string? Texte(string c) => Valeur(c) is { } v ? Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture) : null;
+    private string Canal => Texte("canal") ?? "courriel";
+    private string Tls => Texte("smtp_tls") ?? "starttls";
+    private bool Renseigne => Valeur("mot_de_passe_renseigne") is true;
+    private bool Complet => Valeur("complet") is true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Contexte?.EmpreinteJeton() is { } jeton) Table = await Depot.ReglageEnvoiCodesAsync(jeton, Contexte.RequestAborted);
+    }
+}

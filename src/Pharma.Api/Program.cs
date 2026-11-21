@@ -32,11 +32,11 @@ var dossierPharma = Pharma.Infrastructure.Systeme.DossiersDonnees.Racine(builder
 static string? Chemin(string? valeur) => Pharma.Infrastructure.Systeme.DossiersDonnees.CheminUtilisable(valeur);
 
 // Journal du serveur en fichiers (un par jour, taille et durée de conservation réglables : section « Journaux »)
-var optionsJournal = builder.Configuration.GetSection("Journaux").Get<Pharma.Api.Journalisation.OptionsJournalFichier>()
-                     ?? new Pharma.Api.Journalisation.OptionsJournalFichier();
+var optionsJournal = builder.Configuration.GetSection("Journaux").Get<Pharma.Shared.Journalisation.OptionsJournalFichier>()
+                     ?? new Pharma.Shared.Journalisation.OptionsJournalFichier();
 if (builder.Configuration["Journaux:Dossier"] is not { } reglageJournal || (reglageJournal.Length > 0 && Chemin(reglageJournal) is null))
     optionsJournal.Dossier = Path.Combine(dossierPharma, "Journaux");
-builder.Logging.AddProvider(new Pharma.Api.Journalisation.JournalFichierProvider(optionsJournal));
+builder.Logging.AddProvider(new Pharma.Shared.Journalisation.JournalFichierProvider(optionsJournal));
 
 // GED : un dossier du serveur pour tous les documents (réglage Ged:Dossier). Les ordonnances y vont par défaut, et celles de
 // l'ancien dossier par défaut y sont déplacées au démarrage (sans rien écraser). Chifa : les fichiers sont lus dans le dossier

@@ -18,7 +18,7 @@ public static class ConsoleAdministration
         ["--initialiser-autorite", "--certificat-serveur", "--creer-officine", "--code-activation", "--revoquer", "--revoquer-serveur", "--lister", "--partitions", "--generer-miroir",
          "--reglages", "--regler-famille", "--effacer-famille", "--conservation", "--purge-lots", "--purger-lots",
          "--reglages-mutualises", "--publier-reglage", "--mode-reglage", "--modele-depuis-officine", "--liberer-reglages", "--retablir-reglages", "--journal-reglages",
-         "--verifier-integrite", "--anomalies-integrite", "--restaurations-integrite", "--conservation-depart", "--depart-officine", "--effacer-officine",
+         "--verifier-integrite", "--anomalies-integrite", "--restaurations-integrite", "--conservation-depart", "--depart-officine", "--effacer-officine", "--envoi-codes",
          .. Ordres.OrdresAdministration.Commandes, .. Comptes.ComptesDistantsAdministration.Commandes];
 
     public static bool Concerne(string[] args) => args.Length > 0 && Commandes.Contains(args[0]);
@@ -247,6 +247,19 @@ public static class ConsoleAdministration
                         if (email is not null)
                         {
                             var (smtp, manque) = Depart.ReglagesSmtpCentral.Lire(Environment.GetEnvironmentVariable);
+                            if (smtp is null)
+                            {
+                                // Lot S7.6 : variables absentes → compte SMTP du réglage « Envoi des codes » (écrans du central), s'il est complet
+                                await using var dbReglage = Admin();
+                                var (smtpBase, manqueBase) = await Depart.ReglageSmtpBase.LireAsync(dbReglage,
+                                    Option(args, "--dossier") ?? Environment.GetEnvironmentVariable("PHARMA_CLOUD_DOSSIER"), CancellationToken.None);
+                                if (smtpBase is not null)
+                                {
+                                    smtp = smtpBase;
+                                    Console.WriteLine("Mot de passe de l'archive envoyé par le compte SMTP du réglage « Envoi des codes » (écrans du central).");
+                                }
+                                else manque = $"{manque} ; {manqueBase}";
+                            }
                             if (smtp is not null) envoiCourriel = new Depart.EnvoiCourrielSmtp(smtp);
                             else
                             {
@@ -266,6 +279,49 @@ public static class ConsoleAdministration
                         await Depart.DepartOfficine.NoterExportAsync(db, officine, operateur, export, envoi, arret.Token);
                         Depart.DepartOfficine.EcrireCompteRendu(Console.Out, export, envoi);   // mot de passe de l'archive affiché ici une seule fois
                         Console.WriteLine("Effacement : jamais automatique ; --effacer-officine après la durée de conservation après départ (--reglages).");
+                        return 0;
+                    }
+                case "--envoi-codes":
+                    {
+                        // 2026-11-21 : compte e-mail des codes de second facteur réglé sur le serveur (amorçage sans variable ni fichier)
+                        // --envoi-codes --serveur <smtp> --port <587|465> --tls <starttls|ssl> --identifiant <adresse> [--expediteur <adresse>]
+                        //   --operateur <nom> [--essai <adresse>] ; mot de passe d'application demandé au clavier (masqué)
+                        var tls = Option(args, "--tls") ?? "starttls";
+                        var port = int.TryParse(Option(args, "--port") ?? "587", out var p) ? p : throw new ArgumentException("Port attendu : --port 587 (ou 465).");
+                        var identifiant = Option(args, "--identifiant") ?? throw new ArgumentException("Identifiant attendu : --identifiant <adresse du compte d'envoi>.");
+                        var serveur = Option(args, "--serveur") ?? throw new ArgumentException("Serveur attendu : --serveur smtp.gmail.com.");
+                        var operateur = Option(args, "--operateur") ?? throw new ArgumentException("Opérateur attendu : --operateur <nom>.");
+                        if (!Depart.ReglageSmtpBase.ServeurValide(serveur))
+                            throw new ArgumentException("Serveur d'e-mail invalide : le nom seul, ex. smtp.gmail.com (sans « https:// », sans port, sans espace).");
+                        var motDePasse = LireSecret("Mot de passe d'application du compte d'envoi (non affiché) : ");
+                        var (smtp, manque) = Depart.ReglagesSmtpCentral.Creer(serveur, port, tls, identifiant, motDePasse, Option(args, "--expediteur") ?? identifiant);
+                        if (smtp is null) throw new ArgumentException($"Rien n'est enregistré : {manque}.");
+                        var protection = Depart.ProtectionSmtpCentral.Depuis(Depart.ProtectionSmtpCentral.DossierDuCentral(
+                            Option(args, "--dossier") ?? Environment.GetEnvironmentVariable("PHARMA_CLOUD_DOSSIER")))
+                            ?? throw new InvalidOperationException("Dossier du central absent (--dossier ou PHARMA_CLOUD_DOSSIER) : le mot de passe ne peut pas être chiffré.");
+                        using var arret = AnnulationConsole();
+                        if (Option(args, "--essai") is { } essai)
+                        {
+                            // E-mail d'essai AVANT d'enregistrer : un réglage refusé par le serveur n'est jamais enregistré
+                            if (!Depart.AdresseCourriel.EstValide(essai)) throw new ArgumentException("Adresse de l'e-mail d'essai invalide (--essai).");
+                            try
+                            {
+                                await new Depart.EnvoiCourrielSmtp(smtp).EnvoyerAsync(essai, "Essai d'envoi des codes · serveur central",
+                                    "Cet e-mail d'essai a été envoyé par la console du serveur central (--envoi-codes). Aucun code n'est contenu dans ce message.", arret.Token);
+                            }
+                            catch (Exception e) when (e is not OperationCanceledException)
+                            {
+                                Console.Error.WriteLine(Depart.ErreursSmtp.RefusIdentifiants(e)
+                                    ? "Rien n'est enregistré : le serveur d'e-mail a refusé l'identifiant ou le mot de passe (Gmail : mot de passe d'application de CE compte, 16 lettres sans espaces)."
+                                    : $"Rien n'est enregistré : l'e-mail d'essai n'est pas parti ({e.GetType().Name}). Vérifiez le serveur, le port et la sécurité.");
+                                return 1;
+                            }
+                            Console.WriteLine($"E-mail d'essai envoyé à {Depart.AdresseCourriel.Masquer(essai)}.");
+                        }
+                        await using var db = Admin();
+                        await Depart.ReglageSmtpBase.EnregistrerAsync(db, protection, smtp, tls, operateur, arret.Token);
+                        Console.WriteLine($"Envoi des codes enregistré : canal e-mail, SMTP {smtp.Hote}:{smtp.Port} {tls} (mot de passe chiffré, jamais affiché).");
+                        Console.WriteLine("Les écrans du central l'utilisent au plus tard 10 secondes après ; donnez une adresse e-mail à chaque compte (« Comptes »).");
                         return 0;
                     }
                 case "--effacer-officine":
@@ -434,6 +490,21 @@ public static class ConsoleAdministration
         var m = Environment.GetEnvironmentVariable("PHARMA_CLOUD_MOT_DE_PASSE");
         AutoriteCertification.VerifierMotDePasse(m);
         return m!;
+    }
+
+    /// <summary>Secret saisi au clavier sans écho (entrée redirigée : première ligne lue) ; jamais affiché, jamais journalisé.</summary>
+    private static string LireSecret(string invite)
+    {
+        Console.Write(invite);
+        if (Console.IsInputRedirected) return Console.In.ReadLine() ?? "";
+        var texte = new System.Text.StringBuilder();
+        for (ConsoleKeyInfo touche; (touche = Console.ReadKey(intercept: true)).Key != ConsoleKey.Enter;)
+        {
+            if (touche.Key == ConsoleKey.Backspace) { if (texte.Length > 0) texte.Length--; }
+            else if (!char.IsControl(touche.KeyChar)) texte.Append(touche.KeyChar);
+        }
+        Console.WriteLine();
+        return texte.ToString();
     }
 
     private static string? Option(string[] args, string nom)

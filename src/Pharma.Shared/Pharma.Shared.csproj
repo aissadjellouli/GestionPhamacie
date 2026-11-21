@@ -3,4 +3,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Pharma.Shared</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Journal en fichiers (Journalisation/JournalFichier.cs), seule dépendance de Pharma.Shared -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
 </Project>

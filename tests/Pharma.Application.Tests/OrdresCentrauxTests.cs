@@ -151,7 +151,7 @@ public class OrdresCentrauxTests
             new ModifierUtilisateur(admin, new HacheurFactice(), journal, droits), new EnregistrerDroits(admin, journal), depot.Produits, depot,
             new Pharma.Application.Catalogue.ImporterNomenclature(new LecteurFactice(200), depot.Nomenclature, droits, journal), depot.Referentiels,
             depot.Achats, depot.Organismes, depot.Listes, integrite: integrite,
-            reglagesCommuns: new ReglagesCommunsOrdre(seuils, new EnregistrerSeuils(seuils, moteur, journal, garde)));
+            reglagesCommuns: new ReglagesCommunsOrdre(seuils, new EnregistrerSeuils(seuils, moteur, journal, garde)), horloge: new Horloge(Maintenant));
         var horloge = new Horloge(Maintenant);
         // Lot S7.4 : mot de passe du titulaire (n° 1) ressaisi pour accepter ou refuser des réglages communs
         var motDePasse = new Pharma.Application.Securite.VerificationMotDePasseActuel(
@@ -779,5 +779,58 @@ public class OrdresCentrauxTests
         await autre.Auto.ExecuterAsync();
         await Assert.ThrowsAnyAsync<Exception>(() => autre.Confirmer.ExecuterAsync(x.Id, null, "BonMotDePasse1", 1));
         Assert.Null(autre.Seuils.Enregistres);
+    }
+
+    // ---- Reste du lot S7.3 : message du titulaire à distance affiché sur les postes ----
+    private static string Message(string texte, DateTime fin) =>
+        System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["format"] = "message-v1", ["texte"] = texte, ["jusqu_au"] = fin.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture)
+        });
+
+    [Fact]
+    public async Task Message_applique_tout_de_suite_sans_confirmation_resultat_affiche_jusqu_au()
+    {
+        var m = Monter();
+        var o = Ordre(TypesOrdre.Message, donnees: Message("Inventaire lundi : caisse fermée à 17 h", Maintenant.AddDays(2)));
+        m.Depot.Ordres.Add(o);
+        Assert.Equal(1, await m.Auto.ExecuterAsync());
+        Assert.Equal(StatutsOrdre.Applique, m.Depot.Statut(o.Id));
+        Assert.StartsWith("affiché sur les postes jusqu'au ", m.Depot.Ordres.Single().Motif);
+        Assert.Null(m.Depot.Ordres.Single().TraitePar);                                   // automatique : aucun employé
+        Assert.Empty(m.Alertes.Objets);                                                  // rien à confirmer, aucune alerte
+        Assert.Contains("Inventaire lundi", ResumeOrdre.Texte(m.Depot.Ordres.Single(), new EtatDroits([], [], [])));
+        Assert.Equal("Message du titulaire à distance", TypesOrdre.Libelle(TypesOrdre.Message));
+    }
+
+    [Theory]
+    [InlineData("<b>Urgent</b>", 2, "balise")]
+    [InlineData("Voir https://exemple.invalid", 2, "lien")]
+    [InlineData("Écrire à contact@pharma.dz", 2, "lien")]
+    [InlineData("Ligne 1\nLigne 2", 2, "une ligne")]
+    [InlineData("Fin trop lointaine", 8, "durée")]
+    public async Task Message_hors_bornes_refuse_a_la_reception(string texte, int jours, string raison)
+    {
+        var m = Monter();
+        var o = Ordre(TypesOrdre.Message, donnees: Message(texte, Maintenant.AddHours(-1).AddDays(jours)));
+        m.Depot.Ordres.Add(o);
+        await m.Auto.ExecuterAsync();
+        Assert.True(m.Depot.Statut(o.Id) == StatutsOrdre.Refuse, raison);
+        Assert.StartsWith("Message refusé", m.Depot.Ordres.Single().Motif);
+    }
+
+    [Fact]
+    public async Task Message_trop_long_ou_deja_echu_refuse_jamais_affiche()
+    {
+        var m = Monter();
+        var long201 = Ordre(TypesOrdre.Message, donnees: Message(new string('é', 201), Maintenant.AddDays(1)));
+        var echu = Ordre(TypesOrdre.Message, donnees: Message("Déjà passé", Maintenant.AddMinutes(-10)));
+        var juste200 = Ordre(TypesOrdre.Message, donnees: Message(new string('é', 200), Maintenant.AddDays(1)));
+        m.Depot.Ordres.AddRange([long201, echu, juste200]);
+        await m.Auto.ExecuterAsync();
+        Assert.Equal(StatutsOrdre.Refuse, m.Depot.Statut(long201.Id));
+        Assert.Equal(StatutsOrdre.Refuse, m.Depot.Statut(echu.Id));
+        Assert.Contains("déjà passée", m.Depot.Ordres.Single(x => x.Id == echu.Id).Motif);
+        Assert.Equal(StatutsOrdre.Applique, m.Depot.Statut(juste200.Id));
     }
 }

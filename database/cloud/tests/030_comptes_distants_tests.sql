@@ -198,7 +198,8 @@ DECLARE v record;
 BEGIN
     ASSERT (SELECT count(*) FROM journal_acces_distant WHERE compte_id = (SELECT id FROM compte_distant WHERE identifiant = 'essai.031')) >= 10, 'accès journalisés';
     ASSERT EXISTS (SELECT 1 FROM journal_acces_distant WHERE evenement = 'connexion' AND objet = 'identifiant_inconnu' AND compte_id IS NULL), 'inconnu journalisé sans identifiant';
-    ASSERT NOT EXISTS (SELECT 1 FROM journal_acces_distant WHERE objet LIKE '%essai%' OR objet LIKE '%@%'), 'aucun identifiant ni e-mail au journal';
+    ASSERT NOT EXISTS (SELECT 1 FROM journal_acces_distant WHERE objet LIKE '%@%'
+        OR (objet LIKE '%essai%' AND evenement NOT LIKE 'ordre%')), 'aucun identifiant ni e-mail au journal';   -- « essai » est aussi un type d'ordre (liste fermée)
     SELECT * INTO v FROM cloud_ecran_verifier_journal_acces();
     ASSERT v.lignes > 0 AND v.premiere_rupture IS NULL, 'chaîne intacte';
     BEGIN UPDATE journal_acces_distant SET objet = 'modifie' WHERE id = (SELECT max(id) FROM journal_acces_distant); RAISE EXCEPTION 'journal modifiable';

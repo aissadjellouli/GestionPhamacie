@@ -40,7 +40,7 @@ public sealed record DestinataireCode(string Identifiant, string? Email, string?
 /// <summary>Envoi d'un code de second facteur. Jamais le code dans un journal ni sur la console.</summary>
 public interface IEnvoiCodeDistant
 {
-    /// <summary>Canal noté en base : fichier, email ou sms.</summary>
+    /// <summary>Canal noté en base : fichier, email, sms ou les_deux (script central 037).</summary>
     string Canal { get; }
 
     Task EnvoyerAsync(DestinataireCode destinataire, string code, CancellationToken ct);
@@ -68,7 +68,7 @@ public sealed class EnvoiCodeFichier(string dossier, TimeProvider horloge) : IEn
     }
 }
 
-/// <summary>Production : e-mail par le compte SMTP du central (réglages PHARMA_CLOUD_SMTP_*, TLS obligatoire).</summary>
+/// <summary>Production : e-mail par le compte SMTP du réglage « Envoi des codes » (script central 037, TLS obligatoire).</summary>
 public sealed class EnvoiCodeCourriel(IEnvoiCourriel courriel) : IEnvoiCodeDistant
 {
     public string Canal => "email";
@@ -87,11 +87,82 @@ public sealed class EnvoiCodeCourriel(IEnvoiCourriel courriel) : IEnvoiCodeDista
             : throw new InvalidOperationException("Compte sans adresse e-mail.");
 }
 
-/// <summary>SMS : interface prévue, AUCUN fournisseur retenu (refusé au démarrage par ReglagesEcrans).</summary>
+/// <summary>SMS : interface prévue, AUCUN fournisseur retenu ; chaque envoi est refusé (message clair et journal des accès).</summary>
 public sealed class EnvoiCodeSmsIndisponible : IEnvoiCodeDistant
 {
     public string Canal => "sms";
 
     public Task EnvoyerAsync(DestinataireCode destinataire, string code, CancellationToken ct) =>
         throw new NotSupportedException("Envoi par SMS non disponible : aucun fournisseur retenu.");
+}
+
+/// <summary>Résultat d'un envoi sur un canal (fichier, email, sms) : ok, echec, indisponible ou sans_contact ; type d'erreur pour le journal.</summary>
+public sealed record ResultatEnvoiCode(string Canal, string Resultat, string? TypeErreur = null)
+{
+    public bool Parti => Resultat == "ok";
+
+    /// <summary>Objet noté au journal des accès (liste fermée du script central 037) : « canal:résultat ».</summary>
+    public string Objet => $"{Canal}:{Resultat}";
+}
+
+/// <summary>
+/// Canal « les deux » (comme le super admin du poste : avec les deux, chaque code part sur les deux) : e-mail à l'adresse du compte
+/// ET SMS au numéro du compte. Un canal en échec (SMS indisponible, compte sans numéro) n'empêche pas l'autre ; refus seulement
+/// si aucun n'est parti.
+/// </summary>
+public sealed class EnvoiCodeLesDeux(IEnvoiCodeDistant courriel, IEnvoiCodeDistant sms) : IEnvoiCodeDistant
+{
+    public string Canal => "les_deux";
+
+    public async Task EnvoyerAsync(DestinataireCode destinataire, string code, CancellationToken ct)
+    {
+        if (!(await EnvoyerChacunAsync(destinataire, code, ct)).Any(r => r.Parti))
+            throw new InvalidOperationException("Code parti sur aucun canal (e-mail et SMS).");
+    }
+
+    public async Task<IReadOnlyList<ResultatEnvoiCode>> EnvoyerChacunAsync(DestinataireCode destinataire, string code, CancellationToken ct) =>
+    [
+        destinataire.Email is { Length: > 0 } ? await EnvoisCodes.UnAsync(courriel, destinataire, code, ct) : new ResultatEnvoiCode(courriel.Canal, "sans_contact"),
+        destinataire.Telephone is { Length: > 0 } ? await EnvoisCodes.UnAsync(sms, destinataire, code, ct) : new ResultatEnvoiCode(sms.Canal, "sans_contact"),
+    ];
+}
+
+/// <summary>
+/// DÉVELOPPEMENT seulement (mode fichier) : le code est TOUJOURS écrit dans le fichier, PUIS envoyé par le canal du réglage en base
+/// (e-mail) ; un envoi en échec est noté au journal de l'application sans bloquer la connexion (le fichier suffit en développement).
+/// </summary>
+public sealed class EnvoiCodeAvecCopieFichier(IEnvoiCodeDistant envoi, IEnvoiCodeDistant fichier, ILogger? journal = null) : IEnvoiCodeDistant
+{
+    public string Canal => envoi.Canal;
+
+    public async Task EnvoyerAsync(DestinataireCode destinataire, string code, CancellationToken ct)
+    {
+        await fichier.EnvoyerAsync(destinataire, code, ct);
+        foreach (var r in await EnvoisCodes.EnvoyerAsync(envoi, destinataire, code, ct))
+            if (!r.Parti) journal?.LogWarning("Code de développement écrit dans le fichier, envoi {Objet} non parti ({Type})", r.Objet, r.TypeErreur ?? "-");
+    }
+}
+
+/// <summary>Envoi d'un code sur le canal retenu, résultat par canal (jamais le code ni le contact dans le résultat).</summary>
+public static class EnvoisCodes
+{
+    public static async Task<IReadOnlyList<ResultatEnvoiCode>> EnvoyerAsync(IEnvoiCodeDistant envoi, DestinataireCode destinataire, string code, CancellationToken ct) =>
+        envoi is EnvoiCodeLesDeux deux ? await deux.EnvoyerChacunAsync(destinataire, code, ct) : [await UnAsync(envoi, destinataire, code, ct)];
+
+    internal static async Task<ResultatEnvoiCode> UnAsync(IEnvoiCodeDistant envoi, DestinataireCode destinataire, string code, CancellationToken ct)
+    {
+        try
+        {
+            await envoi.EnvoyerAsync(destinataire, code, ct);
+            return new ResultatEnvoiCode(envoi.Canal, "ok");
+        }
+        catch (NotSupportedException e)
+        {
+            return new ResultatEnvoiCode(envoi.Canal, "indisponible", e.GetType().Name);
+        }
+        catch (Exception e) when (e is not OperationCanceledException)
+        {
+            return new ResultatEnvoiCode(envoi.Canal, "echec", e.GetType().Name);
+        }
+    }
 }

@@ -214,6 +214,59 @@ Administration › Synchronisation › État › « Recharger toutes les donnée
 (cause « Non expliquée », n° du chargement). Une restauration réelle (nouvelle époque, § 30 de la conception) donne les causes
 « Nouvelle époque » puis « Restauration d'une sauvegarde » après la vérification d'intégrité.
 
+**Codes du central par Gmail (lot S7.6) : passer du mode fichier au Gmail en local.** Le canal et le serveur d'e-mail des codes de
+second facteur se règlent dans l'écran **« Envoi des codes »** des écrans du central (éditeur), jamais dans des variables Windows.
+Prérequis : script central `037` passé sur `pharmacie_cloud_dev` (après 036, après relecture) ; variable `PHARMA_CLOUD_DOSSIER` posée par
+`-Preparer` (les clés qui chiffrent le mot de passe SMTP vont dans son sous-dossier `cles-protection`).
+1. **Créer un mot de passe d'application Gmail** (compte Gmail de l'éditeur, jamais le mot de passe du compte) : compte Google ›
+   **Sécurité** › activer la **Validation en deux étapes** ; puis, toujours dans Sécurité, **« Mots de passe des applications »**
+   (https://myaccount.google.com/apppasswords), nom « Écrans du central », **Créer** : Google affiche UNE fois un mot de passe de
+   **16 caractères** (en 4 groupes de 4) ; le saisir sans les espaces. Il ne se garde nulle part ailleurs (ni fichier, ni dépôt, ni message).
+   Sans validation en deux étapes, ou si l'administrateur d'un compte Google professionnel l'a interdit, l'entrée n'apparaît pas.
+2. **Par la console (le plus simple, comme en production)** : dans une session PowerShell, à la racine du dépôt :
+   ```powershell
+   $env:PHARMA_CLOUD_ADMIN_CONNEXION = "Host=localhost;Port=5432;Database=pharmacie_cloud_dev;Username=pharma_app;Password=pharma_dev"
+   dotnet run --project src\Pharma.Cloud.Api -- --envoi-codes --serveur smtp.gmail.com --port 587 --tls starttls `
+       --identifiant <adresse Gmail de l'éditeur> --operateur "<nom>" --essai <votre adresse>
+   Remove-Item Env:\PHARMA_CLOUD_ADMIN_CONNEXION
+   ```
+   Le mot de passe d'application est demandé au clavier (rien ne s'affiche). Adresse qui recevra les codes, même session :
+   `dotnet run --project src\Pharma.Cloud.Api -- --contact-compte editeur.dev --email <votre adresse> --auteur "<nom>"`
+   (idem `titulaire.dev`) ; l'étape 3 devient inutile. Ou bien, à l'écran :
+   **Régler, encore en mode fichier** (codes dans `%LOCALAPPDATA%\PharmaOfficine\central-dev\codes\`) : https://127.0.0.1:5094/,
+   `editeur.dev`, menu **« Envoi des codes »** : canal **E-mail**, serveur `smtp.gmail.com`, port `587`, sécurité **STARTTLS**,
+   identifiant et expéditeur = l'adresse Gmail, mot de passe = celui de l'étape 1. **« Envoyer un e-mail d'essai »** à votre adresse
+   (rien n'est enregistré) → « E-mail d'essai envoyé ». Puis « Recevoir un code de confirmation » (code dans le fichier), saisir le code,
+   **« Enregistrer »**. Le mot de passe n'est plus jamais affiché (« Renseigné : vide = inchangé »).
+3. **Contact du compte** : menu **« Comptes »** → `editeur.dev` › « Modifier » : l'e-mail qui recevra les codes (votre adresse réelle).
+   **Dès cette étape, en mode fichier, chaque code part aussi par Gmail** à l'adresse du compte (et reste écrit dans le fichier) :
+   l'étape 4 n'est utile que pour essayer le comportement de production (plus de fichier).
+4. **Passer au réglage en base** (optionnel) : lancer les écrans avec l'argument `--Ecrans:ModeCodes=reglage` :
+   `dotnet run --project src\Pharma.Cloud.Web -- --Ecrans:ModeCodes=reglage`, ou Visual Studio › propriétés de débogage du profil
+   `Pharma.Cloud.Web` › arguments de ligne de commande (Visual Studio l'écrit dans `Properties\launchSettings.json` : ne pas le commiter). La connexion envoie alors le code par Gmail.
+   Revenir au mode fichier : retirer l'argument (`appsettings.Development.json` garde `fichier`). Si le réglage est incomplet ou
+   illisible (dossier de clés changé), les codes repartent dans le fichier (développement seulement).
+Les variables `PHARMA_CLOUD_SMTP_*` ne servent plus aux écrans en développement ; elles restent lues par la console pour le départ
+d'une officine (prioritaires ; sinon le compte du réglage « Envoi des codes »). Aucune adresse ni aucun secret réel dans le dépôt.
+
+**Reste S7.2 / S7.3 (scripts central 038 et local 160) : comment voir les écrans.** Prérequis (après relecture, sauvegarde `pg_dump -Fc`
+`--enable-row-security` du central et accord du titulaire) : script central `038` sur `pharmacie_cloud_dev` (après 037), script local
+`160` sur la base du poste (`pharmacie_test`, après 159) ; aucun `002_tables_miroir.sql` à repasser.
+- **Remise à zéro d'un mot de passe** (éditeur `editeur.dev`) : menu **« Comptes »** → `titulaire.dev` › « Modifier » → bouton
+  **« Mot de passe »** (`/comptes?compte=<n° du compte>&action=mot-de-passe`) : motif, identifiant ressaisi, « Recevoir un code de
+  confirmation » (fichier `editeur.dev.txt`), « Remettre à zéro » → page **« Mot de passe provisoire »** (montré une fois). Sur
+  `editeur.dev` lui-même : « votre propre compte », aucun formulaire. Le titulaire se reconnecte avec le provisoire et doit le changer.
+  Penser à noter le nouveau mot de passe de `titulaire.dev`.
+- **Message sur les postes** (titulaire `titulaire.dev`, droit « ordres » accordé depuis le poste) : « Mes officines » → « Ordres »
+  (`/mes-officines/<officine>/ordres`), panneau **« Message sur les postes »** : texte (200 caractères au plus), « Affiché jusqu'au »,
+  code, « Envoyer le message ». **Provoquer l'affichage** : au poste branché sur `pharmacie_test`, attendre le passage de synchronisation
+  suivant (une minute environ) : la pastille grise **« Message »** apparaît dans la barre d'état de tous les employés connectés ; un clic
+  ouvre la fenêtre ; « Ne plus afficher » (titulaire seulement) la retire de tous les postes. Au central, l'ordre passe « Appliqué ».
+  À voir aussi : avec une anomalie (sauvegarde en retard…), la pastille passe dans « À traiter » ; un message de plus de 200 caractères
+  ou avec « www. » est refusé par l'écran.
+- **Retrait d'un rattachement** (titulaire) : « Mes officines » → « Retirer » (`/mes-officines/<officine>/retirer`) : nom de l'officine
+  ressaisi, code → l'officine disparaît de la liste. Pour la retrouver : nouveau code tiré au poste (Accès à distance), puis « Rattacher ».
+
 **5. Retirer** (central arrêté) : `.\scripts\dev\preparer_central_vs.ps1 -Retirer -WhatIf`, puis sans `-WhatIf`. Retire les variables
 posées par le script, les rôles `pharma_cloud_dev_vs` et `pharma_cloud_etat_vs` et le dossier `%LOCALAPPDATA%\PharmaOfficine\central-dev` ; rien n'est supprimé en
 base (l'officine reste au central, les réglages de synchronisation restent dans `pharmacie_dev` : décocher **Synchronisation activée**

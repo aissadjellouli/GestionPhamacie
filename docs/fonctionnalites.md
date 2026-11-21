@@ -16,15 +16,15 @@ Légende des états :
 
 | État | Nombre de fonctions |
 | --- | --- |
-| Fait | 191 |
+| Fait | 192 |
 | En cours | 1 |
 | En attente | 47 |
 | Bloqué | 9 |
 | Non proposé | 1 |
 | À vérifier | 0 |
-| **Total** | **249** |
+| **Total** | **250** |
 
-Recompté le 2026-11-21 (soir, lot S7.5) à partir des lignes ci-dessous (249 lignes ; « Fait en local » compté dans « Fait ») ; « En cours » : démonstration cloud (Docker absent du poste).
+Recompté le 2026-11-21 (soir, lot S7.6) à partir des lignes ci-dessous (250 lignes ; « Fait en local » compté dans « Fait ») ; « En cours » : démonstration cloud (Docker absent du poste).
 
 ## Caisse et ventes
 
@@ -357,8 +357,11 @@ Recompté le 2026-11-21 (soir, lot S7.5) à partir des lignes ci-dessous (249 li
 | Tuiles navigables du central : chaque tuile du tableau de bord du titulaire (14) et de la rubrique « Lignes absentes » de l’éditeur (4) mène à l’écran qui détaille son chiffre, ou à l’écran permis le plus proche (vue d’ensemble, mes officines, ordres avec le droit « ordres » ; chargements, restaurations, changements d’époque, tableau de la rubrique) ; infobulle qui dit où la tuile mène ; jamais un écran de l’autre rôle | Fait en local (2026-11-21 ; tests verts ; rendu à mesurer à 1 366 × 768 et 1 536 × 890, clair et sombre) | ecrans-central.md § 3 septies |
 | Tuiles navigables du poste : toutes les tuiles (Alertes, Stock, Inventaire, Dettes, État de la caisse, Financements et fiche d’un prêt, Tableau de bord financier, Rapports, Reprise) mènent à l’écran qui détaille leur chiffre, ou à l’écran le plus proche, rubrique ou filtre en paramètre ; sur l’écran affiché, filtre appliqué ; infobulle qui dit où ; chiffre non cliquable seulement sans le droit d’ouvrir la cible (même contrôle que le menu) ; composant `TuileLien`, test `TuilesNavigablesTests` | Fait en local (2026-11-21 ; tests verts ; rendu à mesurer à 1 366 × 768 et 1 536 × 890, clair et sombre) | charte-graphique.md (« Tuiles navigables ») |
 | Aide en contexte (« ? » des écrans, « Aide de la caisse ») : le panneau se ferme par Échap, par « Fermer » ou par un clic à l’extérieur (voile transparent) | Fait en local (2026-11-21 ; test vert ; à essayer sur le poste) | navigation.md |
-| S7.3 (reste) : ordre « message à afficher sur les postes » | En attente (surface d’affichage sur les postes à décider ; barre d’état livrée) | ecrans-central.md § 8 |
-| S7.2 (reste) : SMS (fournisseur), remise à zéro d’un mot de passe par l’éditeur, retrait d’un rattachement depuis les écrans, alertes de refus en série | En attente (après l’hébergeur) | ecrans-central.md § 8 |
+| S7.6 : envoi des codes de second facteur réglé dans l’administration du site central (éditeur) : écran « Envoi des codes » (canal e-mail / SMS / les deux, serveur d’e-mail, mot de passe chiffré jamais réaffiché, vide = inchangé, code de confirmation, e-mail d’essai) ; écran « Comptes » (e-mail et téléphone d’un compte, au moins un, contact masqué) ; canal relu à chaque envoi, SMS indisponible signalé, les deux : l’e-mail part même sans SMS ; mode fichier gardé pour le développement ; départ d’une officine par le même compte si les variables SMTP manquent ; Gmail (mot de passe d’application) documenté ; script central 037 | Fait en local (2026-11-21 ; tests verts ; 037 passé sur le central de développement ; envoi réel par Gmail essayé avec succès) | ecrans-central.md § 3 octies ; poste-de-developpement.md |
+| S7.6 (suite, 2026-11-21) : écran « Comptes » › « Ajouter un compte » (éditeur, code de confirmation, mot de passe provisoire montré une fois, script central 039) ; console `--envoi-codes` (compte e-mail des codes réglé sur le serveur, e-mail d'essai avant d'enregistrer) et `--contact-compte` (adresse d'un compte changée sur le serveur) | Fait en local (2026-11-21 ; tests verts ; 039 passé sur le central de développement) | ecrans-central.md § 3 octies ; poste-de-developpement.md |
+| S7.3 (reste) : ordre « message à afficher sur les postes » du titulaire à distance (texte simple de 200 caractères, sans lien, 1 à 7 jours, droit « ordres », code ; contrôlé au central et au poste) : pastille « Message » de la barre d’état pour tous les employés, petite fenêtre, « Ne plus afficher » pour le titulaire de l’officine | Fait en local (2026-11-21, scripts central 038 et local 160 à passer ; écrans à mesurer) | ecrans-central.md § 3 nonies |
+| S7.2 (reste) : remise à zéro du mot de passe d’un compte distant par l’éditeur (mot de passe provisoire montré une fois, jamais par e-mail, sessions fermées, jamais son propre compte) ; retrait d’un rattachement par le titulaire depuis les écrans (accès coupé, ordres annulés) | Fait en local (2026-11-21, script central 038 à passer ; écrans à mesurer) | ecrans-central.md § 3 nonies |
+| S7.2 (reste) : SMS (fournisseur), alertes de refus en série | En attente (après l’hébergeur) | ecrans-central.md § 8 |
 | Mise en ligne des écrans du central (domaine, certificat, SMTP, connexion de production, comptes réels) | En attente (après le choix de l’hébergeur) | ecrans-central.md § 8 |
 | Découpage par officine des grandes tables du central | En attente | reste-a-faire-synthese.md § 7 |
 | Compatibilité des versions du format d’échange | En attente (à l’arrivée d’une version 2) | a-faire.md « Plus tard » |

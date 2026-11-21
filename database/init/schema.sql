@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 159 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 160 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 159 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 160 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -4198,6 +4198,35 @@ BEGIN
     END IF;
     RAISE EXCEPTION 'sync_lot : lot figé (seul l''accusé peut être enregistré)';
 END $$;
+
+
+--
+-- Name: sync_message_central_fermer(uuid, bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_message_central_fermer(p_id uuid, p_par bigint) RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+DECLARE o sync_ordre_recu;
+BEGIN
+    IF p_par IS NULL THEN RAISE EXCEPTION 'Message du serveur central : fermeture sans auteur'; END IF;
+    UPDATE sync_ordre_recu SET message_ferme_le = now(), message_ferme_par = p_par
+    WHERE id = p_id AND type = 'message' AND statut = 'applique' AND message_ferme_le IS NULL
+    RETURNING * INTO o;
+    IF NOT FOUND THEN RETURN false; END IF;
+    INSERT INTO journal_audit (utilisateur_id, action, table_cible, details)
+    VALUES (p_par, 'message_central_ferme', 'sync_ordre_recu',
+            jsonb_build_object('ordre', o.id, 'auteur_central', o.auteur, 'jusqu_au', o.donnees ->> 'jusqu_au',
+                               'longueur', length(coalesce(o.donnees ->> 'texte', ''))));
+    RETURN true;
+END $$;
+
+
+--
+-- Name: FUNCTION sync_message_central_fermer(p_id uuid, p_par bigint); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.sync_message_central_fermer(p_id uuid, p_par bigint) IS 'Ferme un message du titulaire à distance affiché sur les postes (journal des actions), script 160.';
 
 
 --
@@ -11332,6 +11361,9 @@ CREATE TABLE public.sync_ordre_recu (
     recu_le timestamp with time zone DEFAULT now() NOT NULL,
     traite_le timestamp with time zone,
     traite_par bigint,
+    message_ferme_le timestamp with time zone,
+    message_ferme_par bigint,
+    CONSTRAINT ck_sync_ordre_recu_message_ferme CHECK (((message_ferme_le IS NULL) OR ((type = 'message'::text) AND (statut = 'applique'::text) AND (message_ferme_par IS NOT NULL)))),
     CONSTRAINT sync_ordre_recu_attendu_check CHECK ((jsonb_typeof(attendu) = 'object'::text)),
     CONSTRAINT sync_ordre_recu_auteur_check CHECK (((length(auteur) >= 1) AND (length(auteur) <= 100))),
     CONSTRAINT sync_ordre_recu_cible_check CHECK ((length(cible) <= 100)),
@@ -11348,6 +11380,20 @@ CREATE TABLE public.sync_ordre_recu (
 --
 
 COMMENT ON TABLE public.sync_ordre_recu IS 'Ordres reçus du serveur central (format ordre-v1), appliqués par l''API locale ; jamais envoyée (script 145).';
+
+
+--
+-- Name: COLUMN sync_ordre_recu.message_ferme_le; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sync_ordre_recu.message_ferme_le IS 'Message du titulaire à distance fermé par le titulaire de l''officine (plus affiché sur les postes), script 160.';
+
+
+--
+-- Name: COLUMN sync_ordre_recu.message_ferme_par; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.sync_ordre_recu.message_ferme_par IS 'Titulaire de l''officine qui a fermé le message, script 160.';
 
 
 --
@@ -16036,6 +16082,13 @@ CREATE INDEX ix_sync_famille_colonne_table ON public.sync_famille_colonne USING 
 
 
 --
+-- Name: ix_sync_ordre_recu_message; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_sync_ordre_recu_message ON public.sync_ordre_recu USING btree (cree_le DESC) WHERE ((type = 'message'::text) AND (statut = 'applique'::text) AND (message_ferme_le IS NULL));
+
+
+--
 -- Name: ix_sync_ordre_recu_statut; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -19616,6 +19669,14 @@ ALTER TABLE ONLY public.substitution_liste_blanche
 
 ALTER TABLE ONLY public.substitution_liste_blanche
     ADD CONSTRAINT substitution_liste_blanche_remplacant_id_fkey FOREIGN KEY (remplacant_id) REFERENCES public.produit(id);
+
+
+--
+-- Name: sync_ordre_recu sync_ordre_recu_message_ferme_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sync_ordre_recu
+    ADD CONSTRAINT sync_ordre_recu_message_ferme_par_fkey FOREIGN KEY (message_ferme_par) REFERENCES public.utilisateur(id);
 
 
 --

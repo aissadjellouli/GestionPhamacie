@@ -77,7 +77,7 @@ public class ComptesDistantsConsoleTests
     }
 
     [Fact]
-    public async Task Titulaire_et_code_de_rattachement_sur_une_base_jetable_puis_tests_sql_030_a_036()
+    public async Task Titulaire_et_code_de_rattachement_sur_une_base_jetable_puis_tests_sql_030_a_037()
     {
         using var base_ = BaseCentraleJetable.Creer();
         if (base_ is null) return;   // pas de serveur, de psql ou de droit CREATEDB : rien à vérifier ici
@@ -123,10 +123,59 @@ public class ComptesDistantsConsoleTests
         Assert.Contains("n'est pas un compte titulaire", sortie.ToString());
         Assert.Equal(1, await ComptesDistantsAdministration.ExecuterAsync(db, ["--code-rattachement", "titulaire.console", Guid.NewGuid().ToString(), "--auteur", "A"], new StringWriter()));
 
-        // Tests SQL des écrans (transaction annulée) sur la même base : 030 à 036
+        // Tests SQL des écrans (transaction annulée) sur la même base : 030 à 038
         foreach (var t in new[] { "030_comptes_distants_tests.sql", "031_ecrans_editeur_tests.sql", "032_ecrans_titulaire_tests.sql", "033_code_rattachement_poste_tests.sql",
                      "034_titulaire_multi_officines_ordres_tests.sql", "035_reglages_communs_titulaire_tests.sql",
-                     "036_lignes_absentes_ecrans_tests.sql" })
+                     "036_lignes_absentes_ecrans_tests.sql", "037_envoi_codes_reglage_tests.sql",
+                     "038_remise_mot_de_passe_retrait_message_tests.sql", "039_creation_compte_ecran_tests.sql" })
             base_.Rejouer(Path.Combine(Depot.Racine(), "database", "cloud", "tests", t));
+    }
+
+    [Fact]
+    public void Contact_compte_arguments_controles()
+    {
+        Assert.Equal(("editeur.x", "n@exemple.org", (string?)null, "installateur"),
+            ComptesDistantsAdministration.LireContact(["--contact-compte", "editeur.x", "--email", "n@exemple.org", "--auteur", "installateur"]));
+        Assert.Equal(("editeur.x", "", "0555000099", "a"),
+            ComptesDistantsAdministration.LireContact(["--contact-compte", "editeur.x", "--email", "-", "--telephone", "0555 000 099", "--auteur", "a"]));
+        Assert.Throws<ArgumentException>(() => ComptesDistantsAdministration.LireContact(["--contact-compte", "editeur.x", "--auteur", "a"]));
+        Assert.Throws<ArgumentException>(() => ComptesDistantsAdministration.LireContact(["--contact-compte", "editeur.x", "--email", "pas-une-adresse", "--auteur", "a"]));
+        Assert.Throws<ArgumentException>(() => ComptesDistantsAdministration.LireContact(["--contact-compte", "editeur.x", "--email", "n@exemple.org"]));
+    }
+
+    [Fact]
+    public async Task Contact_compte_change_sur_le_serveur_sans_adresse_au_journal()
+    {
+        using var base_ = BaseCentraleJetable.Creer();
+        if (base_ is null) return;   // pas de serveur, de psql ou de droit CREATEDB : rien à vérifier ici
+        await using var db = NpgsqlDataSource.Create(base_.Connexion);
+        var sortie = new StringWriter();
+        Assert.Equal(0, await ComptesDistantsAdministration.ExecuterAsync(db, ["--creer-compte-editeur", "editeur.contact", "--nom", "Éditeur contact", "--email", "ancien@exemple.org"], sortie));
+
+        Assert.Equal(0, await ComptesDistantsAdministration.ExecuterAsync(db, ["--contact-compte", "editeur.contact", "--email", "nouveau@exemple.org", "--auteur", "installateur"], sortie));
+        async Task<string> Contact()
+        {
+            await using var cmd = db.CreateCommand("SELECT coalesce(email, '-') || '|' || coalesce(telephone, '-') FROM compte_distant WHERE identifiant = 'editeur.contact'");
+            return (string)(await cmd.ExecuteScalarAsync())!;
+        }
+        Assert.Equal("nouveau@exemple.org|-", await Contact());
+
+        // Aucun contact restant : refusé, rien ne change ; avec un téléphone, l'e-mail peut être retiré
+        Assert.Equal(1, await ComptesDistantsAdministration.ExecuterAsync(db, ["--contact-compte", "editeur.contact", "--email", "-", "--auteur", "installateur"], sortie));
+        Assert.Equal("nouveau@exemple.org|-", await Contact());
+        Assert.Equal(0, await ComptesDistantsAdministration.ExecuterAsync(db, ["--contact-compte", "editeur.contact", "--telephone", "0555000099", "--email", "-", "--auteur", "installateur"], sortie));
+        Assert.Equal("-|0555000099", await Contact());
+        Assert.Equal(1, await ComptesDistantsAdministration.ExecuterAsync(db, ["--contact-compte", "inconnu.x", "--email", "a@exemple.org", "--auteur", "installateur"], sortie));
+
+        // Journaux : jamais l'adresse ni le numéro ; journal des accès toujours chaîné
+        await using (var cmd = db.CreateCommand("""
+            SELECT (SELECT count(*) FROM journal_securite WHERE evenement = 'compte_contact_modifie' AND (detail LIKE '%@%' OR detail LIKE '%0555000099%'))
+                 + (SELECT count(*) FROM journal_acces_distant WHERE evenement = 'compte_contact_modifie' AND (objet LIKE '%@%' OR objet LIKE '%0555000099%'))
+            """))
+            Assert.Equal(0L, await cmd.ExecuteScalarAsync());
+        await using (var cmd = db.CreateCommand("SELECT count(*) FROM journal_securite WHERE evenement = 'compte_contact_modifie' AND detail LIKE 'console (installateur)%'"))
+            Assert.Equal(2L, await cmd.ExecuteScalarAsync());
+        await using (var cmd = db.CreateCommand("SELECT premiere_rupture FROM cloud_ecran_verifier_journal_acces()"))
+            Assert.Equal(DBNull.Value, await cmd.ExecuteScalarAsync());
     }
 }

@@ -60,7 +60,7 @@ Vue d'ensemble courte (point d'avancement) : [reste-a-faire-synthese.md](reste-a
 
 ## Plus tard (sur accord explicite du titulaire)
 
-- [ ] Synchronisation S7.3 (reste) : ordre « message à afficher sur les postes » (surface d'affichage à décider ; la barre d'état est livrée) ; S7.2 (reste) : SMS, remise à zéro d'un mot de passe par l'éditeur, retrait d'un rattachement depuis les écrans, alertes de refus en série ([ecrans-central.md](ecrans-central.md) § 8).
+- [ ] Synchronisation S7.2 (reste) : SMS (fournisseur), alertes de refus en série ([ecrans-central.md](ecrans-central.md) § 8). Message à afficher sur les postes, remise à zéro d'un mot de passe par l'éditeur et retrait d'un rattachement depuis les écrans : faits en local le 2026-11-21 (§ 3 nonies ; scripts 038 et 160 à passer, écrans à mesurer).
 - [ ] Barre d'état : pastilles « Mise à jour disponible » et « Imprimante injoignable » en direct (aucune source fiable aujourd'hui ; regles-metier.md « Barre d'état : éléments fixes et pastilles »).
 - [x] Synchronisation S3, supervision et purge (2026-11-16, script 140) : purge de `sync_sortie` après accusé (30 jours, puis chargement complet), bandeau des postes, alertes au titulaire, écran « Supervision et purge » (`docs/conception-synchronisation.md` § 20).
 - [ ] Synchronisation S3, suite : à confirmer avec le titulaire : valeurs de départ (bandeau 60 min, retard 24 h, erreur 60 min, conservation 30 jours), abonnement automatique des destinataires « sauvegarde » au sujet « synchronisation », SMS suivant l'option « SMS sauvegarde » ; à vérifier : durée des sauvegardes du serveur central (conservation), détection du quota par un 429 avec motif (essai avec le serveur central réel, champ explicite plus sûr).

@@ -12,9 +12,11 @@ public sealed record Pastille(string Cle, string Libelle, string? Niveau, string
 /// <summary>
 /// Ce que sait le poste au moment de dessiner la barre. Les dates reçues du serveur sont converties en heure locale ; Maintenant est l'heure
 /// locale du poste. SecondesAvantDeconnexion : temps restant avant la déconnexion automatique (null : pas de déconnexion automatique).
+/// Message : message du titulaire à distance encore affichable (reste du lot S7.3), lu par le serveur.
 /// </summary>
 public sealed record EtatBarre(bool ServeurJoignable, DateTime Maintenant, Func<string, bool> Droit, EtatPosteDto? Poste = null,
-    EtatLiaisonsPosteDto? Liaisons = null, CompteursBarreDto? Compteurs = null, int? SecondesAvantDeconnexion = null, string? ErreurImprimante = null);
+    EtatLiaisonsPosteDto? Liaisons = null, CompteursBarreDto? Compteurs = null, int? SecondesAvantDeconnexion = null, string? ErreurImprimante = null,
+    MessageCentralDto? Message = null);
 
 /// <summary>
 /// Pastilles à dessiner. Regroupe : au moins une pastille orange ou rouge est affichée, les pastilles grises passent dans « À traiter (N) »
@@ -49,12 +51,22 @@ public static class PastillesBarre
     /// </summary>
     public const int AnomaliesVisiblesMax = 4;
 
+    /// <summary>
+    /// Pastilles grises affichées au plus sans regroupement : 6 (cas mesuré le 2026-11-21 : 6 grises et un nom long, 17 px libres à
+    /// 1366). Reste du lot S7.3 : le message du titulaire peut en faire une 7e ; au-delà de 6, elles passent toutes dans « À traiter ».
+    /// </summary>
+    public const int GrisesVisiblesMax = 6;
+
+    /// <summary>Lien réservé de la pastille du message : la barre ouvre sa petite fenêtre au lieu de changer d'écran.</summary>
+    public const string LienMessage = "#message-central";
+
     public static AffichageBarre Calculer(EtatBarre e)
     {
         var toutes = Toutes(e).ToList();
         var anomalies = toutes.Where(p => p.Niveau is not null).ToList();
         var grises = toutes.Where(p => p.Niveau is null).ToList();
-        if (anomalies.Count == 0 || (grises.Count == 0 && anomalies.Count <= AnomaliesVisiblesMax)) return new AffichageBarre(toutes, []);
+        if ((anomalies.Count == 0 && grises.Count <= GrisesVisiblesMax) || (grises.Count == 0 && anomalies.Count <= AnomaliesVisiblesMax))
+            return new AffichageBarre(toutes, []);
         // Rouges d'abord pour choisir celles qui restent visibles ; l'ordre de la barre est gardé
         var gardees = anomalies.Select((p, i) => (p, i)).OrderBy(x => x.p.Niveau == Anormal ? 0 : 1).ThenBy(x => x.i)
             .Take(AnomaliesVisiblesMax).OrderBy(x => x.i).Select(x => x.p).ToList();
@@ -93,6 +105,12 @@ public static class PastillesBarre
         if (e.Compteurs is { JournauxEnAnomalie: true } && e.Droit("role.titulaire"))
             yield return new("journaux", "Journaux : anomalie", Anormal, "admin/controle-interne?rubrique=integrite",
                 "Intégrité des journaux : une chaîne est rompue ou n’a pas pu être vérifiée.");
+
+        // Reste du lot S7.3 : message du titulaire à distance, pour TOUS les employés connectés (pastille d'information grise) ; un clic
+        // ouvre sa petite fenêtre (texte, fin d'affichage ; « Ne plus afficher » pour le titulaire). Échu : le serveur ne le rend plus.
+        if (e.Message is { } m && Local(m.JusquAu) > e.Maintenant)
+            yield return new("message-central", "Message", null, LienMessage,
+                $"Message du titulaire (à distance), jusqu’au {Local(m.JusquAu):dd/MM à HH:mm} : {m.Texte}");
 
         // Caisse du poste : grise, orange si elle a été ouverte un autre jour (clôture oubliée)
         if (e.Droit("caisse.vendre") && e.Poste?.CaisseOuverteLe is { } ouverte)

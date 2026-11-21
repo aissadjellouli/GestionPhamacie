@@ -1054,6 +1054,15 @@ public sealed record EtatPosteDto(bool SauvegardeActive, DateTime? DerniereSauve
 public sealed record CompteursBarreDto(int VentesEnAttente, int ProduitsDisponibles, int VoletsChifa, int ChifaADeposer, int TraitesAPayer,
     bool JournauxEnAnomalie);
 
+/// <summary>
+/// Message du titulaire à distance affiché dans la barre d'état (reste du lot S7.3). Texte simple de 200 caractères au plus ; dates en
+/// UTC ; PeutFermer : l'employé connecté est le titulaire de l'officine (POST /api/etat-poste/message-central/{Id}/fermer).
+/// </summary>
+public sealed record MessageCentralDto(Guid Id, string Texte, DateTime JusquAu, DateTime RecuLe, bool PeutFermer);
+
+/// <summary>GET /api/etat-poste/message-central (tout employé connecté) : Message null s'il n'y a rien à afficher (toujours un corps JSON).</summary>
+public sealed record MessageCentralEtatDto(MessageCentralDto? Message);
+
 // ---- Fiche contact d'un tiers --------------------------------------------------------------
 
 /// <summary>Genre : « telephone », « email » (lien d'appel ou de courrier), « montant_du » (somme due mise en avant), sinon texte.</summary>

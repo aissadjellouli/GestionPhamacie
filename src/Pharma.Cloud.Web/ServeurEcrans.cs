@@ -16,7 +16,12 @@ namespace Pharma.Cloud.Web;
 public sealed class OptionsServeurEcrans
 {
     public X509Certificate2? Certificat { get; init; }
+    /// <summary>Envoi imposé (tests) : prioritaire sur le réglage en base.</summary>
     public IEnvoiCodeDistant? Envoi { get; init; }
+    /// <summary>Production : envoi si le réglage en base est incomplet (variables PHARMA_CLOUD_SMTP_*) ; null : refus clair.</summary>
+    public IEnvoiCodeDistant? Repli { get; init; }
+    /// <summary>Envoi SMTP pour des réglages (tests : envoi factice, rien ne part).</summary>
+    public Func<ReglagesSmtpCentral, IEnvoiCourriel>? FabriqueCourriel { get; init; }
     public TimeProvider? Horloge { get; init; }
 }
 
@@ -35,29 +40,21 @@ public static class ServeurEcrans
     public static async Task<int> LancerAsync(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
+        // Journal en fichiers (section « Journaux » du appsettings.json : dossier, taille maximale, durée de conservation, niveau)
+        builder.Logging.AddProvider(new Pharma.Shared.Journalisation.JournalFichierProvider(
+            Pharma.Shared.Journalisation.OptionsJournalFichier.Lire(cle => builder.Configuration["Journaux:" + cle], "central-ecrans-")));
         var (reglages, refus) = ReglagesEcrans.Evaluer(builder.Environment.IsDevelopment(), builder.Configuration, Environment.GetEnvironmentVariable);
         if (reglages is null)
         {
             Console.Error.WriteLine(refus);
             return 1;
         }
-        IEnvoiCodeDistant envoi;
-        switch (reglages.Mode)
-        {
-            case ModeCodes.Fichier:
-                envoi = new EnvoiCodeFichier(reglages.DossierCodes, TimeProvider.System);
-                break;
-            default:
-                var (smtp, manque) = ReglagesSmtpCentral.Lire(Environment.GetEnvironmentVariable);
-                if (smtp is null)
-                {
-                    Console.Error.WriteLine($"Écrans refusés : {manque} (envoi des codes de second facteur par e-mail).");
-                    return 1;
-                }
-                envoi = new EnvoiCodeCourriel(new EnvoiCourrielSmtp(smtp));
-                break;
-        }
-        var app = Construire(builder, reglages, new OptionsServeurEcrans { Envoi = envoi });
+        // Lot S7.6 : le canal et le SMTP viennent du réglage en base (écran « Envoi des codes »), lus à chaque envoi. Repli si le réglage
+        // est incomplet : fichier en développement ; en production, variables PHARMA_CLOUD_SMTP_* si complètes (amorçage, comme avant)
+        IEnvoiCodeDistant? repli = null;
+        if (!builder.Environment.IsDevelopment() && ReglagesSmtpCentral.Lire(Environment.GetEnvironmentVariable).Reglages is { } smtpVariables)
+            repli = new EnvoiCodeCourriel(new EnvoiCourrielSmtp(smtpVariables));
+        var app = Construire(builder, reglages, new OptionsServeurEcrans { Repli = repli });
         try
         {
             app.Logger.LogInformation("Connexion des écrans : rôle {Role}", await app.Services.GetRequiredService<DepotEcrans>().ControlerRoleAsync(CancellationToken.None));
@@ -67,7 +64,8 @@ public static class ServeurEcrans
             Console.Error.WriteLine($"Écrans refusés : {e.Message}");
             return 1;
         }
-        app.Logger.LogInformation("Écrans du central : https://{Adresse}:{Port}/ (codes : {Mode})", reglages.Adresse, reglages.Port, reglages.Mode);
+        app.Logger.LogInformation("Écrans du central : https://{Adresse}:{Port}/ (codes : {Mode}, clés du mot de passe SMTP : {Cles})", reglages.Adresse, reglages.Port,
+            reglages.Mode, app.Services.GetRequiredService<ChoixEnvoiCodes>().Protection is null ? "absentes" : "dossier du central");
         await app.RunAsync();
         return 0;
     }
@@ -90,7 +88,19 @@ public static class ServeurEcrans
         builder.Services.AddSingleton(NpgsqlDataSource.Create(reglages.Connexion));
         builder.Services.AddSingleton<DepotEcrans>();
         builder.Services.AddSingleton(new CodesSecondFacteur());
-        builder.Services.AddSingleton(options.Envoi ?? new EnvoiCodeFichier(reglages.DossierCodes, horloge));
+        // Lot S7.6 : envoi choisi à chaque code d'après le réglage en base ; le mode fichier (développement) ou l'envoi des tests reste prioritaire
+        var dev = builder.Environment.IsDevelopment();
+        // Mode fichier en DÉVELOPPEMENT : code écrit dans le fichier ET envoyé par l'e-mail du réglage en base s'il est complet ;
+        // hors développement (ou envoi fixé par les tests), le mode fichier reste prioritaire et la base n'est pas lue
+        var fichierEtMail = options.Envoi is null && reglages.Mode == ModeCodes.Fichier && dev;
+        builder.Services.AddSingleton(sp => new ChoixEnvoiCodes(
+            options.Envoi ?? (reglages.Mode == ModeCodes.Fichier && !fichierEtMail ? new EnvoiCodeFichier(reglages.DossierCodes, horloge) : null),
+            dev ? new EnvoiCodeFichier(reglages.DossierCodes, horloge) : options.Repli,
+            (jeton, ct) => sp.GetRequiredService<DepotEcrans>().ReglageEnvoiAsync(jeton, ct),
+            ProtectionSmtpCentral.Depuis(reglages.DossierCles),
+            options.FabriqueCourriel ?? (smtp => new EnvoiCourrielSmtp(smtp)),
+            horloge, sp.GetRequiredService<ILoggerFactory>().CreateLogger("Pharma.Cloud.Web.Codes"),
+            copieFichier: fichierEtMail ? new EnvoiCodeFichier(reglages.DossierCodes, horloge) : null));
         builder.Services.AddSingleton(new EpinglageAutorite(reglages.CertificatAutorite));
         builder.Services.AddSingleton<CodesAffiches>();
         builder.Services.AddRazorComponents();

@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Crée la base d'un serveur central de synchronisation NEUF : scripts database\cloud 001 au dernier (036 à ce jour) dans l'ordre, contrôles, tests facultatifs.
+    Crée la base d'un serveur central de synchronisation NEUF : scripts database\cloud 001 au dernier (039 à ce jour) dans l'ordre, contrôles, tests facultatifs.
 
 .DESCRIPTION
     À utiliser pour le parcours E, étape 2 (serveur central). Ne sert jamais sur la base d'une officine.
@@ -13,10 +13,11 @@
 
     Étapes :
       1. création de la base (propriétaire = -Proprietaire, UTF8) par -CompteAdmin si elle n'existe pas ;
-      2. scripts 001 au dernier (036 à ce jour) de database\cloud, un par un, avec le compte propriétaire. Le script 001 crée le rôle
+      2. scripts 001 au dernier (039 à ce jour) de database\cloud, un par un, avec le compte propriétaire. Le script 001 crée le rôle
          applicatif pharma_cloud_api SANS connexion (non propriétaire des tables : la sécurité au niveau des lignes s'applique) ;
          le script 029 crée le rôle de lecture technique pharma_cloud_etat SANS connexion (aucune connexion créée ici) ; le script 030
-         crée le rôle des écrans pharma_cloud_ecrans SANS connexion ni droit sur les tables (fonctions cloud_ecran_* seulement) ;
+         crée le rôle des écrans pharma_cloud_ecrans SANS connexion ni droit sur les tables (fonctions cloud_ecran_* seulement) ; le script 037
+         crée le réglage (vide) de l'envoi des codes de second facteur, rempli ensuite dans l'écran « Envoi des codes » ;
       3. contrôles : tables centrales et miroir présentes, sécurité au niveau des lignes activée sur les tables de données,
          rôle pharma_cloud_api sans connexion et non propriétaire, rôles pharma_cloud_etat et pharma_cloud_ecrans sans connexion et non propriétaires,
          partitions de lot_recu ;
@@ -56,7 +57,7 @@
 
 .EXAMPLE
     .\scripts\mep\creer_base_centrale.ps1 -Base pharmacie_central -Proprietaire central_proprietaire
-    Crée la base et passe tous les scripts 001 à 036 (la suite numérotée sans trou).
+    Crée la base et passe tous les scripts 001 à 039 (la suite numérotée sans trou).
 
 .EXAMPLE
     .\scripts\mep\creer_base_centrale.ps1 -Base pharmacie_central -Proprietaire central_proprietaire -AvecTests -WhatIf
@@ -169,6 +170,18 @@ Invoke-Principal {
         $droits = Get-Scalaire -Compte $Proprietaire -Base $Base -Sql "SELECT count(*) FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p', 'v') AND (has_table_privilege('$RoleEcrans', c.oid, 'SELECT, INSERT, UPDATE, DELETE') OR has_any_column_privilege('$RoleEcrans', c.oid, 'SELECT'))"
         if ($droits -ne "0") { throw "$RoleEcrans a un droit direct sur $droits table(s) : seules les fonctions cloud_ecran_* lui sont permises." }
         Write-Ok "Rôle $RoleEcrans présent, sans connexion, sans aucun droit sur les tables (fonctions cloud_ecran_* seulement). Aucune connexion ni compte distant n'est créé par ce script."
+        # Script 037 (lot S7.6) : réglage unique de l'envoi des codes, vide (à remplir dans l'écran « Envoi des codes » ; jamais de mot de passe ici)
+        $reglage = Get-Scalaire -Compte $Proprietaire -Base $Base -Sql "SELECT count(*) FROM parametre_envoi_codes WHERE id = 1"
+        if ($reglage -ne "1") { throw "Réglage de l'envoi des codes (parametre_envoi_codes, script 037) absent." }
+        Write-Ok "Réglage de l'envoi des codes présent (canal, serveur d'e-mail et mot de passe à renseigner dans l'écran « Envoi des codes » des écrans du central)."
+        # Script 038 (reste S7.2 et S7.3) : remise à zéro d'un mot de passe (éditeur), retrait d'un rattachement et message aux postes (titulaire)
+        $s7reste = Get-Scalaire -Compte $Proprietaire -Base $Base -Sql "SELECT count(*) FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('cloud_ecran_remise_mot_de_passe', 'cloud_ecran_titulaire_retirer_officine', 'cloud_ecran_titulaire_envoyer_message') AND has_function_privilege('$RoleEcrans', oid, 'EXECUTE')"
+        if ($s7reste -ne "3") { throw "Fonctions du script 038 (remise à zéro d'un mot de passe, retrait d'un rattachement, message aux postes) absentes ou non accordées à $RoleEcrans." }
+        Write-Ok "Remise à zéro d'un mot de passe (éditeur), retrait d'un rattachement et message aux postes (titulaire) : fonctions présentes."
+        # Script 039 : création d'un compte distant par l'éditeur depuis l'écran « Comptes »
+        $creation = Get-Scalaire -Compte $Proprietaire -Base $Base -Sql "SELECT count(*) FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = 'cloud_ecran_compte_creer' AND has_function_privilege('$RoleEcrans', oid, 'EXECUTE')"
+        if ($creation -ne "1") { throw "Fonction du script 039 (création d'un compte par l'éditeur) absente ou non accordée à $RoleEcrans." }
+        Write-Ok "Création d'un compte par l'éditeur (écran « Comptes ») : fonction présente."
         $parts = Get-Scalaire -Compte $Proprietaire -Base $Base -Sql "SELECT count(*) FROM pg_inherits WHERE inhparent = 'public.lot_recu'::regclass"
         Write-Ok "Partitions de lot_recu : $parts."
 

@@ -2278,6 +2278,50 @@ Règles appliquées par le script central `032_ecrans_titulaire.sql`, la console
   terminé comprenant la table, table ou colonne non envoyée, colonne d'une famille nominative non envoyée) ; sans les retours clients, le
   chiffre d'affaires reste non disponible. Les totaux sont ceux des données reçues au dernier contact.
 
+## Envoi des codes de second facteur des écrans du central (lot S7.6, 2026-11-21)
+
+Règles appliquées par le script central `037_envoi_codes_reglage.sql` et les écrans du central ([ecrans-central.md](ecrans-central.md)
+§ 3 octies) :
+
+- **Un seul réglage** pour tout le central : canal (**E-mail**, **SMS**, **E-mail et SMS**), serveur d'e-mail (serveur, port,
+  sécurité STARTTLS ou TLS direct — jamais sans chiffrement —, identifiant, expéditeur, mot de passe). Modifiable par l'**éditeur**
+  seulement, avec un **code de confirmation** ; jamais par un titulaire.
+- **E-mail** exige un serveur d'e-mail complet (serveur, port, identifiant, expéditeur, mot de passe) : sinon rien n'est enregistré
+  (« Rien n'est enregistré : l'e-mail exige… »). Les contrôles de saisie passent avant le code (un code n'est pas consommé pour une faute).
+- **Mot de passe** : champ toujours vide ; vide = **inchangé** ; saisi = remplacé ; jamais réaffiché ni noté (seulement « remplacé » ou
+  « inchangé » au journal de sécurité).
+- **E-mail d'essai** : à une adresse saisie, avec les valeurs du formulaire (mot de passe saisi, sinon celui déjà enregistré) ; rien n'est
+  enregistré, aucun code exigé ; résultat « envoyé » ou « pas parti » sans détail technique. **Le mot de passe enregistré ne part que
+  vers le serveur enregistré** (2026-11-21, revue de code) : si le serveur, le port, la sécurité ou l'identifiant saisis diffèrent,
+  « Serveur, port, sécurité ou identifiant modifiés : ressaisissez le mot de passe d'application… » (sinon une session éditeur
+  détournée pourrait envoyer ce mot de passe à un serveur de son choix).
+- **Envoi d'un code** : canal relu à chaque envoi (10 secondes au plus après un enregistrement). E-mail → adresse du compte ; E-mail
+  et SMS → chaque code part sur les deux (refus seulement si aucun ne part). **Tant qu'aucun fournisseur SMS n'existe** (2026-11-21,
+  revue de code) : « SMS » seul est grisé à l'écran et refusé à l'enregistrement (« Rien n'est enregistré : « SMS » seul est
+  impossible… »), car plus aucun code ne partirait et personne, éditeur compris, ne pourrait se reconnecter ; un réglage « SMS »
+  ou « E-mail et SMS » déjà en base envoie l'**e-mail seul**. Compte sans contact pour le
+  canal : « Votre compte n'a pas de contact pour le canal choisi… ».
+- **Réglage incomplet** (ou mot de passe illisible) : en développement, codes écrits dans le fichier ; en production, variables
+  `PHARMA_CLOUD_SMTP_*` si elles sont complètes, sinon « Envoi des codes non réglé… » (aucun code ne part). Mode fichier
+  (`Ecrans:ModeCodes=fichier`) : en **développement**, chaque code est écrit dans le fichier **et** envoyé par l'e-mail du réglage
+  s'il est complet (2026-11-21, demande du titulaire) ; un e-mail en échec ne bloque pas la connexion (le fichier suffit), il est
+  seulement noté au journal de l'application ; réglage incomplet : fichier seul. Hors développement, le mode fichier passe avant le
+  réglage (la base n'est pas lue).
+- **Contact d'un compte** : e-mail **et** téléphone possibles, **au moins un** ; l'éditeur le modifie (vide = inchangé, « - » = retirer)
+  avec un code ; affiché masqué (`a***@domaine`, `***12`).
+- **Création d'un compte depuis l'écran** (2026-11-21, décision du titulaire, script central 039) : l'**éditeur** seul, avec un code de
+  confirmation ; rôle titulaire ou éditeur ; identifiant unique (3 à 60 caractères, minuscules, chiffres, « . _ - », casse et espaces
+  ignorés) ; nom ; **au moins un contact** (e-mail et/ou téléphone), où partiront les codes du compte. Mot de passe **provisoire** montré une
+  seule fois, à changer à la première connexion. Une faute de saisie ne consomme pas le code. Le premier éditeur d'une installation est
+  créé par la console (`--creer-compte-editeur … --email …`), après le réglage du compte d'envoi (`--envoi-codes`).
+- **Contact changé sur le serveur** (2026-11-21) : `--contact-compte <identifiant> --email <adresse> --auteur <nom>` quand l'adresse est
+  perdue ou erronée (l'écran exige un code reçu à cette adresse) ; « - » retire ; au moins un contact reste.
+- **Départ d'une officine** : le mot de passe de l'archive part par les variables `PHARMA_CLOUD_SMTP_*` si elles sont complètes, sinon
+  par le compte du réglage « Envoi des codes ».
+- — `database/cloud/037_envoi_codes_reglage.sql`, `src/Pharma.Cloud.Web/Codes/ChoixEnvoiCodes.cs`, `Codes/SecondFacteur.cs`,
+  `Points/ActionsEnvoiCodes.cs`, `Composants/Pages/EnvoiCodes.razor`, `Comptes.razor`, `src/Pharma.Cloud.Api/Depart/CourrielSmtp.cs`,
+  `Depart/ReglageSmtpBase.cs`
+
 ## Lignes absentes vues au serveur central (lot S7.5, 2026-11-21)
 
 Règles appliquées par le script central `036_lignes_absentes_ecrans.sql` et les écrans du central ([ecrans-central.md](ecrans-central.md)
@@ -2352,6 +2396,33 @@ centrale), `ComptesAccesDistant` et `ExecuterOrdreCentral` (API locale) ([ecrans
 - — `database/cloud/034_titulaire_multi_officines_ordres.sql`, `src/Pharma.Cloud.Web/Composants/Pages/VueEnsembleTitulaire.razor`,
   `OrdresOfficine.razor`, `src/Pharma.Cloud.Web/Donnees/VueEnsemble.cs`, `src/Pharma.Cloud.Api/Comptes/AccesDistantsPoste.cs`,
   `src/Pharma.Application/Synchronisation/AccesDistant.cs`, `OrdresCentraux.cs`, `src/Pharma.Desktop/Composants/Pages/AdminSynchronisation.razor`
+
+## Remise à zéro d'un mot de passe, retrait d'un rattachement, message aux postes (reste des lots S7.2 et S7.3, 2026-11-21)
+
+Règles appliquées par le script central `038_remise_mot_de_passe_retrait_message.sql`, les écrans du central, `ExecuterOrdreCentral` et
+la barre d'état du poste (script local `160_message_central_postes.sql`) ([ecrans-central.md](ecrans-central.md) § 3 nonies) :
+
+- **Remise à zéro du mot de passe d'un compte distant** (éditeur, écran « Comptes » › « Mot de passe ») : jamais son propre compte (il
+  change le sien par « Mot de passe »), compte actif ; motif de 5 à 300 caractères, identifiant du compte ressaisi, code de confirmation.
+  Un mot de passe provisoire de 16 caractères est tiré au sort et **montré une seule fois à l'éditeur** (2 minutes, même session), à
+  transmettre de vive voix après vérification de l'identité ; **jamais envoyé par e-mail** (le code de connexion part déjà sur le
+  contact du compte). Le compte doit le changer à la connexion suivante ; ses sessions ouvertes sont fermées, ses codes en cours
+  annulés, son verrouillage levé. Journaux : accès (éditeur et compte) et sécurité (motif) ; jamais le mot de passe ni son empreinte.
+- **Retrait d'un rattachement par le titulaire** (écran « Mes officines » › « Retirer ») : nom de l'officine ressaisi (casse ignorée),
+  code de confirmation ; plus aucun accès à l'officine depuis ce compte, tout de suite ; ses ordres encore ouverts pour elle sont
+  annulés (même règle que le retrait depuis le poste). Pour revenir : un nouveau code tiré sur le poste. L'éditeur ne retire pas de
+  rattachement.
+- **Message à afficher sur les postes** (ordre du titulaire à distance, droit « ordres », code de confirmation) : **texte simple** de 1 à
+  200 caractères sur une ligne, sans balise (< >), caractère invisible ni lien (`://`, `www.`, protocole, nom de domaine courant) ;
+  affiché jusqu'à une date choisie de **1 à 7 jours** après l'envoi. Mêmes règles à l'écran, dans la base centrale et au poste : hors
+  bornes = refusé (au poste : « refusé » remonté au central). Un seul message en attente par officine ; 10 ordres par heure (messages
+  compris) ; relevé dans les 24 heures sinon « expiré ». Au poste : **appliqué tout de suite** (aucune confirmation) = **affiché** dans la
+  barre d'état de tous les postes (voir « Barre d'état : éléments fixes et pastilles ») ; une fin déjà passée à la réception : refusé ;
+  échu : plus affiché. Le texte n'est jamais écrit au journal de sécurité du central.
+- — `database/cloud/038_remise_mot_de_passe_retrait_message.sql`, `src/Pharma.Domain/Reglages/MessagePostes.cs`,
+  `src/Pharma.Cloud.Web/Points/ActionsEcrans.cs`, `ActionsEnvoiCodes.cs`, `src/Pharma.Cloud.Web/Composants/Pages/Comptes.razor`,
+  `MotDePasseAffiche.razor`, `RetirerOfficine.razor`, `OrdresOfficine.razor`, `src/Pharma.Application/Synchronisation/OrdresCentraux.cs`,
+  `MessageCentral.cs`
 
 ## Accès à distance : code de rattachement tiré par le poste (lot S7.2b, 2026-11-21)
 
@@ -2441,6 +2512,16 @@ Règles appliquées par `GenererCodeAccesDistant` (API locale), la route `POST /
   l'écran** (0 sinon ; journaux : titulaire seul ; par code comptoir, seulement les droits du comptoir) ; compteurs de l'officine et
   ventes en attente de chaque poste gardés 30 secondes au serveur ; une lecture impossible laisse le compteur à 0 sans rien bloquer.
   Relue par le poste au même rythme que la caisse et la sauvegarde (chaque minute et à chaque changement d'écran).
+- **(2026-11-21, reste du lot S7.3) Pastille « Message »** (grise, information, **tous les employés connectés**) : message du titulaire à
+  distance reçu du serveur central, encore valable (fin d'affichage pas passée à l'horloge de l'officine) et pas fermé ; le plus récent
+  remplace les précédents. Toujours cliquable : un clic ouvre une **petite fenêtre** au-dessus de la barre (texte, « affiché sur tous les
+  postes jusqu'au … », reçu le ; « Ordres du central » avec le droit `admin.parametres` ; « **Ne plus afficher** » pour le **titulaire**
+  seulement : le message disparaît de tous les postes, journal des actions `message_central_ferme` sans le texte) ; fermée par Échap, un
+  clic dehors ou « Fermer ». Infobulle : le texte complet. Lu par `GET /api/etat-poste/message-central` (connexion seule) au même rythme
+  que les compteurs ; une lecture impossible garde le message déjà connu. **Regroupement** : comme toute pastille grise, elle passe dans
+  « À traiter » dès qu'une orange ou rouge s'affiche ; et, nouveau, **au-delà de 6 pastilles grises** (cas le plus chargé mesuré : 6 et un
+  nom long), toutes les grises passent dans « À traiter (N) » : la barre reste sur une ligne à 1 366 px. — `src/Pharma.Desktop/Services/PastillesBarre.cs`
+  (`GrisesVisiblesMax`, `LienMessage`), `BarreEtat.razor`, `src/Pharma.Application/Synchronisation/MessageCentral.cs`, `database/migration/160_message_central_postes.sql`
 - **Pas de pastille « Mise à jour disponible »** : le logiciel ne sait pas aujourd'hui qu'une nouvelle version existe (aucune source).
   — `src/Pharma.Desktop/Services/PastillesBarre.cs`, `src/Pharma.Desktop/Composants/Mise/BarreEtat.razor`,
   `src/Pharma.Application/Administration/CompteursBarre.cs`, `src/Pharma.Api/Endpoints/EtatPosteEndpoints.cs`,

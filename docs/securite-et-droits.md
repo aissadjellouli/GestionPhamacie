@@ -61,10 +61,10 @@ Détail : [conception-synchronisation.md](conception-synchronisation.md) § 16 b
 
 ## Journaux sans données personnelles
 
-Règle (2026-11-16) : les fichiers journaux du serveur (`C:\ProgramData\PharmaOfficine\Journaux\pharma-api-*.log`) et du poste (`%LOCALAPPDATA%\PharmaOfficine\erreurs.log`) ne contiennent aucune donnée personnelle : ni nom ou prénom de patient, de médecin ou d'employé, ni n° d'assuré, n° de pièce, téléphone, e-mail, adresse, ni texte libre saisi (motifs, observations). Le journal d'audit en base (`journal_audit`) n'est pas concerné.
+Règle (2026-11-16) : les fichiers journaux du serveur (`C:\ProgramData\PharmaOfficine\Journaux\pharma-api-*.log`), du serveur central (`Journaux\Central\central-api-*.log`, `central-ecrans-*.log`, depuis le 2026-11-21) et du poste (`%LOCALAPPDATA%\PharmaOfficine\erreurs.log`) ne contiennent aucune donnée personnelle : ni nom ou prénom de patient, de médecin ou d'employé, ni n° d'assuré, n° de pièce, téléphone, e-mail, adresse, ni texte libre saisi (motifs, observations). Le journal d'audit en base (`journal_audit`) n'est pas concerné.
 
 - **À la source** : on journalise des identifiants techniques (id, code d'action, type d'alerte, code d'erreur), jamais le texte. Refus métier : chemin, type d'exception, champ et statut, jamais le message (qui part au poste seulement). Refus de la base : code SQL, contrainte, table, sans le texte de la base. Requête mal formée : nom du paramètre seulement. Code super admin : action et canal (SMS ou e-mail), jamais le destinataire.
-- **Filet de sécurité** : `Pharma.Shared.MasqueurJournal` est appliqué à chaque ligne écrite (message rendu et pile d'exception complète) par `JournalFichierProvider` (serveur) et par `App.NoterErreur` (poste). Il masque : e-mail → `a***@d***.dz` (1er caractère, 1er caractère du domaine, extension) ; téléphone mobile algérien 05/06/07 ou +213/00213, séparateurs espace, point ou tiret admis → `06******12` ; nombre de 9 à 12 chiffres avec suffixe `/NN` facultatif (n° d'assuré) → `6907******42/80`. Les noms et textes libres ne sont pas reconnaissables : seule la règle « à la source » les protège.
+- **Filet de sécurité** : `Pharma.Shared.MasqueurJournal` est appliqué à chaque ligne écrite (message rendu et pile d'exception complète) par `Pharma.Shared.Journalisation.JournalFichierProvider` (serveur de l'officine et serveur central) et par `App.NoterErreur` (poste). Il masque : e-mail → `a***@d***.dz` (1er caractère, 1er caractère du domaine, extension) ; téléphone mobile algérien 05/06/07 ou +213/00213, séparateurs espace, point ou tiret admis → `06******12` ; nombre de 9 à 12 chiffres avec suffixe `/NN` facultatif (n° d'assuré) → `6907******42/80`. Les noms et textes libres ne sont pas reconnaissables : seule la règle « à la source » les protège.
 - Contrôlé par `tests/Pharma.Architecture.Tests/JournauxSansDonneesPersonnellesTests.cs`.
 
 ## Barre d'état (2026-11-21)
@@ -78,8 +78,10 @@ Règle (2026-11-16) : les fichiers journaux du serveur (`C:\ProgramData\PharmaOf
 Détail : [ecrans-central.md](ecrans-central.md) § 5. En local seulement à ce jour.
 
 - **Comptes** (`compte_distant`, script central 030) distincts des employés de l'officine : rôle `editeur` (S7.1) ou `titulaire` (S7.2). Créés
-  par la console du central (`--creer-compte-editeur`), jamais par un écran ; mot de passe **provisoire** affiché une fois, à changer à la première
-  connexion ; empreinte BCrypt coût 12 ; second facteur obligatoire à chaque connexion **et** à chaque action sensible.
+  par la console du central (`--creer-compte-editeur`, `--creer-compte-titulaire`) **ou, depuis le 2026-11-21 (décision du titulaire), par
+  l'éditeur dans l'écran « Comptes »** (« Ajouter un compte » : éditeur seulement, code de confirmation exigé, script central 039 ; jamais par un
+  titulaire) ; le premier éditeur d'une installation est toujours créé par la console. Mot de passe **provisoire** tiré au sort par le central,
+  affiché une fois (seule l'empreinte est gardée), à changer à la première connexion ; empreinte BCrypt coût 12 ; second facteur obligatoire à chaque connexion **et** à chaque action sensible.
 - **Éditeur** : état technique de toutes les officines, **jamais** de donnée nominative ni de contenu (décision n° 4) ; actions : créer une
   officine, nouveau code d'activation, révoquer un certificat ou un serveur (motif obligatoire, ressaisie, journal des accès et journal de
   sécurité). Départ, effacement, purges, familles et autorité restent en console.
@@ -97,6 +99,15 @@ Détail : [ecrans-central.md](ecrans-central.md) § 5. En local seulement à ce 
   à chaque envoi, 5 envois par heure ; jamais prix, TVA, droits, comptes ni rien de fiscal (refusé par l'écran, la base et le poste).
   **Rien ne s'applique** sans l'acceptation du titulaire de l'officine sur son poste, **mot de passe ressaisi** (aussi pour refuser) ; un
   autre employé ne décide pas. Le titulaire à distance ne voit que ses propres envois et leur état, jamais le motif d'un refus local.
+- **Envoi des codes de second facteur (lot S7.6, script central 037)** : canal (e-mail, SMS, les deux) et serveur d'e-mail réglés dans
+  l'écran « Envoi des codes » par l'**éditeur seulement** (titulaire refusé par l'écran et par la base), **code de second facteur** pour
+  enregistrer. Le **mot de passe SMTP** est chiffré par l'application (protection des données, clés dans le dossier du central, hors
+  dépôt ; DPAPI machine sous Windows) : la base ne garde que le texte chiffré (un texte en clair est refusé par la contrainte), la
+  lecture de l'éditeur ne rend que « renseigné oui/non », le champ n'est jamais réaffiché (vide = inchangé), jamais dans une adresse,
+  un journal ni la console. Chaque lecture, modification, e-mail d'essai et envoi de code est noté au journal des accès (chaîné) ;
+  chaque modification au journal de sécurité, sans mot de passe, identifiant, adresse ni numéro. Contact d'un compte (e-mail ET
+  téléphone, au moins un) modifiable par l'éditeur avec un code, affiché masqué. SMS : aucun fournisseur, refus clair, jamais un
+  faux succès. Réglage incomplet en production : refus clair (ou variables `PHARMA_CLOUD_SMTP_*` si elles sont complètes).
 - **Lignes absentes (lot S7.5, script central 036)** : l'éditeur (fiche d'une officine) et le titulaire (ses officines, droit
   `consulter`) ne voient que des **nombres** : lignes absentes par table, n° du chargement qui les a constatées, date, cause probable ;
   jamais le contenu ni la clé d'une ligne. Les fonctions comptent dans les tables miroir avec l'officine posée par la base (RLS forcée)
@@ -112,5 +123,19 @@ Détail : [ecrans-central.md](ecrans-central.md) § 5. En local seulement à ce 
   activée. Le poste demande le code au central par `POST /api/v1/rattachement` (certificat client + jeton) : **l'officine est celle du
   certificat**, jamais un champ ; la base revérifie le certificat. Compte inconnu, non titulaire ou désactivé : **même réponse** (aucune
   énumération) ; 5 demandes par heure et par officine. Le code est montré une fois, jamais gardé ni journalisé (empreinte seule au central).
+- **Remise à zéro d'un mot de passe (script central 038)** : par l'**éditeur** seulement, jamais sur son propre compte (refus de l'écran
+  et de la base), compte actif ; motif, identifiant ressaisi et **code de second facteur**. Le mot de passe provisoire est tiré par les
+  écrans, **montré une seule fois à l'éditeur** (mémoire du processus, 2 minutes, même session) et **jamais envoyé par e-mail** (le code
+  de connexion part déjà sur ce canal : les deux facteurs ne voyagent jamais ensemble) ; seule l'empreinte BCrypt va en base ; jamais
+  dans un journal, une adresse ou la console. Effets : changement obligatoire à la connexion suivante, toutes les sessions du compte
+  fermées, codes en cours annulés, verrou levé ; journal des accès (aussi dans le journal du compte remis à zéro) et journal de sécurité
+  (avec le motif).
+- **Retrait d'un rattachement par le titulaire (script central 038)** : le titulaire retire lui-même une de ses officines (nom ressaisi,
+  code de second facteur) ; accès coupé **tout de suite**, ses ordres encore ouverts annulés ; l'éditeur ne retire aucun rattachement.
+- **Message à afficher sur les postes (script central 038, script local 160)** : ordre du titulaire à distance (droit `ordres`, code de
+  second facteur) ; **texte simple** de 200 caractères au plus, une ligne, sans balise, caractère invisible ni lien, affiché 7 jours au
+  plus, contrôlé par l'écran, la base centrale (fonction et contrainte) et le poste ; affiché en texte (jamais interprété ni cliquable)
+  à **tous les employés connectés** ; seul le **titulaire de l'officine** peut le fermer (journal des actions, sans le texte). Le texte
+  n'est jamais écrit au journal de sécurité du central.
 - **Rôles étanches** : le titulaire n'ouvre aucun écran ni aucune action de l'éditeur, l'éditeur aucun écran du titulaire ; refus par les
   écrans (« Accès refusé ») **et** par la base (rôle revérifié dans chaque fonction).

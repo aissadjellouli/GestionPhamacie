@@ -15,6 +15,9 @@ Console.OutputEncoding = System.Text.Encoding.UTF8;
 if (ConsoleAdministration.Concerne(args)) return await ConsoleAdministration.ExecuterAsync(args);
 
 var builder = WebApplication.CreateBuilder(args);
+// Journal en fichiers (section « Journaux » du appsettings.json : dossier, taille maximale, durée de conservation, niveau)
+builder.Logging.AddProvider(new Pharma.Shared.Journalisation.JournalFichierProvider(
+    Pharma.Shared.Journalisation.OptionsJournalFichier.Lire(cle => builder.Configuration["Journaux:" + cle], "central-api-")));
 var dossier = ConsoleAdministration.Dossier(args);
 var motDePasse = ConsoleAdministration.MotDePasse();
 var connexion = Environment.GetEnvironmentVariable("PHARMA_CLOUD_CONNEXION") is { Length: > 0 } cx ? cx

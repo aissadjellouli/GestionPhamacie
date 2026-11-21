@@ -53,6 +53,9 @@ public static class Rubriques
         // Lignes absentes (script central 036)
         ["nom_table"] = "Table", ["lignes"] = "Lignes absentes", ["chargement"] = "Constatées au chargement",
         ["premiere_constatation"] = "Première constatation", ["cause"] = "Cause probable",
+        // Contacts des comptes (script central 037) : contact masqué seulement
+        ["identifiant"] = "Identifiant", ["role"] = "Rôle", ["actif"] = "Actif", ["email_masque"] = "E-mail", ["telephone_masque"] = "Téléphone",
+        ["derniere_connexion_le"] = "Dernière connexion", ["modifie_le"] = "Modifié le",
     };
 
     /// <summary>Lot S7.3 : ordres que le titulaire peut envoyer (liste fermée, même liste que cloud_ordre_titulaire_permis, script 034).</summary>
@@ -102,7 +105,9 @@ public static class Rubriques
         string s when colonne == "droits" => string.Join(", ", s.Split(',').Select(d => d switch { "consulter" => "tableau de bord", "journal_acces" => "journal des accès", "ordres" => "ordres à distance", _ => d })),
         string s when colonne == "type" && OrdresTitulaire.FirstOrDefault(o => o.Type == s) is { Libelle: { } l } => l,
         string s when colonne == "type" && s == Pharma.Domain.Reglages.ReglagesCommuns.TypeOrdre => "Réglages communs",
+        string s when colonne == "type" && s == Pharma.Domain.Reglages.MessagePostes.TypeOrdre => "Message sur les postes",
         string s when colonne == "statut" && StatutsOrdre.TryGetValue(s, out var so) => so,
+        string s when colonne == "role" => s switch { "editeur" => "Éditeur", "titulaire" => "Titulaire", _ => s },
         string s when colonne == "acteur" => s switch { "vous" => "Vous", "editeur" => "Éditeur (support)", "titulaire" => "Autre titulaire", "poste" => "Poste de l’officine", "console" => "Console du central", _ => s },
         _ => Convert.ToString(valeur, CultureInfo.GetCultureInfo("fr-FR")) ?? "—",
     };

@@ -149,7 +149,7 @@ chiffrement résistant au quantique.
 | `Ged__Dossier` | non | `C:\ProgramData\PharmaOfficine\GED` (défaut) | Dossier de tous les documents |
 | `Ged__RetentionSauvegardesJours` | non | `7` (défaut) | Conservation des copies de base dans `GED\Sauvegardes` |
 | `Ordonnances__Dossier` | non | défaut : `GED\Ordonnances` | Scans d'ordonnances |
-| `Journaux__Dossier`, `Journaux__TailleMaxMo` (50), `Journaux__RetentionMois` (3), `Journaux__Niveau` (`Information` ou `Warning`) | non | | Journal du serveur |
+| `Journaux__Dossier`, `Journaux__Prefixe`, `Journaux__TailleMaxMo` (50), `Journaux__RetentionMois` (3), `Journaux__Niveau` (`Information` ou `Warning`) | non | | Journal du serveur. Valeurs écrites dans la section `Journaux` de `appsettings.json` (dossier, taille maximale d'un fichier, durée de conservation, niveau) ; les variables d'environnement les remplacent. Le dossier accepte `%VARIABLE%` |
 | `LimiteConnexions__ParMinute` | non | `20` (défaut) | Essais de connexion permis par minute et par adresse |
 | `AutoriserHttpReseau` | **non, à ne pas régler** | | Dérogation provisoire : HTTP servi sur le réseau, en clair |
 | `SecondServeur__AutreServeur` | seulement si parcours C | IP de l'autre serveur | Évite que deux API écrivent |
@@ -175,6 +175,7 @@ Côté serveur central (outils d'administration) : voir parcours E, étape 3.2.
 | `C:\ProgramData\PharmaOfficine\archives-fiscales\AAAA\MM` | PC serveur | Rapports scellés, à conserver 6 ans au moins | **Oui** |
 | `C:\ProgramData\PharmaOfficine\GED` | PC serveur | Documents (ordonnances, Chifa, factures, rapports…) | Oui (sous-dossier `GED` du disque externe) |
 | `C:\ProgramData\PharmaOfficine\Journaux` | PC serveur | Journal du serveur (`pharma-api-AAAAMMJJ.log`) | Non |
+| `C:\ProgramData\PharmaOfficine\Journaux\Central` | serveur central | Journaux de l'API du central (`central-api-AAAAMMJJ.log`) et des écrans du central (`central-ecrans-AAAAMMJJ.log`) : section `Journaux` de leur `appsettings.json` (même règles : un fichier par jour, 50 Mo puis `_2`, `_3`…, conservés 3 mois) | Non |
 | `C:\ProgramData\PharmaOfficine\poste.json` | chaque poste | Réglages du poste (imprimantes, adresse de secours) | Non |
 | `C:\ProgramData\PharmaOfficine\copie-secours.json` | PC serveur | Réglages et état de la copie de secours | Non |
 | `C:\ProgramData\PharmaOfficine\Synchronisation` | PC serveur | Clé privée de synchronisation (DPAPI, ce PC seulement) | **Ne jamais copier sur un autre serveur** |
@@ -386,12 +387,12 @@ Un seul script enchaîne tout dans le bon ordre, avec des contrôles : `scripts\
      - **Attendu** : `True`. Si PowerShell refuse ensuite le script, voir « Conventions de commandes » (stratégie d'exécution).
   1. **Essai à blanc d'abord** (rien n'est écrit, aucune phrase de passe demandée) :
      ```powershell
-     .\scripts\certificat_https.ps1 -DossierApi "C:\Program Files\PharmaOfficine\Api" -DossierExport E:\ -FichierSauvegardeAutorite F:utorite-pharmacie.pfx -PareFeu -WhatIf
+     .\scripts\certificat_https.ps1 -DossierApi "C:\Program Files\PharmaOfficine\Api" -DossierExport E:\ -FichierSauvegardeAutorite F:\autorite-pharmacie.pfx -PareFeu -WhatIf
      ```
      - **Attendu** : chaque action est annoncée avec la mention `[SIMULATION]` (création de l'autorité, sauvegarde du PFX, certificat du serveur, configuration, export, pare-feu), et la fin dit « rien n'a été modifié ».
   2. **Lancement réel** (clé USB du coffre `F:\` branchée) :
      ```powershell
-     .\scripts\certificat_https.ps1 -DossierApi "C:\Program Files\PharmaOfficine\Api" -DossierExport E:\ -FichierSauvegardeAutorite F:utorite-pharmacie.pfx -PareFeu
+     .\scripts\certificat_https.ps1 -DossierApi "C:\Program Files\PharmaOfficine\Api" -DossierExport E:\ -FichierSauvegardeAutorite F:\autorite-pharmacie.pfx -PareFeu
      ```
      - Le script demande une **phrase de passe** (12 caractères au moins), puis la même une seconde fois. Elle protège le PFX ; elle n'est jamais passée en paramètre ni écrite dans un fichier ou un journal. **La noter sur papier, au coffre, à part de la clé USB.**
      - Le script affiche les noms et adresses du certificat (par défaut : `localhost`, `127.0.0.1`, le nom du PC et ses adresses IPv4 privées), puis l'empreinte SHA-256 de l'autorité.
@@ -401,13 +402,13 @@ Un seul script enchaîne tout dans le bon ordre, avec des contrôles : `scripts\
   4. **Ranger le PFX au coffre** : retirer la clé USB `F:\` ; la ranger **hors ligne**, au coffre ou à l'extérieur de l'officine. Faire une **seconde copie** du PFX sur une autre clé (même phrase de passe) conservée ailleurs. Ne jamais copier ce PFX sur un poste, un téléphone, la clé USB `E:\`, ni par le réseau ou courriel.
   5. **Fichiers créés** : vérifier.
      ```powershell
-     Get-Content "C:\Program Files\PharmaOfficine\Apippsettings.Https.json"
+     Get-Content "C:\Program Files\PharmaOfficine\Api\appsettings.Https.json"
      Get-ChildItem E:\, F:\ | Select-Object FullName
      Get-NetFirewallRule -DisplayName "PharmaOfficine API (https 5443)" | Select-Object DisplayName, Enabled
      Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -like "*PharmaOfficine*" } | Select-Object Subject, NotAfter, HasPrivateKey
      ```
      - **Attendu** : `appsettings.Https.json` contient `"Url": "http://localhost:5080"` et `"Url": "https://0.0.0.0:5443"`. `E:\` contient `autorite-pharmacie.crt` et `empreinte-autorite-pharmacie.txt` (et **pas** de `.pfx`). `F:\` contient `autorite-pharmacie.pfx`. La règle de pare-feu est `Enabled : True`. Le magasin contient deux certificats : `CN=PharmaOfficine Autorite pharmacie` (10 ans) et `CN=PharmaOfficine Mobile` (825 jours), `HasPrivateKey : True`.
-  6. **Test de relecture du PFX** (conseillé, sans rien modifier ; le script ne l'importe pas) : sur le PC serveur, `certutil -dump F:utorite-pharmacie.pfx` demande la phrase de passe ; une phrase juste affiche le certificat, une fausse est refusée.
+  6. **Test de relecture du PFX** (conseillé, sans rien modifier ; le script ne l'importe pas) : sur le PC serveur, `certutil -dump F:\autorite-pharmacie.pfx` demande la phrase de passe ; une phrase juste affiche le certificat, une fausse est refusée.
   - **Décision** : le certificat du serveur est valable 825 jours : le renouveler avant l'échéance (procédure F6).
   - **Si échec** : « Dossier de l'API introuvable » : étape 4.2 non faite. « Adresse IP supplémentaire invalide » : vérifier la syntaxe. « Première exécution : … Préciser -FichierSauvegardeAutorite » : ajouter le paramètre. « Dossier introuvable pour -FichierSauvegardeAutorite » : clé du coffre non branchée. « Le fichier existe déjà » : le PFX n'est jamais écrasé ; pour l'utiliser, voir F2 bis. « Les deux saisies sont différentes » ou « 12 caractères au moins » : recommencer, rien n'a été écrit. « ne doit pas être rangé avec le certificat public » : choisir un autre dossier que celui des postes.
   - **Ancienne autorité « par PC »** : si le script avertit « Ancienne autorité … trouvée », suivre la procédure F7. Elle n'est jamais supprimée automatiquement.
@@ -905,7 +906,7 @@ Scripts (dans `scripts\second-serveur\`, à copier sur les deux serveurs avec `c
   .\autoriser-lecture-copie-ged.ps1 -Essai      # sur le principal puis sur le 2e serveur : affiche ce qui serait fait
   .\autoriser-lecture-copie-ged.ps1             # sur le principal d'abord, puis sur le 2e serveur (après la réplication)
   ```
-  - **Pourquoi** : la fréquence de la copie (« toutes les N minutes ») se règle dans l'application, **Administration › 2e serveur › Copie de la GED** (titulaire seul, 1 à 60 minutes, **5 par défaut**). Le 2e serveur a une copie répliquée de la base : la tâche de copie lit ce réglage dans **sa base locale, en lecture seule**. Il faut un compte de lecture, **sans mot de passe stocké nulle part** : un rôle PostgreSQL `pharma_ged_lecture` (connexion seulement, ni superutilisateur ni création, sessions en lecture seule, droit de lire **cette seule colonne**, un nombre de minutes) reconnu par **l'authentification Windows (SSPI)** : PostgreSQL n'accepte comme `pharma_ged_lecture` que le **compte Windows de la tâche de copie** (`PharmaGedCopie`, créé à l'étape 12 quater) sur ce PC, et seulement depuis la **boucle locale** (127.0.0.1 et ::1 : aucun accès depuis le réseau). Un autre programme du PC, sous un autre compte Windows, est refusé. Les autres comptes (`postgres`, `pharma_app`) ne sont pas touchés. Écartés : une règle `trust` (tout programme du PC pouvait se présenter comme ce rôle) et un fichier de mot de passe du compte de la tâche (secret en clair). Si la tâche utilise un autre compte que `PharmaGedCopie` (`copier-ged.ps1 -Compte`), passer le même nom : `.utoriser-lecture-copie-ged.ps1 -CompteWindows <compte>`.
+  - **Pourquoi** : la fréquence de la copie (« toutes les N minutes ») se règle dans l'application, **Administration › 2e serveur › Copie de la GED** (titulaire seul, 1 à 60 minutes, **5 par défaut**). Le 2e serveur a une copie répliquée de la base : la tâche de copie lit ce réglage dans **sa base locale, en lecture seule**. Il faut un compte de lecture, **sans mot de passe stocké nulle part** : un rôle PostgreSQL `pharma_ged_lecture` (connexion seulement, ni superutilisateur ni création, sessions en lecture seule, droit de lire **cette seule colonne**, un nombre de minutes) reconnu par **l'authentification Windows (SSPI)** : PostgreSQL n'accepte comme `pharma_ged_lecture` que le **compte Windows de la tâche de copie** (`PharmaGedCopie`, créé à l'étape 12 quater) sur ce PC, et seulement depuis la **boucle locale** (127.0.0.1 et ::1 : aucun accès depuis le réseau). Un autre programme du PC, sous un autre compte Windows, est refusé. Les autres comptes (`postgres`, `pharma_app`) ne sont pas touchés. Écartés : une règle `trust` (tout programme du PC pouvait se présenter comme ce rôle) et un fichier de mot de passe du compte de la tâche (secret en clair). Si la tâche utilise un autre compte que `PharmaGedCopie` (`copier-ged.ps1 -Compte`), passer le même nom : `.\autoriser-lecture-copie-ged.ps1 -CompteWindows <compte>`.
   - Le script 143 (mise à jour de la base) doit être passé avant. Sur le **principal** : crée le rôle et le droit (répliqués ensuite vers le 2e serveur). Sur le **2e serveur** : vérifie que le rôle est arrivé, ajoute la correspondance au `pg_ident.conf` et les deux lignes `sspi` au `pg_hba.conf` (copie datée de chaque fichier gardée ; lignes placées avant les autres règles ; anciennes lignes `trust` de ce rôle retirées ; lignes en erreur signalées ; rechargement sans redémarrage). À refaire sur l'ancien principal après une bascule si ses fichiers n'ont pas été recopiés (F3/F4).
   - **Attendu** : « Rôle pharma_ged_lecture : existe », « Droit de lecture de la seule colonne ged_copie_minutes donné », « pg_ident.conf complété : PharmaGedCopie@<NOM DU PC> -> pharma_ged_lecture », « pg_hba.conf complété ». **Contrôle après l'étape 12 quater** : le journal de la copie affiche « Réglage de l'application : toutes les N minute(s) ». **Si la lecture est refusée** (« Réglage de la fréquence illisible ») : le journal de PostgreSQL du 2e serveur donne le nom de compte reçu ; s'il diffère de `PharmaGedCopie@<NOM DU PC>` (casse, nom du PC), relancer le script avec ce nom ou signaler l'écart. **Si on saute cette étape** : la copie marche quand même, **toutes les 5 minutes** (valeur par défaut) ; le journal de la copie le dit (« Réglage de la fréquence illisible ») et le réglage de l'écran n'a alors aucun effet sur le 2e serveur.
 
@@ -1063,6 +1064,31 @@ Les scripts de la base centrale sont dans `database\cloud\` (001 au dernier, 036
     Les cinq variables sont obligatoires pour envoyer ; s'il en manque une, la commande le dit et n'envoie rien (le mot de passe reste affiché). **[À CONFIRMER : compte SMTP de l'éditeur à créer (fournisseur, adresse d'expédition) ; aucun envoi réel essayé le 2026-11-20.]**
   - Pour le **service** qui tourne en continu, ces variables doivent être réglées au niveau de la machine ou du compte de service. **[À CONFIRMER : le code ne fournit pas de service Windows pour le serveur central ; mode de lancement et compte du service à définir.]**
 - [ ] **3.3** Publier le serveur central. **Où** : PC des sources. **Compte** : administrateur Windows. **[À CONFIRMER : même forme que l'API, `dotnet publish src\Pharma.Cloud.Api -c Release -r win-x64 --self-contained true -o "<dossier>\Cloud"`, à valider.]**
+
+- [ ] **3.4** Compte e-mail des **codes de second facteur** des écrans du central (2026-11-21). **Où** : serveur central. **Compte** :
+  administrateur Windows, session PowerShell de 3.2 (`PHARMA_CLOUD_DOSSIER`, `PHARMA_CLOUD_ADMIN_CONNEXION`), après le passage des scripts
+  centraux (037 compris). Le compte d'envoi est celui de l'**éditeur** (jamais celui d'un pharmacien). Gmail : validation en deux étapes
+  activée, puis un **mot de passe d'application** créé **sur ce compte** (16 lettres).
+  ```powershell
+  & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --envoi-codes --serveur smtp.gmail.com --port 587 --tls starttls `
+      --identifiant <adresse du compte d'envoi> --operateur "<nom>" --essai <votre adresse>
+  ```
+  - Le mot de passe d'application est **demandé au clavier** (rien ne s'affiche) ; jamais en argument ni en variable.
+  - **Attendu** : « E-mail d'essai envoyé à x***@… » puis « Envoi des codes enregistré… ». L'e-mail d'essai ne contient **pas** de code.
+  - « identifiant ou mot de passe refusé » : mot de passe d'application d'un **autre** compte, mot de passe habituel du compte, ou
+    validation en deux étapes absente. Rien n'est enregistré.
+  - Ensuite, **compte administrateur (éditeur) avec l'adresse qui recevra ses codes** :
+    ```powershell
+    & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --creer-compte-editeur <identifiant> --nom "<nom>" --email <adresse de l'éditeur>
+    ```
+    Le mot de passe provisoire s'affiche une fois ; à la première connexion, le **code arrive par e-mail** à cette adresse (envoyé par le
+    compte réglé ci-dessus), puis le mot de passe est à changer.
+  - **Adresse erronée, perdue ou à changer** (l'écran « Comptes » exige un code, donc une adresse qui marche) : sur le serveur,
+    ```powershell
+    & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --contact-compte <identifiant> --email <nouvelle adresse> --auteur "<nom>"
+    ```
+    (`--telephone <n°>` aussi ; `-` retire ; au moins un contact reste). Noté au journal des accès et au journal de sécurité, sans l'adresse.
+  - Le réglage d'envoi se modifie ensuite à l'écran « Envoi des codes », les contacts à l'écran « Comptes ».
 
 ### 4. Autorité et certificat du serveur central
 
@@ -1503,7 +1529,7 @@ La première version du script créait une autorité « `PharmaOfficine Autorite
 | `Get-NetFirewallRule` montre une règle sur 5080 | Règle héritée | `Disable-NetFirewallRule -DisplayName '<nom>'` |
 | Deux postes partagent la même caisse | Même `PHARMA_POSTE` | Donner un nom unique à chaque poste |
 
-Journal du serveur : `C:\ProgramData\PharmaOfficine\Journaux\pharma-api-AAAAMMJJ.log` (un fichier par jour).
+Journal du serveur : `C:\ProgramData\PharmaOfficine\Journaux\pharma-api-AAAAMMJJ.log` (un fichier par jour). Serveur central : `C:\ProgramData\PharmaOfficine\Journaux\Central\central-api-AAAAMMJJ.log` et `central-ecrans-AAAAMMJJ.log`. Dossier, taille maximale et durée de conservation : section `Journaux` du `appsettings.json` de chaque application.
 
 ### A2. Clé de scellement des journaux
 

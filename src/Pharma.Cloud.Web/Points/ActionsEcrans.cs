@@ -61,6 +61,56 @@ public static class Messages
         ["reglages_format"] = "Rien n'est envoyé : réglages illisibles.",
         ["reglages_aucune_officine"] = "Rien n'est envoyé : cochez au moins une officine.",
         ["reglages_trop_d_officines"] = "Rien n'est envoyé : 50 officines au plus par envoi.",
+        // Lot S7.6 : envoi des codes réglé dans l'administration du site
+        ["reglage_incomplet"] = "Envoi des codes non réglé : aucun code n'est parti. L'éditeur doit compléter « Envoi des codes » (serveur d'e-mail et mot de passe).",
+        ["sms_indisponible"] = "Envoi des codes par SMS non disponible (aucun fournisseur retenu) : aucun code n'est parti. Prévenez l'éditeur.",
+        ["sans_contact"] = "Votre compte n'a pas de contact pour le canal choisi (e-mail ou téléphone) : aucun code n'est parti. Prévenez l'éditeur.",
+        ["envoi_codes_canal"] = "Canal inconnu : e-mail, SMS ou les deux.",
+        ["envoi_codes_serveur"] = "Serveur d'e-mail invalide : le nom seul, ex. smtp.gmail.com (sans « https:// », sans « :587 », sans espace).",
+        ["envoi_codes_port"] = "Port invalide : un nombre de 1 à 65 535 (587 pour Gmail).",
+        ["envoi_codes_tls"] = "Sécurité inconnue : STARTTLS ou TLS direct (jamais sans chiffrement).",
+        ["envoi_codes_identifiant"] = "Identifiant invalide (254 caractères au plus, sans espace).",
+        ["envoi_codes_expediteur"] = "Adresse d'expéditeur invalide.",
+        ["envoi_codes_incomplet"] = "Rien n'est enregistré : l'e-mail exige le serveur, le port, l'identifiant, l'expéditeur et le mot de passe.",
+        ["envoi_codes_cles"] = "Rien n'est enregistré : dossier des clés du central introuvable (PHARMA_CLOUD_DOSSIER ou Ecrans:DossierCles), le mot de passe ne peut pas être chiffré.",
+        ["envoi_codes_sms"] = "Rien n'est enregistré : « SMS » seul est impossible tant qu'aucun fournisseur SMS n'est retenu (plus aucun code ne partirait). Choisissez « E-mail ».",
+        ["essai_mot_de_passe"] = "Serveur, port, sécurité ou identifiant modifiés : ressaisissez le mot de passe d'application pour l'e-mail d'essai (le mot de passe enregistré ne part que vers le serveur enregistré).",
+        ["essai_adresse"] ="Adresse de l'e-mail d'essai invalide.",
+        ["essai_incomplet"] = "E-mail d'essai impossible : serveur, port, sécurité, identifiant, expéditeur et mot de passe nécessaires (saisis ou déjà enregistrés).",
+        ["essai_identifiants"] = "Le serveur d'e-mail a refusé l'identifiant ou le mot de passe. Gmail : le mot de passe doit être un « mot de passe d'application » (16 lettres, validation en deux étapes activée), pas celui du compte ; l'identifiant est l'adresse Gmail complète.",
+        ["essai_echec"] = "L'e-mail d'essai n'est pas parti : vérifiez le serveur, le port, la sécurité, l'identifiant et le mot de passe d'application. Aucun détail technique n'est affiché ici.",
+        ["contact_inconnu"] = "Compte introuvable.",
+        ["contact_email"] = "Adresse e-mail invalide.",
+        ["contact_telephone"] = "Téléphone invalide : 8 à 15 chiffres, « + » permis en tête.",
+        ["contact_sans_contact"] = "Refusé : un compte garde au moins un contact (e-mail ou téléphone).",
+        ["contact_inchange"] = "Rien à changer : saisissez une nouvelle adresse, un nouveau numéro ou « - » pour retirer.",
+        // Reste S7.2 (script central 038) : remise à zéro d'un mot de passe (éditeur), retrait d'un rattachement (titulaire)
+        ["creation_identifiant"] = "Identifiant invalide : 3 à 60 caractères, minuscules, chiffres et « . _ - » (ex. titulaire.dupont).",
+        ["creation_existe"] = "Cet identifiant est déjà pris : choisissez-en un autre.",
+        ["creation_nom"] = "Nom obligatoire (120 caractères au plus).",
+        ["creation_role"] = "Rôle : éditeur ou titulaire.",
+        ["creation_contact"] = "Il faut au moins un contact (e-mail ou téléphone) : c'est là que partiront les codes du compte.",
+        ["creation_email"] = "Adresse e-mail invalide.",
+        ["creation_telephone"] = "Téléphone invalide : 8 à 15 chiffres, « + » permis en tête.",
+        ["remise_inconnu"] = "Compte introuvable : rien n'est changé.",
+        ["remise_soi_meme"] = "Votre propre mot de passe se change par « Mot de passe » (en-tête), jamais par une remise à zéro.",
+        ["remise_inactif"] = "Compte désactivé : aucune remise à zéro.",
+        ["remise_motif"] = "Motif obligatoire : 5 à 300 caractères (ex. « appel du titulaire, identité vérifiée »).",
+        ["remise_confirmation"] = "Ressaisissez exactement l'identifiant du compte pour confirmer.",
+        ["mdp_affiche"] = "Ce mot de passe provisoire a déjà été affiché (ou plus de 2 minutes ont passé) : il n'est plus visible. Refaites une remise à zéro si besoin.",
+        ["retrait_refuse"] = "Officine introuvable, rattachée à un autre compte ou déjà retirée : rien n'est changé.",
+        ["retrait_confirmation"] = "Ressaisissez exactement le nom de l'officine pour confirmer le retrait.",
+        // Reste S7.3 (script central 038) : message à afficher sur les postes
+        ["message_vide"] = "Message vide : saisissez le texte à afficher sur les postes.",
+        ["message_trop_long"] = "Message trop long : 200 caractères au plus.",
+        ["message_texte"] = "Message refusé : texte simple sur une ligne, sans balise (< >) ni caractère invisible.",
+        ["message_lien"] = "Message refusé : aucun lien ni adresse de site (http, www., nom de domaine).",
+        ["message_duree"] = "Durée d'affichage invalide : de 1 à 7 jours.",
+        ["message_format"] = "Message illisible : rien n'est envoyé.",
+        ["message_refuse"] = "Message refusé : officine non rattachée, accès retiré ou droit « ordres » non accordé depuis le poste de l'officine.",
+        ["message_partie"] = "Cette officine est partie : aucun message.",
+        ["message_deja_en_cours"] = "Un message attend déjà d'être relevé par l'officine : attendez son résultat (ou son expiration, 24 heures).",
+        ["message_trop_d_ordres"] = "Trop d'ordres envoyés : 10 par heure au plus (messages compris).",
     };
 
     public static readonly Dictionary<string, string> Succes = new()
@@ -72,6 +122,13 @@ public static class Messages
         ["rattachee"] = "Officine rattachée à votre compte : tableau de bord et journal des accès.",
         ["ordre_envoye"] = "Ordre envoyé : l'officine le relève à son prochain passage (une minute environ) ; résultat ci-dessous.",
         ["reglages_envoyes"] = "Réglages proposés : chaque officine les relève, puis son titulaire les accepte ou les refuse sur le poste (24 heures) ; rien ne change avant. Suivi ci-dessous.",
+        // Lot S7.6
+        ["envoi_codes_enregistre"] = "Envoi des codes enregistré : appliqué aux prochains codes (dans 10 secondes au plus).",
+        ["essai_envoye"] = "E-mail d'essai envoyé : vérifiez la boîte de réception (et les indésirables) de l'adresse saisie.",
+        ["contact_modifie"] = "Contact du compte modifié (noté au journal de sécurité).",
+        // Script central 038
+        ["rattachement_retire"] = "Rattachement retiré : l'officine n'est plus accessible depuis votre compte ; ses ordres encore ouverts sont annulés.",
+        ["message_envoye"] = "Message envoyé : l'officine le relève à son prochain passage et l'affiche sur ses postes jusqu'à la date choisie (statut « Appliqué » = affiché).",
     };
 
     public static string? Erreur(string? cle) => cle is not null && Erreurs.TryGetValue(cle, out var m) ? m : null;
@@ -164,7 +221,7 @@ public static class ActionsEcrans
         var g = app.MapGroup("/actions");
 
         g.MapPost("/connexion", async ([FromForm] string? identifiant, [FromForm(Name = "mot_de_passe")] string? motDePasse, HttpContext ctx,
-            DepotEcrans depot, CodesSecondFacteur codes, IEnvoiCodeDistant envoi, ILoggerFactory journaux) =>
+            DepotEcrans depot, CodesSecondFacteur codes, ChoixEnvoiCodes envoi, ILoggerFactory journaux) =>
         {
             var ct = ctx.RequestAborted;
             var id = ComptesDistants.NormaliserIdentifiant(identifiant);
@@ -179,7 +236,7 @@ public static class ActionsEcrans
             return Results.Redirect(envoye is null ? "/code" : $"/code?erreur={envoye}");
         }).RequireRateLimiting("connexion");
 
-        g.MapPost("/renvoyer-code", async (HttpContext ctx, DepotEcrans depot, CodesSecondFacteur codes, IEnvoiCodeDistant envoi, ILoggerFactory journaux) =>
+        g.MapPost("/renvoyer-code", async (HttpContext ctx, DepotEcrans depot, CodesSecondFacteur codes, ChoixEnvoiCodes envoi, ILoggerFactory journaux) =>
         {
             var erreur = await EnvoyerCodeAsync(depot, codes, envoi, ctx.EmpreinteJeton()!, "connexion", journaux, ctx.RequestAborted);
             return Results.Redirect(erreur is null ? "/code?ok=code_envoye" : $"/code?erreur={erreur}");
@@ -273,8 +330,36 @@ public static class ActionsEcrans
             return Results.Redirect($"{retour}{(retour.Contains('?') ? '&' : '?')}erreur={cle}");
         }).RequireRateLimiting("code");
 
+        // Script central 038 : retrait d'un rattachement par le titulaire lui-même (nom de l'officine ressaisi, code de confirmation)
+        g.MapPost("/mes-officines/{officine:guid}/retrait", async (Guid officine, [FromForm] string? confirmation, [FromForm] string? code, HttpContext ctx,
+            DepotEcrans depot, CodesSecondFacteur codes) =>
+        {
+            var (statut, _) = await depot.RetirerRattachementAsync(ctx.EmpreinteJeton()!, officine, confirmation, codes.Empreinte("action", code), ctx.RequestAborted);
+            return Results.Redirect(statut == "ok"
+                ? "/mes-officines?ok=rattachement_retire"
+                : $"/mes-officines/{officine}/retirer?erreur={(Messages.Erreurs.ContainsKey("retrait_" + statut) ? "retrait_" + statut : Cle(statut))}");
+        }).RequireRateLimiting("code");
+
+        // Script central 038 : message à afficher sur les postes (texte simple contrôlé ici, puis par la base, puis par le poste ; droit
+        // « ordres », code de confirmation). Après un refus, la saisie ne revient PAS dans l'adresse (texte libre : jamais dans une adresse).
+        g.MapPost("/mes-officines/{officine:guid}/message", async (Guid officine, [FromForm] string? texte, [FromForm] string? jours, [FromForm] string? code,
+            HttpContext ctx, DepotEcrans depot, CodesSecondFacteur codes) =>
+        {
+            var page = $"/mes-officines/{officine}/ordres";
+            var t = (texte ?? "").Trim();
+            string statut;
+            if (!int.TryParse(jours, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var j)
+                || !Pharma.Domain.Reglages.MessagePostes.JoursValides(j))
+                statut = "duree";
+            else if (Pharma.Domain.Reglages.MessagePostes.ControlerTexte(t) is { } refus) statut = refus;
+            else statut = await depot.EnvoyerMessageAsync(ctx.EmpreinteJeton()!, officine, t, j, codes.Empreinte("action", code), ctx.RequestAborted);
+            return Results.Redirect(statut == "ok"
+                ? $"{page}?ok=message_envoye"
+                : $"{page}?erreur={(Messages.Erreurs.ContainsKey("message_" + statut) ? "message_" + statut : Cle(statut))}");
+        }).RequireRateLimiting("code");
+
         // Code de confirmation d'une action (second facteur à chaque action sensible)
-        g.MapPost("/code-action", async ([FromForm] string? retour, HttpContext ctx, DepotEcrans depot, CodesSecondFacteur codes, IEnvoiCodeDistant envoi,
+        g.MapPost("/code-action", async ([FromForm] string? retour, HttpContext ctx, DepotEcrans depot, CodesSecondFacteur codes, ChoixEnvoiCodes envoi,
             ILoggerFactory journaux) =>
         {
             var erreur = await EnvoyerCodeAsync(depot, codes, envoi, ctx.EmpreinteJeton()!, "action", journaux, ctx.RequestAborted);
@@ -329,6 +414,11 @@ public static class ActionsEcrans
                 ? $"/officines/{officine}?rubrique=certificats&ok=serveur_revoque"
                 : $"/officines/{officine}/revoquer-serveur?serveur={srv}&erreur={Cle(statut)}");
         });
+
+        // Lot S7.6 : envoi des codes (réglage, e-mail d'essai) et contact des comptes, éditeur seulement
+        ActionsEnvoiCodes.Mapper(g);
+        // Script central 038 : remise à zéro du mot de passe d'un autre compte, éditeur seulement
+        ActionsEnvoiCodes.MapperRemise(g);
     }
 
     /// <summary>Code d'activation (format du poste : secret + début de l'empreinte de l'autorité) et empreinte du secret (seule gardée en base).</summary>
@@ -352,23 +442,32 @@ public static class ActionsEcrans
 
     private static string Cle(string? statut) => statut is not null && Messages.Erreurs.ContainsKey(statut) ? statut : "officine";
 
-    /// <summary>Tire un code, garde son empreinte HMAC en base, l'envoie ; rend null ou la clé du message d'erreur. Le code n'est jamais journalisé.</summary>
-    private static async Task<string?> EnvoyerCodeAsync(DepotEcrans depot, CodesSecondFacteur codes, IEnvoiCodeDistant envoi, string empreinteJeton, string objet,
+    /// <summary>
+    /// Tire un code, garde son empreinte HMAC en base, l'envoie sur le canal du réglage (lot S7.6) ; rend null ou la clé du message
+    /// d'erreur. Résultat de chaque canal noté au journal des accès (jamais le code, l'adresse ni le numéro).
+    /// </summary>
+    private static async Task<string?> EnvoyerCodeAsync(DepotEcrans depot, CodesSecondFacteur codes, ChoixEnvoiCodes choix, string empreinteJeton, string objet,
         ILoggerFactory journaux, CancellationToken ct)
     {
+        var journal = journaux.CreateLogger("Pharma.Cloud.Web.Codes");
+        var (envoi, refus) = await choix.ChoisirAsync(empreinteJeton, ct);
+        if (envoi is null)
+        {
+            await depot.NoterEnvoiAsync(empreinteJeton, "code_envoi", "reglage:incomplet", ct);
+            return refus ?? ChoixEnvoiCodes.RefusIncomplet;
+        }
         var code = CodesSecondFacteur.Tirer();
         var (statut, destinataire) = await depot.CreerCodeAsync(empreinteJeton, objet, codes.Empreinte(objet, code)!, envoi.Canal, ct);
-        if (statut == "trop_de_codes") return "trop_de_codes";
-        if (statut != "envoye" || destinataire is null) return statut == "session" ? "session" : "envoi";
-        try
+        if (statut is "trop_de_codes" or "sans_contact" or "session") return statut;
+        if (statut != "envoye" || destinataire is null) return "envoi";
+        var resultats = await EnvoisCodes.EnvoyerAsync(envoi, destinataire, code, ct);
+        foreach (var r in resultats)
         {
-            await envoi.EnvoyerAsync(destinataire, code, ct);
-            return null;
+            await depot.NoterEnvoiAsync(empreinteJeton, "code_envoi", r.Objet, ct);
+            if (!r.Parti) journal.LogWarning("Envoi d'un code de second facteur : {Canal} {Resultat} ({Type})", r.Canal, r.Resultat, r.TypeErreur ?? "-");
         }
-        catch (Exception e) when (e is not OperationCanceledException)
-        {
-            journaux.CreateLogger("Pharma.Cloud.Web.Codes").LogWarning("Envoi d'un code de second facteur en échec ({Canal}, {Type})", envoi.Canal, e.GetType().Name);
-            return "envoi";
-        }
+        if (resultats.Any(r => r.Parti)) return null;
+        return resultats.All(r => r.Canal == "sms" && r.Resultat == "indisponible") ? "sms_indisponible"
+            : resultats.All(r => r.Resultat == "sans_contact") ? "sans_contact" : "envoi";
     }
 }

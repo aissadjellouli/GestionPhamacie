@@ -247,6 +247,8 @@ public static class DependencyInjection
         services.AddScoped<Application.Synchronisation.IPurgeSyncDepot>(sp => sp.GetRequiredService<Synchronisation.SupervisionSyncSql>());
         // Lots S5.1 et S5.5 : ordres reçus du serveur central (script 145)
         services.AddScoped<Application.Synchronisation.IOrdresCentrauxDepot, Synchronisation.OrdresCentrauxSql>();
+        // Reste du lot S7.3 : message du titulaire à distance affiché sur les postes (script 160)
+        services.AddScoped<Application.Synchronisation.IMessageCentralDepot, Synchronisation.MessageCentralSql>();
         services.AddSingleton<Application.Synchronisation.ICertificatSync>(new Synchronisation.CertificatSyncFichier(
             Choisir(options.DossierSynchronisation, Path.Combine(racine, "Synchronisation")), protection));
         // Registre des psychotropes renforcé (lot 8, script 117) ; répertoire national des ordonnances : adaptateur FACTICE

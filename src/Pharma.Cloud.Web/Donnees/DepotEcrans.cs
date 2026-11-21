@@ -72,9 +72,10 @@ public sealed class DepotEcrans(NpgsqlDataSource db)
             : null;
     }
 
+    /// <summary>Nouveau code (script central 037 : canal fichier, email, sms ou les_deux) ; contact rendu pour l'envoi seulement.</summary>
     public async Task<(string Statut, DestinataireCode? Destinataire)> CreerCodeAsync(string empreinteJeton, string objet, string empreinteCode, string canal, CancellationToken ct)
     {
-        await using var cmd = Commande("SELECT statut, identifiant, email, telephone FROM cloud_ecran_creer_code($1, $2, $3, $4)", empreinteJeton, objet, empreinteCode, canal);
+        await using var cmd = Commande("SELECT statut, identifiant, email, telephone FROM cloud_ecran_facteur_demander_code($1, $2, $3, $4)", empreinteJeton, objet, empreinteCode, canal);
         await using var r = await cmd.ExecuteReaderAsync(ct);
         await r.ReadAsync(ct);
         var statut = r.GetString(0);
@@ -218,6 +219,120 @@ public sealed class DepotEcrans(NpgsqlDataSource db)
     public Task<string?> RevoquerServeurAsync(string jeton, Guid officine, string? code, string? motif, string serveur, string? confirmation, CancellationToken ct) =>
         ActionOuverteAsync(jeton, officine, "SELECT statut FROM cloud_ecran_revoquer_serveur($1, $2, $3, $4, $5)",
             [jeton, code, motif, serveur, confirmation], ct);
+
+    // ------------------------------------------------------------------ envoi des codes et comptes (lot S7.6, script central 037)
+    /// <summary>Réglage lu par l'éditeur : jamais le mot de passe, seulement « renseigné oui/non » (une ligne).</summary>
+    public Task<TableEcran> ReglageEnvoiCodesAsync(string empreinteJeton, CancellationToken ct) =>
+        LireAsync(null, null, "SELECT * FROM cloud_ecran_facteur_reglage_lire($1)", [Texte(empreinteJeton)], ct);
+
+    /// <summary>Réglage pour l'envoi d'un code (mot de passe CHIFFRÉ seulement) ; null sans session valable.</summary>
+    public async Task<ReglageEnvoiCodes?> ReglageEnvoiAsync(string empreinteJeton, CancellationToken ct)
+    {
+        await using var cmd = Commande("""
+            SELECT canal, smtp_serveur, smtp_port, smtp_tls, smtp_identifiant, smtp_expediteur, smtp_mot_de_passe_chiffre, complet
+            FROM cloud_ecran_facteur_reglage_envoi($1)
+            """, empreinteJeton);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        if (!await r.ReadAsync(ct)) return null;
+        string? T(int i) => r.IsDBNull(i) ? null : r.GetString(i);
+        return new ReglageEnvoiCodes(r.GetString(0), T(1), r.IsDBNull(2) ? null : r.GetInt32(2), r.GetString(3), T(4), T(5), T(6), r.GetBoolean(7));
+    }
+
+    /// <summary>Enregistrement du réglage (code de second facteur ; mot de passe CHIFFRÉ ou null = inchangé) ; rend le statut de la base.</summary>
+    public async Task<string> EnregistrerReglageEnvoiCodesAsync(string empreinteJeton, string? empreinteCode, string? canal, string? serveur, int? port,
+        string? tls, string? identifiant, string? expediteur, string? motDePasseChiffre, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("SELECT statut FROM cloud_ecran_facteur_reglage_enregistrer($1, $2, $3, $4, $5, $6, $7, $8, $9)");
+        foreach (var v in new[] { empreinteJeton, empreinteCode, canal, serveur }) cmd.Parameters.Add(Texte(v));
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)port ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Integer });
+        foreach (var v in new[] { tls, identifiant, expediteur, motDePasseChiffre }) cmd.Parameters.Add(Texte(v));
+        return (string)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+
+    /// <summary>Résultat d'un envoi au journal des accès (événement et objet de la liste fermée du script 037).</summary>
+    public async Task NoterEnvoiAsync(string empreinteJeton, string evenement, string objet, CancellationToken ct)
+    {
+        await using var cmd = Commande("SELECT cloud_ecran_facteur_noter_envoi($1, $2, $3)", empreinteJeton, evenement, objet);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>Comptes distants vus par l'éditeur (contact masqué), page par page.</summary>
+    public Task<TableEcran> ComptesAsync(string empreinteJeton, int page, int taille, CancellationToken ct) =>
+        LireAsync(null, null, "SELECT * FROM cloud_ecran_facteur_comptes($1, $2, $3)", [Texte(empreinteJeton), Entier(page), Entier(taille)], ct);
+
+    /// <summary>Contact d'un compte (vide = inchangé, « - » = retiré ; code de second facteur) ; rend le statut de la base.</summary>
+    public async Task<string> ModifierContactAsync(string empreinteJeton, string? empreinteCode, Guid compte, string? email, string? telephone, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("SELECT statut FROM cloud_ecran_facteur_compte_contact($1, $2, $3, $4, $5)");
+        cmd.Parameters.Add(Texte(empreinteJeton));
+        cmd.Parameters.Add(Texte(empreinteCode));
+        cmd.Parameters.Add(Uuid(compte));
+        cmd.Parameters.Add(Texte(email is { Length: <= 254 } ? email : email is null ? null : "invalide"));
+        cmd.Parameters.Add(Texte(telephone is { Length: <= 40 } ? telephone : telephone is null ? null : "invalide"));
+        return (string)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+
+    // ------------------------------------------------------------------ reste S7.2 et S7.3 (script central 038)
+    /// <summary>
+    /// Remise à zéro du mot de passe d'un autre compte par l'éditeur : seule l'empreinte BCrypt du mot de passe provisoire part vers
+    /// la base (jamais le mot de passe) ; motif, identifiant ressaisi, empreinte du code de confirmation. Rend le statut de la base.
+    /// </summary>
+    public async Task<string> RemettreMotDePasseAsync(string empreinteJeton, string? empreinteCode, Guid compte, string? motif, string? confirmation,
+        string empreinteBcrypt, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("SELECT statut FROM cloud_ecran_remise_mot_de_passe($1, $2, $3, $4, $5, $6)");
+        cmd.Parameters.Add(Texte(empreinteJeton));
+        cmd.Parameters.Add(Texte(empreinteCode));
+        cmd.Parameters.Add(Uuid(compte));
+        cmd.Parameters.Add(Texte(motif is { Length: <= 400 } ? motif : null));
+        cmd.Parameters.Add(Texte(confirmation is { Length: <= 100 } ? confirmation : null));
+        cmd.Parameters.Add(Texte(empreinteBcrypt));
+        return (string)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+
+    /// <summary>Script central 039 : compte distant créé par l'éditeur (mot de passe provisoire : empreinte BCrypt seulement) ; statut et n° du compte.</summary>
+    public async Task<(string Statut, Guid? Compte)> CreerCompteAsync(string empreinteJeton, string? empreinteCode, string? identifiant, string? nom, string? role,
+        string? telephone, string? email, string empreinteBcrypt, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("SELECT statut, compte FROM cloud_ecran_compte_creer($1, $2, $3, $4, $5, $6, $7, $8)");
+        cmd.Parameters.Add(Texte(empreinteJeton));
+        cmd.Parameters.Add(Texte(empreinteCode));
+        cmd.Parameters.Add(Texte(identifiant is { Length: <= 100 } ? identifiant : null));
+        cmd.Parameters.Add(Texte(nom is { Length: <= 200 } ? nom : null));
+        cmd.Parameters.Add(Texte(role is { Length: <= 20 } ? role : null));
+        cmd.Parameters.Add(Texte(telephone is { Length: <= 30 } ? telephone : null));
+        cmd.Parameters.Add(Texte(email is { Length: <= 300 } ? email : null));
+        cmd.Parameters.Add(Texte(empreinteBcrypt));
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        await r.ReadAsync(ct);
+        return (r.GetString(0), r.IsDBNull(1) ? null : r.GetGuid(1));
+    }
+
+    /// <summary>Retrait d'un rattachement par le titulaire lui-même (nom de l'officine ressaisi, code) ; statut et nombre d'ordres annulés.</summary>
+    public async Task<(string Statut, int OrdresAnnules)> RetirerRattachementAsync(string empreinteJeton, Guid officine, string? confirmation, string? empreinteCode,
+        CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("SELECT statut, ordres_annules FROM cloud_ecran_titulaire_retirer_officine($1, $2, $3, $4)");
+        cmd.Parameters.Add(Texte(empreinteJeton));
+        cmd.Parameters.Add(Uuid(officine));
+        cmd.Parameters.Add(Texte(confirmation is { Length: <= 300 } ? confirmation : null));
+        cmd.Parameters.Add(Texte(empreinteCode));
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        await r.ReadAsync(ct);
+        return (r.GetString(0), r.GetInt32(1));
+    }
+
+    /// <summary>Message à afficher sur les postes d'une officine (texte déjà contrôlé par l'écran, revérifié par la base) ; rend le statut.</summary>
+    public async Task<string> EnvoyerMessageAsync(string empreinteJeton, Guid officine, string? texte, int jours, string? empreinteCode, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("SELECT statut FROM cloud_ecran_titulaire_envoyer_message($1, $2, $3, $4, $5)");
+        cmd.Parameters.Add(Texte(empreinteJeton));
+        cmd.Parameters.Add(Uuid(officine));
+        cmd.Parameters.Add(Texte(texte is { Length: <= 1000 } ? texte : null));
+        cmd.Parameters.Add(Entier(jours));
+        cmd.Parameters.Add(Texte(empreinteCode));
+        return (string)(await cmd.ExecuteScalarAsync(ct))!;
+    }
 
     // ------------------------------------------------------------------ outils
     private async Task<string?> ActionOuverteAsync(string jeton, Guid officine, string sql, string?[] valeurs, CancellationToken ct)

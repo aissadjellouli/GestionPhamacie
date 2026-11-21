@@ -3,7 +3,7 @@
 
 <PageTitle>Mes officines · écrans du central</PageTitle>
 
-<div class="page page-serree">
+<div class="page page-serree page-mes-officines">
     <div class="titre-page">
         <div>
             <h1>Mes officines</h1>
@@ -29,10 +29,14 @@
                 <span aria-hidden="true"> · </span>
                 <a class="lien" href="@($"mes-officines/{Table.Valeur(ligne, "id")}/ordres")">Ordres</a>
             }
+            @* Script central 038 : le titulaire retire lui-même une officine (nom ressaisi, code de confirmation) *@
+            <span aria-hidden="true"> · </span>
+            <a class="lien" href="@($"mes-officines/{Table.Valeur(ligne, "id")}/retirer")">Retirer</a>
         </Action>
     </TableauEcran>
     <p class="pied-page">« En retard » : officine active sans lot ni certificat reçu depuis 24 heures. Chaque ouverture est notée au journal des accès.
-        Le droit « ordres à distance » ne s'accorde (et ne se retire) que depuis le poste de l'officine, rubrique Accès à distance.</p>
+        Le droit « ordres à distance » ne s'accorde (et ne se retire) que depuis le poste de l'officine, rubrique Accès à distance ;
+        « Retirer » coupe l'accès de votre compte tout de suite.</p>
 </div>
 
 @code {

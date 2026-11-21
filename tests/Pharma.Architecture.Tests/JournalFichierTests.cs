@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Logging;
-using Pharma.Api.Journalisation;
+using Pharma.Shared.Journalisation;
 
 namespace Pharma.Architecture.Tests;
 
@@ -17,7 +17,7 @@ public sealed class JournalFichierTests : IDisposable
     public void Ecriture_reprise_apres_un_fichier_inaccessible_et_lignes_perdues_signalees()
     {
         Directory.CreateDirectory(dossier);
-        var chemin = Path.Combine(dossier, $"{JournalFichierProvider.Prefixe}{DateTime.Now:yyyyMMdd}.log");
+        var chemin = Path.Combine(dossier, $"{JournalFichierProvider.PrefixeApiLocale}{DateTime.Now:yyyyMMdd}.log");
         var provider = new JournalFichierProvider(new OptionsJournalFichier { Dossier = dossier });
         try
         {

@@ -69,22 +69,24 @@ public static class ControleAcces
 
     public static bool Statique(PathString chemin) => Statiques.Any(s => chemin.Value?.StartsWith(s, StringComparison.OrdinalIgnoreCase) == true);
 
-    /// <summary>Tableau de bord, journal ou ordres d'une officine du titulaire : /mes-officines/{uuid}, …/journal, …/ordres.</summary>
+    /// <summary>Tableau de bord, journal, ordres ou retrait (script central 038) d'une officine du titulaire : /mes-officines/{uuid},
+    /// …/journal, …/ordres, …/retirer.</summary>
     public static bool EcranOfficineTitulaire(string chemin)
     {
         var morceaux = chemin.Split('/', StringSplitOptions.RemoveEmptyEntries);
         return morceaux.Length is 2 or 3 && string.Equals(morceaux[0], "mes-officines", StringComparison.OrdinalIgnoreCase)
                && Guid.TryParseExact(morceaux[1], "D", out _)
-               && (morceaux.Length == 2 || morceaux[2].ToLowerInvariant() is "journal" or "ordres");
+               && (morceaux.Length == 2 || morceaux[2].ToLowerInvariant() is "journal" or "ordres" or "retirer");
     }
 
-    /// <summary>Lot S7.3 : envoi d'un ordre du titulaire, /actions/mes-officines/{uuid}/ordre (POST).</summary>
+    /// <summary>Lot S7.3 : envoi d'un ordre du titulaire, /actions/mes-officines/{uuid}/ordre (POST) ; script central 038 : retrait du
+    /// rattachement (…/retrait) et message à afficher sur les postes (…/message).</summary>
     public static bool ActionOfficineTitulaire(string chemin)
     {
         var morceaux = chemin.Split('/', StringSplitOptions.RemoveEmptyEntries);
         return morceaux.Length == 4 && string.Equals(morceaux[0], "actions", StringComparison.OrdinalIgnoreCase)
                && string.Equals(morceaux[1], "mes-officines", StringComparison.OrdinalIgnoreCase)
-               && Guid.TryParseExact(morceaux[2], "D", out _) && string.Equals(morceaux[3], "ordre", StringComparison.OrdinalIgnoreCase);
+               && Guid.TryParseExact(morceaux[2], "D", out _) && morceaux[3].ToLowerInvariant() is "ordre" or "retrait" or "message";
     }
 
     /// <summary>Adresse de redirection, ou null si la requête peut passer (règle pure, testée).</summary>
@@ -134,11 +136,15 @@ public static class ControleAcces
 }
 
 /// <summary>
-/// Code d'activation tout juste créé : gardé en MÉMOIRE seulement, 2 minutes, pour la seule session qui l'a créé, et rendu une
-/// seule fois (page « code affiché ») ; jamais en base, dans un journal ni sur disque.
+/// Code d'activation (ou, script central 038, mot de passe provisoire d'un compte remis à zéro) tout juste créé : gardé en MÉMOIRE
+/// seulement, 2 minutes, pour la seule session qui l'a créé, et rendu une seule fois (page « code affiché » ou « mot de passe
+/// provisoire ») ; jamais en base, dans un journal ni sur disque.
 /// </summary>
 public sealed class CodesAffiches(TimeProvider horloge)
 {
+    /// <summary>Script central 038 : « serveur » réservé au mot de passe provisoire d'un compte (l'identifiant est alors celui du compte).</summary>
+    public const string MotDePasse = "mot_de_passe";
+
     private sealed record Entree(long Session, Guid Officine, string Serveur, string Code, DateTimeOffset Expire);
 
     private readonly ConcurrentDictionary<string, Entree> entrees = new();

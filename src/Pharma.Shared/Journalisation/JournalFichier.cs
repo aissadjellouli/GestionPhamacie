@@ -2,31 +2,50 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
 using System.Threading.Channels;
+using Microsoft.Extensions.Logging;
 
-namespace Pharma.Api.Journalisation;
+namespace Pharma.Shared.Journalisation;
 
 /// <summary>
-/// Réglages du journal du serveur (section « Journaux » : appsettings.json ou variables Journaux__Dossier, Journaux__TailleMaxMo,
-/// Journaux__RetentionMois, Journaux__Niveau).
+/// Réglages du journal en fichiers (section « Journaux » du appsettings.json de chaque application : API locale, API et écrans du
+/// central ; ou variables Journaux__Dossier, Journaux__TailleMaxMo, Journaux__RetentionMois, Journaux__Niveau).
 /// </summary>
 public sealed class OptionsJournalFichier
 {
+    /// <summary>Dossier des fichiers ; les variables d'environnement sont développées (ex. %LOCALAPPDATA%\PharmaOfficine\Journaux).</summary>
     public string Dossier { get; set; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "Journaux");
+    /// <summary>Début du nom des fichiers (un par application : pharma-api-, central-api-, central-ecrans-).</summary>
+    public string Prefixe { get; set; } = JournalFichierProvider.PrefixeApiLocale;
     /// <summary>Taille maximale d'un fichier ; au-delà, un nouveau fichier est ouvert le même jour (_2, _3…).</summary>
     public double TailleMaxMo { get; set; } = 50;
     /// <summary>Les fichiers plus anciens sont supprimés (au démarrage, puis chaque jour).</summary>
     public int RetentionMois { get; set; } = 3;
     public LogLevel Niveau { get; set; } = LogLevel.Information;
+
+    /// <summary>
+    /// Réglages lus clé par clé (Dossier, Prefixe, TailleMaxMo, RetentionMois, Niveau de la section « Journaux ») ; une clé absente
+    /// ou illisible garde sa valeur par défaut (préfixe : celui de l'application).
+    /// </summary>
+    public static OptionsJournalFichier Lire(Func<string, string?> valeur, string prefixeParDefaut)
+    {
+        var o = new OptionsJournalFichier { Prefixe = prefixeParDefaut };
+        if (valeur("Dossier") is { Length: > 0 } d) o.Dossier = d;
+        if (valeur("Prefixe") is { Length: > 0 } p) o.Prefixe = p;
+        if (double.TryParse(valeur("TailleMaxMo"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var t) && t > 0) o.TailleMaxMo = t;
+        if (int.TryParse(valeur("RetentionMois"), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var r) && r >= 0) o.RetentionMois = r;
+        if (Enum.TryParse<LogLevel>(valeur("Niveau"), true, out var n)) o.Niveau = n;
+        return o;
+    }
 }
 
 /// <summary>
-/// Journal du serveur en fichiers texte UTF-8 : un fichier par jour (pharma-api-AAAAMMJJ.log), découpé à la taille maximale,
+/// Journal en fichiers texte UTF-8 : un fichier par jour (préfixe-AAAAMMJJ.log, ex. pharma-api-20261121.log), découpé à la taille maximale,
 /// conservé le nombre de mois réglé. Écrit par une tâche de fond : une requête n'attend jamais le disque.
 /// </summary>
 public sealed class JournalFichierProvider : ILoggerProvider
 {
-    public const string Prefixe = "pharma-api-";
+    public const string PrefixeApiLocale = "pharma-api-";
     private readonly OptionsJournalFichier options;
     private readonly long tailleMax;
     private readonly Channel<string> file = Channel.CreateBounded<string>(new BoundedChannelOptions(10_000) { FullMode = BoundedChannelFullMode.DropOldest });
@@ -36,9 +55,16 @@ public sealed class JournalFichierProvider : ILoggerProvider
 
     public JournalFichierProvider(OptionsJournalFichier options)
     {
+        options.Dossier = Environment.ExpandEnvironmentVariables(options.Dossier);
+        if (string.IsNullOrWhiteSpace(options.Prefixe)) options.Prefixe = PrefixeApiLocale;
         this.options = options;
         tailleMax = (long)(Math.Max(options.TailleMaxMo, 0.001) * 1024 * 1024);
-        Directory.CreateDirectory(options.Dossier);
+        // Dossier impossible à créer (droits, disque absent) : signalé, l'application démarre quand même (nouvel essai à l'écriture)
+        try { Directory.CreateDirectory(options.Dossier); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            Signaler($"Journal fichier : dossier {options.Dossier} inutilisable ({e.GetType().Name}). Nouvel essai à la première écriture.");
+        }
         ecriture = Task.Run(EcrireAsync);
     }
 
@@ -71,7 +97,7 @@ public sealed class JournalFichierProvider : ILoggerProvider
                         var aujourdhui = DateOnly.FromDateTime(DateTime.Now);
                         if (fichier is null || jour != aujourdhui || fichier.BaseStream.Length >= tailleMax)
                         {
-                            if (jour != aujourdhui) Purger(options.Dossier, options.RetentionMois, DateTime.Now);
+                            if (jour != aujourdhui) Purger(options.Dossier, options.Prefixe, options.RetentionMois, DateTime.Now);
                             Fermer(fichier);
                             fichier = null;
                             fichier = Ouvrir(aujourdhui);
@@ -109,7 +135,7 @@ public sealed class JournalFichierProvider : ILoggerProvider
     private static string LignePerdues(int nombre, string? erreur) =>
         new StringBuilder()
             .Append(DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss.fff zzz", CultureInfo.InvariantCulture))
-            .Append(" [AVT] Pharma.Api.Journalisation : ").Append(nombre).Append(" ligne(s) du journal perdue(s) : échec d'écriture")
+            .Append(" [AVT] Pharma.Shared.Journalisation : ").Append(nombre).Append(" ligne(s) du journal perdue(s) : échec d'écriture")
             .Append(erreur is null ? "" : $" ({erreur})").ToString();
 
     /// <summary>Attente avant un nouvel essai : 1 s, 2 s, 4 s… jusqu'à 30 s ; écourtée à l'arrêt du serveur.</summary>
@@ -134,29 +160,29 @@ public sealed class JournalFichierProvider : ILoggerProvider
         catch (Exception) { }
     }
 
-    /// <summary>Fichier du jour qui n'a pas atteint la taille maximale : pharma-api-AAAAMMJJ.log, puis _2, _3…</summary>
+    /// <summary>Fichier du jour qui n'a pas atteint la taille maximale : préfixe-AAAAMMJJ.log, puis _2, _3…</summary>
     private StreamWriter Ouvrir(DateOnly jour)
     {
         Directory.CreateDirectory(options.Dossier);   // dossier supprimé ou disque rebranché
         for (var n = 1; ; n++)
         {
-            var chemin = Path.Combine(options.Dossier, NomFichier(jour, n));
+            var chemin = Path.Combine(options.Dossier, NomFichier(options.Prefixe, jour, n));
             if (File.Exists(chemin) && new FileInfo(chemin).Length >= tailleMax) continue;
             var flux = new FileStream(chemin, FileMode.Append, FileAccess.Write, FileShare.Read);
             return new StreamWriter(flux, new UTF8Encoding(false));
         }
     }
 
-    internal static string NomFichier(DateOnly jour, int numero) =>
-        $"{Prefixe}{jour:yyyyMMdd}{(numero > 1 ? $"_{numero}" : "")}.log";
+    public static string NomFichier(string prefixe, DateOnly jour, int numero) =>
+        $"{prefixe}{jour:yyyyMMdd}{(numero > 1 ? $"_{numero}" : "")}.log";
 
     /// <summary>Supprime les fichiers du journal modifiés pour la dernière fois il y a plus de « mois » mois.</summary>
-    internal static int Purger(string dossier, int mois, DateTime maintenant)
+    public static int Purger(string dossier, string prefixe, int mois, DateTime maintenant)
     {
         if (mois <= 0 || !Directory.Exists(dossier)) return 0;
         var limite = maintenant.AddMonths(-mois);
         var supprimes = 0;
-        foreach (var f in Directory.EnumerateFiles(dossier, $"{Prefixe}*.log"))
+        foreach (var f in Directory.EnumerateFiles(dossier, $"{prefixe}*.log"))
             try
             {
                 if (File.GetLastWriteTime(f) < limite) { File.Delete(f); supprimes++; }

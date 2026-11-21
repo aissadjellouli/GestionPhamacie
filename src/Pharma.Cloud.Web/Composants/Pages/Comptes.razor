@@ -1,0 +1,174 @@
+@page "/comptes"
+@inject DepotEcrans Depot
+
+@* Lot S7.6 (script central 037) : contacts du second facteur des comptes distants, ÉDITEUR seulement. Contact affiché MASQUÉ ;
+   e-mail ET téléphone possibles, au moins un ; modifier exige un code de confirmation (noté au journal de sécurité).
+   Script central 038 : remise à zéro du mot de passe d'un AUTRE compte (motif, identifiant ressaisi, code de confirmation).
+   Script central 039 : création d'un compte éditeur ou titulaire (code de confirmation, mot de passe provisoire montré une fois). *@
+<PageTitle>Contacts des comptes · écrans du central</PageTitle>
+
+<div class="page page-serree">
+    <div class="titre-page">
+        <div>
+            <h1>Contacts des comptes</h1>
+            <p class="sous-titre">E-mail et téléphone qui reçoivent les codes de second facteur de chaque compte (affichés masqués) ; création d'un compte ; remise à zéro d'un mot de passe oublié.</p>
+        </div>
+        <div class="actions">
+            <a class="btn btn-principal" href="comptes?action=creer" aria-current="@(Creation ? "page" : null)">Ajouter un compte</a>
+            <a class="btn btn-contour" href="envoi-codes">Envoi des codes</a>
+        </div>
+    </div>
+    <Message Erreur="@Erreur" Ok="@Ok" />
+    <div class="comptes-contact" data-hauteur-restante>
+        <div class="colonne-comptes">
+            <TableauEcran Table="@Table" Vide="Aucun compte distant : « Ajouter un compte » (ou la console du central).">
+                <Action Context="ligne">
+                    <a class="lien" href="@($"comptes?compte={Table.Valeur(ligne, "id")}&page={PageCourante}")">Modifier</a>
+                </Action>
+            </TableauEcran>
+            <PaginationEcran Page="@PageCourante" Taille="@Taille" Total="@Table.Total" Base="comptes" />
+        </div>
+        <section class="panneau colonne-compte" aria-labelledby="t-contact">
+            @if (Creation)
+            {
+                @* Script central 039 : mot de passe provisoire tiré au sort par le central, montré UNE fois à l'éditeur ; les codes du compte
+                   partiront au contact saisi ici (e-mail et/ou téléphone) *@
+                <h2 id="t-contact">Ajouter un compte</h2>
+                <p class="detail">Un mot de passe provisoire est tiré au sort et affiché <strong>une seule fois</strong> après la création ; la personne
+                    le change à sa première connexion. Ses codes de connexion partent au contact saisi ici.</p>
+                <DemandeCode Retour="/comptes?action=creer" />
+                <form method="post" action="actions/comptes/creer" class="formulaire-contact">
+                    <AntiforgeryToken />
+                    <div class="champ">
+                        <label for="role" class="requis">Rôle</label>
+                        <select id="role" name="role" required>
+                            <option value="titulaire">Titulaire</option>
+                            <option value="editeur">Éditeur (administrateur)</option>
+                        </select>
+                    </div>
+                    <div class="champ">
+                        <label for="identifiant" class="requis">Identifiant</label>
+                        <input id="identifiant" name="identifiant" maxlength="60" autocomplete="off" spellcheck="false" placeholder="ex. titulaire.dupont" required />
+                    </div>
+                    <div class="champ champ-large">
+                        <label for="nom" class="requis">Nom</label>
+                        <input id="nom" name="nom" maxlength="120" autocomplete="off" required />
+                    </div>
+                    <div class="champ">
+                        <label for="email-nouveau">E-mail (reçoit les codes)</label>
+                        <input id="email-nouveau" name="email" type="email" maxlength="254" autocomplete="off" />
+                    </div>
+                    <div class="champ">
+                        <label for="telephone-nouveau">Téléphone</label>
+                        <input id="telephone-nouveau" name="telephone" maxlength="20" inputmode="tel" autocomplete="off" />
+                    </div>
+                    <div class="champ">
+                        <label for="code-creation" class="requis">Code de confirmation reçu</label>
+                        <input id="code-creation" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required />
+                    </div>
+                    <div class="actions">
+                        <button type="submit" class="btn btn-principal">Créer le compte</button>
+                    </div>
+                </form>
+            }
+            else if (Choisi is null)
+            {
+                <h2 id="t-contact">Modifier un contact</h2>
+                <p class="detail">Choisissez un compte dans le tableau (« Modifier ») : contact ou remise à zéro du mot de passe ; ou « Ajouter un compte ».</p>
+            }
+            else
+            {
+                <h2 id="t-contact">@Table.Valeur(Choisi, "identifiant") (@Rubriques.Afficher("role", Table.Valeur(Choisi, "role")))</h2>
+                <nav class="choix-action-compte" aria-label="Action sur le compte">
+                    <a class="btn @(RemiseMotDePasse ? "btn-contour" : "btn-principal")" href="@($"comptes?compte={Compte}&page={PageCourante}")"
+                       aria-current="@(RemiseMotDePasse ? null : "page")">Contact</a>
+                    <a class="btn @(RemiseMotDePasse ? "btn-principal" : "btn-contour")" href="@($"comptes?compte={Compte}&page={PageCourante}&action=mot-de-passe")"
+                       aria-current="@(RemiseMotDePasse ? "page" : null)">Mot de passe</a>
+                </nav>
+                @if (!RemiseMotDePasse)
+                {
+                    <dl class="fiche-infos">
+                        <dt>E-mail actuel</dt>
+                        <dd>@(Table.Valeur(Choisi, "email_masque") ?? "aucun")</dd>
+                        <dt>Téléphone actuel</dt>
+                        <dd>@(Table.Valeur(Choisi, "telephone_masque") ?? "aucun")</dd>
+                    </dl>
+                    <DemandeCode Retour="@($"/comptes?compte={Compte}&page={PageCourante}")" />
+                    <form method="post" action="@($"actions/comptes/{Compte}/contact")" class="formulaire-contact">
+                        <AntiforgeryToken />
+                        <div class="champ">
+                            <label for="email">Nouvel e-mail (vide = inchangé, « - » = retirer)</label>
+                            <input id="email" name="email" maxlength="254" autocomplete="off" />
+                        </div>
+                        <div class="champ">
+                            <label for="telephone">Nouveau téléphone (vide = inchangé, « - » = retirer)</label>
+                            <input id="telephone" name="telephone" maxlength="20" inputmode="tel" autocomplete="off" />
+                        </div>
+                        <div class="champ">
+                            <label for="code" class="requis">Code de confirmation reçu</label>
+                            <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required />
+                        </div>
+                        <div class="actions">
+                            <button type="submit" class="btn btn-principal">Enregistrer le contact</button>
+                        </div>
+                    </form>
+                }
+                else if (SonPropreCompte)
+                {
+                    <p class="detail">C'est votre propre compte : votre mot de passe se change par « Mot de passe » dans l'en-tête (mot de passe actuel
+                        demandé), jamais par une remise à zéro.</p>
+                }
+                else
+                {
+                    @* Script central 038 : mot de passe provisoire tiré au sort, montré UNE fois à l'éditeur seul ; à transmettre de vive voix
+                       après avoir vérifié l'identité (le code de connexion part sur le contact du compte : les deux ne voyagent jamais ensemble) *@
+                    <p class="detail">Un mot de passe provisoire est tiré au sort et affiché <strong>une seule fois</strong> ; le compte devra le changer
+                        à sa prochaine connexion et ses sessions ouvertes sont fermées. Transmettez-le de vive voix après avoir vérifié l'identité de la
+                        personne (jamais par e-mail : le code de connexion part déjà sur son contact).</p>
+                    <DemandeCode Retour="@($"/comptes?compte={Compte}&page={PageCourante}&action=mot-de-passe")" />
+                    <form method="post" action="@($"actions/comptes/{Compte}/mot-de-passe")" class="formulaire-contact">
+                        <AntiforgeryToken />
+                        <div class="champ champ-large">
+                            <label for="motif" class="requis">Motif (5 à 300 caractères)</label>
+                            <input id="motif" name="motif" minlength="5" maxlength="300" autocomplete="off" required />
+                        </div>
+                        <div class="champ">
+                            <label for="confirmation" class="requis">Identifiant du compte, ressaisi</label>
+                            <input id="confirmation" name="confirmation" maxlength="60" autocomplete="off" spellcheck="false" required />
+                        </div>
+                        <div class="champ">
+                            <label for="code-mdp" class="requis">Code de confirmation reçu</label>
+                            <input id="code-mdp" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required />
+                        </div>
+                        <div class="actions">
+                            <button type="submit" class="btn btn-principal">Remettre à zéro le mot de passe</button>
+                        </div>
+                    </form>
+                }
+            }
+        </section>
+    </div>
+</div>
+
+@code {
+    private const int Taille = 20;
+
+    [CascadingParameter] private HttpContext? Contexte { get; set; }
+    [SupplyParameterFromQuery(Name = "compte")] private Guid? Compte { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] private int? Numero { get; set; }
+    [SupplyParameterFromQuery(Name = "erreur")] private string? Erreur { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] private string? Ok { get; set; }
+    [SupplyParameterFromQuery(Name = "action")] private string? Action { get; set; }
+
+    private TableEcran Table { get; set; } = TableEcran.Vide;
+    private int PageCourante => Math.Clamp(Numero ?? 1, 1, 100_000);
+    private bool RemiseMotDePasse => Action == "mot-de-passe";
+    private bool Creation => Action == "creer";
+    private bool SonPropreCompte => Compte is { } c && Contexte?.Session() is { } s && s.Compte == c;
+    private object?[]? Choisi => Compte is { } c ? Table.Lignes.FirstOrDefault(l => Table.Valeur(l, "id") is Guid g && g == c) : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Contexte?.EmpreinteJeton() is { } jeton) Table = await Depot.ComptesAsync(jeton, PageCourante, Taille, Contexte.RequestAborted);
+    }
+}

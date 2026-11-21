@@ -47,10 +47,13 @@ public static class TypesOrdre
     /// <summary>Lot S7.4 : réglages communs proposés par le titulaire à distance (liste fermée, reglages-v1) ; jamais appliqués sans
     /// l'acceptation du titulaire local (mot de passe ressaisi).</summary>
     public const string Reglages = Pharma.Domain.Reglages.ReglagesCommuns.TypeOrdre;
+    /// <summary>Reste du lot S7.3 : message court du titulaire à distance affiché sur les postes (message-v1, texte simple, 7 jours au
+    /// plus) ; appliqué tout de suite (= affiché dans la barre d'état), rien d'autre ne change.</summary>
+    public const string Message = Pharma.Domain.Reglages.MessagePostes.TypeOrdre;
     public static readonly IReadOnlySet<string> Connus = new HashSet<string>(StringComparer.Ordinal)
     {
         Essai, EmployeCreer, EmployeModifier, EmployeBloquer, EmployeDebloquer, DroitsRole, PrixProduit, Nomenclature, Commande, ClasseSuivie, Organismes,
-        Prestations, Indications, Dci, Sauvegarde, VerificationIntegrite, Reglages
+        Prestations, Indications, Dci, Sauvegarde, VerificationIntegrite, Reglages, Message
     };
 
     /// <summary>Confirmation du titulaire exigée avant application (décision S5-D3) ; le blocage et l'essai s'appliquent tout de suite.</summary>
@@ -80,6 +83,7 @@ public static class TypesOrdre
         Sauvegarde => "Sauvegarde demandée à distance",
         VerificationIntegrite => "Vérification d’intégrité demandée à distance",
         Reglages => "Réglages communs proposés à distance",
+        Message => "Message du titulaire à distance",
         _ => type
     };
 }
@@ -162,7 +166,8 @@ public sealed class OrdreInapplicableException(string message) : Exception(messa
 public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisateur creer, ModifierUtilisateur modifier, EnregistrerDroits droitsRole,
     Catalogue.IProduitsModification produits, IOrdresCentrauxDepot depot, Catalogue.ImporterNomenclature nomenclature,
     ITelechargementReferentiel referentiels, Achats.IAchats achats, IOrganismesCentraux organismes, IListesCentrales listes,
-    Sauvegardes.LancerSauvegarde? sauvegarde = null, Integrite.VerifierIntegrite? integrite = null, ReglagesCommunsOrdre? reglagesCommuns = null)
+    Sauvegardes.LancerSauvegarde? sauvegarde = null, Integrite.VerifierIntegrite? integrite = null, ReglagesCommunsOrdre? reglagesCommuns = null,
+    IHorloge? horloge = null)
 {
     /// <summary>Lignes au plus dans un ordre de commande (décision S5.4-D5).</summary>
     public const int LignesCommandeMax = 200;
@@ -236,6 +241,9 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
         if (o.Type == TypesOrdre.Reglages)
             return await (reglagesCommuns ?? throw new OrdreInapplicableException("Réglages communs indisponibles sur ce serveur."))
                 .AppliquerAsync(o, titulaireId!.Value, ct);
+        // Reste du lot S7.3 : message à afficher sur les postes, revérifié ici (texte simple, sans lien, fin 1 à 7 jours après l'envoi,
+        // pas déjà échue) ; « appliqué » = affiché dans la barre d'état de tous les postes jusqu'à sa fin
+        if (o.Type == TypesOrdre.Message) return VerifierMessage(o);
         var etat = await admin.LireAsync(ct);
         switch (o.Type)
         {
@@ -321,6 +329,20 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
             default:
                 throw new OrdreInapplicableException($"Type d’ordre non pris en charge : {o.Type}.");
         }
+    }
+
+    /// <summary>
+    /// Reste du lot S7.3 : message du titulaire à distance. Mêmes règles que l'écran et la base du central (MessagePostes) ; hors bornes,
+    /// lien, balise ou fin déjà passée (horloge de l'officine) : refus définitif. Résultat remonté : « affiché jusqu'au … ».
+    /// </summary>
+    private string VerifierMessage(OrdreRecu o)
+    {
+        var (_, fin, refus) = Pharma.Domain.Reglages.MessagePostes.Lire(o.DonneesJson, o.CreeLeUtc);
+        if (refus is not null)
+            throw new OrdreInapplicableException($"Message refusé : {Pharma.Domain.Reglages.MessagePostes.Refus.GetValueOrDefault(refus, refus)}.");
+        if (horloge is not null && fin!.Value <= horloge.MaintenantUtc)
+            throw new OrdreInapplicableException("Message refusé : sa date de fin d'affichage est déjà passée.");
+        return $"affiché sur les postes jusqu'au {fin!.Value:yyyy-MM-dd HH:mm} UTC";
     }
 
     /// <summary>Lot S7.3 : sauvegarde demandée à distance, lancée au nom du titulaire qui confirme (mêmes règles que « Sauvegarder
@@ -621,6 +643,9 @@ public static class ResumeOrdre
                 TypesOrdre.Reglages => "Seuils d’alerte de stock et de péremption proposés par le titulaire à distance, appliqués seulement si vous acceptez : "
                     + (Pharma.Domain.Reglages.ReglagesCommuns.Lire(o.DonneesJson) is { Erreurs.Count: 0 } j
                         ? Pharma.Domain.Reglages.ReglagesCommuns.Texte(j.Valeurs) : "réglages illisibles") + ".",
+                TypesOrdre.Message => Pharma.Domain.Reglages.MessagePostes.Lire(o.DonneesJson, o.CreeLeUtc) is { Code: null } m
+                    ? $"Message affiché sur les postes jusqu’au {m.JusquAuUtc!.Value.ToLocalTime():dd/MM/yyyy HH:mm} : « {m.Texte} »"
+                    : "Message illisible ou hors des bornes permises (refusé).",
                 TypesOrdre.EmployeCreer => $"Nouveau compte « {T(d, "nom")} », identifiant {T(d, "identifiant")}, rôle {NomRole(T(d, "role"))}.",
                 TypesOrdre.EmployeModifier => $"{Employe()} : "
                     + string.Join(", ", new[]
