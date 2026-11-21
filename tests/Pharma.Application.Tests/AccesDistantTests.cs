@@ -47,6 +47,94 @@ public class AccesDistantTests
             Appels.Add((adresse, compte));
             return Task.FromResult((reponse ?? (_ => new CodeRattachementSync("ABCD-EFGH-JKLM", DateTime.UtcNow.AddMinutes(30))))(compte));
         }
+
+        // Lot S7.3 : comptes rattachés, droits, retrait
+        public readonly List<string> AppelsComptes = [];
+        public Exception? Panne { get; init; }
+        public Task<IReadOnlyList<CompteDistantSync>> ComptesDistantsAsync(string adresse, CancellationToken ct = default)
+        {
+            AppelsComptes.Add("liste");
+            if (Panne is not null) throw Panne;
+            return Task.FromResult<IReadOnlyList<CompteDistantSync>>([new CompteDistantSync("titulaire.dupont", "Dupont", ["consulter", "ordres"], DateTime.UtcNow, true)]);
+        }
+        public Task<int> DroitsCompteDistantAsync(string adresse, string compte, IReadOnlyList<string> droits, CancellationToken ct = default)
+        {
+            AppelsComptes.Add($"droits:{compte}:{string.Join(",", droits)}");
+            if (Panne is not null) throw Panne;
+            return Task.FromResult(droits.Contains("ordres") ? 0 : 1);
+        }
+        public Task<int> RetirerCompteDistantAsync(string adresse, string compte, CancellationToken ct = default)
+        {
+            AppelsComptes.Add($"retrait:{compte}");
+            if (Panne is not null) throw Panne;
+            return Task.FromResult(2);
+        }
+    }
+
+    private static (ComptesAccesDistant Cas, Central Central, Journal Journal) CreerComptes(ParametresEnvoiSync? p = null, bool titulaire = true,
+        Central? central = null)
+    {
+        var depot = DispatchProxy.Create<IEnvoiSyncDepot, DepotParametres>();
+        ((DepotParametres)(object)depot).Parametres = p ?? Parametres();
+        var s = central ?? new Central();
+        var j = new Journal();
+        return (new ComptesAccesDistant(depot, new Certificat(CertificatValable), new Droits(titulaire),
+            new VerificationMotDePasseActuel(new Comptes(), new Verificateur(), j), s, j), s, j);
+    }
+
+    [Fact]
+    public async Task S7_3_comptes_rattaches_reserves_au_titulaire_et_synchronisation_activee()
+    {
+        var (cas, central, _) = CreerComptes();
+        Assert.Equal("titulaire.dupont", Assert.Single(await cas.ListerAsync(1)).Identifiant);
+        var (employe, c2, _) = CreerComptes(titulaire: false);
+        await Assert.ThrowsAsync<DroitRefuseException>(() => employe.ListerAsync(2));
+        await Assert.ThrowsAsync<DroitRefuseException>(() => employe.ModifierDroitsAsync("titulaire.dupont", ["ordres"], BonMotDePasse, 2));
+        await Assert.ThrowsAsync<DroitRefuseException>(() => employe.RetirerAsync("titulaire.dupont", BonMotDePasse, 2));
+        Assert.Empty(c2.AppelsComptes);
+        var (inactive, c3, _) = CreerComptes(Parametres(active: false));
+        Assert.Equal(GenererCodeAccesDistant.RefusNonActivee, (await Assert.ThrowsAsync<RegleMetierException>(() => inactive.ListerAsync(1))).Message);
+        Assert.Empty(c3.AppelsComptes);
+        Assert.Single(central.AppelsComptes);
+    }
+
+    [Fact]
+    public async Task S7_3_droits_et_retrait_exigent_le_mot_de_passe_et_sont_journalises()
+    {
+        var (cas, central, journal) = CreerComptes();
+        var e = await Assert.ThrowsAsync<RegleMetierException>(() => cas.ModifierDroitsAsync("titulaire.dupont", ["consulter", "ordres"], "faux", 1));
+        Assert.Equal(GenererCodeAccesDistant.ChampMotDePasse, e.Champ);
+        await Assert.ThrowsAsync<RegleMetierException>(() => cas.RetirerAsync("titulaire.dupont", null, 1));
+        Assert.Empty(central.AppelsComptes);
+        // Droits hors liste ou vides : refusés avant le mot de passe et l'appel
+        Assert.Equal(ComptesAccesDistant.ChampDroits, (await Assert.ThrowsAsync<RegleMetierException>(() => cas.ModifierDroitsAsync("titulaire.dupont", ["admin"], BonMotDePasse, 1))).Champ);
+        Assert.Equal(ComptesAccesDistant.ChampDroits, (await Assert.ThrowsAsync<RegleMetierException>(() => cas.ModifierDroitsAsync("titulaire.dupont", [], BonMotDePasse, 1))).Champ);
+        Assert.Empty(central.AppelsComptes);
+
+        Assert.Equal(1, await cas.ModifierDroitsAsync(" Titulaire.Dupont ", ["journal_acces", "consulter", "consulter"], BonMotDePasse, 1));
+        Assert.Equal(2, await cas.RetirerAsync("titulaire.dupont", BonMotDePasse, 1));
+        Assert.Equal(["droits:titulaire.dupont:consulter,journal_acces", "retrait:titulaire.dupont"], central.AppelsComptes);
+        var ecrits = journal.Ecrits.Where(x => x.Action is "droits_acces_distant" or "retrait_acces_distant").ToList();
+        Assert.Equal(2, ecrits.Count);
+        Assert.Equal("consulter,journal_acces", ecrits[0].Details["droits"]);
+        Assert.Equal(2, ecrits[1].Details["ordres_annules"]);
+        Assert.DoesNotContain(journal.Ecrits.SelectMany(x => x.Details.Values), v => v is string t && t.Contains(BonMotDePasse));
+    }
+
+    [Fact]
+    public async Task S7_3_compte_non_rattache_et_central_injoignable_rendus_clairement()
+    {
+        foreach (var (panne, attendu) in new (Exception, string)[]
+                 {
+                     (new ServeurCentralException("serveur central : 422", 422), ComptesAccesDistant.RefusInconnu),
+                     (new ServeurCentralException("serveur central : 502", 502), ComptesAccesDistant.RefusInjoignable),
+                     (new HttpRequestException("coupé"), ComptesAccesDistant.RefusInjoignable),
+                 })
+        {
+            var (cas, _, journal) = CreerComptes(central: new Central { Panne = panne });
+            Assert.Equal(attendu, (await Assert.ThrowsAsync<RegleMetierException>(() => cas.RetirerAsync("titulaire.dupont", BonMotDePasse, 1))).Message);
+            Assert.DoesNotContain(journal.Ecrits, x => x.Action == "retrait_acces_distant");
+        }
     }
 
     private sealed class Droits(bool titulaire) : IPermissionService

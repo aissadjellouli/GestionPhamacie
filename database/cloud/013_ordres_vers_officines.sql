@@ -192,6 +192,13 @@ BEGIN
 END $$;
 
 -- Expiration des ordres non traités après leur date limite (toutes les officines) ; renvoie le nombre d'ordres expirés
+-- Garde de rejeu (2026-11-21, lot S7.3) : définition remplacée par le script 034 (motif selon le délai réel) ; rejouer ce script
+-- après 034 ne la ramène pas en arrière (marqueur : colonne ordre_central.origine, posée par 034).
+DO $rejeu$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'ordre_central' AND column_name = 'origine') THEN
+        RAISE NOTICE 'cloud_expirer_ordres : définition plus récente (script 034) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_expirer_ordres() RETURNS integer
 LANGUAGE plpgsql AS $$
 DECLARE f record; o record; n int := 0;
@@ -208,6 +215,9 @@ BEGIN
     PERFORM set_config('app.officine_id', '', true);
     RETURN n;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 -- Retour du résultat de l'officine (miroir sync_ordre_resultat) : l'ordre prend l'état constaté par l'officine
 CREATE OR REPLACE FUNCTION cloud_ordre_resultat_recu() RETURNS trigger

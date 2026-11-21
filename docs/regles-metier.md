@@ -2277,6 +2277,30 @@ Règles appliquées par le script central `032_ecrans_titulaire.sql`, la console
   terminé comprenant la table, table ou colonne non envoyée, colonne d'une famille nominative non envoyée) ; sans les retours clients, le
   chiffre d'affaires reste non disponible. Les totaux sont ceux des données reçues au dernier contact.
 
+## Multi-officines et ordres du titulaire à distance (lot S7.3, 2026-11-21)
+
+Règles appliquées par le script central `034_titulaire_multi_officines_ordres.sql`, les écrans du central, `AccesDistantsPoste` (API
+centrale), `ComptesAccesDistant` et `ExecuterOrdreCentral` (API locale) ([ecrans-central.md](ecrans-central.md) § 3 quater) :
+
+- **Vue d'ensemble** : une ligne par officine rattachée au compte avec le droit « tableau de bord » (50 au plus) ; mêmes totaux que le
+  tableau de bord d'une officine. **Total du groupe** : somme des valeurs disponibles ; si une officine n'a pas la valeur (« non
+  disponible »), elle n'est jamais comptée comme 0 et le total est marqué « partiel : n sur m officines » ; aucune valeur : « non disponible ».
+- **Droits par officine** : tableau de bord, journal des accès, **ordres à distance**. Le rattachement donne les deux premiers ; « ordres à
+  distance » ne s'accorde que depuis le poste (Administration › Synchronisation › Accès à distance › Comptes rattachés), par le
+  titulaire, mot de passe ressaisi ; au moins un droit coché.
+- **Retrait d'un compte** (poste, titulaire, mot de passe) : plus aucun accès à l'officine, tout de suite ; ses ordres encore ouverts
+  sont annulés. Retirer le seul droit « ordres » annule aussi ses ordres ouverts.
+- **Ordres du titulaire** : essai de liaison (rien ne change), sauvegarde (le titulaire local confirme ; disque absent ou échec : l'ordre
+  reste à confirmer), vérification d'intégrité (lecture seule, appliquée tout de suite ; résultat en nombres de chaînes). Aucun ordre ne
+  touche une vente, un stock, un prix ni un compte. Un seul ordre ouvert du même type par officine ; 10 ordres par heure et par compte ;
+  code de confirmation à chaque ordre ; **24 heures** puis « expiré » (l'officine le vérifie aussi avec sa propre horloge).
+- **Statut visible** à distance : en attente, à confirmer sur le poste, appliqué, refusé, expiré, annulé (jamais le motif ni les données).
+- **Journaux** : central, journal des accès (chaîné) et journal de sécurité (sans identifiant) ; poste, journal des actions
+  `droits_acces_distant`, `retrait_acces_distant` (compte, droits, ordres annulés) et `ordre_central_<état>`.
+- — `database/cloud/034_titulaire_multi_officines_ordres.sql`, `src/Pharma.Cloud.Web/Composants/Pages/VueEnsembleTitulaire.razor`,
+  `OrdresOfficine.razor`, `src/Pharma.Cloud.Web/Donnees/VueEnsemble.cs`, `src/Pharma.Cloud.Api/Comptes/AccesDistantsPoste.cs`,
+  `src/Pharma.Application/Synchronisation/AccesDistant.cs`, `OrdresCentraux.cs`, `src/Pharma.Desktop/Composants/Pages/AdminSynchronisation.razor`
+
 ## Accès à distance : code de rattachement tiré par le poste (lot S7.2b, 2026-11-21)
 
 Règles appliquées par `GenererCodeAccesDistant` (API locale), la route `POST /api/v1/rattachement` et le script central
@@ -2326,8 +2350,8 @@ Règles appliquées par `GenererCodeAccesDistant` (API locale), la route `POST /
 ## Barre d'état : éléments fixes et pastilles (2026-11-21, maquette validée par le titulaire)
 
 - **Éléments fixes, toujours affichés**, en texte gris : voyant « Connecté » ou « Serveur injoignable » (un clic revérifie le
-  serveur) ; **poste · vendeur connecté** (« Caisse 1 · Karim » : nom du poste seulement s'il est déclaré par `PHARMA_POSTE`, sinon
-  le vendeur seul ; avant la connexion, le poste seul ; nom trop long coupé par « … », complet dans l'infobulle) ; **date et heure** à
+  serveur) ; **poste · vendeur connecté** (« Caisse 1 · Karim » : nom du poste déclaré par `PHARMA_POSTE`, sinon
+  le nom de l'ordinateur, comme la caisse (« ADH · Vendeur Démo ») ; avant la connexion, le poste seul ; nom trop long coupé par « … », complet dans l'infobulle) ; **date et heure** à
   droite (« sam. 21/11 · 10:42 », « 21/11 · 10:42 » quand les pastilles sont regroupées) ; la version du logiciel est dans
   l'infobulle de la date. La mention « Démonstration — données fictives » reste permanente sur un serveur de démonstration.
 - **Pastilles, seulement s'il y a une information** (rien sinon : 0 vente en attente, sauvegarde à jour, liaisons à jour…).

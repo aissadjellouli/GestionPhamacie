@@ -230,6 +230,33 @@ public sealed record DemandeCodeAccesDistantDto(string? Compte, string? MotDePas
 /// <summary>Code à saisir dans l'écran « Rattacher une officine » du serveur central, échéance (UTC) ; jamais gardé par le poste.</summary>
 public sealed record CodeAccesDistantDto(string Code, DateTime ExpireLe);
 
+// ---- Lot S7.3 : comptes distants rattachés, droits par officine, retrait (docs/ecrans-central.md § 3 quater) ----
+
+/// <summary>Droits d'un compte distant sur une officine (liste fermée, script central 034). « ordres » n'est accordé que depuis le poste.</summary>
+public static class DroitsCompteDistant
+{
+    public const string Consulter = "consulter", JournalAcces = "journal_acces", Ordres = "ordres";
+    public static readonly IReadOnlyList<string> Tous = [Consulter, JournalAcces, Ordres];
+}
+
+/// <summary>Compte distant rattaché à l'officine du certificat (GET /api/v1/acces-distants ; API locale : même forme).</summary>
+public sealed record CompteDistantRattacheDto(string Identifiant, string Nom, IReadOnlyList<string> Droits, DateTimeOffset RattacheLe, bool Actif);
+
+/// <summary>API centrale, POST /api/v1/acces-distants/droits : compte rattaché et droits voulus (consulter, journal_acces, ordres).</summary>
+public sealed record DemandeDroitsCompteDistantDto(string? Compte, IReadOnlyList<string>? Droits);
+
+/// <summary>API centrale, POST /api/v1/acces-distants/retrait : compte rattaché à retirer (effet immédiat).</summary>
+public sealed record DemandeRetraitCompteDistantDto(string? Compte);
+
+/// <summary>Résultat d'un changement de droits ou d'un retrait : ordres encore ouverts de ce compte annulés.</summary>
+public sealed record ReponseCompteDistantDto(int OrdresAnnules);
+
+/// <summary>API locale : droits voulus pour un compte rattaché, mot de passe du titulaire ressaisi.</summary>
+public sealed record DemandeDroitsAccesDistantDto(string? Compte, IReadOnlyList<string>? Droits, string? MotDePasse);
+
+/// <summary>API locale : retrait d'un compte rattaché, mot de passe du titulaire ressaisi.</summary>
+public sealed record DemandeRetraitAccesDistantDto(string? Compte, string? MotDePasse);
+
 /// <summary>
 /// Lot S4 : dernière vérification d'intégrité faite par le serveur central (résumé reçu par la voie descendante, format integrite-v1).
 /// Statut : ok, attente (une ligne, un ticket ou un sceau attendu n'est pas encore arrivé) ou anomalie.

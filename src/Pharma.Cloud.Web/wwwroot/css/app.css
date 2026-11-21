@@ -1051,3 +1051,5 @@ fieldset.panneau:disabled { opacity: 0.85; }
 .connexion .carte { display: flex; flex-direction: column; gap: 12px; }
 /* Tableau de bord du titulaire (lot S7.2a) : donnée non montée au central, en texte secondaire (jamais un 0 inventé) */
 .tuile-valeur.non-disponible { color: var(--texte-2); font-weight: 500; }
+/* Vue d'ensemble du titulaire : montants sur une ligne, en-têtes courts (titre complet dans le pied de page) */
+.tableau-ensemble td.nombre, .tableau-ensemble th.nombre { white-space: nowrap; }

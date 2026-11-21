@@ -86,6 +86,12 @@ Détail : [ecrans-central.md](ecrans-central.md) § 5. En local seulement à ce 
   seule en base ; 5 refus par quart d'heure ; code d'un autre compte : même réponse qu'un code inconnu). Droits par officine : `consulter`
   (tableau de bord : **totaux seulement**, aucun patient, aucune vente détaillée) et `journal_acces` (journal des accès de l'officine, y
   compris ceux de l'éditeur, sans identifiant ni nom). Sessions : 30 minutes d'inactivité, 8 heures au plus.
+- **Multi-officines et ordres du titulaire (lot S7.3, script central 034)** : le droit `ordres` d'un compte distant sur une officine ne
+  s'accorde (et ne se retire) que **depuis le poste** de l'officine, par le titulaire, mot de passe ressaisi ; le retrait d'un compte
+  coupe l'accès **tout de suite** et annule ses ordres encore ouverts. Ordres du titulaire : liste fermée (essai, sauvegarde, vérification
+  d'intégrité ; aucun sur les ventes, stocks, prix ou comptes, revérifiée par la base), code de second facteur à usage unique par ordre,
+  24 heures, 10 par heure ; la sauvegarde attend la confirmation du titulaire local. Vue d'ensemble : officines du compte seulement,
+  totaux seulement.
 - **Accès à distance depuis le poste (lot S7.2b, script central 033)** : seul le **titulaire** de l'officine génère un code de rattachement
   (Administration › Synchronisation › Accès à distance), avec son **mot de passe ressaisi** (essais comptés, blocage) et la synchronisation
   activée. Le poste demande le code au central par `POST /api/v1/rattachement` (certificat client + jeton) : **l'officine est celle du

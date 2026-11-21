@@ -10,6 +10,7 @@
             <p class="sous-titre">Officines rattachées à votre compte. Le tableau de bord ne montre que des totaux, jamais un patient ni une vente.</p>
         </div>
         <div class="actions">
+            <a class="btn btn-contour" href="mes-officines/ensemble">Vue d'ensemble</a>
             <a class="btn btn-principal" href="rattacher">Rattacher une officine</a>
         </div>
     </div>
@@ -22,9 +23,15 @@
                 <span aria-hidden="true"> · </span>
                 <a class="lien" href="@($"mes-officines/{Table.Valeur(ligne, "id")}/journal")">Journal des accès</a>
             }
+            @if (Table.Valeur(ligne, "droits") is string o && o.Split(',').Contains("ordres"))
+            {
+                <span aria-hidden="true"> · </span>
+                <a class="lien" href="@($"mes-officines/{Table.Valeur(ligne, "id")}/ordres")">Ordres</a>
+            }
         </Action>
     </TableauEcran>
-    <p class="pied-page">« En retard » : officine active sans lot ni certificat reçu depuis 24 heures. Chaque ouverture est notée au journal des accès.</p>
+    <p class="pied-page">« En retard » : officine active sans lot ni certificat reçu depuis 24 heures. Chaque ouverture est notée au journal des accès.
+        Le droit « ordres à distance » ne s'accorde (et ne se retire) que depuis le poste de l'officine, rubrique Accès à distance.</p>
 </div>
 
 @code {

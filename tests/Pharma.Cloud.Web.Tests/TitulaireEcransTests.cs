@@ -218,6 +218,33 @@ public class TitulaireEcransTests
             Assert.Contains("Titulaire essai A", await Texte(client, "/mes-officines"));
             Assert.Contains("Vous", await Texte(client, $"/mes-officines/{e.A}/journal"));
 
+            // Lot S7.3 : vue d'ensemble (officines du compte seulement, total du groupe) ; ordres refusés sans le droit « ordres »
+            var ensemble = (await Texte(client, "/mes-officines/ensemble")).Replace(' ', ' ').Replace(' ', ' ');
+            Assert.Contains("Total du groupe", ensemble);
+            Assert.Contains("1 000,00 DA", ensemble);
+            Assert.DoesNotContain("98 765", ensemble);
+            Assert.DoesNotContain("NOMINATIF_S72", ensemble);
+            Assert.DoesNotContain("style=\"", ensemble);
+            Assert.Contains("droit « ordres » non accordé", await Texte(client, $"/mes-officines/{e.A}/ordres"));
+            // Droit accordé (au poste en service ; ici par le propriétaire) : page des ordres, code de confirmation, ordre envoyé
+            Assert.Equal(1L, await b.ScalaireAsync("WITH u AS (UPDATE compte_officine SET droits = '{consulter,journal_acces,ordres}' WHERE officine_id = $1 RETURNING 1) SELECT count(*) FROM u", e.A));
+            Assert.Contains("Aucun ordre envoyé", await Texte(client, $"/mes-officines/{e.A}/ordres"));
+            var hors = await Poster(client, $"/mes-officines/{e.A}/ordres", $"/actions/mes-officines/{e.A}/ordre", new() { ["type"] = "prix_produit", ["code"] = "000000" });
+            Assert.Equal($"/mes-officines/{e.A}/ordres?erreur=ordre_hors_liste", hors.Headers.Location?.OriginalString);
+            var demandeCode = await Poster(client, $"/mes-officines/{e.A}/ordres", "/actions/code-action", new() { ["retour"] = $"/mes-officines/{e.A}/ordres" });
+            Assert.Equal($"/mes-officines/{e.A}/ordres?ok=code_envoye", demandeCode.Headers.Location?.OriginalString);
+            var codeOrdre = Regex.Match(await File.ReadAllTextAsync(Path.Combine(codes, "tit.web.a.txt")), "[0-9]{6}").Value;
+            var envoi = await Poster(client, $"/mes-officines/{e.A}/ordres", $"/actions/mes-officines/{e.A}/ordre", new() { ["type"] = "sauvegarde", ["code"] = codeOrdre });
+            Assert.Equal($"/mes-officines/{e.A}/ordres?ok=ordre_envoye", envoi.Headers.Location?.OriginalString);
+            var ordres = await Texte(client, $"/mes-officines/{e.A}/ordres?ok=ordre_envoye");
+            Assert.Contains("Demander une sauvegarde", ordres);
+            Assert.Contains("En attente", ordres);
+            Assert.DoesNotContain("style=\"", ordres);
+            // Officine d'un autre titulaire : refus
+            var autreOrdre = await Poster(client, $"/mes-officines/{e.A}/ordres", $"/actions/mes-officines/{e.B}/ordre", new() { ["type"] = "essai", ["code"] = "000000" });
+            Assert.Equal($"/mes-officines/{e.B}/ordres?erreur=ordre_refuse", autreOrdre.Headers.Location?.OriginalString);
+            Assert.Equal(1L, await b.ScalaireAsync("SELECT count(*) FROM journal_acces_distant WHERE evenement = 'ordre_titulaire' AND resultat = 'ok' AND officine_id = $1", e.A));
+
             // Officine d'un autre titulaire : refus (rien de B) ; écrans de l'éditeur : accès refusé
             var autre = await Texte(client, $"/mes-officines/{e.B}");
             Assert.Contains("Officine introuvable ou non rattachée", autre);

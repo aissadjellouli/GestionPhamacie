@@ -323,6 +323,7 @@ public static class DependencyInjection
         services.AddScoped<Synchronisation.PrendreActeRestaurationSync>();
         // Synchronisation, lot S7.2b : accès à distance (code de rattachement tiré par le titulaire)
         services.AddScoped<Synchronisation.GenererCodeAccesDistant>();
+        services.AddScoped<Synchronisation.ComptesAccesDistant>();
         // Synchronisation, lot S3 : bandeau, alertes au titulaire, réglages de supervision, purge de la file
         services.AddSingleton<Synchronisation.MemoireSupervisionSync>();
         services.AddScoped<Synchronisation.ConsulterAttenteSync>();

@@ -98,4 +98,35 @@ public class AccesDistantEcranTests
         Assert.True(titulaire >= 0 && titulaire < mdp && mdp < appel, "titulaire, puis mot de passe, puis serveur central");
         Assert.NotNull(FonctionsCoupeesDemo.FonctionCoupee("POST", "/api/admin/synchronisation/acces-distant/code"));
     }
+
+    [Fact]
+    public void S7_3_comptes_rattaches_droits_et_retrait_titulaire_mot_de_passe_sans_style_en_ligne()
+    {
+        var bloc = Bloc();
+        Assert.Contains("data-zone=\"comptes-distants\"", bloc);
+        Assert.Contains("@if (AccesDistantPossible && EstTitulaire)", bloc);   // ni employé, ni synchronisation inactive
+        Assert.Contains("data-champ=\"droit_ordres\"", bloc);
+        Assert.Contains("data-champ=\"mot_de_passe_compte\" type=\"password\" autocomplete=\"current-password\"", bloc);
+        Assert.Contains("<Pagination Total=\"comptesDistants.Count\"", bloc);
+        Assert.DoesNotContain("style=", bloc);
+        var page = Page();
+        Assert.Contains("motDePasseCompte = \"\";   // jamais gardé", page);
+        Assert.Contains("if (rubrique != \"acces-distant\") (compteOuvert, motDePasseCompte, comptesCharges) = (null, \"\", false);", page);
+        // Routes locales sous le groupe d'administration ; changement : titulaire, puis mot de passe, puis serveur central ; coupées en démonstration
+        var points = Lire("Pharma.Api", "Endpoints", "SynchronisationEndpoints.cs");
+        var groupe = points.IndexOf("var s = api.MapGroup(\"/admin/synchronisation\").ExigerPermission(Permissions.AdminParametres);", StringComparison.Ordinal);
+        foreach (var r in new[] { "s.MapGet(\"/acces-distant/comptes\"", "s.MapPost(\"/acces-distant/droits\"", "s.MapPost(\"/acces-distant/retrait\"" })
+            Assert.True(groupe > 0 && points.IndexOf(r, StringComparison.Ordinal) > groupe, r);
+        var cas = Lire("Pharma.Application", "Synchronisation", "AccesDistant.cs");
+        foreach (var (methode, appel) in new[] { ("public async Task<int> ModifierDroitsAsync(", "client.DroitsCompteDistantAsync("), ("public async Task<int> RetirerAsync(", "client.RetirerCompteDistantAsync(") })
+        {
+            var corps = cas[cas.IndexOf(methode, StringComparison.Ordinal)..];
+            var titulaire = corps.IndexOf("await PreparerAsync(", StringComparison.Ordinal);
+            var mdp = corps.IndexOf("await motDePasse.VerifierAsync(", StringComparison.Ordinal);
+            Assert.True(titulaire >= 0 && titulaire < mdp && mdp < corps.IndexOf(appel, StringComparison.Ordinal), methode);
+        }
+        Assert.Contains("await droits.ExigerTitulaireAsync(titulaireId, action, ct);", cas);
+        Assert.NotNull(FonctionsCoupeesDemo.FonctionCoupee("POST", "/api/admin/synchronisation/acces-distant/droits"));
+        Assert.NotNull(FonctionsCoupeesDemo.FonctionCoupee("POST", "/api/admin/synchronisation/acces-distant/retrait"));
+    }
 }

@@ -194,6 +194,48 @@ public static class PointsEntree
             }
         }).RequireRateLimiting("officine");
 
+        // Lot S7.3 (script 034) : comptes distants rattachés à l'officine du certificat, droits (dont « ordres »), retrait (effet
+        // immédiat, ordres ouverts du compte annulés). Officine = celle du certificat et du jeton, jamais un champ de la demande ; le
+        // mot de passe du titulaire est vérifié par l'API locale avant l'appel.
+        v1.MapGet("/acces-distants", async (HttpContext ctx, Npgsql.NpgsqlDataSource db, CancellationToken ct) =>
+        {
+            var (appelant, refus) = await AppelantAsync(ctx, ct);
+            if (appelant is null) return refus!;
+            ctx.Response.Headers.CacheControl = "no-store";
+            try { return Results.Ok(await Comptes.AccesDistantsPoste.ListerAsync(db, appelant.Officine, appelant.EmpreinteCertificat, ct)); }
+            catch (Npgsql.PostgresException p) when (p.SqlState == "42501") { return Results.Problem("Certificat révoqué, échu ou inconnu.", statusCode: 401); }
+        }).RequireRateLimiting("officine");
+
+        v1.MapPost("/acces-distants/droits", async (DemandeDroitsCompteDistantDto d, HttpContext ctx, Npgsql.NpgsqlDataSource db, ILoggerFactory lf, CancellationToken ct) =>
+        {
+            var (appelant, refus) = await AppelantAsync(ctx, ct);
+            if (appelant is null) return refus!;
+            try
+            {
+                var (statut, annules) = await Comptes.AccesDistantsPoste.DroitsAsync(db, appelant.Officine, appelant.EmpreinteCertificat, d.Compte, d.Droits, ct);
+                if (Comptes.AccesDistantsPoste.Reponse(statut) is { } r) return Results.Problem(r.Motif, statusCode: r.Code);
+                lf.CreateLogger("Pharma.Cloud.AccesDistants").LogInformation("Officine {Officine} : droits d'un compte distant changés par le poste ({Annules} ordre(s) annulé(s))",
+                    appelant.Officine, annules);
+                return Results.Ok(new ReponseCompteDistantDto(annules));
+            }
+            catch (Npgsql.PostgresException p) when (p.SqlState == "42501") { return Results.Problem("Certificat révoqué, échu ou inconnu.", statusCode: 401); }
+        }).RequireRateLimiting("officine");
+
+        v1.MapPost("/acces-distants/retrait", async (DemandeRetraitCompteDistantDto d, HttpContext ctx, Npgsql.NpgsqlDataSource db, ILoggerFactory lf, CancellationToken ct) =>
+        {
+            var (appelant, refus) = await AppelantAsync(ctx, ct);
+            if (appelant is null) return refus!;
+            try
+            {
+                var (statut, annules) = await Comptes.AccesDistantsPoste.RetirerAsync(db, appelant.Officine, appelant.EmpreinteCertificat, d.Compte, ct);
+                if (Comptes.AccesDistantsPoste.Reponse(statut) is { } r) return Results.Problem(r.Motif, statusCode: r.Code);
+                lf.CreateLogger("Pharma.Cloud.AccesDistants").LogInformation("Officine {Officine} : compte distant retiré par le poste ({Annules} ordre(s) annulé(s))",
+                    appelant.Officine, annules);
+                return Results.Ok(new ReponseCompteDistantDto(annules));
+            }
+            catch (Npgsql.PostgresException p) when (p.SqlState == "42501") { return Results.Problem("Certificat révoqué, échu ou inconnu.", statusCode: 401); }
+        }).RequireRateLimiting("officine");
+
         // Lot S5.3 : téléchargement d'un fichier de référentiel (nomenclature) désigné par un ordre de cette officine ; 404 sinon
         v1.MapGet("/referentiels/{id:long}", async (long id, HttpContext ctx, DepotCentral depot, CancellationToken ct) =>
         {

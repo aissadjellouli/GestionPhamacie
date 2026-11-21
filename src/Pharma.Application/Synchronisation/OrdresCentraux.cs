@@ -1,7 +1,9 @@
 using System.Text.Json;
 using Pharma.Application.Administration;
 using Pharma.Application.Commun;
+using Pharma.Application.Integrite;
 using Pharma.Application.Notifications;
+using Pharma.Application.Sauvegardes;
 using Pharma.Application.Securite;
 using Pharma.Domain.Commun;
 
@@ -38,16 +40,20 @@ public static class TypesOrdre
     public const string Indications = "indications";
     /// <summary>Référentiels, lot 5 : DCI à ajouter (par nom).</summary>
     public const string Dci = "dci";
+    /// <summary>Lot S7.3 : sauvegarde demandée par le titulaire à distance ; confirmée sur le poste (moment choisi par le titulaire local).</summary>
+    public const string Sauvegarde = "sauvegarde";
+    /// <summary>Lot S7.3 : vérification d'intégrité des journaux chaînés demandée à distance (lecture seule, appliquée tout de suite).</summary>
+    public const string VerificationIntegrite = "verification_integrite";
     public static readonly IReadOnlySet<string> Connus = new HashSet<string>(StringComparer.Ordinal)
     {
         Essai, EmployeCreer, EmployeModifier, EmployeBloquer, EmployeDebloquer, DroitsRole, PrixProduit, Nomenclature, Commande, ClasseSuivie, Organismes,
-        Prestations, Indications, Dci
+        Prestations, Indications, Dci, Sauvegarde, VerificationIntegrite
     };
 
     /// <summary>Confirmation du titulaire exigée avant application (décision S5-D3) ; le blocage et l'essai s'appliquent tout de suite.</summary>
     public static bool ConfirmationRequise(string type) =>
         type is EmployeCreer or EmployeModifier or EmployeDebloquer or DroitsRole or Nomenclature or ClasseSuivie or Organismes
-            or Prestations or Indications or Dci;
+            or Prestations or Indications or Dci or Sauvegarde;
 
     public static string Libelle(string type) => type switch
     {
@@ -65,6 +71,8 @@ public static class TypesOrdre
         Prestations => "Prestations",
         Indications => "Indications thérapeutiques",
         Dci => "Dénominations communes (DCI)",
+        Sauvegarde => "Sauvegarde demandée à distance",
+        VerificationIntegrite => "Vérification d’intégrité demandée à distance",
         _ => type
     };
 }
@@ -142,7 +150,8 @@ public sealed class OrdreInapplicableException(string message) : Exception(messa
 /// <summary>Application d'un ordre par les cas d'usage existants ; <paramref name="titulaireId"/> : titulaire qui confirme (null : automatique).</summary>
 public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisateur creer, ModifierUtilisateur modifier, EnregistrerDroits droitsRole,
     Catalogue.IProduitsModification produits, IOrdresCentrauxDepot depot, Catalogue.ImporterNomenclature nomenclature,
-    ITelechargementReferentiel referentiels, Achats.IAchats achats, IOrganismesCentraux organismes, IListesCentrales listes)
+    ITelechargementReferentiel referentiels, Achats.IAchats achats, IOrganismesCentraux organismes, IListesCentrales listes,
+    Sauvegardes.LancerSauvegarde? sauvegarde = null, Integrite.VerifierIntegrite? integrite = null)
 {
     /// <summary>Lignes au plus dans un ordre de commande (décision S5.4-D5).</summary>
     public const int LignesCommandeMax = 200;
@@ -199,15 +208,19 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
     private static decimal? Montant(JsonElement e, string nom) =>
         e.TryGetProperty(nom, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDecimal() : null;
 
-    public async Task ExecuterAsync(OrdreRecu o, long? titulaireId, string? motDePasse, CancellationToken ct = default)
+    /// <returns>Résultat à remonter avec l'état « appliqué » (S7.3 : sauvegarde, vérification d'intégrité) ; null sinon.</returns>
+    public async Task<string?> ExecuterAsync(OrdreRecu o, long? titulaireId, string? motDePasse, CancellationToken ct = default)
     {
         using var attendu = JsonDocument.Parse(o.AttenduJson);
         using var donnees = JsonDocument.Parse(o.DonneesJson);
         var a = attendu.RootElement;
         var d = donnees.RootElement;
-        if (o.Type == TypesOrdre.Essai) return;
+        if (o.Type == TypesOrdre.Essai) return null;
         if (TypesOrdre.ConfirmationRequise(o.Type) && titulaireId is null)
             throw new InvalidOperationException("Ordre à confirmer par le titulaire : application automatique interdite.");
+        // Lot S7.3 : ordres du titulaire à distance (liste fermée, sans donnée) ; rien ne modifie une vente, un stock, un prix ni un compte
+        if (o.Type == TypesOrdre.Sauvegarde) return await SauvegarderAsync(titulaireId!.Value, ct);
+        if (o.Type == TypesOrdre.VerificationIntegrite) return await VerifierIntegriteAsync(ct);
         var etat = await admin.LireAsync(ct);
         switch (o.Type)
         {
@@ -216,7 +229,7 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
                 var role = Role(etat, Texte(d, "role"));
                 if (string.IsNullOrEmpty(motDePasse)) throw new RegleMetierException("Mot de passe provisoire obligatoire pour créer le compte.", "mot_de_passe");
                 await creer.ExecuterAsync(Texte(d, "nom"), Texte(d, "identifiant"), motDePasse, role.Id, titulaireId!.Value, ct: ct);
-                return;
+                return null;
             }
             case TypesOrdre.EmployeModifier or TypesOrdre.EmployeBloquer or TypesOrdre.EmployeDebloquer:
             {
@@ -226,7 +239,7 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
                 {
                     // Protecteur, sans confirmation : seul l'état actif change (les sessions de l'employé tombent à l'appel suivant)
                     await admin.ModifierAsync(u.Id, u.NomComplet, u.RoleId, false, null, u.Telephone, u.Email, ct);
-                    return;
+                    return null;
                 }
                 var roleId = u.RoleId;
                 if (o.Type == TypesOrdre.EmployeModifier && d.TryGetProperty("role", out var r) && r.ValueKind == JsonValueKind.String)
@@ -235,7 +248,7 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
                     ? n.GetString()! : u.NomComplet;
                 var actif = o.Type == TypesOrdre.EmployeDebloquer || u.Actif;
                 await modifier.ExecuterAsync(u.Id, nom, roleId, actif, null, titulaireId!.Value, u.Telephone, u.Email, ct);
-                return;
+                return null;
             }
             case TypesOrdre.PrixProduit:
             {
@@ -252,14 +265,14 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
                     throw new InvalidOperationException("Écart de prix au-delà de 20 % : confirmation du titulaire exigée.");
                 if (!await depot.ModifierPrixAsync(fiche.Id, prix, tarif, fiche.PrixPublic, fiche.TarifReference, titulaireId, o.Auteur, o.Id, ct))
                     throw new OrdreInapplicableException($"Prix de « {fiche.NomCommercial} » {ModifieDansOfficine}.");
-                return;
+                return null;
             }
             case TypesOrdre.Nomenclature:
                 await ImporterNomenclatureAsync(d, titulaireId!.Value, ct);
-                return;
+                return null;
             case TypesOrdre.Commande:
                 await CreerCommandeAsync(o, d, ct);
-                return;
+                return null;
             case TypesOrdre.ClasseSuivie:
             {
                 var noms = NomsDci(d);
@@ -268,17 +281,17 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
                 // Garde-fou : une liste dont aucun nom n'est reconnu viderait la classe
                 if (prevu.Reconnues == 0) throw new OrdreInapplicableException("Aucune DCI de la liste n’existe dans l’officine : rien n’est changé.");
                 await depot.ClasseSuivieAsync(o.Cible!, noms, true, titulaireId, o.Auteur, o.Id, ct);
-                return;
+                return null;
             }
             case TypesOrdre.Organismes:
                 await organismes.AppliquerAsync(d, titulaireId!.Value, ct);
-                return;
+                return null;
             case TypesOrdre.Prestations or TypesOrdre.Indications:
                 await listes.AppliquerAsync(o.Type, d, titulaireId!.Value, ct);
-                return;
+                return null;
             case TypesOrdre.Dci:
                 await depot.AjouterDciAsync(Textes(d, "dci"), true, titulaireId, o.Auteur, o.Id, ct);
-                return;
+                return null;
             case TypesOrdre.DroitsRole:
             {
                 var role = Role(etat, o.Cible);
@@ -288,11 +301,33 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
                     throw new OrdreInapplicableException($"Droits du rôle « {role.Nom} » {ModifieDansOfficine}.");
                 var voulus = d.GetProperty("permissions").EnumerateArray().Select(x => x.GetString() ?? "").ToList();
                 await droitsRole.ExecuterAsync([new DroitsRole(role.Id, voulus)], titulaireId!.Value, ct);
-                return;
+                return null;
             }
             default:
                 throw new OrdreInapplicableException($"Type d’ordre non pris en charge : {o.Type}.");
         }
+    }
+
+    /// <summary>Lot S7.3 : sauvegarde demandée à distance, lancée au nom du titulaire qui confirme (mêmes règles que « Sauvegarder
+    /// maintenant » : dossier réglé, disque présent, journal des sauvegardes). Dossier non réglé, disque absent ou échec : l'ordre RESTE
+    /// à confirmer (le titulaire branche le disque et recommence, ou refuse) ; il expire sinon à son échéance.</summary>
+    private async Task<string?> SauvegarderAsync(long titulaireId, CancellationToken ct)
+    {
+        if (sauvegarde is null) throw new OrdreInapplicableException("Sauvegarde indisponible sur ce serveur.");
+        var r = await sauvegarde.ExecuterAsync(false, titulaireId, DateTime.Now, ct);
+        if (r.Statut != "reussie") throw new RegleMetierException($"Sauvegarde en échec : {r.Message} L’ordre reste à confirmer.");
+        return "sauvegarde réussie" + (r.TailleOctets is { } t ? $" ({t / 1048576m:N1} Mo)" : "");
+    }
+
+    /// <summary>Lot S7.3 : vérification d'intégrité demandée à distance (lecture seule, comme la vérification de la nuit) ; résultat en
+    /// nombres seulement (aucune donnée de ligne) ; une rupture est signalée au titulaire par la vérification elle-même.</summary>
+    private async Task<string?> VerifierIntegriteAsync(CancellationToken ct)
+    {
+        if (integrite is null) throw new OrdreInapplicableException("Vérification d’intégrité indisponible sur ce serveur.");
+        var etats = await integrite.ExecuterAsync(null, ct);
+        var ruptures = etats.Count(e => e.Statut == VerifierIntegrite.Rupture);
+        var erreurs = etats.Count(e => e.Statut == VerifierIntegrite.Erreur);
+        return $"{etats.Count} chaîne(s) vérifiée(s) : {etats.Count - ruptures - erreurs} intacte(s), {ruptures} rupture(s), {erreurs} en erreur";
     }
 
     /// <summary>Aperçu des changements d'un ordre à confirmer (référentiels), montré au titulaire avant sa décision ; null : sans objet.</summary>
@@ -437,8 +472,8 @@ public sealed class AppliquerOrdresCentraux(IOrdresCentrauxDepot depot, Executer
             }
             try
             {
-                await executer.ExecuterAsync(o, null, null, ct);
-                await depot.NoterAsync(o.Id, StatutsOrdre.Applique, null, null, ct);
+                var resultat = await executer.ExecuterAsync(o, null, null, ct);
+                await depot.NoterAsync(o.Id, StatutsOrdre.Applique, resultat, null, ct);
                 if (o.Type is TypesOrdre.EmployeBloquer or TypesOrdre.Commande) await PrevenirAsync(o, StatutsOrdre.Applique, null, ct);
             }
             catch (Exception e) when (e is OrdreInapplicableException or RegleMetierException or JsonException or KeyNotFoundException)
@@ -489,9 +524,10 @@ public sealed class ConfirmerOrdreCentral(IOrdresCentrauxDepot depot, ExecuterOr
             await depot.NoterAsync(id, StatutsOrdre.Expire, "non traité avant sa date limite (horloge de l’officine)", null, ct);
             throw new RegleMetierException("Cet ordre a expiré : il n’est pas appliqué.");
         }
+        string? resultat;
         try
         {
-            await executer.ExecuterAsync(o, titulaireId, motDePasse, ct);
+            resultat = await executer.ExecuterAsync(o, titulaireId, motDePasse, ct);
         }
         catch (OrdreInapplicableException e)
         {
@@ -499,7 +535,7 @@ public sealed class ConfirmerOrdreCentral(IOrdresCentrauxDepot depot, ExecuterOr
             await depot.NoterAsync(id, StatutsOrdre.Refuse, e.Message, titulaireId, ct);
             throw new RegleMetierException($"Ordre refusé : {e.Message}");
         }
-        await depot.NoterAsync(id, StatutsOrdre.Applique, null, titulaireId, ct);
+        await depot.NoterAsync(id, StatutsOrdre.Applique, resultat, titulaireId, ct);
         return StatutsOrdre.Applique;
     }
 }
@@ -547,6 +583,8 @@ public static class ResumeOrdre
             return o.Type switch
             {
                 TypesOrdre.Essai => "Vérification de la liaison : rien ne change.",
+                TypesOrdre.Sauvegarde => "Sauvegarde de la base sur le disque externe, lancée à votre confirmation (choisissez un moment calme) ; rien d’autre ne change.",
+                TypesOrdre.VerificationIntegrite => "Vérification des journaux chaînés (lecture seule) ; une rupture vous est signalée.",
                 TypesOrdre.EmployeCreer => $"Nouveau compte « {T(d, "nom")} », identifiant {T(d, "identifiant")}, rôle {NomRole(T(d, "role"))}.",
                 TypesOrdre.EmployeModifier => $"{Employe()} : "
                     + string.Join(", ", new[]

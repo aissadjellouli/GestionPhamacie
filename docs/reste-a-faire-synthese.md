@@ -215,7 +215,12 @@ rapprochement 157, ticket, tâches laissées et réglage 156, fiche du prêt, mo
 - [x] **Synchronisation S7.2b** (2026-11-21, en local) : rubrique « Accès à distance » du poste, le titulaire génère le code de rattachement
   (route centrale `POST /api/v1/rattachement`, script central **033**) ([ecrans-central.md](ecrans-central.md) § 3 ter). À faire avant usage :
   passer le script central **033** sur `pharmacie_cloud_dev` (après 032, après relecture), mesurer la rubrique (1 366 × 768 et 1 536 × 890, clair et sombre).
-- [ ] **Synchronisation S7.2b (reste)** : voir et retirer depuis le poste les comptes distants rattachés.
+- [x] **Synchronisation S7.2b (reste)** : voir et retirer depuis le poste les comptes distants rattachés (fait avec S7.3).
+- [x] **Synchronisation S7.3** (2026-11-21, en local) : vue d’ensemble du titulaire, droit « ordres » accordé depuis le poste, comptes
+  rattachés et retrait, ordres du titulaire (essai, sauvegarde, vérification d’intégrité) ([ecrans-central.md](ecrans-central.md) § 3 quater).
+  À faire avant usage : passer le script central **034** sur `pharmacie_cloud_dev` (après 033, après relecture), mesurer
+  `/mes-officines/ensemble`, `/mes-officines/{officine}/ordres` et la rubrique « Accès à distance » (1 366 × 768 et 1 536 × 890, clair et sombre).
+- [ ] **Synchronisation S7.3 (reste)** : ordre « message à afficher sur les postes » (après la modification en cours de la barre d’état).
 - [ ] **Synchronisation S7.2 (reste)** : SMS (fournisseur), remise à zéro d'un mot de passe par l'éditeur, retrait d'un rattachement depuis les écrans, alertes de refus en série.
 - [ ] **Mise en ligne des écrans du central** (après le choix de l'hébergeur) : domaine et certificat, proxy inverse (adresse réelle pour les limites de débit), connexion de production au rôle `pharma_cloud_ecrans`, SMTP, clé HMAC commune si plusieurs instances, comptes éditeur réels, test d'intrusion.
 - [ ] Découpage par officine des grandes tables du central.

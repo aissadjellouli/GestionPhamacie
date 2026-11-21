@@ -192,7 +192,7 @@ Principe : défense en profondeur ; si une couche cède, les autres tiennent. L'
 | S4 | Vérification d'intégrité côté cloud (chaînes, continuité, ancrages des sceaux) — **réalisé le 2026-11-17 (§ 22)** | S2 ; lots 2, 3, 8 (faits) |
 | S5 | Ordres descendants (prix, réglages, nomenclature) appliqués par l'API locale, conflits, journalisation — **analysé, décisions S5-D1 à D5 du 2026-11-18 (§ 23) ; S5.1 (socle des ordres) et S5.5 (employés et droits) réalisés le 2026-11-18 (§ 24) ; S5.2 (prix) réalisé le 2026-11-18 (§ 25) ; S5.3 (nomenclature) réalisé le 2026-11-18 (§ 26) ; S5.4 (commandes en brouillon) réalisé le 2026-11-18 (§ 27) ; référentiels : antibiotiques suivis, organismes et centres payeurs, prestations, indications, DCI réalisés le 2026-11-18 (§ 28)** | S3 |
 | S6 | Cas particuliers : chargement initial, bascule 2e serveur, restauration (époques), départ d'une officine | S3, S4 |
-| S7 | **S7.1 réalisé le 2026-11-21 en local (§ 32 : écrans de l'éditeur, comptes distants, journal des accès)** ; S7.2 : écrans à distance du titulaire, multi-officines ; journal des accès (la page d'état de développement `http://127.0.0.1:5092` du 2026-11-21 n'est **pas** un écran S7 : outil de développement en lecture seule ; seul son rôle `pharma_cloud_etat`, script central 029, servira à S7) | S2, S5 |
+| S7 | **S7.1 réalisé le 2026-11-21 en local (§ 32 : écrans de l'éditeur, comptes distants, journal des accès)** ; **S7.2a, S7.2b et S7.3 (multi-officines, ordres du titulaire) réalisés en local le 2026-11-21 (§ 32.1 à 32.3)** ; S7.2 : écrans à distance du titulaire, multi-officines ; journal des accès (la page d'état de développement `http://127.0.0.1:5092` du 2026-11-21 n'est **pas** un écran S7 : outil de développement en lecture seule ; seul son rôle `pharma_cloud_etat`, script central 029, servira à S7) | S2, S5 |
 | (lot 9) | Chiffrement des données : **non lancé**, s'insérera aux points du § 6 | « go chiffrement » |
 
 ### Décisions demandées au titulaire
@@ -2113,4 +2113,22 @@ Détail : [ecrans-central.md](ecrans-central.md) § 3 ter.
   l'officine est celle du certificat ; même tirage que la console ; 422 neutre, 429 au-delà de 5 demandes par heure et par officine.
 - **Script central `033_code_rattachement_poste.sql`** : `cloud_poste_code_rattachement` (rôle `pharma_cloud_api`), enregistrement commun
   `cloud_code_rattachement_enregistrer` (console et poste), acteur « poste » au journal de l'officine.
-- **Reste** : voir et retirer les comptes rattachés depuis le poste ; adresse réelle des écrans (mise en ligne).
+- **Reste** : adresse réelle des écrans (mise en ligne). Comptes rattachés vus et retirés depuis le poste : § 32.3.
+
+### 32.3 Lot S7.3 : multi-officines et ordres du titulaire (réalisé en local le 2026-11-21, go du titulaire, recommandations S7 acceptées)
+
+Détail : [ecrans-central.md](ecrans-central.md) § 3 quater.
+
+- **Vue d'ensemble** (`cloud_ecran_titulaire_ensemble`) : une ligne d'agrégats par officine du compte, lue par la fonction du tableau
+  de bord (officine posée par la base, RLS forcée) ; total du groupe fait par l'écran, **partiel** quand une officine n'a pas la valeur
+  (jamais un « non disponible » compté comme 0).
+- **Droit `ordres`** sur `compte_officine` : accordé et retiré **seulement** depuis le poste (titulaire, mot de passe ressaisi,
+  `/api/v1/acces-distants/…`) ; le rattachement donne toujours `consulter` + `journal_acces`. Retrait d'un compte : immédiat.
+- **Ordres du titulaire** (§ 1 : « tout passe par un ordre descendant appliqué par l'API locale ») : liste fermée `essai`,
+  `sauvegarde` (confirmée sur le poste), `verification_integrite` (lecture seule, appliquée tout de suite) ; 24 heures ; mêmes table
+  (`ordre_central`, colonnes `origine` et `compte_id`), journal, publication `ordre-v1` et retour (`sync_ordre_resultat`) que S5.
+  **Écart signalé** : la décision 3 (§ 0) permet prix, réglages, commandes et employés aux ordres du **propriétaire du central** (S5) ;
+  pour le titulaire à distance, la consigne du lot (aucun ordre sur les ventes, stocks, prix, comptes) est appliquée. Le « message à
+  afficher sur les postes » n'est **pas** fait (pas de surface commune aux postes sans la barre d'état, modification en attente).
+- **Script central `034_titulaire_multi_officines_ordres.sql`** (garde de rejeu ajoutée à 013 pour `cloud_expirer_ordres`) ; aucun
+  script local, `002_tables_miroir.sql` inchangé.

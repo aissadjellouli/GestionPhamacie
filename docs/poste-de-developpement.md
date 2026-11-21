@@ -180,6 +180,15 @@ https://127.0.0.1:5094/ : connexion `titulaire.dev`, « Rattacher une officine �
 l'officine montre « Poste de l'officine ». À vérifier aussi : identifiant inconnu ou `editeur.dev` → même message ; 6e demande dans l'heure
 → « Trop de codes demandés » ; employé non titulaire → texte sans bouton ; synchronisation décochée → explication sans bouton.
 
+**Multi-officines et ordres (lot S7.3) : comment tester.** Prérequis : script central `034` passé sur `pharmacie_cloud_dev` (après 033,
+après relecture), `titulaire.dev` rattaché (ci-dessus). Dans le poste (titulaire), Accès à distance › **Comptes rattachés** : la ligne
+`titulaire.dev` ; « Droits », cocher « Ordres à distance », mot de passe → enregistré. Sur https://127.0.0.1:5094/ : « Mes officines »
+→ lien « Ordres » ; « Recevoir un code de confirmation » (code dans `codes\titulaire.dev.txt`), « Demander une vérification
+d’intégrité » → statut « En attente » puis « Appliqué » après le passage de synchronisation suivant ; « Demander une sauvegarde » →
+« À confirmer sur le poste » (Synchronisation › Ordres du central, « Confirmer »). « Vue d’ensemble » : totaux par officine et total
+du groupe. À vérifier aussi : même type déjà en cours → refusé ; « Retirer » `titulaire.dev` au poste → le tableau de bord est refusé
+tout de suite et l’ordre ouvert passe « Annulé » ; employé non titulaire → aucune liste.
+
 **5. Retirer** (central arrêté) : `.\scripts\dev\preparer_central_vs.ps1 -Retirer -WhatIf`, puis sans `-WhatIf`. Retire les variables
 posées par le script, les rôles `pharma_cloud_dev_vs` et `pharma_cloud_etat_vs` et le dossier `%LOCALAPPDATA%\PharmaOfficine\central-dev` ; rien n'est supprimé en
 base (l'officine reste au central, les réglages de synchronisation restent dans `pharmacie_dev` : décocher **Synchronisation activée**

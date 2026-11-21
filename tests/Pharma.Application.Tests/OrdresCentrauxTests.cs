@@ -141,14 +141,14 @@ public class OrdresCentrauxTests
             StatutsOrdre.AAppliquer, null, Maintenant.AddMinutes(-5), null, null);
 
     private static (Depot Depot, UtilisateursEnMemoire Admin, Alertes Alertes, JournalEspion Journal, AppliquerOrdresCentraux Auto,
-        ConfirmerOrdreCentral Confirmer, RefuserOrdreCentral Refuser) Monter(bool titulaire = true)
+        ConfirmerOrdreCentral Confirmer, RefuserOrdreCentral Refuser) Monter(bool titulaire = true, Pharma.Application.Integrite.VerifierIntegrite? integrite = null)
     {
         var (depot, admin, alertes, journal) = (new Depot(), new UtilisateursEnMemoire(), new Alertes(), new JournalEspion());
         var droits = new DroitsFactices("admin.utilisateurs") { Titulaire = titulaire };
         var executer = new ExecuterOrdreCentral(admin, new CreerUtilisateur(admin, new HacheurFactice(), journal, droits),
             new ModifierUtilisateur(admin, new HacheurFactice(), journal, droits), new EnregistrerDroits(admin, journal), depot.Produits, depot,
             new Pharma.Application.Catalogue.ImporterNomenclature(new LecteurFactice(200), depot.Nomenclature, droits, journal), depot.Referentiels,
-            depot.Achats, depot.Organismes, depot.Listes);
+            depot.Achats, depot.Organismes, depot.Listes, integrite: integrite);
         var horloge = new Horloge(Maintenant);
         return (depot, admin, alertes, journal, new AppliquerOrdresCentraux(depot, executer, horloge, alertes),
             new ConfirmerOrdreCentral(depot, executer, droits, horloge), new RefuserOrdreCentral(depot, droits));
@@ -264,6 +264,52 @@ public class OrdresCentrauxTests
         Assert.Equal(StatutsOrdre.Expire, m.Depot.Statut(aConfirmerVieux.Id));
         Assert.Equal(StatutsOrdre.Refuse, m.Depot.Statut(inconnu.Id));
         Assert.Null(m.Admin.Modifie);
+    }
+
+    /// <summary>Lot S7.3 : dépôt d'intégrité factice, un journal dont la vérification échoue (aucune ligne lue).</summary>
+    public class IntegriteFactice : System.Reflection.DispatchProxy
+    {
+        protected override object? Invoke(System.Reflection.MethodInfo? m, object?[]? args) => m?.Name switch
+        {
+            "JournauxAsync" => Task.FromResult<IReadOnlyList<Pharma.Application.Integrite.JournalChaine>>(
+                [new Pharma.Application.Integrite.JournalChaine("journal_vente", "Ventes", "sha256", Maintenant)]),
+            "EnregistrerVerificationAsync" or "JournaliserRuptureSystemeAsync" => Task.CompletedTask,
+            _ => throw new InvalidOperationException(m?.Name),
+        };
+    }
+
+    [Fact]
+    public async Task S7_3_sauvegarde_attend_le_titulaire_verification_appliquee_tout_de_suite_avec_son_resultat()
+    {
+        var depotIntegrite = System.Reflection.DispatchProxy.Create<Pharma.Application.Integrite.IIntegriteDepot, IntegriteFactice>();
+        var m = Monter(integrite: new Pharma.Application.Integrite.VerifierIntegrite(depotIntegrite, null!));
+        var sauvegarde = Ordre(TypesOrdre.Sauvegarde, expire: Maintenant.AddHours(23));
+        var verification = Ordre(TypesOrdre.VerificationIntegrite, expire: Maintenant.AddHours(23));
+        m.Depot.Ordres.AddRange([sauvegarde, verification]);
+
+        Assert.Equal(2, await m.Auto.ExecuterAsync());
+        Assert.Equal(StatutsOrdre.AConfirmer, m.Depot.Statut(sauvegarde.Id));   // jamais lancée sans le titulaire local
+        Assert.Equal(StatutsOrdre.Applique, m.Depot.Statut(verification.Id));
+        Assert.Equal("1 chaîne(s) vérifiée(s) : 0 intacte(s), 0 rupture(s), 1 en erreur", m.Depot.Notes.Single(n => n.Id == verification.Id).Motif);
+        Assert.True(TypesOrdre.ConfirmationRequise(TypesOrdre.Sauvegarde));
+        Assert.False(TypesOrdre.ConfirmationRequise(TypesOrdre.VerificationIntegrite));
+        // Sans service de sauvegarde sur ce serveur : refus à la confirmation (rien d'autre ne change)
+        await Assert.ThrowsAsync<RegleMetierException>(() => m.Confirmer.ExecuterAsync(sauvegarde.Id, null, 1));
+        Assert.Equal(StatutsOrdre.Refuse, m.Depot.Statut(sauvegarde.Id));
+        Assert.Null(m.Admin.Modifie);
+    }
+
+    [Fact]
+    public async Task S7_3_ordre_du_titulaire_expire_jamais_applique()
+    {
+        var m = Monter();
+        var vieux = Ordre(TypesOrdre.VerificationIntegrite, expire: Maintenant.AddMinutes(-1));
+        var sauvegarde = Ordre(TypesOrdre.Sauvegarde, expire: Maintenant.AddMinutes(-1)) with { Statut = StatutsOrdre.AConfirmer };
+        m.Depot.Ordres.AddRange([vieux, sauvegarde]);
+        await m.Auto.ExecuterAsync();
+        Assert.Equal(StatutsOrdre.Expire, m.Depot.Statut(vieux.Id));
+        Assert.Equal(StatutsOrdre.Expire, m.Depot.Statut(sauvegarde.Id));
+        Assert.Contains("lancée à votre confirmation", ResumeOrdre.Texte(Ordre(TypesOrdre.Sauvegarde), new EtatDroits([], [], [])));
     }
 
     [Fact]

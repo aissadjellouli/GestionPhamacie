@@ -198,10 +198,22 @@ public interface IClientServeurCentral
     /// Refus neutre : ServeurCentralException 422 ; limite : 429. Sans implémentation : NotSupportedException.</summary>
     Task<CodeRattachementSync> CodeRattachementAsync(string adresse, string compte, CancellationToken ct = default) =>
         throw new NotSupportedException();
+    /// <summary>Lot S7.3 : comptes distants rattachés à cette officine (GET /api/v1/acces-distants). Sans implémentation : NotSupportedException.</summary>
+    Task<IReadOnlyList<CompteDistantSync>> ComptesDistantsAsync(string adresse, CancellationToken ct = default) => throw new NotSupportedException();
+    /// <summary>Lot S7.3 : droits d'un compte rattaché (POST /api/v1/acces-distants/droits) ; rend le nombre d'ordres ouverts annulés.
+    /// Compte non rattaché ou droits invalides : ServeurCentralException 422. Sans implémentation : NotSupportedException.</summary>
+    Task<int> DroitsCompteDistantAsync(string adresse, string compte, IReadOnlyList<string> droits, CancellationToken ct = default) =>
+        throw new NotSupportedException();
+    /// <summary>Lot S7.3 : retrait d'un compte rattaché (POST /api/v1/acces-distants/retrait, effet immédiat) ; rend le nombre d'ordres
+    /// ouverts annulés. Compte non rattaché : ServeurCentralException 422. Sans implémentation : NotSupportedException.</summary>
+    Task<int> RetirerCompteDistantAsync(string adresse, string compte, CancellationToken ct = default) => throw new NotSupportedException();
 }
 
 /// <summary>Code de rattachement délivré par le serveur central (montré une fois, jamais gardé) et son échéance (UTC).</summary>
 public sealed record CodeRattachementSync(string Code, DateTime ExpireLeUtc);
+
+/// <summary>Lot S7.3 : compte distant rattaché à cette officine, vu du poste (droits : consulter, journal_acces, ordres).</summary>
+public sealed record CompteDistantSync(string Identifiant, string Nom, IReadOnlyList<string> Droits, DateTime RattacheLeUtc, bool Actif);
 
 /// <summary>Un seul passage de synchronisation à la fois dans l'API (singleton).</summary>
 public sealed class VerrouSync

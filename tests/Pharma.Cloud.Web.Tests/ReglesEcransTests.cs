@@ -122,7 +122,7 @@ public class ReglesEcransTests
                      "/mon-journal", "/mot-de-passe", "/actions/mot-de-passe", "/actions/deconnexion", "/actions/theme", "/acces-refuse" })
             Assert.Null(ControleAcces.Redirection(permis, S("titulaire")));
         foreach (var editeur in new[] { $"/officines/{officine}", "/officines/nouvelle", $"/officines/{officine}/nouveau-code", "/actions/creer-officine",
-                     "/actions/code-action", $"/actions/officines/{officine}/revoquer-serveur", $"/officines/{officine}/code-affiche", $"/mes-officines/{officine}/autre",
+                     $"/actions/officines/{officine}/revoquer-serveur", $"/officines/{officine}/code-affiche", $"/mes-officines/{officine}/autre",
                      "/mes-officines/pas-un-uuid" })
             Assert.Equal("/acces-refuse", ControleAcces.Redirection(editeur, S("titulaire")));
         Assert.Equal("/mes-officines", ControleAcces.Redirection("/", S("titulaire")));
@@ -159,6 +159,46 @@ public class ReglesEcransTests
         Assert.Equal(Tableau.NonDisponible, Tableau.Nombre(null));
         Assert.Equal("1 400,00 DA", Tableau.Montant(1400m).Replace(' ', ' ').Replace(' ', ' '));
         Assert.Equal("0", Tableau.Nombre(0));
+    }
+
+    [Fact]
+    public void Lot_s7_3_vue_d_ensemble_et_ordres_du_titulaire_jamais_pour_l_editeur()
+    {
+        SessionEcran S(string role) => new(1, Guid.NewGuid(), "a.b", "A", role, "ouverte", DateTime.UtcNow.AddHours(1), false);
+        var officine = Guid.NewGuid();
+        // Titulaire : vue d'ensemble, ordres d'une officine, envoi d'un ordre, code de confirmation (second facteur de l'ordre)
+        foreach (var permis in new[] { "/mes-officines/ensemble", $"/mes-officines/{officine}/ordres", $"/actions/mes-officines/{officine}/ordre", "/actions/code-action" })
+            Assert.Null(ControleAcces.Redirection(permis, S("titulaire")));
+        foreach (var refuse in new[] { "/actions/mes-officines/pas-un-uuid/ordre", $"/actions/mes-officines/{officine}/autre", $"/mes-officines/{officine}/ordres/x" })
+            Assert.Equal("/acces-refuse", ControleAcces.Redirection(refuse, S("titulaire")));
+        // Éditeur : rien du titulaire ; il garde le code de ses propres actions
+        foreach (var titulaire in new[] { "/mes-officines/ensemble", $"/mes-officines/{officine}/ordres", $"/actions/mes-officines/{officine}/ordre" })
+            Assert.Equal("/acces-refuse", ControleAcces.Redirection(titulaire, S("editeur")));
+        Assert.Null(ControleAcces.Redirection("/actions/code-action", S("editeur")));
+        // Liste fermée affichée = liste fermée de la base (script 034)
+        Assert.Equal(["essai", "sauvegarde", "verification_integrite"], Rubriques.OrdresTitulaire.Select(o => o.Type));
+        var sql = File.ReadAllText(Path.Combine(Depot.Racine(), "database", "cloud", "034_titulaire_multi_officines_ordres.sql"));
+        Assert.Contains("SELECT coalesce(p_type IN ('essai', 'sauvegarde', 'verification_integrite'), false)", sql);
+        Assert.Equal("ordres à distance", Rubriques.Afficher("droits", "ordres"));
+        Assert.Equal("À confirmer sur le poste", Rubriques.Afficher("statut", "a_confirmer"));
+    }
+
+    [Fact]
+    public void Lot_s7_3_total_du_groupe_jamais_un_non_disponible_compte_comme_zero()
+    {
+        var t = new TableEcran(["id", "ca_jour", "ventes_jour"],
+            [[Guid.NewGuid(), 100.50m, 3], [Guid.NewGuid(), null, null], [Guid.NewGuid(), 20m, 2]], 3);
+        var ca = VueEnsemble.Total(t, "ca_jour");
+        Assert.Equal(new TotalGroupe(120.50m, 2, 1), ca);
+        Assert.True(ca.Partiel);
+        Assert.Equal("120,50 DA (partiel : 2 sur 3 officines)", VueEnsemble.Texte(ca, true).Replace(' ', ' ').Replace(' ', ' '));
+        // Toutes disponibles : total simple ; aucune : non disponible (jamais 0)
+        var complet = new TableEcran(["id", "ventes_jour"], [[Guid.NewGuid(), 3], [Guid.NewGuid(), 0]], 2);
+        Assert.Equal("3", VueEnsemble.Texte(VueEnsemble.Total(complet, "ventes_jour"), false));
+        Assert.False(VueEnsemble.Total(complet, "ventes_jour").Partiel);
+        var vide = new TableEcran(["id", "ca_jour"], [[Guid.NewGuid(), null], [Guid.NewGuid(), null]], 2);
+        Assert.Equal(Tableau.NonDisponible, VueEnsemble.Texte(VueEnsemble.Total(vide, "ca_jour"), true));
+        Assert.Equal(Tableau.NonDisponible, VueEnsemble.Texte(VueEnsemble.Total(TableEcran.Vide, "ca_jour"), true));
     }
 
     [Fact]

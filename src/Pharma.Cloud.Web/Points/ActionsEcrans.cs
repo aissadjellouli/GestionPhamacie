@@ -43,6 +43,12 @@ public static class Messages
         ["rattachement_partie"] = "Cette officine est partie : rattachement impossible.",
         ["trop_d_essais"] = "Trop d'essais : attendez un quart d'heure avant de saisir un autre code.",
         ["officine_refusee"] = "Officine introuvable ou non rattachée à votre compte (ou droit absent).",
+        // Lot S7.3 : ordres du titulaire
+        ["ordre_refuse"] = "Ordre refusé : officine non rattachée, accès retiré ou droit « ordres » non accordé depuis le poste de l'officine.",
+        ["ordre_hors_liste"] = "Ordre refusé : seuls l'essai de liaison, la sauvegarde et la vérification d'intégrité peuvent être demandés à distance.",
+        ["ordre_partie"] = "Cette officine est partie : aucun ordre.",
+        ["ordre_deja_en_cours"] = "Un ordre du même type attend déjà l'officine : attendez son résultat (ou son expiration, 24 heures).",
+        ["ordre_trop_d_ordres"] = "Trop d'ordres envoyés : 10 par heure au plus.",
     };
 
     public static readonly Dictionary<string, string> Succes = new()
@@ -52,6 +58,7 @@ public static class Messages
         ["certificat_revoque"] = "Certificat révoqué : refusé dès le prochain appel de l'officine.",
         ["serveur_revoque"] = "Certificats du serveur révoqués : refusés dès le prochain appel.",
         ["rattachee"] = "Officine rattachée à votre compte : tableau de bord et journal des accès.",
+        ["ordre_envoye"] = "Ordre envoyé : l'officine le relève à son prochain passage (une minute environ) ; résultat ci-dessous.",
     };
 
     public static string? Erreur(string? cle) => cle is not null && Erreurs.TryGetValue(cle, out var m) ? m : null;
@@ -157,6 +164,16 @@ public static class ActionsEcrans
             return statut == "ok" && officine is not null
                 ? Results.Redirect($"/mes-officines/{officine}?ok=rattachee")
                 : Results.Redirect($"/rattacher?erreur={(statut == "trop_d_essais" ? "trop_d_essais" : Cle("rattachement_" + statut))}");
+        }).RequireRateLimiting("code");
+
+        // Lot S7.3 : ordre à distance du titulaire (liste fermée, droit « ordres » accordé au poste, code de confirmation à usage unique)
+        g.MapPost("/mes-officines/{officine:guid}/ordre", async (Guid officine, [FromForm] string? type, [FromForm] string? code, HttpContext ctx,
+            DepotEcrans depot, CodesSecondFacteur codes) =>
+        {
+            var statut = await depot.CreerOrdreTitulaireAsync(ctx.EmpreinteJeton()!, officine, type, codes.Empreinte("action", code), ctx.RequestAborted);
+            return Results.Redirect(statut == "ok"
+                ? $"/mes-officines/{officine}/ordres?ok=ordre_envoye"
+                : $"/mes-officines/{officine}/ordres?erreur={(Messages.Erreurs.ContainsKey("ordre_" + statut) ? "ordre_" + statut : Cle(statut))}");
         }).RequireRateLimiting("code");
 
         // Code de confirmation d'une action (second facteur à chaque action sensible)

@@ -632,3 +632,11 @@ barre de 32 px sur une ligne, **0 px** de débordement, 0 px de défilement de p
 (rouge), « Caisse depuis le 18/11 à 20:44 » (orange), « À traiter (4) » (10 ventes en attente, 1 produit revenu, 12 Chifa à
 déposer, 2 traites à payer). Vendeur : mêmes alertes, « À traiter (2) » (ventes en attente, produit revenu), sauvegarde en texte
 simple (pas de droit sur l'écran). Liste « À traiter » ouverte vers le haut dans la fenêtre ; Échap la ferme et rend la main au bouton.
+
+### Mesures du 2026-11-21 (S7.3, vue d'ensemble et ordres du titulaire au central)
+
+Compte `titulaire.dev`, 1 366 × 768 et 1 536 × 890, clair et sombre : « Mes officines », « Vue d'ensemble », « Ordres à distance »
+(état « droit non accordé ») : **0 px**. Défaut corrigé : le tableau de la vue d'ensemble (12 colonnes) défilait horizontalement à
+1 366 px, colonne « Ordres en attente » coupée → dernier contact sous le nom de l'officine, en-têtes courts (« CA jour », « Mois préc. »,
+« Péremption »…), montants sur une ligne (`.tableau-ensemble`) : 0 px horizontal et vertical. Non mesurés : ordres avec le droit accordé
+et rubrique « Accès à distance » du poste (synchronisation non activée sur `pharmacie_test`).

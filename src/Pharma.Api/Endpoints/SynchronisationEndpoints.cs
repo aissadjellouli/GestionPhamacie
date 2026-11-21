@@ -84,6 +84,20 @@ public static class SynchronisationEndpoints
             return Results.Ok(new CodeAccesDistantDto(r.Code, r.ExpireLeUtc));
         });
 
+        // Lot S7.3 : comptes distants rattachés à l'officine, droits (dont « ordres », accordé seulement d'ici) et retrait ; titulaire
+        // seulement, mot de passe ressaisi pour un changement (cas d'usage ComptesAccesDistant) ; réponses non mises en cache
+        s.MapGet("/acces-distant/comptes", async (ComptesAccesDistant comptes, ClaimsPrincipal user, HttpContext ctx, CancellationToken ct) =>
+        {
+            ctx.Response.Headers.CacheControl = "no-store";
+            var liste = await comptes.ListerAsync(user.UtilisateurId(), ct);
+            return Results.Ok(liste.Select(c => new CompteDistantRattacheDto(c.Identifiant, c.Nom, c.Droits,
+                new DateTimeOffset(DateTime.SpecifyKind(c.RattacheLeUtc, DateTimeKind.Utc)), c.Actif)).ToList());
+        });
+        s.MapPost("/acces-distant/droits", async (DemandeDroitsAccesDistantDto d, ComptesAccesDistant comptes, ClaimsPrincipal user, CancellationToken ct) =>
+            Results.Ok(new ReponseCompteDistantDto(await comptes.ModifierDroitsAsync(d.Compte, d.Droits, d.MotDePasse, user.UtilisateurId(), ct))));
+        s.MapPost("/acces-distant/retrait", async (DemandeRetraitAccesDistantDto d, ComptesAccesDistant comptes, ClaimsPrincipal user, CancellationToken ct) =>
+            Results.Ok(new ReponseCompteDistantDto(await comptes.RetirerAsync(d.Compte, d.MotDePasse, user.UtilisateurId(), ct))));
+
         // Lot S6.5.4 (S6.5-D4) : prise d'acte du titulaire d'une restauration constatée par le serveur central (cause), journalisée,
         // envoyée au central ; une fois par époque
         s.MapPost("/integrite/prise-acte", async (PriseActeRestaurationDto d, PrendreActeRestaurationSync prendre, ClaimsPrincipal user, CancellationToken ct) =>

@@ -130,6 +130,31 @@ public sealed class DepotEcrans(NpgsqlDataSource db)
     public Task<TableEcran> TitulaireJournalAsync(string empreinteJeton, Guid officine, int page, int taille, CancellationToken ct) =>
         LireAsync(null, null, "SELECT * FROM cloud_ecran_titulaire_journal($1, $2, $3, $4)", [Texte(empreinteJeton), Uuid(officine), Entier(page), Entier(taille)], ct);
 
+    // Lot S7.3 (script central 034) : vue d'ensemble (une ligne par officine, total fait par VueEnsemble) et ordres du titulaire
+    public Task<TableEcran> TitulaireEnsembleAsync(string empreinteJeton, CancellationToken ct) =>
+        LireAsync(null, null, "SELECT * FROM cloud_ecran_titulaire_ensemble($1)", [Texte(empreinteJeton)], ct);
+
+    public Task<TableEcran> TitulaireOrdresAsync(string empreinteJeton, Guid officine, int page, int taille, CancellationToken ct) =>
+        LireAsync(null, null, "SELECT * FROM cloud_ecran_titulaire_ordres($1, $2, $3, $4)", [Texte(empreinteJeton), Uuid(officine), Entier(page), Entier(taille)], ct);
+
+    /// <summary>Droit accordé au compte sur une officine rattachée (lu par cloud_ecran_titulaire_officines) : distingue « aucun ordre » d'un refus.</summary>
+    public async Task<bool> TitulaireDroitAsync(string empreinteJeton, Guid officine, string droit, CancellationToken ct)
+    {
+        var t = await TitulaireOfficinesAsync(empreinteJeton, ct);
+        return t.Lignes.Any(l => t.Valeur(l, "id") is Guid g && g == officine && t.Valeur(l, "droits") is string d && d.Split(',').Contains(droit));
+    }
+
+    /// <summary>Ordre du titulaire (liste fermée, droit « ordres », code de confirmation : seule son empreinte part vers la base).</summary>
+    public async Task<string> CreerOrdreTitulaireAsync(string empreinteJeton, Guid officine, string? type, string? empreinteCode, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("SELECT statut FROM cloud_ecran_titulaire_creer_ordre($1, $2, $3, $4)");
+        cmd.Parameters.Add(Texte(empreinteJeton));
+        cmd.Parameters.Add(Uuid(officine));
+        cmd.Parameters.Add(Texte(type is { Length: <= 40 } ? type : null));
+        cmd.Parameters.Add(Texte(empreinteCode));
+        return (string)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+
     /// <summary>Rattachement par code : seule l'empreinte du code saisi part vers la base (null si la saisie n'est pas un code : refus compté).</summary>
     public async Task<(string Statut, Guid? Officine)> RattacherAsync(string empreinteJeton, string? empreinteCode, CancellationToken ct)
     {

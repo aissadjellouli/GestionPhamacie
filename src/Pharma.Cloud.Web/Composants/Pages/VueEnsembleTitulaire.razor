@@ -1,0 +1,96 @@
+@page "/mes-officines/ensemble"
+@inject DepotEcrans Depot
+
+<PageTitle>Vue d'ensemble · écrans du central</PageTitle>
+
+@* Lot S7.3 : officines du compte côte à côte (droit « consulter »), totaux seulement, et total du groupe. Une valeur non montée au
+   central (« non disponible ») n'est jamais comptée comme 0 : le total devient « partiel » (VueEnsemble). Seul le tableau défile. *@
+<div class="page page-serree">
+    <div class="titre-page">
+        <div>
+            <h1>Vue d'ensemble</h1>
+            <p class="sous-titre">Vos officines côte à côte et le total du groupe : totaux seulement, jamais un patient ni une vente détaillée.</p>
+        </div>
+        <div class="actions">
+            <a class="btn btn-contour" href="mes-officines">Mes officines</a>
+        </div>
+    </div>
+    @if (Table.Lignes.Count == 0)
+    {
+        <p class="vide">Aucune officine à montrer : rattachez une officine (droit « tableau de bord »).</p>
+    }
+    else
+    {
+        <div class="tableau-cadre">
+            <table class="tableau tableau-serre tableau-central tableau-ensemble">
+                <thead>
+                    <tr>
+                        <th scope="col">Officine · dernier contact</th>
+                        @foreach (var (_, libelle) in Colonnes)
+                        {
+                            <th scope="col" class="nombre">@libelle</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var ligne in PageLignes)
+                    {
+                        <tr>
+                            <td>
+                                <a class="lien" href="@($"mes-officines/{Table.Valeur(ligne, "id")}")">@(Table.Valeur(ligne, "libelle"))</a><br />
+                                <span class="detail @(Table.Valeur(ligne, "en_retard") is true ? "texte-urgent" : null)">@Rubriques.Afficher("dernier_contact", Table.Valeur(ligne, "dernier_contact"))@(Table.Valeur(ligne, "en_retard") is true ? " · en retard" : "")</span>
+                            </td>
+                            @foreach (var (colonne, _) in Colonnes)
+                            {
+                                <td class="nombre">@Valeur(ligne, colonne)</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <th scope="row">Total du groupe<br /><span class="detail">@Table.Lignes.Count officine(s)</span></th>
+                        @foreach (var (colonne, _) in Colonnes)
+                        {
+                            <td class="nombre">@VueEnsemble.Texte(VueEnsemble.Total(Table, colonne), VueEnsemble.Montants.Contains(colonne))</td>
+                        }
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        <PaginationEcran Page="@PageCourante" Taille="@Taille" Total="@Table.Lignes.Count" Base="mes-officines/ensemble" />
+    }
+    <p class="pied-page">
+        « Non disponible » : donnée non montée au serveur central pour cette officine ; elle n'est jamais comptée comme 0 : le total devient
+        « partiel » et dit combien d'officines il compte. Totaux des données reçues (une vente faite depuis le dernier contact n'y figure pas
+        encore). Chaque officine ouverte ici est notée à son journal des accès.
+    </p>
+</div>
+
+@code {
+    private const int Taille = 20;
+
+    /// <summary>Colonnes additionnées (mêmes définitions que le tableau de bord d'une officine).</summary>
+    private static readonly (string Colonne, string Libelle)[] Colonnes =
+    [
+        ("ca_jour", "CA jour"), ("ventes_jour", "Ventes jour"), ("ca_mois", "CA mois"), ("ca_mois_precedent", "Mois préc."),
+        ("part_chifa_mois", "Chifa mois"), ("credits_en_cours", "Crédits"), ("alertes_stock", "Stock"),
+        ("alertes_peremption", "Péremption"), ("anomalies_ouvertes", "Anomalies"), ("ordres_en_attente", "Ordres"),
+    ];
+
+    [CascadingParameter] private HttpContext? Contexte { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] private int? Numero { get; set; }
+
+    private TableEcran Table { get; set; } = TableEcran.Vide;
+    private int PageCourante => Math.Clamp(Numero ?? 1, 1, 100_000);
+    private IEnumerable<object?[]> PageLignes => Table.Lignes.Skip((PageCourante - 1) * Taille).Take(Taille);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Contexte?.EmpreinteJeton() is { } jeton)
+            Table = await Depot.TitulaireEnsembleAsync(jeton, Contexte.RequestAborted);
+    }
+
+    private string Valeur(object?[] ligne, string colonne) =>
+        VueEnsemble.Montants.Contains(colonne) ? Tableau.Montant(Table.Valeur(ligne, colonne)) : Tableau.Nombre(Table.Valeur(ligne, colonne));
+}

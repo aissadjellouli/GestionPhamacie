@@ -50,6 +50,21 @@ public static class Rubriques
         ["rattachee_le"] = "Rattachée le", ["droits"] = "Droits", ["acteur"] = "Par",
     };
 
+    /// <summary>Lot S7.3 : ordres que le titulaire peut envoyer (liste fermée, même liste que cloud_ordre_titulaire_permis, script 034).</summary>
+    public static readonly IReadOnlyList<(string Type, string Libelle, string Explication)> OrdresTitulaire =
+    [
+        ("essai", "Essai de liaison", "Vérifie que l'officine relève les ordres ; rien ne change dans l'officine."),
+        ("sauvegarde", "Demander une sauvegarde", "Le titulaire confirme sur le poste de l'officine, au moment choisi, avant que la sauvegarde parte."),
+        ("verification_integrite", "Demander une vérification d'intégrité", "Les journaux chaînés de l'officine sont revérifiés (lecture seule) ; une rupture vous est signalée."),
+    ];
+
+    /// <summary>Statuts d'un ordre affichés au titulaire.</summary>
+    public static readonly Dictionary<string, string> StatutsOrdre = new()
+    {
+        ["en_attente"] = "En attente", ["a_confirmer"] = "À confirmer sur le poste", ["applique"] = "Appliqué", ["refuse"] = "Refusé",
+        ["expire"] = "Expiré", ["annule"] = "Annulé",
+    };
+
     /// <summary>Colonnes jamais affichées (techniques internes : clés, total).</summary>
     public static readonly HashSet<string> Masquees = ["total", "id", "officine_id"];
 
@@ -70,7 +85,9 @@ public static class Rubriques
         long or int or short => string.Format(CultureInfo.GetCultureInfo("fr-FR"), "{0:N0}", valeur),
         Guid g => g.ToString()[..8],
         string s when colonne == "etat" && Etats.TryGetValue(s, out var e) => e,
-        string s when colonne == "droits" => string.Join(", ", s.Split(',').Select(d => d switch { "consulter" => "tableau de bord", "journal_acces" => "journal des accès", _ => d })),
+        string s when colonne == "droits" => string.Join(", ", s.Split(',').Select(d => d switch { "consulter" => "tableau de bord", "journal_acces" => "journal des accès", "ordres" => "ordres à distance", _ => d })),
+        string s when colonne == "type" && OrdresTitulaire.FirstOrDefault(o => o.Type == s) is { Libelle: { } l } => l,
+        string s when colonne == "statut" && StatutsOrdre.TryGetValue(s, out var so) => so,
         string s when colonne == "acteur" => s switch { "vous" => "Vous", "editeur" => "Éditeur (support)", "titulaire" => "Autre titulaire", "poste" => "Poste de l’officine", "console" => "Console du central", _ => s },
         _ => Convert.ToString(valeur, CultureInfo.GetCultureInfo("fr-FR")) ?? "—",
     };

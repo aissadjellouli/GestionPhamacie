@@ -184,6 +184,21 @@ public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogge
         return new CodeRattachementSync(r.Code, r.Expire.UtcDateTime);
     }
 
+    /// <summary>Lot S7.3 : comptes distants rattachés à l'officine du certificat (GET /api/v1/acces-distants).</summary>
+    public async Task<IReadOnlyList<CompteDistantSync>> ComptesDistantsAsync(string adresse, CancellationToken ct = default) =>
+        (await LireGetAsync<List<CompteDistantRattacheDto>>(adresse, "api/v1/acces-distants", ct) ?? [])
+            .Select(c => new CompteDistantSync(c.Identifiant, c.Nom, c.Droits, c.RattacheLe.UtcDateTime, c.Actif)).ToList();
+
+    /// <summary>Lot S7.3 : droits d'un compte rattaché (POST /api/v1/acces-distants/droits) ; ordres ouverts annulés.</summary>
+    public async Task<int> DroitsCompteDistantAsync(string adresse, string compte, IReadOnlyList<string> droits, CancellationToken ct = default) =>
+        (await PosterAsync<DemandeDroitsCompteDistantDto, ReponseCompteDistantDto>(adresse, "api/v1/acces-distants/droits",
+            new DemandeDroitsCompteDistantDto(compte, droits), ct)).OrdresAnnules;
+
+    /// <summary>Lot S7.3 : retrait d'un compte rattaché (POST /api/v1/acces-distants/retrait) ; ordres ouverts annulés.</summary>
+    public async Task<int> RetirerCompteDistantAsync(string adresse, string compte, CancellationToken ct = default) =>
+        (await PosterAsync<DemandeRetraitCompteDistantDto, ReponseCompteDistantDto>(adresse, "api/v1/acces-distants/retrait",
+            new DemandeRetraitCompteDistantDto(compte), ct)).OrdresAnnules;
+
     private async Task<T> LireGetAsync<T>(string adresse, string route, CancellationToken ct)
     {
         var (http, cert) = await ClientCertifieAsync(adresse, ct);

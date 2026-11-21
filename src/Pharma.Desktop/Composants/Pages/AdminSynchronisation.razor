@@ -490,6 +490,61 @@
                     <p class="detail">Le code ne vaut que pour ce compte et cette officine, 30 minutes, une seule fois. 5 codes par heure au plus pour l’officine.</p>
                 }
             </section>
+            @if (AccesDistantPossible && EstTitulaire)
+            {
+                @* Lot S7.3 : comptes distants rattachés à l'officine, droits (« ordres à distance » ne s'accorde QUE d'ici) et retrait (effet
+                   immédiat, ordres encore ouverts du compte annulés) ; mot de passe du titulaire ressaisi, jamais gardé. *@
+                <section class="panneau" aria-labelledby="s-comptes-distants" data-zone="comptes-distants">
+                    <h2 id="s-comptes-distants">Comptes rattachés</h2>
+                    <div class="tableau-cadre comptes-distants">
+                        <table class="tableau">
+                            <thead><tr><th scope="col">Compte</th><th scope="col">Nom</th><th scope="col">Droits</th><th scope="col">Rattaché le</th><th scope="col">Actions</th></tr></thead>
+                            <tbody>
+                                @foreach (var c in comptesDistants.Skip((comptesPage - 1) * comptesTaille).Take(comptesTaille))
+                                {
+                                    <tr>
+                                        <td>@c.Identifiant@(c.Actif ? "" : " (désactivé)")</td>
+                                        <td>@c.Nom</td>
+                                        <td>@LibelleDroits(c.Droits)</td>
+                                        <td>@c.RattacheLe.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                        <td><button type="button" class="lien-bouton" disabled="@enCours" @onclick="() => OuvrirCompte(c, false)">Droits</button>
+                                            · <button type="button" class="lien-bouton danger" disabled="@enCours" @onclick="() => OuvrirCompte(c, true)">Retirer</button></td>
+                                    </tr>
+                                }
+                                @if (comptesDistants.Count == 0) { <tr><td colspan="5" class="vide">@(comptesCharges ? "Aucun compte distant rattaché à cette officine." : "Liste non chargée : « Actualiser ».")</td></tr> }
+                            </tbody>
+                        </table>
+                    </div>
+                    <Pagination Total="comptesDistants.Count" Numero="comptesPage" Taille="comptesTaille" Libelle="Pages des comptes rattachés" OnChange="p => (comptesPage, comptesTaille) = (p.Numero, p.Taille)" />
+                    @if (compteOuvert is { } co)
+                    {
+                        <div class="achats-ligne" data-zone="compte-distant-edition">
+                            @if (retraitCompte)
+                            {
+                                <p class="detail">Retirer <strong>@co.Identifiant</strong> : plus aucun accès à cette officine, tout de suite ; ses ordres encore ouverts sont annulés.</p>
+                            }
+                            else
+                            {
+                                <label class="case"><input type="checkbox" data-champ="droit_consulter" @bind="droitConsulter" /><span>Tableau de bord</span></label>
+                                <label class="case"><input type="checkbox" data-champ="droit_journal" @bind="droitJournal" /><span>Journal des accès</span></label>
+                                <label class="case"><input type="checkbox" data-champ="droit_ordres" @bind="droitOrdres" /><span>Ordres à distance</span></label>
+                            }
+                            <div class="champ champ-compte-distant"><label for="s-mdp-compte" class="requis">Votre mot de passe</label>
+                                <input id="s-mdp-compte" data-champ="mot_de_passe_compte" type="password" autocomplete="current-password" @bind="motDePasseCompte" @bind:event="oninput" /></div>
+                            <div class="champ champ-bouton"><button type="button" class="btn" disabled="@enCours" @onclick="FermerCompte">Annuler</button></div>
+                            <div class="champ champ-bouton"><button type="button" class="btn @(retraitCompte ? "btn-danger" : "btn-principal")" disabled="@(enCours || motDePasseCompte.Length == 0)"
+                                    @onclick="ValiderCompteAsync">@(retraitCompte ? "Retirer l’accès" : "Enregistrer les droits")</button></div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="actions">
+                            <p class="detail">« Ordres à distance » : sauvegarde, vérification d’intégrité ou essai demandés depuis les écrans du serveur central ; ce droit ne s’accorde qu’ici. Une sauvegarde demandée attend votre confirmation (Ordres du central).</p>
+                            <button type="button" class="btn" disabled="@enCours" @onclick="ChargerComptesAsync">Actualiser</button>
+                        </div>
+                    }
+                </section>
+            }
         }
     </div>
 </div>
@@ -561,6 +616,9 @@
         if (rubrique != rubriqueAffichee) { rubriqueAffichee = rubrique; message = null; }
         // Lot S7.2b : le code d'accès à distance et le mot de passe saisi ne survivent pas à un changement de rubrique
         if (rubrique != "acces-distant") (codeAcces, motDePasseAcces) = (null, "");
+        // Lot S7.3 : liste des comptes rattachés relue à chaque entrée dans la rubrique ; saisie en cours effacée en la quittant
+        if (rubrique != "acces-distant") (compteOuvert, motDePasseCompte, comptesCharges) = (null, "", false);
+        else if (!comptesCharges && AccesDistantPossible && EstTitulaire) await ChargerComptesAsync();
         if (rubrique != "ordres") ordresCharges = false;
         else if (!ordresCharges)
         {
@@ -780,6 +838,52 @@
     private bool AccesDistantPossible => t is { Active: true, Activee: true, BaseEnLectureSeule: false };
 
     private void EffacerCodeAcces() => codeAcces = null;
+
+    // Lot S7.3 : comptes distants rattachés, droits par officine, retrait (mot de passe ressaisi, jamais gardé après l'essai)
+    private List<CompteDistantRattacheDto> comptesDistants = [];
+    private bool comptesCharges, retraitCompte, droitConsulter, droitJournal, droitOrdres;
+    private int comptesPage = 1, comptesTaille = 5;
+    private CompteDistantRattacheDto? compteOuvert;
+    private string motDePasseCompte = "";
+
+    private static string LibelleDroits(IReadOnlyList<string> droits) => string.Join(", ", droits.Select(d => d switch
+    {
+        "consulter" => "tableau de bord", "journal_acces" => "journal des accès", "ordres" => "ordres à distance", _ => d
+    }));
+
+    private Task ChargerComptesAsync() => Executer(async () =>
+    {
+        var (r, e) = await Api.ComptesAccesDistantAsync();
+        if (r is null) return e;
+        (comptesDistants, comptesCharges, comptesPage) = (r.ToList(), true, 1);
+        return null;
+    });
+
+    private void OuvrirCompte(CompteDistantRattacheDto c, bool retrait)
+    {
+        (compteOuvert, retraitCompte, motDePasseCompte) = (c, retrait, "");
+        (droitConsulter, droitJournal, droitOrdres) = (c.Droits.Contains("consulter"), c.Droits.Contains("journal_acces"), c.Droits.Contains("ordres"));
+    }
+
+    private void FermerCompte() => (compteOuvert, motDePasseCompte) = (null, "");
+
+    private Task ValiderCompteAsync() => Executer(async () =>
+    {
+        if (compteOuvert is not { } c) return null;
+        var mdp = motDePasseCompte;
+        motDePasseCompte = "";   // jamais gardé à l'écran après l'essai
+        var droits = new[] { droitConsulter ? "consulter" : null, droitJournal ? "journal_acces" : null, droitOrdres ? "ordres" : null }
+            .OfType<string>().ToList();
+        var (r, e) = retraitCompte ? await Api.RetirerAccesDistantAsync(c.Identifiant, mdp) : await Api.DroitsAccesDistantAsync(c.Identifiant, droits, mdp);
+        if (r is null) return e;
+        var (ancien, retrait) = (c.Identifiant, retraitCompte);
+        compteOuvert = null;
+        var (liste, e2) = await Api.ComptesAccesDistantAsync();
+        if (liste is not null) (comptesDistants, comptesPage) = (liste.ToList(), 1);
+        message = (retrait ? $"Accès de {ancien} retiré." : $"Droits de {ancien} enregistrés.")
+                  + (r.OrdresAnnules > 0 ? $" {r.OrdresAnnules} ordre(s) encore ouvert(s) annulé(s)." : "");
+        return e2;
+    });
 
     private Task GenererCodeAccesAsync() => Executer(async () =>
     {

@@ -980,6 +980,17 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(CodeAccesDistantDto?, string?)> CodeAccesDistantAsync(string compte, string motDePasse) =>
         PostAsync<DemandeCodeAccesDistantDto, CodeAccesDistantDto>("api/admin/synchronisation/acces-distant/code",
             new DemandeCodeAccesDistantDto(compte, motDePasse));
+    /// <summary>Lot S7.3 : comptes distants rattachés à l'officine (titulaire).</summary>
+    public Task<(List<CompteDistantRattacheDto>?, string?)> ComptesAccesDistantAsync() =>
+        GetAsync<List<CompteDistantRattacheDto>?>("api/admin/synchronisation/acces-distant/comptes", null);
+    /// <summary>Lot S7.3 : droits d'un compte rattaché (titulaire, mot de passe ressaisi).</summary>
+    public Task<(ReponseCompteDistantDto?, string?)> DroitsAccesDistantAsync(string compte, IReadOnlyList<string> droits, string motDePasse) =>
+        PostAsync<DemandeDroitsAccesDistantDto, ReponseCompteDistantDto>("api/admin/synchronisation/acces-distant/droits",
+            new DemandeDroitsAccesDistantDto(compte, droits, motDePasse));
+    /// <summary>Lot S7.3 : retrait d'un compte rattaché (titulaire, mot de passe ressaisi ; effet immédiat).</summary>
+    public Task<(ReponseCompteDistantDto?, string?)> RetirerAccesDistantAsync(string compte, string motDePasse) =>
+        PostAsync<DemandeRetraitAccesDistantDto, ReponseCompteDistantDto>("api/admin/synchronisation/acces-distant/retrait",
+            new DemandeRetraitAccesDistantDto(compte, motDePasse));
     /// <summary>Lot S6.5.4 : prise d'acte du titulaire d'une restauration constatée par le serveur central (cause).</summary>
     public async Task<string?> PrendreActeRestaurationAsync(int nouvelleEpoque, string cause) =>
         (await EnvoyerCorpsAsync<PriseActeRestaurationDto, object>(HttpMethod.Post, "api/admin/synchronisation/integrite/prise-acte",

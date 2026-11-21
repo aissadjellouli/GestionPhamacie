@@ -4,7 +4,8 @@
 > conception retenues. Lot **S7.2a réalisé en local** (écrans du titulaire, **côté serveur central seulement**, go du titulaire,
 > recommandations S7 acceptées) : § 3 bis. **Rien n'est en ligne** : la mise en ligne (hébergeur, certificat, SMTP, connexion de production)
 > viendra plus tard. Lot **S7.2b réalisé en local** (rubrique « Accès à distance » du poste : le titulaire tire lui-même le code de
-> rattachement, go du titulaire, recommandations acceptées) : § 3 ter.
+> rattachement, go du titulaire, recommandations acceptées) : § 3 ter. Lot **S7.3 réalisé en local** (multi-officines : vue d'ensemble ; droit
+> `ordres` accordé depuis le poste, comptes rattachés et retrait ; ordres à distance du titulaire en liste fermée) : § 3 quater.
 
 Documents liés : [conception-synchronisation.md](conception-synchronisation.md) § 1, § 6, § 6.1, § 6.2 et § 32 ;
 [securite-et-droits.md](securite-et-droits.md) ; [charte-graphique.md](charte-graphique.md) ; [database/cloud/README.md](../database/cloud/README.md) ;
@@ -19,6 +20,8 @@ Documents liés : [conception-synchronisation.md](conception-synchronisation.md)
 | Script central `031_ecrans_editeur.sql` | base centrale | Lecture de l'éditeur et actions |
 | Script central `032_ecrans_titulaire.sql` (S7.2a) | base centrale | Droits par officine, codes de rattachement, lecture du titulaire (agrégats), journal des accès de ses officines |
 | Script central `033_code_rattachement_poste.sql` (S7.2b) | base centrale | Code de rattachement demandé par le poste (`cloud_poste_code_rattachement`, rôle `pharma_cloud_api`), enregistrement commun avec la console, acteur « poste » au journal de l'officine |
+| Script central `034_titulaire_multi_officines_ordres.sql` (S7.3) | base centrale | Droit `ordres`, vue d'ensemble, ordres du titulaire (liste fermée, 24 h), comptes rattachés vus, changés et retirés par le poste |
+| Routes `GET /api/v1/acces-distants`, `POST …/droits`, `POST …/retrait` (S7.3) | API centrale (mTLS) | Comptes rattachés de l'officine du certificat, droits, retrait |
 | Route `POST /api/v1/rattachement` (S7.2b) | API centrale (`Pharma.Cloud.Api`, mTLS) | Code de rattachement de l'officine du certificat, montré une fois |
 | Rubrique « Accès à distance » (S7.2b) | poste, Administration › Synchronisation | Le titulaire génère le code (mot de passe ressaisi) |
 | Commandes de la console du central | `Pharma.Cloud.Api.exe` | `--creer-compte-editeur`, `--creer-compte-titulaire` (S7.2a), `--code-rattachement` (S7.2a), `--comptes-distants`, `--desactiver-compte`, `--deverrouiller-compte` |
@@ -106,7 +109,29 @@ Le titulaire tire lui-même le code de rattachement de **son** officine dans le 
 | API centrale | `POST /api/v1/rattachement` (certificat client + jeton, comme `/echange` ; limite de débit « officine ») | Corps : `{ "compte": "…" }` seulement ; **l'officine est celle du certificat**, jamais un champ. Même tirage que la console (`ComptesDistants.TirerCodeRattachement`) ; seule l'empreinte va en base. Réponses : 200 `{ code, expire }` (une seule fois, `no-store`) ; **422 neutre** pour un compte inconnu, non titulaire, désactivé ou un identifiant mal formé (même texte) ; 429 au-delà de **5 demandes par heure et par officine** (délivrées ou refusées : pas d'oracle) |
 | Base centrale | `cloud_poste_code_rattachement` (033, SECURITY DEFINER, seul droit donné à `pharma_cloud_api`) | Revérifie que le certificat présenté est valable, non révoqué, **de l'officine posée** (`app.officine_id`), officine non partie (sinon 42501). Enregistrement commun avec la console (`cloud_code_rattachement_enregistrer`) : un compte, une officine, 30 min, usage unique, code précédent du même compte et de la même officine annulé. Journal des accès : objet `poste` (refus sans compte), `poste:limite` ; journal de sécurité : délivrance, ou refus avec le motif réel (sans l'identifiant saisi). Écran du titulaire : acteur « Poste de l'officine » |
 
-Restent (non demandés dans ce lot) : voir et retirer les comptes rattachés depuis le poste ; adresse réelle des écrans du central (mise en ligne).
+Restent (non demandés dans ce lot) : adresse réelle des écrans du central (mise en ligne). Comptes rattachés vus et retirés depuis le poste : lot S7.3 (§ 3 quater).
+
+## 3 quater. Lot S7.3 : multi-officines et ordres du titulaire (réalisé en local le 2026-11-21)
+
+Go du titulaire, recommandations S7 acceptées. Script central **034** ; aucun script local (aucune table synchronisée ne change :
+`002_tables_miroir.sql` inchangé).
+
+| Route / maillon | Où | Règle |
+|---|---|---|
+| `/mes-officines/ensemble` (« Vue d'ensemble ») | écrans du central | Une ligne par officine du compte (droit `consulter`, 50 au plus, paginé par 20) : dernier contact, chiffre d'affaires du jour, du mois et du mois précédent, ventes, part Chifa, crédits en cours, alertes, anomalies, ordres en attente (mêmes calculs que le tableau de bord, `cloud_ecran_titulaire_tableau`), puis **Total du groupe** (pied du tableau). Une valeur « non disponible » n'est **jamais** comptée comme 0 : le total devient « … (partiel : n sur m officines) », ou « non disponible » si aucune officine n'a la valeur. Chaque officine lue est notée à son journal des accès |
+| `/mes-officines/{officine}/ordres` | écrans du central | Droit `ordres` exigé (sinon « Ordre refusé : … droit « ordres » non accordé depuis le poste »). Nouvel ordre : liste fermée (**Essai de liaison**, **Demander une sauvegarde**, **Demander une vérification d'intégrité**), « Recevoir un code de confirmation » puis code (second facteur à usage unique), « Envoyer l'ordre ». Tableau paginé (10) : type, créé le, expire le, statut (en attente, à confirmer sur le poste, appliqué, refusé, expiré, annulé), statut le, par (vous / autre titulaire) ; **jamais** les données, le motif ni l'auteur |
+| `POST /actions/mes-officines/{officine}/ordre` | écrans du central | `cloud_ecran_titulaire_creer_ordre` : contrôles **avant** le code (10 ordres par heure et par compte, liste fermée, rattachement et droit `ordres`, officine partie, un seul ordre ouvert du même type), puis code. Ordre `origine = titulaire`, sans donnée, **24 heures**, auteur « titulaire à distance (identifiant) » ; journal des ordres, journal des accès (chaîné), journal de sécurité ; publié par la voie descendante existante (`ordre-v1`) |
+| Rubrique « Accès à distance » › **Comptes rattachés** | poste, Administration › Synchronisation | Titulaire seulement, synchronisation activée. Tableau paginé (5) : compte, nom, droits, rattaché le ; « Droits » (cases tableau de bord, journal des accès, **ordres à distance**) ou « Retirer », mot de passe du titulaire ressaisi. Le droit `ordres` ne s'accorde **que d'ici** |
+| `GET /api/admin/synchronisation/acces-distant/comptes`, `POST …/droits`, `POST …/retrait` | API locale (`ComptesAccesDistant`) | Titulaire (403 sinon), synchronisation activée, puis mot de passe (changements), puis central. Journal des actions `droits_acces_distant`, `retrait_acces_distant` (compte, droits, ordres annulés). Coupées en démonstration (POST) |
+| `GET /api/v1/acces-distants`, `POST /api/v1/acces-distants/droits`, `POST /api/v1/acces-distants/retrait` | API centrale (`AccesDistantsPoste`, certificat client + jeton) | Officine = celle du certificat (revérifiée par la base, `cloud_poste_officine`). Retrait : **effet immédiat** (chaque fonction des écrans revérifie le rattachement), ordres encore ouverts du compte **annulés** et republiés ; retrait du droit `ordres` : idem. 422 « compte non rattaché » ou « droits invalides » |
+| Application à l'officine | API locale (`ExecuterOrdreCentral`) | `essai` : rien ne change ; `verification_integrite` : appliquée tout de suite (lecture seule, comme la vérification de la nuit), résultat remonté en nombres (« n chaîne(s) vérifiée(s) : … intacte(s), … rupture(s), … en erreur ») ; `sauvegarde` : **à confirmer** par le titulaire local (Ordres du central), lancée à sa confirmation comme « Sauvegarder maintenant » ; disque absent ou échec : l'ordre reste à confirmer. Ordre échu (horloge de l'officine aussi) : expiré, jamais appliqué |
+
+**Liste fermée** : la conception ne définissait pas d'ordres du titulaire (la décision 3 du § 0 vise les ordres du propriétaire du
+central, S5) : la liste la plus prudente est retenue, **sans** le « message à afficher sur les postes » (voir § 8). Aucun ordre ne modifie
+une vente, un stock, un prix ni un compte ; la base le revérifie (`cloud_ordre_titulaire_permis`, contrainte `ck_ordre_central_titulaire`).
+
+**Signature** : l'ordre suit le mécanisme existant (voie descendante sur HTTPS avec certificat client de l'officine, `ordre-v1`) ; il n'est
+pas signé à part (comme les ordres S5).
 
 ## 4. Actions de l'éditeur
 
@@ -192,6 +217,10 @@ Le **code d'activation** est tiré par les écrans (`CodeActivationSync`, comme 
 4. Connexion `titulaire.dev` sur https://127.0.0.1:5094/ (code dans `%LOCALAPPDATA%\PharmaOfficine\central-dev\codes\titulaire.dev.txt`),
    changer le mot de passe provisoire, puis « Rattacher une officine ».
 
+**Multi-officines et ordres (S7.3)** : passer le script central **034** sur `pharmacie_cloud_dev` (après 033, propriétaire `pharma_app`,
+après relecture). Dans le poste (titulaire), Accès à distance › Comptes rattachés : « Droits », cocher « Ordres à distance », mot de
+passe → le lien « Ordres » apparaît dans « Mes officines ». Voir [poste-de-developpement.md](poste-de-developpement.md).
+
 Mot de passe de `editeur.dev` perdu : aucune commande ne remet un mot de passe en S7.1 ; `--desactiver-compte editeur.dev` puis créer un autre
 compte (`--creer-compte-editeur editeur.dev2 --nom "…" --email …`) avec l'outil (`%LOCALAPPDATA%\PharmaOfficine\central-dev\outil`).
 
@@ -219,13 +248,21 @@ Variables : `PHARMA_CLOUD_ECRANS_CONNEXION` (obligatoire), `PHARMA_CLOUD_DOSSIER
   (rôle `pharma_cloud_api` sur base jetable, réponses neutres, route authentifiée comme l'échange) ; `tests/Pharma.Application.Tests/AccesDistantTests.cs`
   (titulaire seulement, mot de passe requis, synchronisation non activée, refus neutre et limite, code jamais journalisé) ;
   `tests/Pharma.Architecture.Tests/AccesDistantEcranTests.cs` (écran, route locale, démonstration).
+- **S7.3** : `database/cloud/tests/034_titulaire_multi_officines_ordres_tests.sql` (A rattaché à O1 et O2, B à O2 : non-fuite, droit `ordres`
+  par le poste seulement, ordre refusé sans droit / hors liste / déjà en cours / code faux, ordre expiré, retrait immédiat et ordres annulés) ;
+  `tests/Pharma.Cloud.Tests/AccesDistantsPosteTests.cs` (rôle `pharma_cloud_api`, autre certificat refusé) ; `TitulaireEcransTests` (bout en
+  bout : vue d'ensemble, ordres refusés sans droit, code, ordre envoyé, hors liste, autre officine) ; `ReglesEcransTests` (aiguillage, total
+  partiel) ; `tests/Pharma.Application.Tests/OrdresCentrauxTests.cs` et `AccesDistantTests.cs` ; `AccesDistantEcranTests`.
 
 ## 8. Reste à faire
 
 - **Mise en ligne** (plus tard) : hébergeur, nom de domaine et certificat, proxy inverse (adresse réelle pour les limites de débit), connexion de
   production rattachée à `pharma_cloud_ecrans`, compte SMTP, clé HMAC commune si plusieurs instances, comptes éditeur réels, test d'intrusion.
-- **S7.2b** : génération du code par le poste **réalisée en local** (§ 3 ter) ; reste : voir et retirer les comptes rattachés depuis le
-  poste ; la commande `--code-rattachement` de la console reste pour le développement.
+- **S7.2b** : génération du code par le poste **réalisée en local** (§ 3 ter) ; comptes rattachés vus et retirés depuis le poste : **S7.3**
+  (§ 3 quater) ; la commande `--code-rattachement` de la console reste pour le développement.
+- **S7.3, non fait** : ordre « message à afficher sur les postes » (aucune surface d'affichage commune aux postes sans toucher la barre
+  d'état, modification en attente) ; écrans à mesurer (`/mes-officines/ensemble`, `/mes-officines/{officine}/ordres` avec et sans le droit,
+  rubrique « Accès à distance » avec la liste et la zone de droits ou de retrait ouverte).
 - Reste de S7.2 : SMS (fournisseur à choisir), remise à zéro d'un mot de passe par l'éditeur, retrait d'un rattachement depuis les écrans,
   alertes (refus en série).
 - Mesure des écrans à 1 366 × 768 et 1 536 × 890, clair et sombre (règle de l'écran fixe) : **à faire**, S7.1 et S7.2a

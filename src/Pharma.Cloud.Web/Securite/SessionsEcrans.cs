@@ -59,20 +59,31 @@ public static class ControleAcces
     /// <summary>Écrans communs aux deux rôles en session ouverte.</summary>
     private static readonly string[] Communs = ["/mot-de-passe", "/actions/mot-de-passe", "/actions/deconnexion", "/actions/theme", "/mon-journal", "/acces-refuse"];
 
-    /// <summary>Écrans du titulaire (liste fermée) : ses officines, le rattachement, le tableau de bord et le journal d'une officine.</summary>
-    private static readonly string[] Titulaire = ["/mes-officines", "/rattacher", "/actions/rattacher"];
+    /// <summary>Écrans du titulaire (liste fermée) : ses officines, la vue d'ensemble (S7.3), le rattachement, le code de confirmation
+    /// d'un ordre (S7.3), le tableau de bord, le journal et les ordres d'une officine.</summary>
+    private static readonly string[] Titulaire = ["/mes-officines", "/mes-officines/ensemble", "/rattacher", "/actions/rattacher", "/actions/code-action"];
 
     /// <summary>Accueil de chaque rôle (après la connexion, le code, le mot de passe).</summary>
     public static string Accueil(SessionEcran session) => session.Titulaire ? "/mes-officines" : "/officines";
 
     public static bool Statique(PathString chemin) => Statiques.Any(s => chemin.Value?.StartsWith(s, StringComparison.OrdinalIgnoreCase) == true);
 
-    /// <summary>Tableau de bord ou journal d'une officine du titulaire : /mes-officines/{uuid} ou /mes-officines/{uuid}/journal.</summary>
+    /// <summary>Tableau de bord, journal ou ordres d'une officine du titulaire : /mes-officines/{uuid}, …/journal, …/ordres.</summary>
     public static bool EcranOfficineTitulaire(string chemin)
     {
         var morceaux = chemin.Split('/', StringSplitOptions.RemoveEmptyEntries);
         return morceaux.Length is 2 or 3 && string.Equals(morceaux[0], "mes-officines", StringComparison.OrdinalIgnoreCase)
-               && Guid.TryParseExact(morceaux[1], "D", out _) && (morceaux.Length == 2 || string.Equals(morceaux[2], "journal", StringComparison.OrdinalIgnoreCase));
+               && Guid.TryParseExact(morceaux[1], "D", out _)
+               && (morceaux.Length == 2 || morceaux[2].ToLowerInvariant() is "journal" or "ordres");
+    }
+
+    /// <summary>Lot S7.3 : envoi d'un ordre du titulaire, /actions/mes-officines/{uuid}/ordre (POST).</summary>
+    public static bool ActionOfficineTitulaire(string chemin)
+    {
+        var morceaux = chemin.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return morceaux.Length == 4 && string.Equals(morceaux[0], "actions", StringComparison.OrdinalIgnoreCase)
+               && string.Equals(morceaux[1], "mes-officines", StringComparison.OrdinalIgnoreCase)
+               && Guid.TryParseExact(morceaux[2], "D", out _) && string.Equals(morceaux[3], "ordre", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Adresse de redirection, ou null si la requête peut passer (règle pure, testée).</summary>
@@ -87,9 +98,12 @@ public static class ControleAcces
             "code" => Parmi(EtapeCode) || Parmi(Publiques) ? null : "/code",
             "mot_de_passe" => Parmi(EtapeMotDePasse) || Parmi(Publiques) ? null : "/mot-de-passe",
             _ when session.Titulaire => c is "/" or "/officines" or "/connexion" or "/code" ? "/mes-officines"
-                : Parmi(Communs) || Parmi(Titulaire) || EcranOfficineTitulaire(c) ? null : "/acces-refuse",
+                : Parmi(Communs) || Parmi(Titulaire) || EcranOfficineTitulaire(c) || ActionOfficineTitulaire(c) ? null : "/acces-refuse",
+            // L'éditeur garde le code de confirmation de ses propres actions ; aucun écran ni aucune action du titulaire
             _ when session.Editeur => c is "/connexion" or "/code" ? "/officines"
-                : Parmi(Titulaire) || EcranOfficineTitulaire(c) || c.StartsWith("/mes-officines/", StringComparison.OrdinalIgnoreCase) ? "/acces-refuse" : null,
+                : (Parmi(Titulaire) && c != "/actions/code-action") || EcranOfficineTitulaire(c) || ActionOfficineTitulaire(c)
+                  || c.StartsWith("/mes-officines/", StringComparison.OrdinalIgnoreCase)
+                  || c.StartsWith("/actions/mes-officines/", StringComparison.OrdinalIgnoreCase) ? "/acces-refuse" : null,
             _ => Parmi(Communs) ? null : "/acces-refuse",
         };
     }
