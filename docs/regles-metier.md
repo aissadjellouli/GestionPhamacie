@@ -2277,6 +2277,29 @@ Règles appliquées par le script central `032_ecrans_titulaire.sql`, la console
   terminé comprenant la table, table ou colonne non envoyée, colonne d'une famille nominative non envoyée) ; sans les retours clients, le
   chiffre d'affaires reste non disponible. Les totaux sont ceux des données reçues au dernier contact.
 
+## Réglages communs proposés par le titulaire à distance (lot S7.4, 2026-11-21)
+
+Règles appliquées par le script central `035_reglages_communs_titulaire.sql`, l'écran « Réglages communs » du central et
+`ReglagesCommunsOrdre` / `ConfirmerOrdreCentral` / `RefuserOrdreCentral` (API locale) ([ecrans-central.md](ecrans-central.md) § 3 quinquies) :
+
+- **Liste fermée** : seuils du réglage général des alertes (péremption orange et rouge, risque d'écoulement, délai de livraison, stock
+  de sécurité, stock visé, produit dormant, deux seuils d'ancien lot délaissé), **nombres entiers** dans des bornes fixes (par exemple
+  orange et rouge de 1 à 1 095 jours, délai de livraison de 0 à 90 jours) ; l'alerte rouge doit rester plus courte que l'orange. Jamais
+  prix, TVA, droits des employés, comptes ni rien de fiscal ; aucune donnée nominative. Un champ laissé vide ne change rien.
+- **Envoi** : un réglage par proposition à l'écran (la base accepte un jeu de plusieurs réglages de la liste), une ou plusieurs officines du titulaire, avec le droit « ordres » accordé depuis le poste de **chacune** ; **tout ou rien**
+  (une officine refusée, partie ou qui a déjà une proposition en attente : rien n'est envoyé) ; code de confirmation ; 5 envois par heure,
+  50 officines au plus ; une proposition expire après **24 heures**.
+- **À l'officine** : une proposition hors liste, mal formée ou hors bornes est **refusée dès sa réception** ; sinon elle attend la
+  décision du **titulaire** (Synchronisation › Réglages mutualisés, ou Ordres du central), qui voit la valeur actuelle et la valeur proposée et **ressaisit son mot
+  de passe** pour accepter comme pour refuser (motif obligatoire au refus). **Rien ne s'applique sans acceptation.** Accepter applique les
+  valeurs par l'écran des seuils (mêmes contrôles, alertes recalculées, journal « seuils d'alerte » avant / après au nom du titulaire) ; si
+  le réglage est fixé par le serveur central ou si une règle n'est plus respectée (rouge proposé plus long que l'orange actuel), la
+  proposition est **refusée** avec son motif et rien ne change. Les seuils par grossiste et les exceptions par produit ne changent jamais.
+- **Suivi au central** : Proposé, Accepté, Refusé, Expiré, Annulé, par officine ; jamais le motif d'un refus local.
+- — `database/cloud/035_reglages_communs_titulaire.sql`, `src/Pharma.Domain/Reglages/ReglagesCommuns.cs`,
+  `src/Pharma.Cloud.Web/Composants/Pages/ReglagesCommuns.razor`, `src/Pharma.Application/Synchronisation/ReglagesCommunsOrdre.cs`,
+  `src/Pharma.Application/Synchronisation/OrdresCentraux.cs`, `src/Pharma.Desktop/Composants/Pages/AdminSynchronisation.razor`
+
 ## Multi-officines et ordres du titulaire à distance (lot S7.3, 2026-11-21)
 
 Règles appliquées par le script central `034_titulaire_multi_officines_ordres.sql`, les écrans du central, `AccesDistantsPoste` (API
@@ -2374,7 +2397,8 @@ Règles appliquées par `GenererCodeAccesDistant` (API locale), la route `POST /
   - « Journaux : anomalie » (rouge, titulaire seul) : la dernière vérification d'une chaîne de journaux est rompue ou en erreur ;
     Administration › Contrôle interne › Intégrité des journaux ;
   - « Imprimante tickets : échec » (rouge, **visible par tous, vendeurs compris**, demande du titulaire) : le dernier ticket ou reçu
-    de ce poste n'a pas pu être envoyé à l'imprimante par Windows (message dans l'infobulle) ; effacée dès qu'un ticket repart ; le
+    de ce poste n'a pas pu être envoyé à l'imprimante par Windows (message dans l'infobulle) ; lien vers Administration › Imprimantes
+    avec le droit `admin.parametres`, texte simple sinon ; effacée dès qu'un ticket repart ; le
     ticket d'essai d'Administration › Imprimantes n'y touche pas. Le logiciel ne sait pas qu'une imprimante est éteinte quand Windows
     accepte le ticket dans sa file d'impression : cette pastille ne signale que l'échec constaté.
 - **Regroupement** : dès qu'une pastille orange ou rouge s'affiche, les pastilles grises passent dans « À traiter (N) ▾ », une petite

@@ -11,22 +11,27 @@ Logiciel de gestion d’officine pour les pharmacies algériennes : caisse, stoc
 | `src/Pharma.Infrastructure` | Adaptateurs : PostgreSQL (Npgsql + EF Core), sécurité, impression, Chifa |
 | `src/Pharma.Api` | API ASP.NET Core locale, authentification JWT, droits vérifiés en base, tâche des alertes |
 | `src/Pharma.Desktop` | Poste client WPF + Blazor (BlazorWebView) |
+| `src/Pharma.Cloud.Api` | Serveur central de synchronisation (API mTLS, console d'administration) |
+| `src/Pharma.Cloud.Web` | Écrans du serveur central (éditeur et titulaire) |
 | `src/Pharma.Shared` | Contrat HTTP (DTO) entre l’API et les postes |
 | `tests/Pharma.Domain.Tests` | Tests unitaires du domaine (xUnit) |
 | `tests/Pharma.Application.Tests` | Tests des cas d’usage, avec doublures |
 | `tests/Pharma.Architecture.Tests` | Sens des dépendances entre couches, mapping EF |
+| `tests/Pharma.Cloud.Tests`, `tests/Pharma.Cloud.Web.Tests`, `tests/Pharma.Cloud.Charge` | Tests du serveur central, de ses écrans et essai de charge |
 | `database/migration/` | **Migration** d'une base en service : scripts numérotés `0NN_*.sql` (source de vérité du schéma), rejoués dans l'ordre à chaque nouvelle version ; voir docs/base-de-donnees.md |
 | `database/init/` | **Création à la mise en production** d'une base neuve : `schema.sql` (toute la structure), `seed_referentiel.sql` (référentiel de départ), `clean.sql` (remise à vierge) ; voir docs/mise-en-production.md |
 | `database/data/` | Fichiers qui remplissent la base : données fictives (`9xx_*.sql`, développement et tests) et nomenclature nationale (Excel, à importer dans Administration › Nomenclature) |
+| `database/cloud/` | Scripts de la base du serveur central (voir son README) |
+| `deploy/demo/` | Démonstration en conteneurs (voir docs/demo-cloud.md) |
 | `scripts/` | Initialisation de la base locale, sauvegarde quotidienne |
 | `docs/` | Documentation et maquettes |
 
 ## Prérequis
 
 - SDK .NET 10
-- PostgreSQL 17 ou 18 installé en local (avec `psql`)
+- PostgreSQL 18 installé en local (avec `psql`) ; 17 suffit pour les bases d'officine seules, le serveur central exige 18
 - Runtime WebView2 (présent sur Windows 10/11 à jour)
-- Visual Studio 2022 (`PharmaOfficine.sln`), ou Visual Studio 2022 17.14+ / VS Code avec C# Dev Kit (`PharmaOfficine.slnx`). Les deux solutions contiennent les mêmes projets : préciser le fichier dans les commandes `dotnet`.
+- Visual Studio Community 2026 (18.x) ou plus récent (`PharmaOfficine.slnx` ou `PharmaOfficine.sln`), ou VS Code avec C# Dev Kit (`PharmaOfficine.slnx`). Les deux solutions contiennent les mêmes projets : préciser le fichier dans les commandes `dotnet`.
 
 Procédure détaillée (installation de PostgreSQL, création des bases, lancement depuis Visual Studio, problèmes connus) : [docs/poste-de-developpement.md](docs/poste-de-developpement.md).
 Nouveau développeur sur un PC neuf (avec seulement Visual Studio et l'accès au dépôt) : liste complète [docs/nouveau-poste-developpeur.md](docs/nouveau-poste-developpeur.md).

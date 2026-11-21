@@ -22,7 +22,7 @@ On relie d'abord, on crée le réseau ensuite, on vend des services seulement qu
    - Les grossistes n'ont rien à installer.
 2. **Un portail web gratuit pour les grossistes (après les premières pharmacies).**
    - Chaque grossiste publie son catalogue, ses stocks, ses prix et ses promotions, reçoit les commandes des pharmacies du réseau et met à jour leur suivi : acceptée, partielle, livrée, produits manquants.
-   - C'est ce qui crée l'effet réseau : plus il y a de pharmacies, plus les grossistes veulent y être, et inversement. C'est le modèle de logiciel A et de Blink Pharma au Maroc.
+   - C'est ce qui crée l'effet réseau : plus il y a de pharmacies, plus les grossistes veulent y être, et inversement. C'est le modèle de logiciel A et du logiciel N au Maroc.
    - Les données sur les ruptures deviennent précises et en temps réel, ce qui renforce le module ruptures (M3).
 3. **Gagner de l'argent avec les grossistes (quand le réseau est assez grand).**
    - Abonnement pour des options avancées : statistiques de leurs ventes par région, mise en avant des promotions, API de connexion à leur propre logiciel.

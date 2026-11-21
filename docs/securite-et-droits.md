@@ -67,6 +67,12 @@ Règle (2026-11-16) : les fichiers journaux du serveur (`C:\ProgramData\PharmaOf
 - **Filet de sécurité** : `Pharma.Shared.MasqueurJournal` est appliqué à chaque ligne écrite (message rendu et pile d'exception complète) par `JournalFichierProvider` (serveur) et par `App.NoterErreur` (poste). Il masque : e-mail → `a***@d***.dz` (1er caractère, 1er caractère du domaine, extension) ; téléphone mobile algérien 05/06/07 ou +213/00213, séparateurs espace, point ou tiret admis → `06******12` ; nombre de 9 à 12 chiffres avec suffixe `/NN` facultatif (n° d'assuré) → `6907******42/80`. Les noms et textes libres ne sont pas reconnaissables : seule la règle « à la source » les protège.
 - Contrôlé par `tests/Pharma.Architecture.Tests/JournauxSansDonneesPersonnellesTests.cs`.
 
+## Barre d'état (2026-11-21)
+
+- `GET /api/etat-poste`, `GET /api/etat-poste/compteurs` et `GET /api/synchronisation/etat-poste` : ouvertes à **tout employé
+  connecté** (aucun droit d'administration), nombres et états techniques seulement (ni nom, ni montant, ni adresse du central) ;
+  chaque compteur n'est rendu qu'à l'employé qui a le droit de son écran (0 sinon). Détail : regles-metier.md « Barre d'état ».
+
 ## Comptes distants des écrans du serveur central (lot S7.1, 2026-11-21)
 
 Détail : [ecrans-central.md](ecrans-central.md) § 5. En local seulement à ce jour.
@@ -86,6 +92,11 @@ Détail : [ecrans-central.md](ecrans-central.md) § 5. En local seulement à ce 
   seule en base ; 5 refus par quart d'heure ; code d'un autre compte : même réponse qu'un code inconnu). Droits par officine : `consulter`
   (tableau de bord : **totaux seulement**, aucun patient, aucune vente détaillée) et `journal_acces` (journal des accès de l'officine, y
   compris ceux de l'éditeur, sans identifiant ni nom). Sessions : 30 minutes d'inactivité, 8 heures au plus.
+- **Réglages communs du titulaire (lot S7.4, script central 035)** : un titulaire à distance **propose** des seuils d'alerte (liste
+  fermée de 9 réglages, bornes) à ses officines où il a le droit `ordres` (**chacune**, sinon rien n'est envoyé) ; code de second facteur
+  à chaque envoi, 5 envois par heure ; jamais prix, TVA, droits, comptes ni rien de fiscal (refusé par l'écran, la base et le poste).
+  **Rien ne s'applique** sans l'acceptation du titulaire de l'officine sur son poste, **mot de passe ressaisi** (aussi pour refuser) ; un
+  autre employé ne décide pas. Le titulaire à distance ne voit que ses propres envois et leur état, jamais le motif d'un refus local.
 - **Multi-officines et ordres du titulaire (lot S7.3, script central 034)** : le droit `ordres` d'un compte distant sur une officine ne
   s'accorde (et ne se retire) que **depuis le poste** de l'officine, par le titulaire, mot de passe ressaisi ; le retrait d'un compte
   coupe l'accès **tout de suite** et annule ses ordres encore ouverts. Ordres du titulaire : liste fermée (essai, sauvegarde, vérification

@@ -31,7 +31,7 @@ serveur central de production, certificats d'officines réelles, données réell
 | **Visual Studio** | Community 2026 (18.x) ou plus récent | Charges de travail : **Développement ASP.NET et web** et **Développement .NET Desktop** |
 | **SDK .NET** | 10.0.100 ou plus récent (voir `global.json`) | Installé avec Visual Studio ; vérifier `dotnet --version` |
 | **Git** | celui de Visual Studio ou Git pour Windows | Voir § 2 pour les réglages |
-| **PostgreSQL** | 18.x (17 accepté) | Serveur + outils en ligne de commande, port 5432 : [poste-de-developpement.md](poste-de-developpement.md) § 2 |
+| **PostgreSQL** | 18.x (17 suffit pour l'officine seule ; le serveur central exige 18) | Serveur + outils en ligne de commande, port 5432 : [poste-de-developpement.md](poste-de-developpement.md) § 2 |
 | Runtime WebView2 | celui de Windows à jour | Déjà présent sur Windows 10/11 à jour |
 | 7-Zip | dernière version | Facultatif : ouvrir l'archive de départ chiffrée (AES-256) du serveur central |
 | Docker Desktop + WSL 2 | dernière version | Facultatif : démonstration en conteneurs, [installation-docker.md](installation-docker.md) |

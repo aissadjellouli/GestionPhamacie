@@ -205,7 +205,7 @@ Trois scripts PowerShell (dossier `scripts/mep`) enchaînent tout dans le bon or
 | --- | --- |
 | Base **neuve** d'officine | `scripts\mep\creer_base_officine.ps1 -Base <base>` : rôle `pharma_app`, base, `init/schema.sql`, fuseau horaire (083), `init/seed_referentiel.sql`, séparation des rôles (`111b`) ; refuse si la base existe ou si l'en-tête de l'init n'est pas « 001 à NNN » (dernier script) |
 | Officine **en service** | `scripts\mep\mettre_a_jour_base_officine.ps1 -Base <base> -DossierSauvegarde <dossier>` : sauvegarde `pg_dump -Fc` vérifiée, API arrêtée, contrôle des n° de facture Chifa avant 101, rejeu des scripts numérotés dans l'ordre (033 hors transaction), `-SeparerRoles` pour 111b |
-| Serveur **central** neuf | `scripts\mep\creer_base_centrale.ps1 -Base <base> -Proprietaire <compte>` : scripts `database/cloud` 001 à 011, contrôles, `-AvecTests` |
+| Serveur **central** neuf | `scripts\mep\creer_base_centrale.ps1 -Base <base> -Proprietaire <compte>` : scripts `database/cloud` 001 au dernier, contrôles, `-AvecTests` |
 
 Les scripts « b » (`101b`, `111b`) ne sont jamais rejoués avec la suite : `111b` (séparation des rôles) a son option, `101b` (suppression irréversible d'une colonne) n'est jamais lancé par un script. Sur une base déjà à jour, le rejeu part toujours du script 001 : les scripts `007`, `018`, `097` et `098` (vues dont les colonnes ont changé depuis), `024` (vue sans colonnes nommées), `126` et `129` (fonction `sync_enregistrer_lot` remplacée par `130`) sont gardés pour que cela ne change rien. Contrôle : `tests/Pharma.Architecture.Tests/ScriptsRejouablesTests.cs` et `database/tests/rejeu_complet.ps1` (copie jetable).
 

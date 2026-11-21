@@ -169,7 +169,7 @@ Côté serveur central (outils d'administration) : voir parcours E, étape 3.2.
 
 | Chemin | Où | Contenu | À sauvegarder |
 | --- | --- | --- | --- |
-| `C:\Program Files\PharmaOfficine\Api` | PC serveur | Programme de l'API, `appsettings.Https.json`, `database\` (scripts 001 à 153, sans `111b`) | Non (republié à chaque mise à jour) |
+| `C:\Program Files\PharmaOfficine\Api` | PC serveur | Programme de l'API, `appsettings.Https.json`, `database\` (scripts 001 à 159, sans `111b`) | Non (republié à chaque mise à jour) |
 | `C:\ProgramData\PharmaOfficine\super-admin.dat` | PC serveur | Compte super admin, chiffré pour ce PC | **Oui**, sur le disque externe |
 | `C:\ProgramData\PharmaOfficine\cle-integrite.dat` | PC serveur | Clé de scellement des journaux, chiffrée pour ce PC | **Oui**, sur le disque externe |
 | `C:\ProgramData\PharmaOfficine\archives-fiscales\AAAA\MM` | PC serveur | Rapports scellés, à conserver 6 ans au moins | **Oui** |
@@ -323,7 +323,7 @@ Un seul script enchaîne tout dans le bon ordre, avec des contrôles : `scripts\
   dotnet publish src\Pharma.Api -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Api"
   ```
   - `--self-contained true` : aucun runtime .NET à installer sur le PC serveur.
-  - Le dossier publié contient `Pharma.Api.exe` et `database\` (scripts `001` à `148`, sans `111b`, qui se lance à part).
+  - Le dossier publié contient `Pharma.Api.exe` et `database\` (scripts `001` à `159`, sans `111b`, qui se lance à part).
   - Contrepartie : les correctifs de sécurité de .NET n'arrivent qu'avec une nouvelle publication (parcours B).
   - **Attendu** : `Pharma.Api.exe` et le dossier `database` sont présents dans `<dossier de livraison>\Api`.
   - **Si échec** : SDK absent (étape 1.6) ou version différente de .NET 10.
@@ -1001,7 +1001,7 @@ Option facultative. Le serveur central reçoit la copie des données des officin
 
 Règles : aucun secret dans un fichier du dépôt ni dans `appsettings*.json`. Tout passe par des variables d'environnement du compte de service. **Ne jamais copier le dossier `Synchronisation` d'un serveur d'officine à l'autre.**
 
-Les scripts de la base centrale sont dans `database\cloud\` (001 à 019). Ils ne se passent **jamais** sur la base d'une officine.
+Les scripts de la base centrale sont dans `database\cloud\` (001 au dernier, 035 à ce jour). Ils ne se passent **jamais** sur la base d'une officine.
 
 ### 1. Hébergement et prérequis
 
@@ -1233,7 +1233,7 @@ Le serveur central peut proposer ou imposer aux officines la valeur de 11 régla
 ### 10. Mise à jour du serveur central
 
 - [ ] **10.1** Sauvegarder la base centrale. **Où** : serveur central. **Compte** : propriétaire.
-- [ ] **10.2** Repasser `002` (colonnes `sync_chargement`, `sync_absente_le`, etc.), puis `003` à `028`, **dans cet ordre** (`026` à `028` : tables sans archive réglables, effacement d'une officine partie avec ses éléments techniques, effacement d'une famille nominative aussi dans les lignes archivées ; `027` et `028` demandent le `022` ; le `025` **avant** le script `152` des officines : n° de tickets réattribués signalés ; le `022` à `024` **avant** le script `151` des officines : tables des restaurations, route `POST /api/v1/epoque`, table miroir `integrite_prise_acte` du `002` régénéré, n° de ticket dans `/maximums` ; le `019` **avant** le script `147` des officines : sinon leurs lots sont refusés ; le `020` **avant** le script `149` des officines : route `GET /api/v1/maximums` et archive des lignes remplacées ; `020` et `021` demandent PostgreSQL 18 et le refusent clairement en tête sinon ; depuis le 2026-11-18 rejouer un ancien script ne ramène plus en arrière une fonction redéfinie par un script plus récent (gardes étendues le 2026-11-20 à `004`, `010`, `012`, `013` à `017`, `020`, `021`, `022`) ; `002` régénéré **avant** le script `148` des officines : colonnes d'alerte de `parametre_sauvegarde`), avec le compte propriétaire, un par un : `& $psql -h <hôte> -U <propriétaire> -d <base centrale> -v ON_ERROR_STOP=1 -q -f "database\cloud\<script>.sql"` (le script `creer_base_centrale.ps1` de l'étape 2.1 ne sert que pour une base neuve et refuse une base déjà installée). Scripts idempotents.
+- [ ] **10.2** Repasser `002` (colonnes `sync_chargement`, `sync_absente_le`, etc.), puis `003` au dernier (035 à ce jour), **dans cet ordre** (`029` à `035` : rôles de lecture et des écrans, comptes distants, écrans de l'éditeur et du titulaire, ordres et réglages communs du titulaire ; `026` à `028` : tables sans archive réglables, effacement d'une officine partie avec ses éléments techniques, effacement d'une famille nominative aussi dans les lignes archivées ; `027` et `028` demandent le `022` ; le `025` **avant** le script `152` des officines : n° de tickets réattribués signalés ; le `022` à `024` **avant** le script `151` des officines : tables des restaurations, route `POST /api/v1/epoque`, table miroir `integrite_prise_acte` du `002` régénéré, n° de ticket dans `/maximums` ; le `019` **avant** le script `147` des officines : sinon leurs lots sont refusés ; le `020` **avant** le script `149` des officines : route `GET /api/v1/maximums` et archive des lignes remplacées ; `020` et `021` demandent PostgreSQL 18 et le refusent clairement en tête sinon ; depuis le 2026-11-18 rejouer un ancien script ne ramène plus en arrière une fonction redéfinie par un script plus récent (gardes étendues le 2026-11-20 à `004`, `010`, `012`, `013` à `017`, `020`, `021`, `022`) ; `002` régénéré **avant** le script `148` des officines : colonnes d'alerte de `parametre_sauvegarde`), avec le compte propriétaire, un par un : `& $psql -h <hôte> -U <propriétaire> -d <base centrale> -v ON_ERROR_STOP=1 -q -f "database\cloud\<script>.sql"` (le script `creer_base_centrale.ps1` de l'étape 2.1 ne sert que pour une base neuve et refuse une base déjà installée). Scripts idempotents.
 - [ ] **10.3** Relancer les tests de l'étape 2.3 sur la copie.
 - [ ] **10.4** Redémarrer le serveur central. **Avant** toute mise à jour des officines.
 

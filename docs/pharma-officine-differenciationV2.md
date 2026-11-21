@@ -1,13 +1,13 @@
 # Logiciel de gestion d'officine (Algérie) — Axes de différenciation
 
-> Document de cadrage produit à destination de Claude Code.
+> Document de cadrage produit à destination de l'équipe de développement.
 > Stack : .NET (API) / Angular (front) / PostgreSQL et SQL Server.
 > Le développement est **déjà commencé** : ce document décrit la cible, pas un point de départ.
 > Rédigé le 15/11/2026 à partir d'une veille marché et réglementaire (sources en fin de document).
 
 ---
 
-## 0. Instructions pour Claude Code
+## 0. Instructions pour le développement
 
 1. **Ne rien coder tout de suite.** Commence par lire le code existant, puis produis `docs/analyse-ecarts.md` :
    - pour chaque module ci-dessous : *déjà fait / partiel / absent*, avec les fichiers concernés ;
@@ -57,10 +57,10 @@
 | Acteur | Pays | Chiffres revendiqués | À retenir |
 |---|---|---|---|
 | **logiciel A Pharma** | Maroc (filiale en France) | 50 %+ du marché, 5 000+ pharmacies, interconnecté à 20 répartiteurs et grossistes et à 30 laboratoires | Logiciel cloud + commandes grossistes + IA anti-ruptures + paiement intégré (Attijari Payment, 2026) + application patient. **C'est notre feuille de route** |
-| **Blink Pharma** | Maroc | 4 500+ pharmaciens, 41+ grossistes, 20+ laboratoires | Place de marché B2B pharmacies, grossistes et laboratoires |
-| **Chefaa** | Égypte | 5,25 M$ levés en 2023 | Application patients : trouver ses médicaments pendant les pénuries |
-| **Alliance Pharma** | Burkina Faso | 10 000+ téléchargements | Localiser les pharmacies qui ont un médicament, alimentée par les pharmacies partenaires |
-| **Meditect** | Côte d'Ivoire | 1 200 pharmacies, 3 000+ médicaments contrefaits détectés | Lutte contre la contrefaçon, proche de notre module M1 |
+| **Logiciel N** | Maroc | 4 500+ pharmaciens, 41+ grossistes, 20+ laboratoires | Place de marché B2B pharmacies, grossistes et laboratoires |
+| **Application O** | Égypte | 5,25 M$ levés en 2023 | Application patients : trouver ses médicaments pendant les pénuries |
+| **Application P** | Burkina Faso | 10 000+ téléchargements | Localiser les pharmacies qui ont un médicament, alimentée par les pharmacies partenaires |
+| **Logiciel M** | Côte d'Ivoire | 1 200 pharmacies, 3 000+ médicaments contrefaits détectés | Lutte contre la contrefaçon, proche de notre module M1 |
 
 ### Conséquences pour le projet
 1. **La place est libre en Algérie, mais pour un temps.** Si logiciel A arrive, nos défenses sont l'hébergement en Algérie (loi 18-07), la sérialisation DataMatrix prête et la connaissance du terrain. → **Aller vite sur P1.**
@@ -168,7 +168,7 @@
 | **P1** | M3 (multi-grossistes + alertes ruptures + substitution) | Gain visible dès le premier jour |
 | **P1** | M6 (journal inaltérable) | Peu cher si fait tôt ; très cher à rajouter ensuite |
 | **P2** | M2 (registre psychotropes + alertes) | Argument fort « protection du pharmacien » |
-| **P2** | M1 (DataMatrix : lecture, stock à la boîte, mode factice) | Échéance 2027, avance concurrentielle |
+| **P2** | M1 (DataMatrix : lecture, stock à la boîte, mode factice) | Échéance 2027, avance sur les autres logiciels |
 | **P3** | M5 (pilotage financier) | Différenciation sur la valeur |
 | **P3** | M3 réseau inter-officines, puis application patient | Effet réseau, nécessite une base clients |
 
@@ -358,10 +358,6 @@ Mobile titulaire ────────────TLS──▶          │
 - logiciel A (part de marché, grossistes) : (lien retiré)
 - logiciel A (IA anti-ruptures) : https://www.lecourrierdelatlas.com/?p=195263
 - logiciel A et Attijari Payment : https://en.7news.ma/?p=15177
-- Blink Pharma : https://www.wearetech.africa/fr/fils/solutions/maroc-blink-pharmacie-une-application-b2b-fluidifie-les-transactions-entre-les-pharmacies-les-grossistes-et-les-laboratoires
-- Chefaa : https://techcabal.com/fr/?p=162080
-- Alliance Pharma : https://www.wearetech.africa/fr/fils/solutions/alliance-pharma-facilite-la-recherche-de-medicaments-en-ligne-au-burkina-faso
-- Meditect : https://digitalmag.ci/startup-e-sante-meditect-unique-representante-ivoirienne-google-for-startups-accelerator-africa-2026/?amp=1
 - Label Startup : https://www.upgrowth.dz/en/startup-algeria
 - MIPH, ligne directrice sur la nomenclature : https://www.miph.gov.dz/fr/wp-content/uploads/2026/02/NOMENCLATURE.pdf
 - MIPH, publication de la nomenclature : https://www.miph.gov.dz/fr/?p=20602

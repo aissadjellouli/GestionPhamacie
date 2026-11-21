@@ -100,7 +100,8 @@ vendeur)** : `/`, `/accueil`, `/caisse`, `/caisse/etat`, `/cloture`, `/stock`, `
 `/admin/motifs`, `/admin/prestations`, `/admin/controle-interne`, `/admin/droits`, `/admin/emplacements`,
 `/admin/imprimantes`, `/admin/nomenclature`, `/admin/notifications`, `/admin/pharmacie`, `/admin/reprise`,
 `/admin/profils-reprise` et `/admin/historique-chifa` (ajoutés le 2026-11-16, lot 4 : liste paginée et filtrée, seul le tableau défile,
-édition du profil dans une fenêtre `.voile` qui défile dans son cadre ; mesure à 0 px à refaire sur le poste),
+édition du profil dans une fenêtre `.voile` qui défile dans son cadre ; `/admin/historique-chifa` remesuré par la campagne du
+2026-11-20 ci-dessous ; reprise et profils de reprise à 1 366 × 768 : non mesurés, voir plus bas),
 `/admin/restauration`, `/admin/sauvegardes`, `/admin/seuils`, `/guide`, `/mon-code`, `/mot-de-passe`.
 **`/admin/seuils?rubrique=produits` corrigé le 2026-11-18** (l'écran défilait de 75 px à 1 366 × 768, défaut déjà présent avant
 le filtre avec propositions : le tableau restait à son minimum de 240 px sous le choix du produit) : deux colonnes dans le panneau
@@ -120,11 +121,12 @@ défilait de 77 à 226 px à 1 366 × 768) : les cinq tuiles du résumé en `.tu
 pied en 12 px), affichées sauf pendant la saisie de l'échéancier ; tableaux Échéancier et Usages en `.tableau-cadre`
 `data-hauteur-min="140"` ; onglets « Prêt et document… » et « Employer l'argent… » dans un `.cadre-defilant` (160 px au moins) ;
 saisie ou import de l'échéancier dans un `.cadre-defilant.cadre-unique` (un seul cadre, ses tableaux sans hauteur propre). Aucune
-information retirée. **Mesure à faire** (titulaire, clair et sombre, 1 366 × 768 et 1 536 × 890) : 0 px attendu sur les quatre
-onglets et sur « Modifier ou réimporter l'échéancier… » (saisie et étape « correspondance des colonnes »).
+information retirée. **Mesurée le 2026-11-21** sur les quatre onglets : 0 px, clair et sombre, 1 366 × 768 et 1 536 × 890 (voir
+« Caisse et contrôle › Règles » ci-dessous) ; « Modifier ou réimporter l'échéancier… » (saisie et étape « correspondance des
+colonnes ») : aucune mesure notée, à vérifier.
 **Fenêtre « Changement d'utilisateur impossible » ajoutée le 2026-11-21** (en-tête, « ⇄ Changer » quand la vente de la Caisse n'a
 pas pu être mise en attente) : `.voile` + `.panneau.fenetre-releve` (comme la relève), message en `.erreur`, boutons en `.actions`
-(« Réessayer » principal, « Rester sur la vente ») ; aucun style en ligne. À capturer en clair et en sombre (Caisse panier rempli,
+(« Réessayer » principal, « Rester sur la vente ») ; aucun style en ligne. Mesurée et capturée en clair et en sombre le 2026-11-21 (« Mesures du 2026-11-21 (fin de journée) » ; cas : Caisse panier rempli,
 serveur arrêté).
 **Rapports › Synthèse revu le 2026-11-20** : la vue Mois défilait de 102 px à 1 366 × 768 (tuile Chiffre d'affaires sur dix
 lignes : répartition médicaments · parapharmacie · prestations et retours clients dans son pied) ; tuiles « Parapharmacie »
@@ -166,9 +168,9 @@ page et 0 px horizontal, 8 lignes visibles à 1 366 × 768, 10 à 1 536 × 890 ;
 de gauche défile dans son cadre. Caisse avec le lien « Patients en attente » (colonne Comptoir) : 0 px à 1 366 × 768 et
 1 536 × 890, clair et sombre.
 **Écran ajouté le 2026-11-16 (lot 10, sérialisation), conçu fixe (seul le tableau défile, paginé et filtré par statut) ; mesure
-à 1 536 × 890 à faire à l'écran** : `/admin/serialisation`.
+à 1 536 × 890 à faire à l'écran** : `/admin/serialisation`. **Mesuré le 2026-11-21** : 0 px (« Mesures du 2026-11-21 (après-midi) »).
 **Écran ajouté le 2026-11-16 (lot 5, 2e serveur), conçu fixe 1 536 × 890 (trois sous-rubriques à gauche : État de la réplication,
-Réglages par serveur, Clé de scellement ; tableau des serveurs seul défilant) ; mesure à 0 px à faire à l'écran** : `/admin/second-serveur`.
+Réglages par serveur, Clé de scellement ; tableau des serveurs seul défilant) ; mesure à 0 px à faire à l'écran** : `/admin/second-serveur`. **Mesuré le 2026-11-21** : 0 px (« Mesures du 2026-11-21 (après-midi) »).
 **Écran ajouté le 2026-11-16 (lot S2, synchronisation), conçu fixe 1 536 × 890 (trois sous-rubriques à gauche : État, Réglages,
 Activation ; aucun tableau, aucun défilement) ; mesure à 0 px à faire à l'écran** : `/admin/synchronisation`.
 Mesurée le 2026-11-16 (titulaire, clair et sombre, 1 536 × 890 et 1 366 × 768) : 0 px dans les trois rubriques, y compris
@@ -177,6 +179,7 @@ au-dessus, panneaux État et Chargement complet dans un `.cadre-defilant` ; titr
 **Écran ajouté le 2026-11-16 (lot 11, tableau de bord financier), conçu fixe 1 536 × 890 (sept rubriques à gauche : Synthèse,
 Créances, Stock et dormant, Marges, Achats par grossiste, Rejets Chifa, TVA par taux ; tuiles, puis un seul tableau défilant,
 paginé ; marges et stock dormant filtrés et paginés par le serveur) ; mesure à 0 px à faire à l'écran** : `/pilotage-financier`.
+Synthèse mesurée le 2026-11-16 (voir plus bas) ; autres rubriques : couvertes par la campagne 1 366 × 768 du 2026-11-20 (ci-dessus).
 Corrigés ce jour : Accueil (27 px), Administration › Contrôle interne (29 px, horaires sous « Stock et réception » sur une
 ligne), Trésorerie › Chèques à remettre (4 632 px, liste en cadre défilant) et › Caisses à verser (10 px), Achats ›
 Réceptions › En attente (272 px : pastilles dès qu’il y a des livraisons comptées), Achats › À commander avec un produit
@@ -203,28 +206,30 @@ Psychotropes › Alertes du registre (206 px : panneau « Wilayas de la zone » 
 (défilement horizontal du tableau : file à droite élargie, colonnes égales), Stock › Modifier un produit (DCI et forme
 tronquées : champs élargis). Fenêtre de modification de la fiche patient (157 px, boutons cachés) : fenêtre élargie
 (`.fenetre-contact-large`, 1 000 px), tout tient à l'écran. `/admin/synchronisation` › État mesuré à 0 px.
-`/admin/reprise` et `/admin/profils-reprise` (super admin) : non mesurés, compte super admin non utilisé.
+`/admin/reprise` et `/admin/profils-reprise` (super admin) : non mesurés à 1 366 × 768 (mesurés à 1 536 × 890 le 2026-11-16, étape 2
+exceptée, voir plus haut) ; le 2026-11-21, le mot de passe noté du compte d'essai `super.essai` est refusé : à demander au titulaire.
 
 **Ajouté le 2026-11-16 (lot 2, à mesurer sur le poste)** : Administration › Contrôle interne › Intégrité des journaux
 (`/admin/controle-interne?rubrique=integrite`) : titre et bouton « Vérifier maintenant » sur une ligne, un seul tableau en
-cadre défilant (`.tableau-cadre`), page attendue à 0 px. Mesure à 1 536 × 890 non faite (poste non lancé) : à vérifier.
+cadre défilant (`.tableau-cadre`), page attendue à 0 px. **Mesuré le 2026-11-21** : 0 px (« Mesures du 2026-11-21 (après-midi) »).
 
 **Ajouté le 2026-11-16 (lot 3, à mesurer sur le poste)** : Administration › Contrôle interne › Journal fiscal
 (`/admin/controle-interne?rubrique=journal-fiscal`) : titre, période, ticket et boutons d’export sur une ligne ; une ligne d’état
 (chaîne, compteur des tickets, conservation) ; à gauche le tableau des lignes en cadre défilant et paginé, à droite le récapitulatif
-TVA et les sceaux de la période (cadre défilant). Page attendue à 0 px. Mesure à 1 536 × 890 non faite (poste non lancé) : à vérifier.
+TVA et les sceaux de la période (cadre défilant). Page attendue à 0 px. **Mesuré et corrigé le 2026-11-16** (voir plus haut).
 
 **Ajouté le 2026-11-16 (lot 6, à mesurer sur le poste)** : Achats › Commander (multi-grossistes)
 (`/achats?onglet=commander`) : filtres sur une ligne, un seul tableau en cadre défilant (`.tableau-cadre`), pagination,
 barre de répartition sur une ligne ; Achats › Catalogues des grossistes (`/achats?onglet=catalogues`) : profil et import
-dans un panneau défilant à gauche, imports en tableau paginé à droite (`.achats-grille`). Page attendue à 0 px ; mesure à
-1 536 × 890 non faite (poste non lancé) : à vérifier.
+dans un panneau défilant à gauche, imports en tableau paginé à droite (`.achats-grille`). Page attendue à 0 px. **Mesurés le
+2026-11-21** : Commander et Catalogues des grossistes, 0 px (« Mesures du 2026-11-21 (après-midi) »).
 
 **Ajouté le 2026-11-16 (lot 7, à mesurer sur le poste)** : Achats › Ruptures chez les grossistes (`/achats?onglet=ruptures`) :
 filtres sur une ligne, un seul tableau en cadre défilant, pagination ; Achats › Patients en attente
 (`/achats?onglet=patients-attente`) et Achats › Substitution (`/achats?onglet=substitution`) : saisie et réglages dans un panneau
 défilant à gauche, liste paginée et filtrée à droite (`.achats-grille`) ; bandeau « Produit redevenu disponible » de la Caisse
-(`.info-bandeau`, une ligne). Page attendue à 0 px ; mesure à 1 536 × 890 non faite (poste non lancé) : à vérifier.
+(`.info-bandeau`, une ligne). Page attendue à 0 px. **Mesurés le 2026-11-21** : Ruptures et Substitution, 0 px (« Mesures du
+2026-11-21 (après-midi) ») ; Patients en attente mesurés avec le domaine Patients le 2026-11-18.
 Patients en attente déplacés le 2026-11-18 dans le domaine Patients (`/patients/attente`, voir ci-dessous) ; l'ancienne adresse y renvoie.
 
 **Domaine Patients mesuré le 2026-11-18** (poste lancé sur `pharmacie_test`, titulaire, thèmes sombre et clair, 1 536 × 890 et
@@ -280,7 +285,8 @@ clair, 1 366 × 768 et 1 536 × 890, captures regardées) :
 panneaux côte à côte, chaque tableau en cadre défilant et paginé). Registre : nouvelle rubrique « Alertes forcées »
 (`/stock/registre?rubrique=forcages`, liste paginée et filtrée par le serveur) ; ligne des filtres des inscriptions avec
 « Prescripteur (export) » et trois boutons PDF, Excel, CSV (à vérifier : tient-elle sur une ligne ?). Caisse : fenêtre
-« Alerte du registre des psychotropes » (voile). Mesure à 1 536 × 890 non faite (poste non lancé) : à vérifier.
+« Alerte du registre des psychotropes » (voile). Alertes du registre et Suivi des antibiotiques **mesurés et corrigés le 2026-11-16**
+(voir plus haut) ; ligne des filtres du registre et fenêtre de la Caisse : à vérifier.
 
 ### Écran trop chargé : menu vertical de rubriques
 
@@ -616,8 +622,8 @@ tableau « Hiérarchie du texte ».
 
 `.code-acces-distant` (Administration › Synchronisation › Accès à distance) : code montré une seule fois, en grand (32 px, chasse fixe,
 espacé), couleurs par variables (`--surface-2`, `--accent-texte`, `--bordure`) donc lisible en clair et en sombre ; champs de la ligne
-`.achats-ligne` avec `.champ-compte-distant` et `.champ-bouton`. Aucun style en ligne dans la rubrique. **Mesure à faire** (1 366 × 768 et
-1 536 × 890, clair et sombre : formulaire, code affiché, synchronisation non activée).
+`.achats-ligne` avec `.champ-compte-distant` et `.champ-bouton`. Aucun style en ligne dans la rubrique. **Mesurée le 2026-11-21** (voir « Mesures du
+2026-11-21 (Synchronisation › Accès à distance, poste relié au central) »).
 
 ### Mesures du 2026-11-21 (S7.2a, écrans du titulaire au central)
 
@@ -638,8 +644,8 @@ simple (pas de droit sur l'écran). Liste « À traiter » ouverte vers le haut 
 Compte `titulaire.dev`, 1 366 × 768 et 1 536 × 890, clair et sombre : « Mes officines », « Vue d'ensemble », « Ordres à distance »
 (état « droit non accordé ») : **0 px**. Défaut corrigé : le tableau de la vue d'ensemble (12 colonnes) défilait horizontalement à
 1 366 px, colonne « Ordres en attente » coupée → dernier contact sous le nom de l'officine, en-têtes courts (« CA jour », « Mois préc. »,
-« Péremption »…), montants sur une ligne (`.tableau-ensemble`) : 0 px horizontal et vertical. Non mesurés : ordres avec le droit accordé
-et rubrique « Accès à distance » du poste (synchronisation non activée sur `pharmacie_test`).
+« Péremption »…), montants sur une ligne (`.tableau-ensemble`) : 0 px horizontal et vertical. Mesurés ensuite le 2026-11-21 : rubrique
+« Accès à distance » du poste (section suivante) et ordres avec le droit accordé (1 366 × 768, essai de bout en bout, statut « Appliqué ») : 0 px.
 
 ### Mesures du 2026-11-21 (Synchronisation › Accès à distance, poste relié au central)
 
@@ -647,3 +653,20 @@ et rubrique « Accès à distance » du poste (synchronisation non activée sur 
 corrigé : la page défilait (205 px à 1 366, 99 px à 1 536) → les deux panneaux (code, comptes rattachés) dans un cadre défilant
 (`.cadre-defilant.cadre-empile`, comme les autres sous-rubriques) : **0 px** de page ; la zone « Droits » ou « Retirer », ouverte
 sous le tableau, est amenée dans le cadre (`pharma.voirZone`) et reste entièrement visible aux deux tailles.
+
+### Mesures du 2026-11-21 (après-midi)
+
+`pharmacie_test`, compte `titulaire` (et `titulaire.dev` au central), 1 366 × 768 et 1 536 × 890, clair et sombre.
+
+- **Central, `/mes-officines/reglages`** (S7.4) : défilait (35 px à 1 366 × 768, 104 px avec un message ; 62 px à 1 536 × 890 avec un
+  message) → hauteur du cadre posée par `ecrans.js` (`data-hauteur-restante`) au lieu de `calc(100vh - 330px)` : **0 px** partout. Tableau
+  « Propositions envoyées » : défilement horizontal, colonne Statut cachée → texte qui passe à la ligne : **0 px**.
+- **Poste, Réglages mutualisés** avec une proposition en attente : **0 px** aux deux tailles, clair et sombre.
+- **Poste, page de Connexion** : défilait de 53 px à 1 366 × 768 avec le message « … a quitté le poste » → marges resserrées
+  (`.page.connexion`) : **0 px** dans les trois états (code comptoir, mot de passe, super admin).
+- **Achats › Commander** : accord du texte corrigé (« 10 produits cochés chez 4 grossistes »).
+- **Mesurés à 0 px de page** : Achats › Commander (le tableau seul défile), Catalogues des grossistes, Ruptures chez les grossistes,
+  Substitution, Contrôle interne › Intégrité des journaux, Sérialisation DataMatrix, 2e serveur ; ordres à distance avec le droit
+  accordé (1 366 × 768, essai de bout en bout, statut « Appliqué »).
+- **Non mesurés** : `/admin/reprise` et `/admin/profils-reprise` à 1 366 × 768 (mot de passe noté du compte `super.essai` refusé ; ne
+  pas réessayer, risque de blocage ; à demander au titulaire).

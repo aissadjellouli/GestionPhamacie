@@ -11,7 +11,7 @@ Procédure suivie pour installer PostgreSQL, créer les bases locales et lancer 
 | Windows | 10 version 2004 ou plus récent, ou 11 | Exigé par le poste client (WebView2) |
 | SDK .NET | 10.0.100 ou plus récent | Voir `global.json` |
 | Visual Studio | Community 2026 (18.x) | Ouvre `PharmaOfficine.slnx` ou `PharmaOfficine.sln` |
-| PostgreSQL | 18.6 | 17 convient aussi |
+| PostgreSQL | 18.6 | 17 suffit pour les bases d'officine seulement ; le serveur central exige 18 |
 | Runtime WebView2 | celui de Windows à jour | Déjà présent sur Windows 10/11 à jour |
 
 ## 2. Installer PostgreSQL 18
@@ -167,7 +167,7 @@ ou propriétaire des tables.
 
 **Écrans du central (lot S7.1, développement).** Profil **« Central + Écrans »** (central + écrans seuls) ou **« API + Poste + Central »**
 (les quatre) : le navigateur s'ouvre sur **https://127.0.0.1:5094/** (projet `src\Pharma.Cloud.Web`, processus séparé, refus de démarrer hors
-boucle locale). Prérequis : scripts centraux `030` et `031` passés sur `pharmacie_cloud_dev`, puis `-Preparer` relancé (rôle`npharma_cloud_ecrans_dev_vs`, variable `PHARMA_CLOUD_ECRANS_CONNEXION`, dossier des codes, compte `editeur.dev` dont le mot de passe provisoire est
+boucle locale). Prérequis : scripts centraux `030` et `031` passés sur `pharmacie_cloud_dev`, puis `-Preparer` relancé (rôle `pharma_cloud_ecrans_dev_vs`, variable `PHARMA_CLOUD_ECRANS_CONNEXION`, dossier des codes, compte `editeur.dev` dont le mot de passe provisoire est
 affiché une fois). Le code de second facteur est écrit dans `%LOCALAPPDATA%\PharmaOfficine\central-dev\codes\editeur.dev.txt` (mode fichier,
 développement seulement). Certificat HTTPS : celui de développement d'ASP.NET (`dotnet dev-certs https --trust`, il couvre `127.0.0.1`).
 Détails : [ecrans-central.md](ecrans-central.md).
@@ -188,6 +188,18 @@ d’intégrité » → statut « En attente » puis « Appliqué » après le pa
 « À confirmer sur le poste » (Synchronisation › Ordres du central, « Confirmer »). « Vue d’ensemble » : totaux par officine et total
 du groupe. À vérifier aussi : même type déjà en cours → refusé ; « Retirer » `titulaire.dev` au poste → le tableau de bord est refusé
 tout de suite et l’ordre ouvert passe « Annulé » ; employé non titulaire → aucune liste.
+
+**Réglages communs (lot S7.4) : comment tester.** `pharmacie_test` est reliée au central de développement (officine
+`142d3c7d-c7a3-4e40-84dc-04d4440af2dc`) et le compte web `titulaire.dev` y est rattaché avec le droit `ordres`. Prérequis : script
+central `035` passé sur `pharmacie_cloud_dev` (après 034, après relecture). Sur https://127.0.0.1:5094/ (`titulaire.dev`) : « Mes
+officines » → « Réglages communs » ; choisir « Péremption : alerte orange », valeur 150, l’officine cochée, « Recevoir un code de
+confirmation » (code dans `%LOCALAPPDATA%\PharmaOfficine\central-dev\codes\titulaire.dev.txt`), « Proposer » → état « Proposé ». Au
+poste branché sur `pharmacie_test` (titulaire), après le passage de synchronisation suivant : Administration › Synchronisation ›
+Réglages mutualisés → bandeau « 1 proposition en attente », tableau actuel (barré) / proposé, mot de passe du titulaire,
+« Accepter et appliquer » → Administration › Seuils montre 150 (ligne dans « Décisions précédentes »), journal des actions « seuils d’alerte » ; au central l’état
+passe « Accepté ». À vérifier aussi : mot de passe faux → reste à confirmer ; « Refuser » (motif + mot de passe) → « Refusé » au central ;
+deuxième proposition tant que la première attend → « Rien n’est envoyé » ; rouge 200 (orange actuel 150) → « Accepter » puis refus
+avec le motif ; employé non titulaire → proposition visible sans boutons ; non décidé en 24 heures → « Expiré ».
 
 **5. Retirer** (central arrêté) : `.\scripts\dev\preparer_central_vs.ps1 -Retirer -WhatIf`, puis sans `-WhatIf`. Retire les variables
 posées par le script, les rôles `pharma_cloud_dev_vs` et `pharma_cloud_etat_vs` et le dossier `%LOCALAPPDATA%\PharmaOfficine\central-dev` ; rien n'est supprimé en

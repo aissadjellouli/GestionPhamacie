@@ -1,17 +1,33 @@
 # Reste à faire : synthèse
 
-Point d'avancement du 2026-11-21 (nuit) : tout le travail du jour est fait, passé sur les bases et vérifié ; dernier lot (script 159,
-écrans du central corrigés) **non commité**, prêt pour « commit ». Détail : [a-faire.md](a-faire.md), [fonctionnalites.md](fonctionnalites.md)
-(inventaire complet) et documents cités. À mettre à jour à chaque point d'avancement.
+Point d'avancement du 2026-11-21 (après-midi) : tout le travail du jour est fait, passé sur les bases et vérifié ; travail commité
+jusqu'à `20c1ecf` ; **lot S7.4 (script central 035) non commité**, prêt pour « commit ». Détail : [a-faire.md](a-faire.md),
+[fonctionnalites.md](fonctionnalites.md) (inventaire complet) et documents cités. À mettre à jour à chaque point d'avancement.
 
 ## 1. En cours
 
-Rien. Commits locaux (branche `develop`, **non poussée**) du 2026-11-20 et du 2026-11-21 : `ce5586a`, `9f62c7c`, `4b9b51b`
-(lancement API + Poste + Central, démo étape 1, guide du nouveau développeur), `e93dc22` (retour partiel en tiers payant 155,
-rapprochement 157, ticket, tâches laissées et réglage 156, fiche du prêt, mode démo, page d'état 029, S7.1 écrans de l'éditeur
-030-031), `1ce78e3` (retour et dettes du patient 158, écran de retour et règles de caisse sans défilement).
+Démonstration cloud : étapes 1 et 2 écrites, premier démarrage réel en attente de Docker (section 3). Branche `develop` à jour avec
+`origin/develop` (poussée). Commits du 2026-11-20 : `ce5586a`, `9f62c7c`, `4b9b51b` (lancement API + Poste + Central, démo étape 1,
+guide du nouveau développeur). Commits du 2026-11-21 : `e93dc22` (retour partiel en tiers payant 155, rapprochement 157, ticket,
+tâches laissées et réglage 156, fiche du prêt, mode démo, page d'état 029, S7.1 écrans de l'éditeur 030-031), `1ce78e3` (retour et
+dettes du patient 158, écran de retour et règles de caisse sans défilement), `f71a011` (script 159), `69c53db` (S7.2a et CSP des
+écrans du central), `b5545fd` (barre d'état : liaisons), `fa24fc6` (S7.2b), `d1aaa7b` et `fad75d1` (barre d'état : éléments fixes,
+pastilles, nom du poste), `ea5ad15` (S7.3), `20c1ecf` (Accès à distance sans défilement).
 
-## 2. Fait, à commiter (2026-11-21, nuit)
+## 2. Fait, à commiter (2026-11-21, après-midi)
+
+- **Synchronisation S7.4, réglages communs proposés par le titulaire** ([ecrans-central.md](ecrans-central.md) § 3 quinquies) :
+  script central **035** passé deux fois sur `pharmacie_cloud_dev` après sauvegarde, tests SQL 034 et 035 réussis. Essai de bout en
+  bout réussi : `titulaire.dev` propose « Péremption : alerte orange 150 jours » à Essai (`pharmacie_test`) → reçue sur le poste
+  « 180 → 150 », acceptée avec le mot de passe, `parametre_alerte.jours_orange` = 150, statut « Accepté » au central une minute après.
+- **Défauts d'écran corrigés et mesurés** (charte, « Mesures du 2026-11-21 (après-midi) ») : `/mes-officines/reglages` du central
+  (défilait de 35 à 104 px) ; tableau « Propositions envoyées » (défilement horizontal) ; page de Connexion du poste (53 px à
+  1 366 × 768 avec le message « … a quitté le poste ») ; accord « 10 produits cochés chez 4 grossistes » de « Commander ».
+- **Écrans mesurés à 0 px** (1 366 × 768 et 1 536 × 890, clair et sombre) : Achats › Commander, Catalogues des grossistes,
+  Ruptures chez les grossistes, Substitution, Contrôle interne › Intégrité des journaux, Sérialisation DataMatrix, 2e serveur ;
+  Réglages mutualisés du poste avec une proposition en attente ; ordres à distance avec le droit accordé (1 366 × 768, statut « Appliqué »).
+
+## 2 bis. Fait et commité le 2026-11-21 (`f71a011` à `20c1ecf`)
 
 - **Retour d'une vente régularisée « rendu au patient »** (script 159, décision du titulaire « Régularisation ok ») : retenue au prorata
   de ce qui a déjà été rendu au patient pour les boîtes rapportées, prise sur le remboursement ; si elle dépasse, le reste devient
@@ -27,8 +43,8 @@ rapprochement 157, ticket, tâches laissées et réglage 156, fiche du prêt, mo
 - **Écrans du titulaire au central (S7.2a, côté central seulement ; le poste ne change pas)** : script central **032**
   (`compte_officine.droits`, `code_rattachement`, rattachement, tableau de bord en totaux, journal des accès de l'officine), console
   `--creer-compte-titulaire` / `--code-rattachement`, écrans `/mes-officines`, `/rattacher`, `/mes-officines/{officine}`,
-  `/mes-officines/{officine}/journal`, compte `titulaire.dev` dans `preparer_central_vs.ps1`. **Rien n'est passé** sur
-  `pharmacie_cloud_dev` (consigne du lot) : 032 à passer après relecture ; écrans à mesurer (1 366 × 768 et 1 536 × 890, clair et sombre).
+  `/mes-officines/{officine}/journal`, compte `titulaire.dev` dans `preparer_central_vs.ps1`. Script central 032 passé sur
+  `pharmacie_cloud_dev` ; quatre écrans mesurés à 0 px (1 366 × 768 et 1 536 × 890, clair et sombre).
   Tests sur bases jetables (supprimées) : SQL 030 à 032, Pharma.Cloud.Web.Tests, ComptesDistantsConsoleTests, rejeu des scripts centraux.
 - **Barre d'état : liaisons avec le serveur central et le 2e serveur** (demande du titulaire « 7 quand le cloud est déployé sinon
   rien », « pareil pour 2e serveur ») : un élément seulement en anomalie (« Central : en attente (2 h 05) », « Central : erreur
@@ -42,16 +58,17 @@ rapprochement 157, ticket, tâches laissées et réglage 156, fiche du prêt, mo
   « À traiter (N) ▾ » dès qu'une anomalie s'affiche (au plus 4 anomalies visibles) ; route `GET /api/etat-poste/compteurs` (tout
   employé connecté, compteurs filtrés par les droits, gardée 30 s). Aucun script. Mesurée sur page de mesure (vrai app.css, Poppins) :
   une ligne à 1 366 × 768 et 1 536 × 890, clair et sombre. **Non faites** (pas de source fiable) : « Mise à jour disponible » ;
-  « Imprimante injoignable » en direct (seul l'échec d'envoi d'un ticket est signalé). À voir dans l'application lancée ; à confirmer
+  « Imprimante injoignable » en direct (seul l'échec d'envoi d'un ticket est signalé). Mesurée aussi dans l'application lancée
+  (`pharmacie_test`, titulaire et vendeur) : 0 px ; à confirmer
   par le titulaire : regroupement dès une seule anomalie même pour 1 pastille grise, seuil de 4 anomalies visibles, déconnexion
   gardée quand le serveur est injoignable, libellés « 5 volets Chifa » et « 12 Chifa à déposer » en deux pastilles.
 - **Mesures** (charte, « Mesures du 2026-11-21 ») : fenêtre « Changement d'utilisateur impossible » de la Caisse (serveur arrêté),
   0 px, panier gardé par « Rester sur la vente ».
-- Compilation : 0 erreur, 0 avertissement ; tests : 2 936 réussis, 1 ignoré (déjà ignoré), 0 échec.
+- Compilation : 0 erreur, 0 avertissement ; tests : 2 936 réussis, 1 ignoré (déjà ignoré), 0 échec (avant S7.4).
 
 ## 3. Ensuite
 
-- [ ] **Push** des commits locaux par le titulaire (branche `develop` : 50 commits d'avance sur `origin/develop` après le commit du 2026-11-20).
+- [x] **Push** des commits locaux par le titulaire : fait (`develop` = `origin/develop`).
 - [ ] **Port 5432 du poste de développement** (par le titulaire, PowerShell administrateur) : `listen_addresses = 'localhost'` dans
       `C:\Program Files\PostgreSQL\18\data\postgresql.conf` (copie `postgresql.conf.avant-localhost` gardée), puis `Restart-Service postgresql-x64-18`,
       Visual Studio arrêté avant. Constat du 2026-11-18 : écoute sur toutes les adresses, `pg_hba.conf` limité à 127.0.0.1 et ::1, aucune règle de pare-feu.
@@ -148,18 +165,18 @@ rapprochement 157, ticket, tâches laissées et réglage 156, fiche du prêt, mo
       Détail des corrections : charte graphique, « Campagne 1 366 × 768 du 2026-11-20 ». Nouvelles rubriques : Caisse et contrôle
       › « Chifa : délais et seuils », Notifications › « E-mail » et « SMS ».
 - [x] **Fiche d'un prêt ouvert** (Financements › Prêts bancaires) : défilait de 77 à 226 px à 1 366 × 768. **Corrigé le 2026-11-21
-      (« go 3 », non commité)** : cinq tuiles compactes sur une rangée, tableaux à 140 px au moins, onglets « Prêt et document »,
-      « Employer l'argent » et saisie de l'échéancier dans un cadre défilant ; rien n'est retiré. **Reste : mesure 0 px et captures
-      clair et sombre à 1 366 × 768 et 1 536 × 890 par le titulaire** (`/financements?rubrique=prets&pret=<id>`, les quatre onglets
-      et « Modifier ou réimporter l'échéancier… »).
-- [x] **Vente au changement d'utilisateur, serveur injoignable** : **corrigé le 2026-11-21 (non commité)** : plus aucun panier perdu
+      (« go 3 », commité `e93dc22`)** : cinq tuiles compactes sur une rangée, tableaux à 140 px au moins, onglets « Prêt et document »,
+      « Employer l'argent » et saisie de l'échéancier dans un cadre défilant ; rien n'est retiré. Mesurée le 2026-11-21 : 0 px sur les
+      quatre onglets, clair et sombre (charte graphique).
+- [x] **Vente au changement d'utilisateur, serveur injoignable** : **corrigé le 2026-11-21 (commité `e93dc22`)** : plus aucun panier perdu
       en silence ; fenêtre bloquante « Réessayer » / « Rester sur la vente » (regles-metier.md « Aucun panier perdu en silence »).
-      **Reste : essai serveur coupé, mesure et captures de la fenêtre** (Caisse panier rempli, API arrêtée, « ⇄ Changer »).
-- [x] **Facture et retour fournisseur laissés au changement d'utilisateur** : **fait le 2026-11-21 (non commité)**, décision du
+      Essai serveur arrêté, mesure (0 px aux deux tailles) et captures clair et sombre faits le 2026-11-21.
+- [x] **Facture et retour fournisseur laissés au changement d'utilisateur** : **fait le 2026-11-21 (commité `e93dc22`)**, décision du
       titulaire « fichier du poste » : `%LOCALAPPDATA%\PharmaOfficine\taches-laissees.dat`, chiffré DPAPI utilisateur, relu au
       démarrage, 7 jours au plus (regles-metier.md « Facture et retour fournisseur laissés »). **Reste : essai sur le poste**
       (facture en préparation, « ⇄ Changer », fermer et relancer le logiciel, le suivant reprend la facture).
-- [ ] Non mesurés à 1 366 × 768 : Reprise de données et profils de reprise (super admin).
+- [ ] Non mesurés à 1 366 × 768 : Reprise de données et profils de reprise (super admin) : le mot de passe noté du compte
+      d'essai `super.essai` est refusé (2026-11-21) ; ne pas réessayer (risque de blocage) : **à demander au titulaire**.
 - [x] **Bulle « À renseigner » trop tôt** (2026-11-20, corrigé, commité `d4dbe40`, vérifié à l'écran) : porteur de l'ordonnance (curseur dans le nom à la coche),
       n° de facture et « motif sans n° » Chifa, motif du rattachement d'un volet, confirmation du mot de passe (Synchronisation) ;
       règle ajoutée à la charte graphique (« Bulle seulement après une tentative »).
@@ -210,17 +227,21 @@ rapprochement 157, ticket, tâches laissées et réglage 156, fiche du prêt, mo
 ## 8. Plus tard (sur accord explicite du titulaire)
 
 
-- [x] **Synchronisation S7.1** (2026-11-21, en local) : écrans de l'éditeur du serveur central, comptes distants, second facteur, journal des accès chaîné ([ecrans-central.md](ecrans-central.md)). À faire avant usage : passer les scripts centraux **030** puis **031** sur `pharmacie_cloud_dev` (après relecture), `preparer_central_vs.ps1 -Preparer`, mesurer les écrans (1 366 × 768 et 1 536 × 890, clair et sombre).
-- [x] **Synchronisation S7.2a** (2026-11-21, en local, côté serveur central) : écrans du titulaire (mes officines, rattachement par code, tableau de bord en totaux seulement, journal des accès de l'officine), console `--creer-compte-titulaire` et `--code-rattachement` ([ecrans-central.md](ecrans-central.md) § 3 bis). À faire avant usage : passer le script central **032** sur `pharmacie_cloud_dev` (après relecture), `preparer_central_vs.ps1 -Preparer` (compte `titulaire.dev`), mesurer les quatre écrans (1 366 × 768 et 1 536 × 890, clair et sombre).
+- [x] **Synchronisation S7.1** (2026-11-21, en local) : écrans de l'éditeur du serveur central, comptes distants, second facteur, journal des accès chaîné ([ecrans-central.md](ecrans-central.md)). Scripts centraux **030** et **031** passés sur `pharmacie_cloud_dev`, `preparer_central_vs.ps1 -Preparer` fait, 19 pages mesurées à 0 px (1 366 × 768 et 1 536 × 890, clair et sombre).
+- [x] **Synchronisation S7.2a** (2026-11-21, en local, côté serveur central) : écrans du titulaire (mes officines, rattachement par code, tableau de bord en totaux seulement, journal des accès de l'officine), console `--creer-compte-titulaire` et `--code-rattachement` ([ecrans-central.md](ecrans-central.md) § 3 bis). Script central **032** passé sur `pharmacie_cloud_dev`, compte `titulaire.dev` créé, quatre écrans mesurés à 0 px (1 366 × 768 et 1 536 × 890, clair et sombre).
 - [x] **Synchronisation S7.2b** (2026-11-21, en local) : rubrique « Accès à distance » du poste, le titulaire génère le code de rattachement
-  (route centrale `POST /api/v1/rattachement`, script central **033**) ([ecrans-central.md](ecrans-central.md) § 3 ter). À faire avant usage :
-  passer le script central **033** sur `pharmacie_cloud_dev` (après 032, après relecture), mesurer la rubrique (1 366 × 768 et 1 536 × 890, clair et sombre).
+  (route centrale `POST /api/v1/rattachement`, script central **033**) ([ecrans-central.md](ecrans-central.md) § 3 ter). Script central **033**
+  passé sur `pharmacie_cloud_dev` ; rubrique « Accès à distance » mesurée à 0 px (commit `20c1ecf`).
 - [x] **Synchronisation S7.2b (reste)** : voir et retirer depuis le poste les comptes distants rattachés (fait avec S7.3).
 - [x] **Synchronisation S7.3** (2026-11-21, en local) : vue d’ensemble du titulaire, droit « ordres » accordé depuis le poste, comptes
   rattachés et retrait, ordres du titulaire (essai, sauvegarde, vérification d’intégrité) ([ecrans-central.md](ecrans-central.md) § 3 quater).
-  À faire avant usage : passer le script central **034** sur `pharmacie_cloud_dev` (après 033, après relecture), mesurer
-  `/mes-officines/ensemble`, `/mes-officines/{officine}/ordres` et la rubrique « Accès à distance » (1 366 × 768 et 1 536 × 890, clair et sombre).
-- [ ] **Synchronisation S7.3 (reste)** : ordre « message à afficher sur les postes » (après la modification en cours de la barre d’état).
+  Script central **034** passé sur `pharmacie_cloud_dev` ; mesurés à 0 px : `/mes-officines/ensemble`, `/mes-officines/{officine}/ordres`
+  (sans le droit, puis avec le droit accordé à 1 366 × 768, statut « Appliqué ») et la rubrique « Accès à distance ».
+- [x] **Synchronisation S7.4** (2026-11-21, en local) : réglages communs proposés par le titulaire à plusieurs officines, chaque
+  officine décide sur son poste ([ecrans-central.md](ecrans-central.md) § 3 quinquies). Script central **035** passé deux fois sur
+  `pharmacie_cloud_dev` après sauvegarde, tests SQL 034 et 035 réussis ; `/mes-officines/reglages` et Réglages mutualisés du poste
+  mesurés à 0 px ; essai de bout en bout réussi avec `pharmacie_test` (voir section 2). **Non commité.**
+- [ ] **Synchronisation S7.3 (reste)** : ordre « message à afficher sur les postes » (la barre d’état est livrée ; surface d’affichage à décider).
 - [ ] **Synchronisation S7.2 (reste)** : SMS (fournisseur), remise à zéro d'un mot de passe par l'éditeur, retrait d'un rattachement depuis les écrans, alertes de refus en série.
 - [ ] **Mise en ligne des écrans du central** (après le choix de l'hébergeur) : domaine et certificat, proxy inverse (adresse réelle pour les limites de débit), connexion de production au rôle `pharma_cloud_ecrans`, SMTP, clé HMAC commune si plusieurs instances, comptes éditeur réels, test d'intrusion.
 - [ ] Découpage par officine des grandes tables du central.

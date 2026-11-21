@@ -40,7 +40,7 @@ Autres options écartées pour la copie entre serveurs de l'officine : écriture
 1. **Maintenant** : GED dans l'officine ; copie toutes les 5 minutes vers le 2e serveur quand il existe ; **deux disques externes en
    rotation, dont un toujours hors de l'officine**, rendus obligatoires dans `mise-en-production.md` pour une officine sans 2e serveur.
 2. **Option** : alerte au titulaire si aucune sauvegarde réussie sur disque externe depuis 7 jours (réglable), par le mécanisme
-   d'alertes existant. Aujourd'hui la barre d'état affiche « Sauvegarde automatique désactivée » sans alerter.
+   d'alertes existant. Fait depuis : alerte à 7 jours (script 148) ; la barre d'état montre la pastille orange « Sauvegarde désactivée » quand la sauvegarde automatique est coupée.
 3. **Plus tard** (après le choix de l'hébergeur agréé et le lot 9, chiffrement) : sauvegarde chiffrée de la GED vers le central,
    illisible par lui, pour restauration seulement ; prioritaire pour les officines à un seul serveur.
 4. **Jamais** de GED consultable en clair au central (sauf révision explicite de la décision n° 2).

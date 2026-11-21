@@ -5,7 +5,8 @@
 > recommandations S7 acceptées) : § 3 bis. **Rien n'est en ligne** : la mise en ligne (hébergeur, certificat, SMTP, connexion de production)
 > viendra plus tard. Lot **S7.2b réalisé en local** (rubrique « Accès à distance » du poste : le titulaire tire lui-même le code de
 > rattachement, go du titulaire, recommandations acceptées) : § 3 ter. Lot **S7.3 réalisé en local** (multi-officines : vue d'ensemble ; droit
-> `ordres` accordé depuis le poste, comptes rattachés et retrait ; ordres à distance du titulaire en liste fermée) : § 3 quater.
+> `ordres` accordé depuis le poste, comptes rattachés et retrait ; ordres à distance du titulaire en liste fermée) : § 3 quater. Lot **S7.4
+> réalisé en local** (réglages communs proposés par le titulaire à plusieurs officines, chaque officine décide sur son poste) : § 3 quinquies.
 
 Documents liés : [conception-synchronisation.md](conception-synchronisation.md) § 1, § 6, § 6.1, § 6.2 et § 32 ;
 [securite-et-droits.md](securite-et-droits.md) ; [charte-graphique.md](charte-graphique.md) ; [database/cloud/README.md](../database/cloud/README.md) ;
@@ -21,11 +22,12 @@ Documents liés : [conception-synchronisation.md](conception-synchronisation.md)
 | Script central `032_ecrans_titulaire.sql` (S7.2a) | base centrale | Droits par officine, codes de rattachement, lecture du titulaire (agrégats), journal des accès de ses officines |
 | Script central `033_code_rattachement_poste.sql` (S7.2b) | base centrale | Code de rattachement demandé par le poste (`cloud_poste_code_rattachement`, rôle `pharma_cloud_api`), enregistrement commun avec la console, acteur « poste » au journal de l'officine |
 | Script central `034_titulaire_multi_officines_ordres.sql` (S7.3) | base centrale | Droit `ordres`, vue d'ensemble, ordres du titulaire (liste fermée, 24 h), comptes rattachés vus, changés et retirés par le poste |
+| Script central `035_reglages_communs_titulaire.sql` (S7.4) | base centrale | Liste fermée et bornes des réglages communs, type d'ordre `reglages`, envoi à plusieurs officines, suivi des envois |
 | Routes `GET /api/v1/acces-distants`, `POST …/droits`, `POST …/retrait` (S7.3) | API centrale (mTLS) | Comptes rattachés de l'officine du certificat, droits, retrait |
 | Route `POST /api/v1/rattachement` (S7.2b) | API centrale (`Pharma.Cloud.Api`, mTLS) | Code de rattachement de l'officine du certificat, montré une fois |
 | Rubrique « Accès à distance » (S7.2b) | poste, Administration › Synchronisation | Le titulaire génère le code (mot de passe ressaisi) |
 | Commandes de la console du central | `Pharma.Cloud.Api.exe` | `--creer-compte-editeur`, `--creer-compte-titulaire` (S7.2a), `--code-rattachement` (S7.2a), `--comptes-distants`, `--desactiver-compte`, `--deverrouiller-compte` |
-| Tests | `tests/Pharma.Cloud.Web.Tests`, `tests/Pharma.Cloud.Tests/ComptesDistantsConsoleTests.cs`, `database/cloud/tests/030_…`, `031_…`, `032_…` | Voir § 7 |
+| Tests | `tests/Pharma.Cloud.Web.Tests`, `tests/Pharma.Cloud.Tests/ComptesDistantsConsoleTests.cs`, `database/cloud/tests/030_…` à `035_…` | Voir § 7 |
 
 ## 2. Rôles
 
@@ -133,6 +135,24 @@ une vente, un stock, un prix ni un compte ; la base le revérifie (`cloud_ordre_
 **Signature** : l'ordre suit le mécanisme existant (voie descendante sur HTTPS avec certificat client de l'officine, `ordre-v1`) ; il n'est
 pas signé à part (comme les ordres S5).
 
+## 3 quinquies. Lot S7.4 : réglages communs du titulaire (réalisé en local le 2026-11-21)
+
+Go du titulaire, recommandations S7 acceptées. Script central **035** ; **aucun script local** (aucune table synchronisée ne change :
+`002_tables_miroir.sql` inchangé) : la proposition voyage comme un ordre du titulaire (`ordre-v1`, S7.3) et son résultat remonte par
+`sync_ordre_resultat`.
+
+| Route / maillon | Où | Règle |
+|---|---|---|
+| `/mes-officines/reglages` (« Réglages communs », bouton de « Mes officines » ; maquette validée du 2026-11-21) | écrans du central | Boutons « Vue d'ensemble » et « Mes officines ». À gauche, panneau « Nouvelle proposition » : **un réglage** choisi dans la liste fermée (bornes dans chaque choix) et sa valeur, officines en cases (seulement celles avec le droit `ordres`, cochées d'office ; les autres grisées avec la raison), code de confirmation et « Recevoir un code », « Proposer aux officines cochées (n possibles) », « Valable 24 h ». À droite, « Propositions envoyées » paginées (5) : Réglage, Valeur, Officine, Statut (**Proposé / Accepté / Refusé / Expiré / Annulé**), Le ; jamais le motif ni l'auteur de la décision locale. Pied : « Aucune donnée de patient ni de vente ». Écran fixe : chaque colonne défile seule. Après un refus, la saisie revient (nombres et identifiants seulement dans l'adresse). La base accepte aussi un jeu de plusieurs réglages (même liste fermée) |
+| `POST /actions/mes-officines/reglages` | écrans du central | Contrôle de l'écran (liste fermée, entiers, bornes, rouge < orange), puis `cloud_ecran_titulaire_envoyer_reglages` : **tout ou rien** (droit `ordres` sur **chaque** officine cochée, officine présente, aucune proposition encore ouverte), 5 envois par heure, 50 officines au plus, contrôles **avant** le code ; un ordre `reglages` par officine (même `envoi_id`), **24 heures**, auteur « titulaire à distance (identifiant) » ; journaux des accès (chaîné), de sécurité, des ordres |
+| Réception à l'officine | API locale (`AppliquerOrdresCentraux`, `ReglagesCommunsOrdre`) | Liste fermée, format, entiers et bornes **revérifiés** : sinon **refusé** tout de suite (jamais à confirmer) ; sinon « à confirmer », motif = avant → après. **Rien ne s'applique** sans l'acceptation |
+| Décision au poste | Administration › Synchronisation › **Réglages mutualisés** (maquette validée) ; aussi dans Ordres du central | Bandeau « n proposition(s) en attente de votre décision (valable jusqu'au …) » ; un panneau par proposition : Réglage / Actuel (barré) / Proposé (couleur d'accent) ; titulaire seulement, **mot de passe du titulaire ressaisi** pour accepter comme pour refuser (motif obligatoire au refus, règle existante des ordres) ; un autre employé voit sans décider. Panneau « Décisions précédentes » paginé : Le, Réglage, Valeur, Décision, Par. Le tout dans un cadre défilant. Accepter : `EnregistrerSeuils` (mêmes règles que l'écran Seuils : rouge plus court que l'orange une fois combiné ; table « fixée par le serveur central » refusée ; alertes recalculées ; journal `seuils_alerte` avant / après au nom du titulaire) ; règle non respectée : **refus définitif** avec son motif. Seuils par grossiste et exceptions par produit jamais touchés |
+
+**Liste fermée** (la conception ne définissait pas S7.4 ; liste la plus prudente) : seuils du réglage général `parametre_alerte` :
+alerte orange et rouge de péremption (1 à 1 095 j), risque d'écoulement (1 à 1 095 j), délai de livraison (0 à 90 j), stock de sécurité
+(0 à 180 j), stock visé (1 à 365 j), produit dormant (1 à 1 095 j), ancien lot délaissé (1 à 1 000 boîtes, deux seuils). **Jamais** prix,
+TVA, droits, comptes, rien de fiscal ni de nominatif ; revérifiée par la contrainte `ck_ordre_central_titulaire` (central) et par le poste.
+
 ## 4. Actions de l'éditeur
 
 Chaque action : **nouveau code de second facteur** (« Recevoir un code de confirmation », objet `action`, usage unique), **motif obligatoire**
@@ -209,13 +229,16 @@ Le **code d'activation** est tiré par les écrans (`CodeActivationSync`, comme 
    ```
 2. `.\scripts\dev\preparer_central_vs.ps1 -Preparer` crée le compte **`titulaire.dev`** s'il manque (mot de passe provisoire affiché
    **une fois**) ; sans 032 : avertissement, rien n'est fait pour lui. L'outil est recompilé d'office (source des comptes plus récente).
-3. Code de rattachement (développement, en attendant S7.2b), avec l'outil et la connexion du propriétaire (`PHARMA_CLOUD_ADMIN_CONNEXION`) :
+3. Code de rattachement par la console (développement), avec l'outil et la connexion du propriétaire (`PHARMA_CLOUD_ADMIN_CONNEXION`) :
    `Pharma.Cloud.Api.exe --code-rattachement titulaire.dev <officine (uuid)> --auteur "<votre nom>"` → code affiché **une fois**, 30 minutes.
    **Ou, depuis S7.2b** (script central **033** passé, après 032) : dans le poste, connecté en **titulaire**, Administration › Synchronisation ›
    Accès à distance, identifiant `titulaire.dev`, mot de passe du titulaire du poste, « Générer le code » (synchronisation activée exigée).
    Un autre compte titulaire : `--creer-compte-titulaire <identifiant> --nom "…" (--telephone … | --email …) --auteur "<votre nom>"`.
 4. Connexion `titulaire.dev` sur https://127.0.0.1:5094/ (code dans `%LOCALAPPDATA%\PharmaOfficine\central-dev\codes\titulaire.dev.txt`),
    changer le mot de passe provisoire, puis « Rattacher une officine ».
+
+**Réglages communs (S7.4)** : passer le script central **035** sur `pharmacie_cloud_dev` (après 034, propriétaire `pharma_app`, après
+relecture). Voir [poste-de-developpement.md](poste-de-developpement.md).
 
 **Multi-officines et ordres (S7.3)** : passer le script central **034** sur `pharmacie_cloud_dev` (après 033, propriétaire `pharma_app`,
 après relecture). Dans le poste (titulaire), Accès à distance › Comptes rattachés : « Droits », cocher « Ordres à distance », mot de
@@ -230,7 +253,7 @@ Variables : `PHARMA_CLOUD_ECRANS_CONNEXION` (obligatoire), `PHARMA_CLOUD_DOSSIER
 
 ## 7. Tests
 
-- SQL (transaction annulée) : `database/cloud/tests/030_comptes_distants_tests.sql`, `031_ecrans_editeur_tests.sql`.
+- SQL (transaction annulée) : `database/cloud/tests/030_comptes_distants_tests.sql`, `031_ecrans_editeur_tests.sql` ; `032_…` à `035_…` : voir S7.2a à S7.4 ci-dessous.
 - `tests/Pharma.Cloud.Web.Tests` : réglages (adresse non locale refusée, mode fichier refusé hors développement, SMS, clé de l'autorité),
   second facteur, contrôle d'accès, mots de passe ; architecture (aucun style en ligne, aucune route de l'API des officines, jamais la clé de
   l'autorité, aucun script Blazor ni interactivité, anti-falsification sur chaque formulaire, lecture par `cloud_ecran_*` seulement) ;
@@ -254,17 +277,32 @@ Variables : `PHARMA_CLOUD_ECRANS_CONNEXION` (obligatoire), `PHARMA_CLOUD_DOSSIER
   bout : vue d'ensemble, ordres refusés sans droit, code, ordre envoyé, hors liste, autre officine) ; `ReglesEcransTests` (aiguillage, total
   partiel) ; `tests/Pharma.Application.Tests/OrdresCentrauxTests.cs` et `AccesDistantTests.cs` ; `AccesDistantEcranTests`.
 
+- **S7.4** : `database/cloud/tests/035_reglages_communs_titulaire_tests.sql` (liste fermée et bornes dans la fonction et la table,
+  console refusée ; non-fuite : B n'envoie pas vers O1 et ne voit pas les envois de A ; refus sans droit `ordres` sur une officine, rien
+  de créé ; hors liste, hors bornes, incohérent, code faux ; rejeu refusé ; accepté / refusé remontés ; expiration) ; `ReglesEcransTests`
+  (accès, liste de l'écran = liste de la base, saisie) ; `TitulaireEcransTests` (bout en bout HTTPS : page, hors liste, hors bornes,
+  officine d'un autre titulaire, envoi, suivi « Proposé ») ; `tests/Pharma.Application.Tests/OrdresCentrauxTests.cs` (rien sans
+  acceptation, mot de passe faux, hors liste et hors bornes refusés à la réception, table fixée par le central, rouge combiné, refus,
+  expiration, rejeu) ; `tests/Pharma.Domain.Tests/ReglagesCommunsTests.cs`.
+
 ## 8. Reste à faire
+
+- **S7.4** : script central 035 passé deux fois sur `pharmacie_cloud_dev`, essai de bout en bout réussi le 2026-11-21 (proposition
+  « Péremption : alerte orange 150 jours » reçue, acceptée sur le poste, « Accepté » au central). Mesurés à 0 px (1 366 × 768 et
+  1 536 × 890, clair et sombre) : `/mes-officines/reglages` (avec un message aussi ; défauts corrigés, charte « Mesures du 2026-11-21
+  (après-midi) ») et, au poste, la rubrique « Réglages mutualisés » avec une proposition en attente (titulaire). Non mesurés : la
+  fenêtre « Accepter / Refuser » des Ordres du central et la rubrique vue par un vendeur. Motifs, catégories et textes de ticket non
+  proposés (voir § 3 quinquies).
 
 - **Mise en ligne** (plus tard) : hébergeur, nom de domaine et certificat, proxy inverse (adresse réelle pour les limites de débit), connexion de
   production rattachée à `pharma_cloud_ecrans`, compte SMTP, clé HMAC commune si plusieurs instances, comptes éditeur réels, test d'intrusion.
 - **S7.2b** : génération du code par le poste **réalisée en local** (§ 3 ter) ; comptes rattachés vus et retirés depuis le poste : **S7.3**
   (§ 3 quater) ; la commande `--code-rattachement` de la console reste pour le développement.
-- **S7.3, non fait** : ordre « message à afficher sur les postes » (aucune surface d'affichage commune aux postes sans toucher la barre
-  d'état, modification en attente) ; écrans à mesurer (`/mes-officines/ensemble`, `/mes-officines/{officine}/ordres` avec et sans le droit,
-  rubrique « Accès à distance » avec la liste et la zone de droits ou de retrait ouverte).
+- **S7.3, non fait** : ordre « message à afficher sur les postes » (surface d'affichage commune aux postes à décider ; la barre d'état
+  est livrée). Écrans S7.3 mesurés à 0 px le 2026-11-21 : `/mes-officines/ensemble`, `/mes-officines/{officine}/ordres` sans le droit
+  et avec le droit accordé (1 366 × 768, statut « Appliqué »), rubrique « Accès à distance » avec la zone de droits ou de retrait ouverte.
 - Reste de S7.2 : SMS (fournisseur à choisir), remise à zéro d'un mot de passe par l'éditeur, retrait d'un rattachement depuis les écrans,
   alertes (refus en série).
-- Mesure des écrans à 1 366 × 768 et 1 536 × 890, clair et sombre (règle de l'écran fixe) : **à faire**, S7.1 et S7.2a
-  (`/mes-officines`, `/rattacher`, `/mes-officines/{officine}`, `/mes-officines/{officine}/journal`), et rubrique « Accès à distance »
-  du poste (S7.2b : formulaire, code affiché, synchronisation non activée).
+- Mesure des écrans à 1 366 × 768 et 1 536 × 890, clair et sombre (règle de l'écran fixe) : **faite le 2026-11-21** pour S7.1
+  (19 pages), S7.2a (`/mes-officines`, `/rattacher`, `/mes-officines/{officine}`, `/mes-officines/{officine}/journal`), S7.3, S7.4 et la
+  rubrique « Accès à distance » du poste ([charte-graphique.md](charte-graphique.md)).
