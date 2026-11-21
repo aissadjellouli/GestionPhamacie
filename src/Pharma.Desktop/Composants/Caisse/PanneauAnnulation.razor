@@ -111,15 +111,20 @@
                     <button type="button" class="lien-bouton" style="margin-left: 8px" @onclick="ChangerDeVente">Changer de vente</button>
                 </div>
 
-                @if (v.DansUnBordereau)
+                @* Script 155 (option A du 2026-11-21) : vente déposée, ni annulation ni boîte remboursée rendue (message du titulaire) ; sur un
+                   bordereau en préparation, la retirer d'abord ; une boîte non remboursée se rend toujours *@
+                @if (v.Deposee || v.DansUnBordereau)
                 {
-                    <div class="erreur" role="alert">Cette vente figure déjà sur un bordereau envoyé à l’organisme : l’annulation ou le retour passe par la régularisation Chifa.</div>
+                    <div class="erreur" role="alert">@(v.Deposee ? MessageDeposee : MessagePreparation)</div>
                 }
-                else if (mode is null)
+                @if (mode is null)
                 {
                     <div class="filtres" role="group" aria-label="Que faire de cette vente ?">
-                        <button type="button" class="btn" @onclick='() => ChoisirMode("annulation")'>Annuler toute la vente</button>
-                        <button type="button" class="btn" @onclick='() => ChoisirModeAsync("retour")'>Retour de produits (partiel)</button>
+                        @if (!v.DansUnBordereau)
+                        {
+                            <button type="button" class="btn" @onclick='() => ChoisirMode("annulation")'>Annuler toute la vente</button>
+                        }
+                        <button type="button" class="btn" @onclick='() => ChoisirModeAsync("retour")'>@(v.DansUnBordereau ? "Retour de produits non remboursés" : "Retour de produits (partiel)")</button>
                     </div>
                 }
                 else if (mode == "annulation")
@@ -205,6 +210,10 @@
                             {
                                 <span class="detail">Tout a déjà été rendu.</span>
                             }
+                            else if (l.MontantOrganisme > 0 && retour.Vente.DansUnBordereau)
+                            {
+                                <span class="detail">Boîte remboursée par l’organisme : @(retour.Vente.Deposee ? "vente déposée, retour impossible dans le logiciel." : "retirez d’abord la vente du bordereau en préparation.")</span>
+                            }
                             else
                             {
                                 <div class="achats-ligne" style="align-items: flex-end">
@@ -236,6 +245,14 @@
                     @ChampMotif
                     @if (ValidationRequise) { @ChampValidation }
                     @ChampDette
+                    @if (PartOrganismeEstimee > 0)
+                    {
+                        @* Part de l'organisme des boîtes rendues retirée de sa créance (script 155) ; rappel de ce qui reste à faire hors du logiciel *@
+                        <div class="avertissement" role="note" data-champ="part_organisme">
+                            Part de l’organisme retirée de sa créance : <strong>@Libelles.Dinars(PartOrganismeEstimee, 2)</strong>@(ARendre is 0m ? " ; rien n’est rendu au patient (part prise en charge par l’organisme)." : ".")
+                            @RappelOrganisme(retour.Organisme)
+                        </div>
+                    }
                     @if (AvoirRecrediteRetour > 0 && ARendre is { } totalRetour)
                     {
                         @* Vente payée en partie par avoir (D2, script 109) : l'avoir est recrédité d'abord, le reste suit le mode de la vente *@
@@ -326,6 +343,38 @@
             : Math.Round(Math.Round(s.Ligne.MontantPatient * s.Rendue / s.Ligne.QuantiteVendue, 2, MidpointRounding.AwayFromZero) * RatioPaye, 2, MidpointRounding.AwayFromZero));
 
     private decimal RatioPaye => retour?.Lignes.Sum(l => l.MontantPatient) is > 0 and var brut ? Math.Min(retour.Vente.PartPatient / brut, 1m) : 1m;
+
+    private const string MessageDeposee = "Vente déposée à la CNAS : retour impossible dans le logiciel tant que la procédure de la CNAS n’est pas connue";
+    private const string MessagePreparation = "Cette vente figure sur un bordereau Chifa en préparation : retirez-la d’abord du bordereau (Finances › Bordereaux Chifa) pour l’annuler ou rendre une boîte remboursée.";
+
+    /// <summary>
+    /// Part de l'organisme des boîtes rendues, retirée de sa créance (script 155) : même calcul que le serveur (prorata des boîtes,
+    /// ramené à la part retenue ; dernières boîtes remboursées rendues : le solde exact).
+    /// </summary>
+    private decimal PartOrganismeEstimee
+    {
+        get
+        {
+            if (retour?.Organisme is not { } o) return 0;
+            var somme = retour.Lignes.Sum(l => l.MontantOrganisme);
+            if (somme <= 0 || o.PartRetenue <= 0) return 0;
+            var ratio = o.PartRetenue / somme;
+            var calcule = saisies.Where(s => s.Ligne.MontantOrganisme > 0 && s.Ligne.QuantiteVendue > 0)
+                .Sum(s => Math.Round(s.Ligne.MontantOrganisme * s.Rendue * ratio / s.Ligne.QuantiteVendue, 2, MidpointRounding.AwayFromZero));
+            var reste = Math.Max(o.PartRetenue - o.DejaRetiree, 0);
+            var toutRendu = calcule > 0 && saisies.Where(s => s.Ligne.MontantOrganisme > 0).All(s => s.Ligne.DejaRendue + s.Rendue >= s.Ligne.QuantiteVendue);
+            return toutRendu ? reste : Math.Min(calcule, reste);
+        }
+    }
+
+    /// <summary>Ce qui reste à faire hors du logiciel après un retour avec part organisme (script 155, décisions 7 et 8 du titulaire).</summary>
+    private static string RappelOrganisme(OrganismeRetourDto? o) => o switch
+    {
+        { Canal: "chifa" } => $" Corrigez ensuite la facture Chifa{(o.FactureChifa is { } f ? $" {f}" : "")} dans CHIFA-Officine (liste « Retours à corriger », Finances › Chifa).",
+        { Canal: "logiciel", FactureOrganisme: { } f } => $" Vente facturée à l’organisme (facture {f}) : établissez un avoir (AV-) manuel pour cette part.",
+        { Canal: "mdn" } => " Vente MDN : la créance de l’organisme diminue d’autant.",
+        _ => ""
+    };
 
     /// <summary>Le patient de la vente doit de l'argent par ailleurs : le caissier choisit de déduire le remboursement de sa dette, ou de le rendre.</summary>
     private bool? solderDette;
@@ -633,7 +682,9 @@
                   + (r.DetteDiminuee > 0 ? $" Dette du patient diminuée de {Libelles.Dinars(r.DetteDiminuee, 2)}." : "")
                   + (r.AvoirRecredite > 0 ? $" Recrédité en avoir : {Libelles.Dinars(r.AvoirRecredite, 2)}." : "")
                   + (r.ARendre > 0 ? $" À rendre au patient : {Libelles.Dinars(r.ARendre, 2)} ({Libelles.ModePaiement(r.Mode)})."
-                     : r.DetteDiminuee > 0 || r.AvoirRecredite > 0 ? " Rien à rendre." : "");
+                     : r.DetteDiminuee > 0 || r.AvoirRecredite > 0 || r.PartOrganismeRetiree > 0 ? " Rien à rendre." : "")
+                  + (r.PartOrganismeRetiree > 0 ? $" Part de l’organisme retirée de sa créance : {Libelles.Dinars(r.PartOrganismeRetiree, 2)}."
+                     + RappelOrganisme(new OrganismeRetourDto(0, 0, r.Canal ?? "logiciel", r.FactureOrganisme, r.FactureChifa)) : "");
         await OnAnnulee.InvokeAsync();
     }
 }

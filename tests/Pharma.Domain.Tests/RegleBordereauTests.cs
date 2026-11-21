@@ -83,8 +83,11 @@ public class RegleBordereauTests
     [Fact]
     public void Vente_sur_un_bordereau_depose_non_annulable_et_ventes_a_deposer_en_retard()
     {
+        // En préparation : la retirer d'abord du bordereau ; déposée : message du titulaire (2026-11-21, script 155)
         var e = Assert.Throws<RegleMetierException>(() => RegleAnnulation.VerifierAnnulable("validee", true));
-        Assert.Contains("régularisation Chifa", e.Message);
+        Assert.Contains("retirez-la d’abord du bordereau", e.Message);
+        var d = Assert.Throws<RegleMetierException>(() => RegleAnnulation.VerifierAnnulable("validee", true, null, deposee: true));
+        Assert.StartsWith("Vente déposée à la CNAS : retour impossible dans le logiciel", d.Message);
         Assert.False(RegleBordereau.EnRetard(new(2026, 11, 8), RegleBordereau.DelaiDepotParDefaut, Aujourdhui));   // 7 jours : dans le délai
         Assert.True(RegleBordereau.EnRetard(new(2026, 11, 7), RegleBordereau.DelaiDepotParDefaut, Aujourdhui));
         Assert.True(RegleBordereau.EnRetard(new(2026, 9, 30), RegleBordereau.DelaiPaiementParDefaut, Aujourdhui)); // 46 jours après le dépôt

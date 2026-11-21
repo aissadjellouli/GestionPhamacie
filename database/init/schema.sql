@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 154 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 157 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, appliquer seulement les
 -- nouveaux scripts 0xx_*.sql, jamais ce fichier.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 154 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 157 ; à régénérer à chaque nouveau script 0xx.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -1803,7 +1803,8 @@ BEGIN
     IF EXISTS (SELECT 1 FROM journal_vente WHERE regularisation_id = g.id AND evenement = v_evt) THEN RETURN NULL; END IF;
     SELECT * INTO v FROM vente WHERE id = g.vente_id;
     v_signe := CASE WHEN v_evt = 'regularisation' THEN 1 ELSE -1 END;
-    v_delta := (g.part_organisme_chifa - g.part_organisme_vente) * v_signe;
+    -- Part déjà rendue avant le rattachement : déjà sortie du journal par la ligne « retour » (script 155), jamais déplacée deux fois
+    v_delta := (g.part_organisme_chifa + g.part_organisme_rendue_avant - g.part_organisme_vente) * v_signe;
     INSERT INTO journal_vente (evenement, numero_ticket, vente_id, regularisation_id, survenu_le, utilisateur_id, type_vente,
                                part_patient, part_organisme, montant_mouvement, motif)
     VALUES (v_evt, v.numero, v.id, g.id, CASE WHEN v_evt = 'regularisation' THEN g.cree_le ELSE COALESCE(g.annulee_le, now()) END,
@@ -1828,19 +1829,23 @@ DECLARE
     v_taux  numeric[];
     v_poids numeric[];
     v_total numeric;
+    v_pat   numeric;
+    v_org   numeric;
     v_vent  record;
 BEGIN
     SELECT * INTO r FROM retour_client WHERE id = NEW.id;
     IF NOT FOUND OR EXISTS (SELECT 1 FROM journal_vente WHERE retour_client_id = r.id) THEN RETURN NULL; END IF;
     SELECT * INTO v FROM vente WHERE id = r.vente_id;
-    SELECT array_agg(taux ORDER BY taux), array_agg(poids ORDER BY taux), COALESCE(sum(poids), 0) INTO v_taux, v_poids, v_total
-    FROM (SELECT journal_vente_taux_ligne(rl.ligne_vente_id) AS taux, sum(rl.montant) AS poids
+    SELECT array_agg(taux ORDER BY taux), array_agg(poids ORDER BY taux), COALESCE(sum(poids), 0), COALESCE(sum(pat), 0), COALESCE(sum(org), 0)
+    INTO v_taux, v_poids, v_total, v_pat, v_org
+    FROM (SELECT journal_vente_taux_ligne(rl.ligne_vente_id) AS taux, sum(rl.montant + rl.montant_organisme) AS poids,
+                 sum(rl.montant) AS pat, sum(rl.montant_organisme) AS org
           FROM retour_client_ligne rl WHERE rl.retour_id = r.id GROUP BY 1) g;
     SELECT * INTO v_vent FROM journal_vente_ventiler(v_taux, v_poids, -v_total);
     INSERT INTO journal_vente (evenement, numero_ticket, vente_id, retour_client_id, survenu_le, session_caisse_id, poste, utilisateur_id,
                                type_vente, montant_ttc, montant_ht, montant_tva, detail_tva, part_patient, part_organisme, paiements, motif)
     VALUES ('retour', v.numero, v.id, r.id, r.cree_le, r.session_caisse_id, r.poste, r.utilisateur_id, v.type,
-            -v_total, v_vent.ht, v_vent.tva, v_vent.detail, -v_total, 0,
+            -v_total, v_vent.ht, v_vent.tva, v_vent.detail, -v_pat, -v_org,
             CASE WHEN r.mode IS NOT NULL AND r.montant_rembourse > 0 THEN r.mode || ':' || (-r.montant_rembourse)::numeric(14,2) ELSE '' END,
             left(COALESCE(r.motif_code || ' ', '') || COALESCE(r.motif, ''), 500));
     RETURN NULL;
@@ -1856,13 +1861,15 @@ CREATE FUNCTION public.journal_vente_depuis_vente() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
-    v        vente;
-    v_poste  text;
-    v_taux   numeric[];
-    v_poids  numeric[];
-    v_vent   record;
-    v_an     annulation_vente;
-    v_retour numeric;
+    v         vente;
+    v_poste   text;
+    v_taux    numeric[];
+    v_poids   numeric[];
+    v_vent    record;
+    v_an      annulation_vente;
+    v_retour  numeric;
+    v_ret_pat numeric;
+    v_ret_org numeric;
 BEGIN
     SELECT * INTO v FROM vente WHERE id = NEW.id;
     IF NOT FOUND THEN RETURN NULL; END IF;
@@ -1881,18 +1888,19 @@ BEGIN
                 v.montant_total, v_vent.ht, v_vent.tva, v_vent.detail, v.part_patient, v.part_organisme, journal_vente_paiements(v.id, 1));
     END IF;
 
-    -- Annulation : nouvelle ligne (le ticket garde son numéro), au montant encore acquis (déjà rendu par des retours exclu)
+    -- Annulation : nouvelle ligne (le ticket garde son numéro), au montant encore acquis (TTC déjà rendu par des retours exclu)
     IF v.statut = 'annulee' AND (TG_OP = 'INSERT' OR OLD.statut IS DISTINCT FROM 'annulee')
        AND NOT EXISTS (SELECT 1 FROM journal_vente WHERE vente_id = v.id AND evenement = 'annulation') THEN
         SELECT * INTO v_an FROM annulation_vente WHERE vente_id = v.id ORDER BY id DESC LIMIT 1;
-        SELECT COALESCE(sum(r.montant), 0) INTO v_retour
+        SELECT COALESCE(sum(r.montant), 0), COALESCE(sum(r.montant_organisme), 0) INTO v_ret_pat, v_ret_org
         FROM retour_client_ligne r JOIN ligne_vente l ON l.id = r.ligne_vente_id WHERE l.vente_id = v.id;
+        v_retour := v_ret_pat + v_ret_org;
         SELECT * INTO v_vent FROM journal_vente_ventiler(v_taux, v_poids, -(v.montant_total - v_retour));
         INSERT INTO journal_vente (evenement, numero_ticket, vente_id, annulation_id, survenu_le, session_caisse_id, poste, utilisateur_id,
                                    type_vente, montant_ttc, montant_ht, montant_tva, detail_tva, part_patient, part_organisme, paiements, motif)
         VALUES ('annulation', v.numero, v.id, v_an.id, COALESCE(v_an.cree_le, now()), v_an.session_caisse_id, v_an.poste,
                 v_an.utilisateur_id, v.type, -(v.montant_total - v_retour), v_vent.ht, v_vent.tva, v_vent.detail,
-                -(v.part_patient - v_retour), -v.part_organisme,
+                -(v.part_patient - v_ret_pat), -(v.part_organisme - v_ret_org),
                 CASE WHEN v_an.mode IS NOT NULL AND v_an.montant_rembourse > 0
                      THEN v_an.mode || ':' || (-v_an.montant_rembourse)::numeric(14,2) ELSE '' END,
                 left(v_an.motif, 500));
@@ -2381,6 +2389,33 @@ $$;
 
 
 --
+-- Name: verifier_regularisation_rendue_avant(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.verifier_regularisation_rendue_avant() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE v_rendu numeric;
+BEGIN
+    SELECT COALESCE(sum(rl.montant_organisme), 0) INTO v_rendu
+    FROM retour_client_ligne rl JOIN ligne_vente l ON l.id = rl.ligne_vente_id
+    WHERE l.vente_id = NEW.vente_id;
+    IF NEW.part_organisme_rendue_avant IS DISTINCT FROM v_rendu THEN
+        RAISE EXCEPTION 'Un retour vient d''être enregistré sur cette vente : rescannez le volet.' USING ERRCODE = 'P0001';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION verifier_regularisation_rendue_avant(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.verifier_regularisation_rendue_avant() IS 'Refuse une régularisation dont la part rendue avant le rattachement ne correspond pas aux retours de la vente (script 157)';
+
+
+--
 -- Name: proteger_regularisation_part_organisme(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2390,10 +2425,12 @@ CREATE FUNCTION public.proteger_regularisation_part_organisme() RETURNS trigger
 BEGIN
     IF TG_OP = 'UPDATE' AND OLD.statut = 'active' AND NEW.statut = 'annulee'
        AND (NEW.id, NEW.vente_id, NEW.organisme_id, NEW.part_organisme_vente, NEW.part_organisme_chifa, NEW.ecart, NEW.sort, NEW.montant_patient,
-            NEW.montant_dette_diminuee, NEW.montant_a_rendre, NEW.montant_pharmacie, NEW.credit_mouvement_id, NEW.utilisateur_id, NEW.valide_par, NEW.cree_le)
+            NEW.montant_dette_diminuee, NEW.montant_a_rendre, NEW.montant_pharmacie, NEW.credit_mouvement_id, NEW.utilisateur_id, NEW.valide_par, NEW.cree_le,
+            NEW.part_organisme_rendue_avant)
            IS NOT DISTINCT FROM
            (OLD.id, OLD.vente_id, OLD.organisme_id, OLD.part_organisme_vente, OLD.part_organisme_chifa, OLD.ecart, OLD.sort, OLD.montant_patient,
-            OLD.montant_dette_diminuee, OLD.montant_a_rendre, OLD.montant_pharmacie, OLD.credit_mouvement_id, OLD.utilisateur_id, OLD.valide_par, OLD.cree_le)
+            OLD.montant_dette_diminuee, OLD.montant_a_rendre, OLD.montant_pharmacie, OLD.credit_mouvement_id, OLD.utilisateur_id, OLD.valide_par, OLD.cree_le,
+            OLD.part_organisme_rendue_avant)
     THEN
         RETURN NEW;
     END IF;
@@ -2502,6 +2539,34 @@ BEGIN
         WHERE p.code_barre = p_code AND p.actif;
 END;
 $$;
+
+
+--
+-- Name: refuser_retour_organisme_depose(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.refuser_retour_organisme_depose() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.montant_organisme > 0 AND EXISTS (
+        SELECT 1 FROM ligne_vente l
+        JOIN bordereau_vente bv ON bv.vente_id = l.vente_id
+        JOIN bordereau b ON b.id = bv.bordereau_id
+        WHERE l.id = NEW.ligne_vente_id AND b.statut <> 'preparation') THEN
+        RAISE EXCEPTION 'Vente déposée à la CNAS : retour impossible dans le logiciel tant que la procédure de la CNAS n’est pas connue'
+            USING ERRCODE = 'P0001';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION refuser_retour_organisme_depose(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.refuser_retour_organisme_depose() IS 'Refuse une part organisme rendue (retour_client_ligne.montant_organisme > 0) sur une vente portée sur un bordereau déposé (script 155)';
 
 
 --
@@ -8914,12 +8979,14 @@ CREATE TABLE public.parametre_caisse (
     chifa_delai_paiement_jours integer DEFAULT 45 NOT NULL,
     reprise_exiger_produits_historique boolean DEFAULT true NOT NULL,
     officine_id uuid DEFAULT public.officine_courante() NOT NULL,
+    taches_laissees_poste text DEFAULT 'chiffre'::text NOT NULL,
     CONSTRAINT ck_delai_alerte_dette CHECK (((delai_alerte_dette_jours >= 1) AND (delai_alerte_dette_jours <= 365))),
     CONSTRAINT ck_parametre_caisse_chifa_delai_depot CHECK (((chifa_delai_depot_jours >= 1) AND (chifa_delai_depot_jours <= 365))),
     CONSTRAINT ck_parametre_caisse_chifa_delai_paiement CHECK (((chifa_delai_paiement_jours >= 1) AND (chifa_delai_paiement_jours <= 365))),
     CONSTRAINT ck_parametre_caisse_delai_volet_chifa CHECK (((delai_volet_chifa_jours >= 1) AND (delai_volet_chifa_jours <= 365))),
     CONSTRAINT ck_parametre_caisse_jours_alerte_fin_droit CHECK (((jours_alerte_fin_droit >= 0) AND (jours_alerte_fin_droit <= 365))),
     CONSTRAINT ck_parametre_caisse_seuil_sortie_tiroir CHECK ((seuil_sortie_tiroir >= (0)::numeric)),
+    CONSTRAINT ck_parametre_caisse_taches_laissees_poste CHECK ((taches_laissees_poste = ANY (ARRAY['chiffre'::text, 'desactive'::text]))),
     CONSTRAINT ck_plafond_credit_defaut CHECK ((plafond_credit_defaut >= (0)::numeric)),
     CONSTRAINT ck_seuil_annulations CHECK (((seuil_annulations >= 0) AND (seuil_annulations <= 100))),
     CONSTRAINT ck_seuil_ecart_chifa CHECK ((seuil_ecart_chifa >= (0)::numeric)),
@@ -9006,6 +9073,13 @@ COMMENT ON COLUMN public.parametre_caisse.chifa_delai_paiement_jours IS 'Bordere
 --
 
 COMMENT ON COLUMN public.parametre_caisse.reprise_exiger_produits_historique IS 'Reprise : fichier des produits exigé pour importer l''historique des organismes seul (Chifa, MDN) ; toujours exigé avec stock, ventes, patients, crédits (121)';
+
+
+--
+-- Name: COLUMN parametre_caisse.taches_laissees_poste; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_caisse.taches_laissees_poste IS 'Facture et retour fournisseur laissés au changement d''utilisateur : chiffre (fichier du poste chiffré AES-256, compte Windows, défaut) ou desactive (mémoire seule) ; titulaire seul (156)';
 
 
 --
@@ -10155,8 +10229,10 @@ CREATE TABLE public.regularisation_part_organisme (
     annulation_rembourse numeric(12,2) DEFAULT 0 NOT NULL,
     annulation_mouvement_tiroir_id bigint,
     officine_id uuid DEFAULT public.officine_courante() NOT NULL,
+    part_organisme_rendue_avant numeric(12,2) DEFAULT 0 NOT NULL,
     CONSTRAINT ck_regularisation_annulation_montants CHECK (((annulation_dette_annulee >= (0)::numeric) AND (annulation_trop_paye_impute >= (0)::numeric) AND (annulation_rembourse >= (0)::numeric) AND (((annulation_dette_annulee + annulation_trop_paye_impute) + annulation_rembourse) <= montant_patient))),
     CONSTRAINT ck_regularisation_avoir CHECK (((sort <> 'avoir_patient'::text) OR ((montant_patient > (0)::numeric) AND (montant_patient = (montant_dette_diminuee + montant_a_rendre))))),
+    CONSTRAINT ck_regularisation_rendue_avant CHECK ((part_organisme_rendue_avant >= (0)::numeric)),
     CONSTRAINT ck_regularisation_patient CHECK (((sort <> 'charge_patient'::text) OR ((montant_patient = ecart) AND (credit_mouvement_id IS NOT NULL)))),
     CONSTRAINT ck_regularisation_sens CHECK ((((ecart > (0)::numeric) AND (sort = ANY (ARRAY['charge_patient'::text, 'perte_pharmacie'::text]))) OR ((ecart < (0)::numeric) AND (sort = ANY (ARRAY['avoir_patient'::text, 'gain_organisme'::text]))))),
     CONSTRAINT ck_regularisation_statut CHECK ((((statut = 'active'::text) AND (annulee_le IS NULL) AND (annulee_par IS NULL)) OR ((statut = 'annulee'::text) AND (annulee_le IS NOT NULL) AND (annulee_par IS NOT NULL)))),
@@ -10181,6 +10257,16 @@ COMMENT ON TABLE public.regularisation_part_organisme IS 'Écart de part organis
 --
 
 COMMENT ON COLUMN public.regularisation_part_organisme.ecart IS 'Part organisme enregistrée à la caisse moins part calculée sur le prix Chifa : > 0 la caisse paiera moins, < 0 elle paiera plus';
+
+
+COMMENT ON COLUMN public.regularisation_part_organisme.part_organisme_chifa IS 'Part calculée sur le prix Chifa (hors majoration) des boîtes servies encore chez le patient au rattachement (nettes des retours, script 157)';
+
+
+--
+-- Name: COLUMN regularisation_part_organisme.part_organisme_rendue_avant; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.regularisation_part_organisme.part_organisme_rendue_avant IS 'Part de l''organisme déjà retirée par des retours avant le rattachement du volet (script 157) ; part_organisme_chifa porte alors sur les seules boîtes encore chez le patient';
 
 
 --
@@ -10387,11 +10473,28 @@ CREATE TABLE public.retour_client (
     motif_code text,
     motif_texte text,
     officine_id uuid DEFAULT public.officine_courante() NOT NULL,
+    chifa_corrige_le timestamp with time zone,
+    chifa_corrige_par bigint,
+    CONSTRAINT ck_retour_client_chifa_corrige CHECK (((chifa_corrige_le IS NULL) = (chifa_corrige_par IS NULL))),
     CONSTRAINT ck_retour_client_motif_texte CHECK (((motif_texte IS NULL) OR ((motif_code IS NOT NULL) AND ((length(btrim(motif_texte)) >= 1) AND (length(btrim(motif_texte)) <= 200))))),
     CONSTRAINT retour_client_mode_check CHECK ((mode = ANY (ARRAY['especes'::text, 'carte'::text, 'cheque'::text, 'credit'::text, 'avoir'::text]))),
     CONSTRAINT retour_client_montant_rembourse_check CHECK ((montant_rembourse >= (0)::numeric)),
     CONSTRAINT retour_client_motif_check CHECK ((length(btrim(motif)) >= 3))
 );
+
+
+--
+-- Name: COLUMN retour_client.chifa_corrige_le; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.retour_client.chifa_corrige_le IS 'Retour avec part organisme d''une vente Chifa : facture corrigée dans CHIFA-Officine le (liste « Retours à corriger », script 155)';
+
+
+--
+-- Name: COLUMN retour_client.chifa_corrige_par; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.retour_client.chifa_corrige_par IS 'Employé qui a marqué la facture corrigée dans CHIFA-Officine (script 155)';
 
 
 --
@@ -10420,10 +10523,19 @@ CREATE TABLE public.retour_client_ligne (
     destination text NOT NULL,
     montant numeric(12,2) NOT NULL,
     officine_id uuid DEFAULT public.officine_courante() NOT NULL,
+    montant_organisme numeric(12,2) DEFAULT 0 NOT NULL,
+    CONSTRAINT ck_retour_client_ligne_montant_organisme CHECK ((montant_organisme >= (0)::numeric)),
     CONSTRAINT retour_client_ligne_destination_check CHECK ((destination = ANY (ARRAY['stock'::text, 'destruction'::text]))),
     CONSTRAINT retour_client_ligne_montant_check CHECK ((montant >= (0)::numeric)),
     CONSTRAINT retour_client_ligne_quantite_check CHECK ((quantite > 0))
 );
+
+
+--
+-- Name: COLUMN retour_client_ligne.montant_organisme; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.retour_client_ligne.montant_organisme IS 'Part de l''organisme des boîtes rendues, retirée de la créance (v_vente_part_organisme) : prorata de la part retenue (Chifa si régularisée), majoration non comprise (script 155)';
 
 
 --
@@ -11819,17 +11931,34 @@ CREATE VIEW public.v_vente_part_organisme AS
  SELECT v.id AS vente_id,
     v.organisme_id,
     v.part_organisme AS part_organisme_caisse,
-    ((COALESCE(r.part_organisme_chifa, v.part_organisme) + v.chifa_majoration_montant))::numeric(12,2) AS part_organisme_retenue,
-    v.chifa_majoration_montant AS majoration_chifa
-   FROM (public.vente v
-     LEFT JOIN public.regularisation_part_organisme r ON (((r.vente_id = v.id) AND (r.statut = 'active'::text))));
+    (((COALESCE((r.part_organisme_chifa + r.part_organisme_rendue_avant), v.part_organisme) - COALESCE(rt.organisme, (0)::numeric)) +
+        CASE
+            WHEN rt.plus_rien_rembourse THEN (0)::numeric
+            ELSE v.chifa_majoration_montant
+        END))::numeric(12,2) AS part_organisme_retenue,
+    (
+        CASE
+            WHEN rt.plus_rien_rembourse THEN (0)::numeric
+            ELSE v.chifa_majoration_montant
+        END)::numeric(12,2) AS majoration_chifa
+   FROM ((public.vente v
+     LEFT JOIN public.regularisation_part_organisme r ON (((r.vente_id = v.id) AND (r.statut = 'active'::text))))
+     LEFT JOIN LATERAL ( SELECT sum(rl.montant_organisme) AS organisme,
+            ((sum(rl.montant_organisme) > (0)::numeric) AND (NOT (EXISTS ( SELECT 1
+                   FROM public.ligne_vente l2
+                  WHERE ((l2.vente_id = v.id) AND (l2.montant_organisme > (0)::numeric) AND (l2.quantite > COALESCE(( SELECT sum(x.quantite) AS sum
+                           FROM public.retour_client_ligne x
+                          WHERE (x.ligne_vente_id = l2.id)), (0)::bigint))))))) AS plus_rien_rembourse
+           FROM (public.retour_client_ligne rl
+             JOIN public.ligne_vente l ON ((l.id = rl.ligne_vente_id)))
+          WHERE (l.vente_id = v.id)) rt ON (true));
 
 
 --
 -- Name: VIEW v_vente_part_organisme; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON VIEW public.v_vente_part_organisme IS 'Créance de l''organisme par vente : part Chifa si l''écart a été régularisé (script 097), sinon part enregistrée à la caisse';
+COMMENT ON VIEW public.v_vente_part_organisme IS 'Créance de l''organisme par vente : part Chifa (+ part déjà rendue avant le rattachement, script 157) si l''écart a été régularisé (script 097), sinon part enregistrée à la caisse ; moins la part des boîtes rendues, majoration retirée quand plus aucune boîte remboursée ne reste (script 155)';
 
 
 --
@@ -16737,6 +16866,13 @@ CREATE TRIGGER trg_registre_sans_doublon BEFORE INSERT ON public.registre_psycho
 
 
 --
+-- Name: regularisation_part_organisme trg_regularisation_rendue_avant; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_regularisation_rendue_avant BEFORE INSERT ON public.regularisation_part_organisme FOR EACH ROW EXECUTE FUNCTION public.verifier_regularisation_rendue_avant();
+
+
+--
 -- Name: regularisation_part_organisme trg_regularisation_part_organisme_immuable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -16755,6 +16891,13 @@ CREATE TRIGGER trg_retour_bon_fournisseur BEFORE INSERT OR UPDATE ON public.lign
 --
 
 CREATE TRIGGER trg_retour_client_ligne_prestation BEFORE INSERT ON public.retour_client_ligne FOR EACH ROW EXECUTE FUNCTION public.refuser_retour_prestation();
+
+
+--
+-- Name: retour_client_ligne trg_retour_client_ligne_organisme_depose; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_retour_client_ligne_organisme_depose BEFORE INSERT OR UPDATE OF montant_organisme ON public.retour_client_ligne FOR EACH ROW EXECUTE FUNCTION public.refuser_retour_organisme_depose();
 
 
 --
@@ -19101,6 +19244,14 @@ ALTER TABLE ONLY public.remise_cheques
 
 ALTER TABLE ONLY public.retour_client_ligne
     ADD CONSTRAINT retour_client_ligne_ligne_vente_id_fkey FOREIGN KEY (ligne_vente_id) REFERENCES public.ligne_vente(id);
+
+
+--
+-- Name: retour_client fk_retour_client_chifa_corrige_par; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.retour_client
+    ADD CONSTRAINT fk_retour_client_chifa_corrige_par FOREIGN KEY (chifa_corrige_par) REFERENCES public.utilisateur(id);
 
 
 --

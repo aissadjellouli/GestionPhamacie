@@ -75,7 +75,15 @@ public sealed class TicketSql(NpgsqlDataSource db) : ITicketLecture
                    COALESCE(SUM(rc.montant_rembourse) FILTER (WHERE rc.mode IS DISTINCT FROM 'credit' AND rc.mode IS DISTINCT FROM 'avoir'), 0),
                    COALESCE(SUM(rc.montant_rembourse) FILTER (WHERE rc.mode = 'credit'), 0),
                    -- Part recréditée à l'avoir du patient (script 109)
-                   COALESCE(SUM(rc.montant_rembourse) FILTER (WHERE rc.mode = 'avoir'), 0)
+                   COALESCE(SUM(rc.montant_rembourse) FILTER (WHERE rc.mode = 'avoir'), 0),
+                   -- Part de l'organisme retirée par ce retour (script 155), portée par les lignes du retour
+                   (SELECT COALESCE(SUM(rl.montant_organisme), 0)
+                    FROM retour_client r2 JOIN retour_client_ligne rl ON rl.retour_id = r2.id
+                    WHERE r2.vente_id = v.id AND r2.cree_le = rc.cree_le),
+                   -- Vente Chifa : facture pas encore marquée « Corrigé dans CHIFA-Officine » (écriture du retour qui porte les lignes)
+                   v.canal_organisme = 'chifa' AND EXISTS (
+                       SELECT 1 FROM retour_client r2 JOIN retour_client_ligne rl ON rl.retour_id = r2.id
+                       WHERE r2.vente_id = v.id AND r2.cree_le = rc.cree_le AND rl.montant_organisme > 0 AND r2.chifa_corrige_le IS NULL)
             FROM retour_client rc
             JOIN vente v ON v.id = rc.vente_id
             WHERE v.numero = $1
@@ -86,12 +94,8 @@ public sealed class TicketSql(NpgsqlDataSource db) : ITicketLecture
             cmd.Parameters.AddWithValue(t.Numero);
             await using var r = await cmd.ExecuteReaderAsync(ct);
             while (await r.ReadAsync(ct))
-            {
-                var (rendu, deduit, avoir) = (r.GetDecimal(2), r.GetDecimal(3), r.GetDecimal(4));
-                retours.Add($"Retour du {r.GetDateTime(0).ToLocalTime():dd/MM/yyyy HH:mm} : {(r.IsDBNull(1) ? "produits" : r.GetString(1))}"
-                    + (avoir > 0 ? $" · recrédité en avoir {avoir:N2} DA" : "")
-                    + (rendu > 0 || (deduit == 0 && avoir == 0) ? $" · rendu {rendu:N2} DA" : "") + (deduit > 0 ? $" · déduit de la dette {deduit:N2} DA" : ""));
-            }
+                retours.Add(RetourTicket.Libelle(r.GetDateTime(0).ToLocalTime(), r.IsDBNull(1) ? null : r.GetString(1),
+                    r.GetDecimal(2), r.GetDecimal(3), r.GetDecimal(4), r.GetDecimal(5), !r.IsDBNull(6) && r.GetBoolean(6)));
         }
         return t with { Lignes = lignes, Retours = retours };
     }

@@ -135,6 +135,9 @@ Ce que fait `-Preparer` :
   `ConnectionStrings__Pharmacie` (`pharmacie_dev`), `Synchronisation__Dossier` (`sync-pharmacie_dev`). Une variable déjà présente avec
   une autre valeur n'est jamais écrasée : le script s'arrête. `PHARMA_CLOUD_ADMIN_CONNEXION` (propriétaire de la base centrale) n'est
   **jamais** posée au niveau utilisateur : elle n'est passée qu'au processus de l'outil d'administration ;
+- rôle de connexion `pharma_cloud_etat_vs` (membre de `pharma_cloud_etat`, script central `029` : lecture technique seule) et variable
+  `PHARMA_CLOUD_ETAT_CONNEXION`, pour la **page d'état** ci-dessous ; si `029` n'est pas passé sur `pharmacie_cloud_dev` (ou si
+  `pharma_app` n'a pas l'option ADMIN sur `pharma_cloud_etat`), cette étape est sautée avec un avertissement, le reste est préparé ;
 - officine **« Développement (pharmacie_dev) »** créée au central si elle manque, sinon code neuf. Le **code d'activation** (usage
   unique, 24 h) est affiché, jamais écrit.
 
@@ -151,8 +154,26 @@ Administration > Synchronisation > onglet **Réglages** : adresse du serveur cen
 **Synchronisation activée**, **Enregistrer** ; onglet **Activation** : coller le code, **Activer**. Le chargement complet part en
 arrière-plan. Suivi : `.\scripts\dev\preparer_central_vs.ps1 -Etat` (lecture seule) ou l'onglet **État**.
 
+**Page d'état du central (développement seulement).** Pendant le débogage, ouvrir **http://127.0.0.1:5092** : officines, certificats
+(début d'empreinte, validité, révocation), codes d'activation (utilisés ou non, expiration ; jamais le code ni son empreinte),
+chargement complet (en cours / terminé, lots, lignes), 20 derniers lots reçus par officine, époques, 50 dernières lignes du journal de
+sécurité ; rafraîchie toutes les 10 s, `http://127.0.0.1:5092/etat.json` pour la même chose en JSON. Aucune donnée de patient, aucune table
+miroir, aucune écriture. C'est un **second serveur web séparé** dans le processus du central, en HTTP sur 127.0.0.1 seulement (toute autre
+adresse est refusée), sans aucune route `/api/v1` ; il ne démarre que si l'environnement est `Development`, `Cloud:PageEtat` vaut `true`
+(posé par le profil de lancement `src\Pharma.Cloud.Api\Properties\launchSettings.json`) et `PHARMA_CLOUD_ETAT_CONNEXION` existe. Sinon un
+avertissement est journalisé et le central démarre normalement. Port : `Cloud:PortPageEtat` (5092 par défaut). Lecture avec le rôle
+`pharma_cloud_etat` (RLS appliquée, officine posée dans chaque transaction) : la page refuse une connexion superutilisateur, `BYPASSRLS`
+ou propriétaire des tables.
+
+**Écrans du central (lot S7.1, développement).** Profil **« Central + Écrans »** (central + écrans seuls) ou **« API + Poste + Central »**
+(les quatre) : le navigateur s'ouvre sur **https://127.0.0.1:5094/** (projet `src\Pharma.Cloud.Web`, processus séparé, refus de démarrer hors
+boucle locale). Prérequis : scripts centraux `030` et `031` passés sur `pharmacie_cloud_dev`, puis `-Preparer` relancé (rôle`npharma_cloud_ecrans_dev_vs`, variable `PHARMA_CLOUD_ECRANS_CONNEXION`, dossier des codes, compte `editeur.dev` dont le mot de passe provisoire est
+affiché une fois). Le code de second facteur est écrit dans `%LOCALAPPDATA%\PharmaOfficine\central-dev\codes\editeur.dev.txt` (mode fichier,
+développement seulement). Certificat HTTPS : celui de développement d'ASP.NET (`dotnet dev-certs https --trust`, il couvre `127.0.0.1`).
+Détails : [ecrans-central.md](ecrans-central.md).
+
 **5. Retirer** (central arrêté) : `.\scripts\dev\preparer_central_vs.ps1 -Retirer -WhatIf`, puis sans `-WhatIf`. Retire les variables
-posées par le script, le rôle `pharma_cloud_dev_vs` et le dossier `%LOCALAPPDATA%\PharmaOfficine\central-dev` ; rien n'est supprimé en
+posées par le script, les rôles `pharma_cloud_dev_vs` et `pharma_cloud_etat_vs` et le dossier `%LOCALAPPDATA%\PharmaOfficine\central-dev` ; rien n'est supprimé en
 base (l'officine reste au central, les réglages de synchronisation restent dans `pharmacie_dev` : décocher **Synchronisation activée**
 à l'écran avant). Redémarrer ensuite Visual Studio.
 

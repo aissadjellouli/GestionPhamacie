@@ -6,6 +6,9 @@ public sealed record ConnexionReponse(string Jeton, string NomComplet, DateTime 
 
 public sealed record ChangementMotDePasseRequete(string? Actuel, string? Nouveau, string? Confirmation);
 
+/// <summary>GET /api/demo (sans connexion) : mode démonstration du serveur ; Libelle = texte du bandeau permanent (null hors démonstration).</summary>
+public sealed record EtatDemoDto(bool Actif, string? Libelle);
+
 /// <summary>Changement d'utilisateur au comptoir : code personnel de 4 à 6 chiffres.</summary>
 public sealed record ConnexionCodeRequete(string Identifiant, string Code);
 
@@ -227,6 +230,16 @@ public sealed record ParametresCaisseDto(bool ComptageAveugle, decimal FondCaiss
     decimal PlafondCreditDefaut = 0, int SeuilAnnulations = 0, bool AutorisationParCode = true, decimal SeuilEcartChifa = 5,
     int DelaiVoletChifaJours = 7, decimal SeuilSortieTiroir = 2000, int JoursAlerteFinDroit = EtatDroitsChifa.JoursAlerteParDefaut,
     int DelaiDepotChifaJours = 7, int DelaiPaiementBordereauJours = 45, bool ExigerProduitsRepriseHistorique = true);
+
+/// <summary>
+/// Facture et retour fournisseur laissés au changement d'utilisateur (réglage de l'officine, titulaire, script 156) :
+/// « chiffre » (fichier du poste chiffré AES-256, compte Windows ; défaut) ou « desactive » (mémoire seule, perdus à la fermeture).
+/// </summary>
+public sealed record ReglageTachesLaisseesDto(string Mode)
+{
+    public const string Chiffre = "chiffre";
+    public const string Desactive = "desactive";
+}
 
 /// <summary>Date de fin de droits Chifa saisie à la caisse ou dans la liste de suivi (vide : effacée).</summary>
 public sealed record FinDroitDto(DateOnly? DateFinDroit);
@@ -876,7 +889,7 @@ public sealed record VenteAnnulableDto(
     string? Mode, string Statut, bool CaisseOuverte, bool DansUnBordereau, IReadOnlyList<LigneVenteAnnulableDto> Lignes,
     decimal ARendreAnnulation = 0, string? FactureNumero = null, decimal SoldeCreditPatient = 0, long? VendeurId = null, long? PatientId = null, decimal DetteEffaceeAnnulation = 0,
     string? Remise = null, string? RegularisationSort = null, decimal RegularisationDue = 0, decimal RegularisationTropPaye = 0,
-    decimal TropPayeCredit = 0, decimal PayeParAvoir = 0, decimal AvoirRecreditable = 0);
+    decimal TropPayeCredit = 0, decimal PayeParAvoir = 0, decimal AvoirRecreditable = 0, bool Deposee = false);
 
 /// <summary>Validateur* : identifiant et code comptoir du pharmacien ou de l'assistant (vente ancienne).</summary>
 /// <summary>SolderDette : l'argent à rendre est retiré de la dette du patient (PatientDetteId : patient nommé, pour une vente sans patient).</summary>
@@ -894,10 +907,17 @@ public sealed record AnnulationVenteDto(string Numero, decimal ARendre, string? 
 
 public sealed record BoiteVendueDto(long Id, string NumeroSerie);
 
+/// <summary>MontantOrganisme : part de l'organisme de la ligne (0 : non remboursée, toujours rendable ; script 155).</summary>
 public sealed record LigneRetournableDto(long LigneVenteId, string Produit, string NumeroLot, int QuantiteVendue, int DejaRendue,
-    decimal MontantPatient, IReadOnlyList<BoiteVendueDto> Boites);
+    decimal MontantPatient, IReadOnlyList<BoiteVendueDto> Boites, decimal MontantOrganisme = 0);
 
-public sealed record VenteRetournableDto(VenteAnnulableDto Vente, IReadOnlyList<LigneRetournableDto> Lignes);
+/// <summary>
+/// Part de l'organisme vue pour un retour (script 155) : part retenue hors majoration (Chifa si régularisée), déjà retirée par des
+/// retours, canal (logiciel, chifa, mdn), facture d'organisme émise (avoir AV- manuel), n° de facture Chifa (à corriger dans CHIFA-Officine).
+/// </summary>
+public sealed record OrganismeRetourDto(decimal PartRetenue, decimal DejaRetiree, string Canal, string? FactureOrganisme, string? FactureChifa);
+
+public sealed record VenteRetournableDto(VenteAnnulableDto Vente, IReadOnlyList<LigneRetournableDto> Lignes, OrganismeRetourDto? Organisme = null);
 
 /// <summary>Destination : stock (remis en stock sur son lot) ou destruction ; Boites : n° des boîtes identifiées rendues.</summary>
 public sealed record LigneRetourClientDto(long LigneVenteId, int Quantite, string Destination, IReadOnlyList<long>? Boites);
@@ -910,8 +930,13 @@ public sealed record LigneRetourClientDto(long LigneVenteId, int Quantite, strin
 public sealed record RetourClientRequete(string? Motif, IReadOnlyList<LigneRetourClientDto> Lignes, string? ValidateurIdentifiant, string? ValidateurCode,
     bool SolderDette = false, long? PatientDetteId = null, bool AccordClient = false, string? MotifCode = null);
 
+/// <summary>PartOrganismeRetiree (script 155) : part de l'organisme retirée de sa créance ; Canal et factures : rappel affiché après le retour.</summary>
 public sealed record RetourClientDto(string Numero, decimal ARendre, string? Mode, int RemisEnStock, int ADetruire, string? ValidePar, decimal DetteDiminuee = 0,
-    decimal AvoirRecredite = 0);
+    decimal AvoirRecredite = 0, decimal PartOrganismeRetiree = 0, string? Canal = null, string? FactureOrganisme = null, string? FactureChifa = null);
+
+/// <summary>Retour avec part organisme d'une vente Chifa, à corriger dans CHIFA-Officine (Finances › Chifa, script 155).</summary>
+public sealed record RetourACorrigerChifaDto(long RetourId, DateTime RetourLe, string RetourPar, long VenteId, string Numero, DateTime DateVente,
+    string? Patient, string? NumAssure, string? FactureChifa, string Produits, decimal PartOrganisme, bool Deposee, DateTime? CorrigeLe, string? CorrigePar);
 
 // ---- Règlements des grossistes -------------------------------------------------------
 

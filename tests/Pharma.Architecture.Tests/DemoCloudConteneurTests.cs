@@ -172,7 +172,8 @@ public partial class DemoCloudConteneurTests
         Assert.DoesNotMatch(@"(?im)^\s{2}\w*(central|cloud)\w*:\s*$", texte);
         var debut = texte.IndexOf("services:", StringComparison.Ordinal);
         var services = texte[debut..texte.IndexOf("\nsecrets:", debut, StringComparison.Ordinal)];
-        Assert.Equal(["db", "api"], Regex.Matches(services, @"(?m)^  ([a-z][\w-]*):[ \t]*$").Select(m => m.Groups[1].Value));
+        // Étape 2 : service « reinit » de remise à zéro de la base de démonstration (ModeDemoTests)
+        Assert.Equal(["db", "api", "reinit"], Regex.Matches(services, @"(?m)^  ([a-z][\w-]*):[ \t]*$").Select(m => m.Groups[1].Value));
     }
 
     // ---- .env.example et .gitignore ----

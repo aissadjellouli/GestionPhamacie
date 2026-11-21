@@ -1,0 +1,21 @@
+@page "/officines/{Id:guid}/revoquer-certificat"
+
+<PageTitle>Révoquer un certificat · écrans du central</PageTitle>
+
+<FormulaireAction Titre="@($"Révoquer le certificat {Empreinte}")"
+                  Explication="Le serveur de l'officine qui porte ce certificat (et ses renouvellements) est refusé dès son prochain appel. Irréversible : il faudra un nouveau code d'activation."
+                  Etape2="Révocation" Action="@($"actions/officines/{Id}/revoquer-certificat")" Retour="@($"/officines/{Id}/revoquer-certificat?empreinte={Empreinte}")"
+                  Annuler="@($"officines/{Id}?rubrique=certificats")" ConfirmationLibelle="@($"Début d'empreinte du certificat, à ressaisir : {Empreinte}")"
+                  Bouton="Révoquer le certificat" Danger="true" Erreur="@Erreur" Ok="@Ok">
+    <input type="hidden" name="empreinte" value="@Empreinte" />
+</FormulaireAction>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    [SupplyParameterFromQuery(Name = "empreinte")] private string? EmpreinteDemandee { get; set; }
+    [SupplyParameterFromQuery(Name = "erreur")] private string? Erreur { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] private string? Ok { get; set; }
+
+    // 12 caractères hexadécimaux seulement (jamais un texte quelconque renvoyé dans la page)
+    private string Empreinte => EmpreinteDemandee is { Length: 12 } e && e.All(Uri.IsHexDigit) ? e.ToLowerInvariant() : "";
+}

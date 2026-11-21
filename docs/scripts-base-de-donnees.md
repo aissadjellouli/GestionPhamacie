@@ -98,7 +98,7 @@ Options communes : `-Hote` (défaut `localhost`), `-Port` (défaut 5432), `-PgBi
 | `-AvecTests` | Passe aussi les tests de `database\cloud\tests` (transaction annulée) |
 | `-WhatIf` | Simulation |
 
-**Ce que fait le script** : contrôle la suite `database\cloud\001` à `028` (sans trou) ; refuse si la base contient déjà des tables centrales ; crée la base si elle n'existe pas ; passe `001` à `028` dans l'ordre avec le compte propriétaire (il n'y a pas de `schema.sql` central : un seul endroit à tenir à jour) ; vérifie les tables, la sécurité au niveau des lignes sur les tables miroir, le rôle `pharma_cloud_api` (créé **sans connexion** par `001`, propriétaire d'aucune table) ; avec `-AvecTests`, chaque fichier de test doit finir par « tous réussis ».
+**Ce que fait le script** : contrôle la suite `database\cloud\001` à `031` (sans trou) ; refuse si la base contient déjà des tables centrales ; crée la base si elle n'existe pas ; passe `001` à `031` dans l'ordre avec le compte propriétaire (il n'y a pas de `schema.sql` central : un seul endroit à tenir à jour) ; vérifie les tables, la sécurité au niveau des lignes sur les tables miroir, le rôle `pharma_cloud_api` (créé **sans connexion** par `001`, propriétaire d'aucune table), les rôles `pharma_cloud_etat` (`029`) et `pharma_cloud_ecrans` (`030`, sans connexion ni droit sur les tables) ; avec `-AvecTests`, chaque fichier de test doit finir par « tous réussis ».
 
 **Après le script** : le mot de passe de `pharma_cloud_api` se règle à part, par le superutilisateur (parcours E, étape 2.4) : `ALTER ROLE pharma_cloud_api LOGIN;` puis `\password pharma_cloud_api`. Ne jamais lancer les tests sur la base de production du central (parcours E, étape 2.2, **[À CONFIRMER]**).
 
@@ -112,7 +112,7 @@ Pour une mise à jour qui a échoué ou qu'on abandonne : la sauvegarde `.dump` 
 | --- | --- |
 | `database\init\` | **Base neuve** d'officine : `schema.sql` (toute la structure) et `seed_referentiel.sql` (référentiel de départ) équivalent aux scripts 001 à NNN. À tenir à jour **à chaque nouveau script** : leur en-tête cite « 001 à NNN » et `creer_base_officine.ps1` refuse de créer une base si NNN n'est pas le dernier script. `clean.sql` remet une base à vierge (jamais en service) |
 | `database\migration\` | **Mise à jour** d'une base existante : scripts `NNN_nom.sql` rejoués dans l'ordre, idempotents. Les scripts « b » (`101b`, `111b`) sont à part (3.1, 3.2) |
-| `database\cloud\` | Base **centrale** : scripts `001` à `028`, jamais sur une base d'officine |
+| `database\cloud\` | Base **centrale** : scripts `001` à `031` (`030`-`031` : écrans du central, lot S7.1), jamais sur une base d'officine |
 | `database\tests\` | Tests SQL des scripts de `migration` (transaction annulée) ; `rejeu_complet.ps1` : rejeu de toute la suite sur une copie jetable (pas un test SQL) |
 | `database\cloud\tests\` | Tests SQL des scripts du central (lancés par `-AvecTests`) |
 | `database\data\` | Données **fictives** de démonstration (`9xx_*.sql`) : développement et recette seulement, **jamais en production** |
@@ -141,6 +141,18 @@ Un ancien script rejoué seul peut ramener une **fonction ou une vue à une anci
 ### 3.5 `154` : rattrapage de la catégorie (données modifiées)
 
 `154_parapharmacie_catalogue.sql` ne change pas de structure de table, mais **modifie des données** au premier passage : les produits encore en catégorie `medicament` qui remplissent la règle stricte (`parapharmacie_certaine` : hors nomenclature, sans DCI, classe libre, non remboursable, sans tarif de référence, aucune substance surveillée dans le nom) passent en `parapharmacie`. Le nombre s'affiche (`NOTICE : 154 : N produit(s) passé(s) …`) : le noter. Les rapports lisant la catégorie actuelle du produit, les ventes passées de ces produits passent de « médicaments » à « parapharmacie ». Rejoué, il ne trouve plus rien (0 produit). Les autres produits hors nomenclature se classent à la main (Administration › Nomenclature nationale, « Produits à classer »).
+
+### 3.6 `155` : retour partiel en tiers payant (vue, déclencheurs, miroir central)
+
+`155_retour_partiel_tiers_payant.sql` ajoute `retour_client_ligne.montant_organisme` (défaut 0 : les retours existants n'ont aucune part organisme, aucun retour n'étant permis en tiers payant avant lui) et `retour_client.chifa_corrige_le` / `chifa_corrige_par` ; il **remplace** la vue `v_vente_part_organisme` (mêmes colonnes : retours déduits, majoration retirée quand plus aucune boîte remboursée ne reste) et les fonctions du journal fiscal `journal_vente_depuis_retour` et `journal_vente_depuis_vente` (retour et annulation au TTC complet ; les lignes déjà écrites du journal ne changent pas). Aucune donnée modifiée. Rejouer la suite remet un instant l'ancienne vue (scripts 097, 098, 100) et les anciennes fonctions (112) jusqu'au passage de 155 : toujours rejouer **toute** la suite (3.4). Les deux tables sont **montantes** : après le passage, le miroir central (`database/cloud/002_tables_miroir.sql`, colonnes ajoutées, test `SchemaMiroirTests` vert) doit être repassé sur les bases centrales ; avant cela, le central ignore les colonnes nouvelles reçues (`jsonb_populate_record`), sans erreur, et les lots bruts les gardent. Test : `database/tests/155_retour_partiel_tiers_payant_tests.sql` (transaction annulée, lot vendable à TVA 0 % nécessaire).
+
+### 3.7 `156` : réglage « facture et retour laissés » (miroir central)
+
+`156_reglage_taches_laissees_poste.sql` ajoute `parametre_caisse.taches_laissees_poste` (défaut `chiffre`, contrainte `ck_parametre_caisse_taches_laissees_poste` : `chiffre` ou `desactive`, posée une seule fois) ; aucune donnée modifiée, rejouable. `parametre_caisse` étant envoyée au serveur central, la colonne est ajoutée à `database\cloud\002_tables_miroir.sql` (test d'alignement `SchemaMiroirTests` vert) : **repasser `002` sur les bases centrales** avant qu'une officine à jour n'envoie la ligne. Test : `database\tests\156_reglage_taches_laissees_poste_tests.sql` (transaction annulée). Sans script passé, l'API ne peut ni lire ni enregistrer le réglage : le poste garde alors son réglage précédent (aucun après un redémarrage : le fichier des tâches laissées n'est ni lu, ni écrit, ni supprimé).
+
+### 3.8 `157` : rapprochement d'un volet après un retour (vue, déclencheurs, miroir central)
+
+`157_rapprochement_volet_apres_retour.sql` (après 155) ajoute `regularisation_part_organisme.part_organisme_rendue_avant` (défaut 0 : aucune régularisation existante n'a suivi un retour en tiers payant) ; il **remplace** la vue `v_vente_part_organisme` (mêmes colonnes), `journal_vente_depuis_regularisation` (112) et `proteger_regularisation_part_organisme` (098), et pose le déclencheur `trg_regularisation_rendue_avant`. Aucune donnée modifiée ; rejouable. Rejouer la suite remet un instant la vue de 155 jusqu'au passage de 157 : toujours rejouer **toute** la suite (3.4). La table est **montante** : la colonne est ajoutée à `database/cloud/002_tables_miroir.sql` ; **repasser `002` sur les bases centrales**. Retour arrière manuel décrit en fin de script. Test : `database/tests/157_rapprochement_volet_apres_retour_tests.sql` (transaction annulée, lot vendable à TVA 0 % nécessaire).
 
 ## 4. Règles pour écrire un nouveau script
 

@@ -85,6 +85,23 @@ public sealed class SessionPoste
     /// </summary>
     public bool ChangementUtilisateur { get; private set; }
 
+    /// <summary>
+    /// Préparations faites avant « Changer d'utilisateur », session encore ouverte et réponse du serveur attendue (la Caisse y met
+    /// son panier en attente). Chacune renvoie null quand tout est confié au serveur, sinon le message à montrer : la session
+    /// n'est alors pas fermée et l'employé choisit « Réessayer » ou « Rester sur la vente » (aucun panier perdu en silence).
+    /// </summary>
+    private readonly List<Func<Task<string?>>> preparationsChangement = [];
+    public void AvantChangementUtilisateur(Func<Task<string?>> preparation) => preparationsChangement.Add(preparation);
+    public void OublierAvantChangement(Func<Task<string?>> preparation) => preparationsChangement.Remove(preparation);
+
+    /// <summary>Null : le changement d'utilisateur peut se faire ; sinon le premier échec (message bloquant, rien n'est fermé).</summary>
+    public async Task<string?> PreparerChangementUtilisateurAsync()
+    {
+        foreach (var preparation in preparationsChangement.ToList())
+            if (await preparation() is { } echec) return echec;
+        return null;
+    }
+
     /// <summary>Vente mise en attente au changement d'utilisateur, reprise par le prochain employé connecté sur ce poste.</summary>
     private (long Id, string LaisseePar)? venteAReprendre;
     public void RetenirVenteAReprendre(long id, string laisseePar) => venteAReprendre = (id, laisseePar);
@@ -112,7 +129,7 @@ public sealed class SessionPoste
 public sealed record ReponseLotFefo(LotFefoDto? Lot, IReadOnlyList<LotEcarteDto> Ecartes, string? Erreur);
 
 /// <summary>Appels à l'API locale. Chaque méthode renvoie le résultat ou un message d'erreur lisible.</summary>
-public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAutorisation? autorisations = null)
+public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAutorisation? autorisations = null, TachesLaissees? tachesLaissees = null)
 {
     private const string Injoignable = "Serveur de la pharmacie injoignable : vérifiez que le PC serveur est allumé.";
 
@@ -612,6 +629,22 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         session.DefinirDroits(droits, deconnexion);
         if ((await PharmacieAsync()).Item1 is { } pharmacie)
             session.DefinirPharmacie(pharmacie.Nom);
+        // Facture et retour laissés (réglage de l'officine, script 156) : fichier chiffré du poste ou mémoire seule. Lecture
+        // impossible : réglage précédent gardé (aucun avant la première lecture : rien n'est lu, écrit ni supprimé sur le poste)
+        if (tachesLaissees is not null && (await ReglageTachesLaisseesAsync()).Item1 is { } reglage)
+            tachesLaissees.AppliquerReglage(reglage.Mode);
+    }
+
+    /// <summary>Réglage « facture et retour laissés » de l'officine (tout employé connecté).</summary>
+    public Task<(ReglageTachesLaisseesDto?, string?)> ReglageTachesLaisseesAsync() =>
+        GetAsync<ReglageTachesLaisseesDto?>("api/reglage-taches-laissees", null);
+
+    /// <summary>Changé par le titulaire (journal avant / après) ; appliqué aussitôt sur ce poste, sur les autres à leur prochaine connexion.</summary>
+    public async Task<string?> ModifierReglageTachesLaisseesAsync(string mode)
+    {
+        var (_, erreur) = await EnvoyerCorpsAsync<ReglageTachesLaisseesDto, object>(HttpMethod.Put, "api/admin/reglage-taches-laissees", new(mode));
+        if (erreur is null) tachesLaissees?.AppliquerReglage(mode);
+        return erreur;
     }
 
     // ---- Caisse ---------------------------------------------------------------
@@ -898,6 +931,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     /// <summary>Script 152 : secondes avant que l'encaissement soit permis (contrôle de démarrage du serveur central).</summary>
     public Task<(AttenteEncaissementDto?, string?)> AttenteEncaissementAsync() => GetAsync<AttenteEncaissementDto?>("api/caisse/attente-encaissement", null);
     public Task<(AttenteSynchronisationDto?, string?)> AttenteSynchronisationAsync() => GetAsync<AttenteSynchronisationDto?>("api/synchronisation/attente", null);
+    /// <summary>Mode démonstration du serveur (route sans connexion) : bandeau permanent de la barre d'état.</summary>
+    public Task<(EtatDemoDto?, string?)> EtatDemoAsync() => GetAsync<EtatDemoDto?>("api/demo", null);
     // Lots S5.1 et S5.5 : ordres du serveur central (liste ; confirmation et refus par le titulaire)
     public Task<(PageOrdresCentrauxDto?, string?)> OrdresCentrauxAsync(string? statut, int page, int taille) =>
         GetAsync<PageOrdresCentrauxDto?>($"api/admin/synchronisation/ordres?page={page}&taille={taille}{(statut is null ? "" : "&statut=" + Uri.EscapeDataString(statut))}", null);
@@ -1373,6 +1408,11 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         (await PostAsync<TrancherConflitFactureRequete, object>($"api/chifa/conflits-facture/{venteId}", new(valeurRetenue))).Item2;
     public async Task<string?> RetablirVenteChifaAsync(long venteId) =>
         (await EnvoyerCorpsAsync<object?, object>(HttpMethod.Delete, $"api/ventes/{venteId}/chifa/exclusion", null)).Item2;
+    // Retours avec part organisme à corriger dans CHIFA-Officine (script 155) : etat = a_corriger, corriges, tous
+    public Task<(PageDto<RetourACorrigerChifaDto>?, string?)> RetoursACorrigerChifaAsync(string? q, string etat, int page, int taille) =>
+        GetAsync<PageDto<RetourACorrigerChifaDto>?>($"api/chifa/retours-a-corriger?page={page}&taille={taille}&" + Requete(("q", q), ("etat", etat)), null);
+    public async Task<string?> MarquerRetourCorrigeChifaAsync(long retourId) =>
+        (await PostAsync<object?, object>($"api/chifa/retours-a-corriger/{retourId}/corrige", null)).Item2;
 
     // ---- Sérialisation DataMatrix : file hors ligne (script 120) ----
     public Task<(EtatSerialisationDto?, string?)> EtatSerialisationAsync() => GetAsync<EtatSerialisationDto?>("api/serialisation/etat", null);

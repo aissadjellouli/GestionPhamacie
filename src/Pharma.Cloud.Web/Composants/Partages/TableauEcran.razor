@@ -1,0 +1,55 @@
+@* Tableau d'une fonction cloud_ecran_* : colonnes de la base (libellés français), seul le cadre défile (règle des listes) *@
+@if (Table.Lignes.Count == 0)
+{
+    <p class="vide">@Vide</p>
+}
+else
+{
+    <div class="tableau-cadre">
+        <table class="tableau tableau-serre tableau-central">
+            <thead>
+                <tr>
+                    @foreach (var c in Colonnes)
+                    {
+                        <th scope="col">@Rubriques.Libelle(c)</th>
+                    }
+                    @if (Action is not null)
+                    {
+                        <th scope="col"><span class="visuellement-cache">Actions</span></th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var ligne in Table.Lignes)
+                {
+                    <tr>
+                        @foreach (var c in Colonnes)
+                        {
+                            var v = Table.Valeur(ligne, c);
+                            <td class="@Classe(c, v)">@Rubriques.Afficher(c, v)</td>
+                        }
+                        @if (Action is not null)
+                        {
+                            <td>@Action(ligne)</td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public TableEcran Table { get; set; } = TableEcran.Vide;
+    [Parameter] public string Vide { get; set; } = "Aucune ligne.";
+    [Parameter] public RenderFragment<object?[]>? Action { get; set; }
+
+    private IEnumerable<string> Colonnes => Table.Colonnes.Where(c => !Rubriques.Masquees.Contains(c));
+
+    private static string? Classe(string colonne, object? valeur) => valeur switch
+    {
+        long or int or short when colonne is not "derniere_epoque" and not "epoque" => "nombre",
+        true when colonne is "en_retard" => "texte-urgent",
+        _ => null,
+    };
+}

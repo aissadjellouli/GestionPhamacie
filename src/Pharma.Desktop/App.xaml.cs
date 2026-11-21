@@ -44,8 +44,11 @@ public partial class App : Application
         services.AddSingleton<FichesContact>();
         // Compteurs du travail en attente (menu du haut et menu de gauche)
         services.AddSingleton<CompteursAttente>();
-        // Tâches laissées au « Changer d'utilisateur » (facture, retour, réception), reprises par le suivant sur ce poste
-        services.AddSingleton<TachesLaissees>();
+        // Tâches laissées au « Changer d'utilisateur » (facture, retour, réception), reprises par le suivant sur ce poste ;
+        // facture et retour gardés dans %LOCALAPPDATA%\PharmaOfficine\taches-laissees.dat (chiffré DPAPI) : survivent au redémarrage.
+        // Réglage de l'officine (titulaire, script 156) lu à chaque connexion par ApiClient : « Désactivé » = mémoire seule, fichier supprimé ;
+        // tant qu'il n'est pas lu (avant la première connexion), le fichier n'est ni lu, ni écrit, ni supprimé
+        services.AddSingleton(_ => new TachesLaissees(new FichierTachesLaissees(FichierTachesLaissees.DossierParDefaut())));
         // Historique des écrans pour « ← Retour » (un par fenêtre du poste)
         services.AddScoped<HistoriqueNavigation>();
         services.AddSingleton<DemandesAutorisation>();

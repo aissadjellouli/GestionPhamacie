@@ -20,6 +20,11 @@ public sealed partial class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rap
     // Polices : celles de Windows sous Windows (inchangé), Liberation Sans embarquée ailleurs
     static DocumentsPdf() => PolicesPdf.Configurer();
 
+    // Mode démonstration : filigrane « DÉMONSTRATION » sur chaque page (FiligranePdf ; absent = PDF inchangés)
+    private readonly FiligranePdf filigrane;
+
+    public DocumentsPdf(FiligranePdf? filigrane = null) => this.filigrane = filigrane ?? new FiligranePdf(false);
+
     public byte[] RapportCloture(DetailSession s, bool avecEcart, decimal seuilEcart, string? pharmacie)
     {
         var doc = NouveauDocument(s.TitreRapport, pharmacie);
@@ -945,10 +950,11 @@ public sealed partial class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rap
 
     private static string Da(decimal montant) => montant.ToString("N2", Fr) + " DA";
 
-    private static byte[] Rendre(Document doc)
+    private byte[] Rendre(Document doc)
     {
         var renderer = new PdfDocumentRenderer { Document = doc };
         renderer.RenderDocument();
+        filigrane.Poser(renderer.PdfDocument);
         using var flux = new MemoryStream();
         renderer.PdfDocument.Save(flux, false);
         return flux.ToArray();

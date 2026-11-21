@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Écrans du serveur central (lot S7.1) : réglages, second facteur, contrôle d'accès, base jetable, bout en bout HTTPS -->
+    <ProjectReference Include="..\..\src\Pharma.Cloud.Web\Pharma.Cloud.Web.csproj" />
+  </ItemGroup>
+</Project>

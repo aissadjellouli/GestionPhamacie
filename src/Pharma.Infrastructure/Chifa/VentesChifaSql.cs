@@ -130,6 +130,92 @@ public sealed class VentesChifaSql(NpgsqlDataSource db) : IVentesChifa
         return await cmd.ExecuteNonQueryAsync(ct) == 1;
     }
 
+    // Retours avec part organisme des ventes Chifa (script 155) : écriture du retour qui porte les lignes, produits rendus, part retirée
+    private const string ColonnesRetours = """
+        rc.id, rc.cree_le, u.nom_complet, v.id, v.numero, v.date_vente, NULLIF(trim(p.nom || ' ' || COALESCE(p.prenom, '')), ''), p.num_assure,
+        v.chifa_facture,
+        (SELECT string_agg(rl.quantite || ' × ' || COALESCE(pr.nom_commercial, l.libelle), ' ; ' ORDER BY rl.id)
+         FROM retour_client_ligne rl JOIN ligne_vente l ON l.id = rl.ligne_vente_id LEFT JOIN produit pr ON pr.id = l.produit_id
+         WHERE rl.retour_id = rc.id),
+        (SELECT sum(rl.montant_organisme) FROM retour_client_ligne rl WHERE rl.retour_id = rc.id),
+        EXISTS (SELECT 1 FROM bordereau_vente bv JOIN bordereau b ON b.id = bv.bordereau_id WHERE bv.vente_id = v.id AND b.statut <> 'preparation'),
+        rc.chifa_corrige_le, cu.nom_complet
+        FROM retour_client rc
+        JOIN vente v ON v.id = rc.vente_id
+        JOIN utilisateur u ON u.id = rc.utilisateur_id
+        LEFT JOIN patient p ON p.id = v.patient_id
+        LEFT JOIN utilisateur cu ON cu.id = rc.chifa_corrige_par
+        """;
+
+    private const string FiltreRetours = """
+        v.canal_organisme = 'chifa'
+        AND EXISTS (SELECT 1 FROM retour_client_ligne rl WHERE rl.retour_id = rc.id AND rl.montant_organisme > 0)
+        AND ($1::text IS NULL OR v.numero ILIKE '%' || $1 || '%' OR trim(p.nom || ' ' || COALESCE(p.prenom, '')) ILIKE '%' || $1 || '%'
+             OR COALESCE(v.chifa_facture, '') ILIKE '%' || $1 || '%'
+             OR (regexp_replace($1, '\D', '', 'g') <> '' AND regexp_replace(COALESCE(p.num_assure, ''), '\D', '', 'g') LIKE '%' || regexp_replace($1, '\D', '', 'g') || '%'))
+        AND ($2::text = 'tous' OR ($2 = 'corriges') = (rc.chifa_corrige_le IS NOT NULL))
+        """;
+
+    public async Task<Page<RetourACorrigerChifa>> RetoursACorrigerAsync(FiltreRetoursACorriger filtre, DemandePage page, CancellationToken ct = default)
+    {
+        await using var cx = await db.OpenConnectionAsync(ct);
+        void Parametres(NpgsqlCommand c)
+        {
+            c.Parameters.Add(new NpgsqlParameter { Value = (object?)filtre.Recherche ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+            c.Parameters.Add(new NpgsqlParameter { Value = filtre.Etat, NpgsqlDbType = NpgsqlDbType.Text });
+        }
+        int total;
+        await using (var compte = new NpgsqlCommand($"""
+            SELECT count(*) FROM retour_client rc JOIN vente v ON v.id = rc.vente_id LEFT JOIN patient p ON p.id = v.patient_id WHERE {FiltreRetours}
+            """, cx))
+        {
+            Parametres(compte);
+            total = (int)(long)(await compte.ExecuteScalarAsync(ct))!;
+        }
+        await using var cmd = new NpgsqlCommand($"SELECT {ColonnesRetours} WHERE {FiltreRetours} ORDER BY rc.cree_le DESC, rc.id DESC LIMIT $3 OFFSET $4", cx);
+        Parametres(cmd);
+        cmd.Parameters.AddWithValue(page.Taille);
+        cmd.Parameters.AddWithValue(page.Decalage);
+        var liste = new List<RetourACorrigerChifa>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct)) liste.Add(LireRetour(r));
+        return new Page<RetourACorrigerChifa>(liste, total, page.Page, page.Taille);
+    }
+
+    public async Task<RetourACorrigerChifa?> MarquerRetourCorrigeAsync(long retourId, long utilisateurId, CancellationToken ct = default)
+    {
+        await using var cx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cx.BeginTransactionAsync(ct);
+        await using (var maj = new NpgsqlCommand($"""
+            UPDATE retour_client rc SET chifa_corrige_le = now(), chifa_corrige_par = $3
+            FROM vente v LEFT JOIN patient p ON p.id = v.patient_id
+            WHERE rc.id = $4 AND v.id = rc.vente_id AND rc.chifa_corrige_le IS NULL AND {FiltreRetours}
+            """, cx, tx))
+        {
+            maj.Parameters.Add(new NpgsqlParameter { Value = DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+            maj.Parameters.Add(new NpgsqlParameter { Value = FiltreRetoursACorriger.ACorriger, NpgsqlDbType = NpgsqlDbType.Text });
+            maj.Parameters.AddWithValue(utilisateurId);
+            maj.Parameters.AddWithValue(retourId);
+            if (await maj.ExecuteNonQueryAsync(ct) != 1) return null;
+        }
+        RetourACorrigerChifa lu;
+        await using (var cmd = new NpgsqlCommand($"SELECT {ColonnesRetours} WHERE rc.id = $1", cx, tx))
+        {
+            cmd.Parameters.AddWithValue(retourId);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            await r.ReadAsync(ct);
+            lu = LireRetour(r);
+        }
+        await tx.CommitAsync(ct);
+        return lu;
+    }
+
+    private static RetourACorrigerChifa LireRetour(NpgsqlDataReader r) =>
+        new(r.GetInt64(0), r.GetDateTime(1), r.GetString(2), r.GetInt64(3), r.GetString(4), r.GetDateTime(5),
+            r.IsDBNull(6) ? null : r.GetString(6), r.IsDBNull(7) ? null : r.GetString(7), r.IsDBNull(8) ? null : r.GetString(8),
+            r.IsDBNull(9) ? "" : r.GetString(9), r.IsDBNull(10) ? 0 : r.GetDecimal(10), r.GetBoolean(11),
+            r.IsDBNull(12) ? null : r.GetDateTime(12), r.IsDBNull(13) ? null : r.GetString(13));
+
     public async Task<string?> EmployeActifAsync(long utilisateurId, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("SELECT nom_complet FROM utilisateur WHERE id = $1 AND actif");

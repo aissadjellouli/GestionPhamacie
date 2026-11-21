@@ -514,6 +514,8 @@ button.element-etat:hover, button.element-etat:focus-visible { color: var(--text
 .element-etat.attention { color: var(--attention); font-weight: 600; }
 .element-etat.anormal { color: var(--urgent-vif); font-weight: 600; }
 .element-etat.droite { margin-left: auto; border-left: none; }
+/* Serveur de démonstration (GET /api/demo) : mention permanente de la barre d'état, couleurs « attention » (clair et sombre) */
+.element-etat.demo, .element-etat + .element-etat.demo { background: var(--attention-fond); color: var(--attention); font-weight: 700; border-left: none; border-radius: 6px; }
 .voyant { width: 8px; height: 8px; border-radius: 50%; background: var(--texte-2); }
 .voyant.ok { background: #12B76A; }
 .voyant.ko { background: var(--urgent-vif); }
@@ -757,6 +759,8 @@ a.tuile.tuile-lien:is(:hover, :focus-visible) { background: var(--surface); box-
 .entete .bouton-retour:disabled { background: rgba(255, 255, 255, 0.22); color: rgba(255, 255, 255, 0.75); box-shadow: none; opacity: 1; cursor: default; }
 /* Fenêtre « Faire la relève avant de changer d'utilisateur ? » */
 .fenetre-releve { width: min(560px, 100%); display: flex; flex-direction: column; gap: 14px; }
+/* … et « Changement d'utilisateur impossible » (vente non mise en attente, 2026-11-21) : même fenêtre, paragraphes sans marge */
+.fenetre-releve p, .fenetre-releve .erreur { margin: 0; }
 /* Bandeau « Tâches laissées en cours sur ce poste » (après un « Changer d'utilisateur ») */
 .bandeau-taches { max-width: 1392px; margin: 16px auto 0; padding: 14px 18px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px;
   background: var(--avert-fond); border: 1px solid var(--avert-bord); border-radius: 10px; }
@@ -897,6 +901,9 @@ fieldset.panneau:disabled { opacity: 0.85; }
 .tuiles-compactes .tuile-valeur { font-size: 22px; }
 .tuiles-compactes .tuile-valeur.petite { font-size: 18px; }
 .tuiles-compactes .detail, .tuiles-compactes .tuile-aller { font-size: 12px; }
+/* Fiche d'un prêt (Financements, 2026-11-21) : les cinq tuiles du résumé sur une seule rangée, pied en petit, pour tenir à 1 366 × 768 */
+.tuiles-pret { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.tuiles-pret .tuile-pied { font-size: 12px; line-height: 1.35; }
 .ligne-synthese { margin: 8px 0 0; font-size: 13px; color: var(--texte-2); }
 .variation { font-size: 12px; font-weight: 600; color: var(--texte-2); }
 .variation.hausse { color: var(--accent-texte); }

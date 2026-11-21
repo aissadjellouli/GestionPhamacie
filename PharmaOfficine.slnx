@@ -9,6 +9,7 @@
     <File Path="docs/base-de-donnees.md" />
     <File Path="docs/scripts-base-de-donnees.md" />
     <File Path="docs/essai-cloud-officine.md" />
+    <File Path="docs/ecrans-central.md" />
     <File Path="docs/ged-protection-a-decider.md" />
     <File Path="docs/reste-a-faire-synthese.md" />
     <File Path="docs/charte-graphique.md" />
@@ -251,6 +252,9 @@
     <File Path="database/migration/152_controle_demarrage_encaissement.sql" />
     <File Path="database/migration/153_alertes_psychotropes_traitement_en_cours.sql" />
     <File Path="database/migration/154_parapharmacie_catalogue.sql" />
+    <File Path="database/migration/155_retour_partiel_tiers_payant.sql" />
+    <File Path="database/migration/156_reglage_taches_laissees_poste.sql" />
+    <File Path="database/migration/157_rapprochement_volet_apres_retour.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
@@ -283,6 +287,9 @@
     <File Path="database/tests/152_controle_demarrage_encaissement_tests.sql" />
     <File Path="database/tests/153_alertes_psychotropes_traitement_en_cours_tests.sql" />
     <File Path="database/tests/154_parapharmacie_catalogue_tests.sql" />
+    <File Path="database/tests/155_retour_partiel_tiers_payant_tests.sql" />
+    <File Path="database/tests/156_reglage_taches_laissees_poste_tests.sql" />
+    <File Path="database/tests/157_rapprochement_volet_apres_retour_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
     <File Path="database/tests/101b_suppression_num_facture_chifa_tests.sql" />
     <File Path="database/tests/rejeu_complet.ps1" />
@@ -344,6 +351,10 @@
     <File Path="database/cloud/tests/026_archive_sans_tables_recalculees_tests.sql" />
     <File Path="database/cloud/tests/027_depart_effacement_elements_techniques_tests.sql" />
     <File Path="database/cloud/tests/028_effacer_famille_lignes_archivees_tests.sql" />
+    <File Path="database/cloud/030_comptes_distants.sql" />
+    <File Path="database/cloud/031_ecrans_editeur.sql" />
+    <File Path="database/cloud/tests/030_comptes_distants_tests.sql" />
+    <File Path="database/cloud/tests/031_ecrans_editeur_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />
@@ -397,6 +408,7 @@
     <Project Path="src/Pharma.Api/Pharma.Api.csproj" />
     <Project Path="src/Pharma.Desktop/Pharma.Desktop.csproj" />
     <Project Path="src/Pharma.Cloud.Api/Pharma.Cloud.Api.csproj" />
+    <Project Path="src/Pharma.Cloud.Web/Pharma.Cloud.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Pharma.Domain.Tests/Pharma.Domain.Tests.csproj" />
@@ -404,6 +416,7 @@
     <Project Path="tests/Pharma.Architecture.Tests/Pharma.Architecture.Tests.csproj" />
     <Project Path="tests/Pharma.Cloud.Tests/Pharma.Cloud.Tests.csproj" />
     <Project Path="tests/Pharma.Cloud.Charge/Pharma.Cloud.Charge.csproj" />
+    <Project Path="tests/Pharma.Cloud.Web.Tests/Pharma.Cloud.Web.Tests.csproj" />
   </Folder>
   <Folder Name="/Documents/EXEMPLE/">
     <File Path="docs/EXEMPLE/WhatsApp Image 2025-11-27 at 12.41.09.jpeg" />

@@ -1,0 +1,31 @@
+@page "/mon-journal"
+@inject DepotEcrans Depot
+
+<PageTitle>Mon journal des accès · écrans du central</PageTitle>
+
+<div class="page page-serree">
+    <div class="titre-page">
+        <div>
+            <h1>Mon journal des accès</h1>
+            <p class="sous-titre">Chaque connexion, code, ouverture d'officine et action de votre compte, du plus récent au plus ancien. Ajout seul, chaîné.</p>
+        </div>
+    </div>
+    <TableauEcran Table="@Table" Vide="Aucun accès noté." />
+    <PaginationEcran Page="@PageCourante" Taille="@Taille" Total="@Table.Total" Base="mon-journal" />
+</div>
+
+@code {
+    private const int Taille = 20;
+
+    [CascadingParameter] private HttpContext? Contexte { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] private int? Numero { get; set; }
+
+    private TableEcran Table { get; set; } = TableEcran.Vide;
+    private int PageCourante => Math.Clamp(Numero ?? 1, 1, 100_000);
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Contexte?.EmpreinteJeton() is { } jeton)
+            Table = await Depot.MonJournalAsync(jeton, PageCourante, Taille, Contexte.RequestAborted);
+    }
+}

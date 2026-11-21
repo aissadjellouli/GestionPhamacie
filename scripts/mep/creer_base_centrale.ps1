@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Crée la base d'un serveur central de synchronisation NEUF : scripts database\cloud 001 au dernier (028 à ce jour) dans l'ordre, contrôles, tests facultatifs.
+    Crée la base d'un serveur central de synchronisation NEUF : scripts database\cloud 001 au dernier (031 à ce jour) dans l'ordre, contrôles, tests facultatifs.
 
 .DESCRIPTION
     À utiliser pour le parcours E, étape 2 (serveur central). Ne sert jamais sur la base d'une officine.
@@ -13,10 +13,13 @@
 
     Étapes :
       1. création de la base (propriétaire = -Proprietaire, UTF8) par -CompteAdmin si elle n'existe pas ;
-      2. scripts 001 au dernier (028 à ce jour) de database\cloud, un par un, avec le compte propriétaire. Le script 001 crée le rôle
+      2. scripts 001 au dernier (031 à ce jour) de database\cloud, un par un, avec le compte propriétaire. Le script 001 crée le rôle
          applicatif pharma_cloud_api SANS connexion (non propriétaire des tables : la sécurité au niveau des lignes s'applique) ;
+         le script 029 crée le rôle de lecture technique pharma_cloud_etat SANS connexion (aucune connexion créée ici) ; le script 030
+         crée le rôle des écrans pharma_cloud_ecrans SANS connexion ni droit sur les tables (fonctions cloud_ecran_* seulement) ;
       3. contrôles : tables centrales et miroir présentes, sécurité au niveau des lignes activée sur les tables de données,
-         rôle pharma_cloud_api sans connexion et non propriétaire, partitions de lot_recu ;
+         rôle pharma_cloud_api sans connexion et non propriétaire, rôles pharma_cloud_etat et pharma_cloud_ecrans sans connexion et non propriétaires,
+         partitions de lot_recu ;
       4. avec -AvecTests : tests de database\cloud\tests (transaction annulée, rien n'est conservé) ; chacun doit finir par « tous réussis ».
          À lancer sur une base neuve ou une copie, pas sur la production (docs\mise-en-production.md, parcours E, étape 2.2).
 
@@ -53,7 +56,7 @@
 
 .EXAMPLE
     .\scripts\mep\creer_base_centrale.ps1 -Base pharmacie_central -Proprietaire central_proprietaire
-    Crée la base et passe tous les scripts 001 à 028 (la suite numérotée sans trou).
+    Crée la base et passe tous les scripts 001 à 031 (la suite numérotée sans trou).
 
 .EXAMPLE
     .\scripts\mep\creer_base_centrale.ps1 -Base pharmacie_central -Proprietaire central_proprietaire -AvecTests -WhatIf
@@ -79,6 +82,8 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "outils_mep.ps1")
 if (-not $DossierDepot) { $DossierDepot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent }
 $RoleCloud = "pharma_cloud_api"
+$RoleEtat = "pharma_cloud_etat"     # script 029 : lecture technique seule, sans connexion (connexion décidée au déploiement)
+$RoleEcrans = "pharma_cloud_ecrans" # script 030 : écrans du central, sans connexion ni droit sur les tables (connexion décidée au déploiement)
 
 Invoke-Principal {
     Write-Etape "Contrôles préalables (sans connexion à la base)"
@@ -105,10 +110,10 @@ Invoke-Principal {
     if ($connexionAdmin) {
         Write-Etape "Contrôles du serveur"
         $version = Get-Scalaire -Compte $CompteAdmin -Base "postgres" -Sql "SHOW server_version"
-        # Scripts 020 et suivants (jusqu'à 028) : PostgreSQL 18 exigé (RETURNING old/new) ; refus avant toute création
+        # Scripts 020 et suivants (jusqu'à 031) : PostgreSQL 18 exigé (RETURNING old/new) ; refus avant toute création
         $versionNum = Get-Scalaire -Compte $CompteAdmin -Base "postgres" -Sql "SHOW server_version_num"
         if ([int]$versionNum -lt 180000) {
-            throw "PostgreSQL 18 ou plus récent exigé pour le serveur central (scripts 020 à 028 : RETURNING old/new) ; ce serveur est en version $version. Rien n'a été créé."
+            throw "PostgreSQL 18 ou plus récent exigé pour le serveur central (scripts 020 à 031 : RETURNING old/new) ; ce serveur est en version $version. Rien n'a été créé."
         }
         Write-Ok "PostgreSQL joignable ($Hote`:$Port), version $version."
         if ((Get-Scalaire -Compte $CompteAdmin -Base "postgres" -Sql "SELECT count(*) FROM pg_roles WHERE rolname = '$Proprietaire'") -eq "0") {
@@ -153,6 +158,17 @@ Invoke-Principal {
         $proprio = Get-Scalaire -Compte $Proprietaire -Base $Base -Sql "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tableowner = '$RoleCloud'"
         if ($proprio -ne "0") { throw "$RoleCloud est propriétaire de $proprio table(s) : la sécurité au niveau des lignes ne s'appliquerait pas." }
         Write-Ok "Rôle $RoleCloud présent (connexion possible : $role), propriétaire d'aucune table. Le mot de passe se règle à l'étape 2.4 du parcours E."
+        $etat = Get-Scalaire -Compte $Proprietaire -Base $Base -Sql "SELECT count(*) FROM pg_roles WHERE rolname = '$RoleEtat' AND NOT rolsuper AND NOT rolbypassrls"
+        if ($etat -eq "0") { throw "Le rôle $RoleEtat n'a pas été créé par le script 029 (ou il est superutilisateur / BYPASSRLS)." }
+        $proprio = Get-Scalaire -Compte $Proprietaire -Base $Base -Sql "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tableowner = '$RoleEtat'"
+        if ($proprio -ne "0") { throw "$RoleEtat est propriétaire de $proprio table(s)." }
+        $connexionEtat = Get-Scalaire -Compte $Proprietaire -Base $Base -Sql "SELECT rolcanlogin::text FROM pg_roles WHERE rolname = '$RoleEtat'"
+        Write-Ok "Rôle $RoleEtat présent (connexion possible : $connexionEtat), propriétaire d'aucune table. Aucune connexion n'est créée par ce script."
+        $ecrans = Get-Scalaire -Compte $Proprietaire -Base $Base -Sql "SELECT count(*) FROM pg_roles WHERE rolname = '$RoleEcrans' AND NOT rolcanlogin AND NOT rolsuper AND NOT rolbypassrls"
+        if ($ecrans -eq "0") { throw "Le rôle $RoleEcrans n'a pas été créé par le script 030 (ou il a une connexion, ou il est superutilisateur / BYPASSRLS)." }
+        $droits = Get-Scalaire -Compte $Proprietaire -Base $Base -Sql "SELECT count(*) FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'p', 'v') AND (has_table_privilege('$RoleEcrans', c.oid, 'SELECT, INSERT, UPDATE, DELETE') OR has_any_column_privilege('$RoleEcrans', c.oid, 'SELECT'))"
+        if ($droits -ne "0") { throw "$RoleEcrans a un droit direct sur $droits table(s) : seules les fonctions cloud_ecran_* lui sont permises." }
+        Write-Ok "Rôle $RoleEcrans présent, sans connexion, sans aucun droit sur les tables (fonctions cloud_ecran_* seulement). Aucune connexion ni compte distant n'est créé par ce script."
         $parts = Get-Scalaire -Compte $Proprietaire -Base $Base -Sql "SELECT count(*) FROM pg_inherits WHERE inhparent = 'public.lot_recu'::regclass"
         Write-Ok "Partitions de lot_recu : $parts."
 
@@ -173,7 +189,7 @@ Invoke-Principal {
     else {
         if (-not $baseExiste) { Write-Simul "CREATE DATABASE $Base OWNER $Proprietaire ENCODING 'UTF8' TEMPLATE template0 (compte $CompteAdmin)" }
         foreach ($s in $scripts) { Write-Simul "$($s.Name) (compte $Proprietaire)" }
-        Write-Simul "Contrôles : tables centrales, sécurité au niveau des lignes, rôle $RoleCloud"
+        Write-Simul "Contrôles : tables centrales, sécurité au niveau des lignes, rôles $RoleCloud, $RoleEtat et $RoleEcrans"
         foreach ($t in $tests) { Write-Simul "test $($t.Name) (compte $Proprietaire)" }
     }
 }

@@ -1,0 +1,107 @@
+@page "/officines/{Id:guid}"
+@inject DepotEcrans Depot
+
+<PageTitle>@Titre · écrans du central</PageTitle>
+
+<div class="page avec-menu">
+    <nav class="nav-laterale" aria-label="Rubriques de l'officine">
+        <a href="officines">← Officines</a>
+        <div class="nav-ecran-ouvert">@Titre</div>
+        <div class="nav-rubriques">
+            @foreach (var r in Rubriques.Toutes)
+            {
+                <a href="@($"officines/{Id}?rubrique={r.Cle}")" class="@(r == Choisie ? "active" : null)" aria-current="@(r == Choisie ? "page" : null)">@r.Titre</a>
+            }
+        </div>
+    </nav>
+    <div class="contenu-rubrique">
+        <div class="titre-page">
+            <div>
+                <h1>@Choisie.Titre</h1>
+                <p class="sous-titre">@Choisie.Explication</p>
+            </div>
+            @if (Choisie.Cle is "resume" or "codes" && Fiche is not null && Valeur("resiliee_le") is null)
+            {
+                <div class="actions">
+                    <a class="btn btn-contour" href="@($"officines/{Id}/nouveau-code?serveur=principal")">Nouveau code (principal)</a>
+                    <a class="btn btn-contour" href="@($"officines/{Id}/nouveau-code?serveur=second")">Nouveau code (second serveur)</a>
+                </div>
+            }
+            @if (Choisie.Cle is "certificats")
+            {
+                <div class="actions">
+                    <a class="btn btn-danger" href="@($"officines/{Id}/revoquer-serveur?serveur=principal")">Révoquer le serveur principal</a>
+                    <a class="btn btn-danger" href="@($"officines/{Id}/revoquer-serveur?serveur=second")">Révoquer le second serveur</a>
+                </div>
+            }
+        </div>
+        <Message Erreur="@Erreur" Ok="@Ok" />
+        @if (Table is null)
+        {
+            <div class="erreur" role="alert">Officine introuvable ou accès refusé (noté au journal des accès).</div>
+        }
+        else if (Choisie.Cle == "resume" && Fiche is not null)
+        {
+            <section class="panneau" aria-labelledby="t-resume">
+                <h2 id="t-resume">@Afficher("libelle")</h2>
+                <dl class="fiche-infos">
+                    @foreach (var c in Table.Colonnes.Where(c => !Rubriques.Masquees.Contains(c) && c != "libelle"))
+                    {
+                        <dt>@Rubriques.Libelle(c)</dt>
+                        <dd>@Afficher(c)</dd>
+                    }
+                    <dt>Code de l'officine</dt>
+                    <dd>@Id</dd>
+                </dl>
+            </section>
+        }
+        else if (Choisie.Cle == "certificats")
+        {
+            <TableauEcran Table="@Table" Vide="Aucun certificat : l'officine n'est pas encore activée.">
+                <Action Context="ligne">
+                    @if (Table.Valeur(ligne, "revoque_le") is null)
+                    {
+                        <a class="lien-bouton danger" href="@($"officines/{Id}/revoquer-certificat?empreinte={Table.Valeur(ligne, "empreinte_courte")}")">Révoquer</a>
+                    }
+                </Action>
+            </TableauEcran>
+        }
+        else
+        {
+            <TableauEcran Table="@Table" />
+            @if (Choisie.Pagine)
+            {
+                <PaginationEcran Page="@PageCourante" Taille="@Taille" Total="@Table.Total" Base="@($"officines/{Id}?rubrique={Choisie.Cle}")" />
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private const int Taille = 20;
+
+    [Parameter] public Guid Id { get; set; }
+    [CascadingParameter] private HttpContext? Contexte { get; set; }
+    [SupplyParameterFromQuery(Name = "rubrique")] private string? Cle { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] private int? Numero { get; set; }
+    [SupplyParameterFromQuery(Name = "erreur")] private string? Erreur { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] private string? Ok { get; set; }
+
+    private Rubrique Choisie => Rubriques.Trouver(Cle);
+    private int PageCourante => Math.Clamp(Numero ?? 1, 1, 100_000);
+    private TableEcran? Table { get; set; }
+    private TableEcran? Resume { get; set; }
+    private object?[]? Fiche => Resume?.Lignes.FirstOrDefault();
+    private string Titre => Fiche is null ? "Officine" : Rubriques.Afficher("libelle", Resume!.Valeur(Fiche, "libelle"));
+
+    private object? Valeur(string c) => Fiche is null ? null : Resume!.Valeur(Fiche, c);
+    private string Afficher(string c) => Rubriques.Afficher(c, Valeur(c));
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Contexte?.EmpreinteJeton() is not { } jeton) return;
+        var ct = Contexte.RequestAborted;
+        Resume = await Depot.RubriqueAsync(jeton, Id, Rubriques.Toutes[0], 1, Taille, ct);
+        Table = Choisie.Cle == "resume" ? Resume : Resume is null ? null : await Depot.RubriqueAsync(jeton, Id, Choisie, PageCourante, Taille, ct);
+    }
+}

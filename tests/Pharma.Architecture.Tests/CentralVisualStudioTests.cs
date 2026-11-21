@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Pharma.Architecture.Tests;
@@ -89,11 +89,16 @@ public partial class CentralVisualStudioTests
         Assert.DoesNotMatch(@"(?i)(UPDATE|INSERT\s+INTO|DELETE\s+FROM)\s+utilisateur\b", texte);
         Assert.DoesNotContain("essai_activation", texte);
         Assert.DoesNotContain("/api/auth/connexion", texte);
-        // Un seul DROP ROLE, sur le rôle dédié, dans -Retirer
-        Assert.Single(Regex.Matches(texte, @"(?i)DROP\s+ROLE"));
+        // Trois DROP ROLE seulement, sur les rôles de connexion dédiés, dans -Retirer (jamais les rôles sans connexion des scripts centraux)
+        Assert.Equal(3, Regex.Matches(texte, @"(?i)DROP\s+ROLE").Count);
+        Assert.Contains("DROP ROLE IF EXISTS $RoleEcrans", Corps(Code(), "Invoke-Retirer"));
+        Assert.Contains("$RoleEcrans = \"pharma_cloud_ecrans_dev_vs\"", Code());
         Assert.Contains("DROP ROLE IF EXISTS $RoleCentral", Corps(Code(), "Invoke-Retirer"));
+        Assert.Contains("DROP ROLE IF EXISTS $RoleEtat", Corps(Code(), "Invoke-Retirer"));
         Assert.Contains("$RoleCentral = \"pharma_cloud_dev_vs\"", Code());
-        Assert.DoesNotMatch(@"(?i)(ALTER|DROP)\s+ROLE\s+(IF\s+EXISTS\s+)?pharma_cloud_api\b", texte);
+        Assert.Contains("$RoleEtat = \"pharma_cloud_etat_vs\"", Code());
+        Assert.DoesNotMatch(@"(?i)(ALTER|DROP)\s+ROLE\s+(IF\s+EXISTS\s+)?pharma_cloud_(api|etat|ecrans)\b", texte);
+        Assert.DoesNotMatch(@"(?i)(ALTER|DROP)\s+ROLE\s+(IF\s+EXISTS\s+)?\$RoleGroupe(Etat|Ecrans)?\b", Code());
         // Un seul dossier supprimé, le dossier exact hors dépôt, après contrôle
         foreach (Match m in Regex.Matches(Code(), @"Remove-Item[^\n]*-Recurse[^\n]*"))
             Assert.Contains("-LiteralPath $Racine", m.Value);
@@ -112,13 +117,13 @@ public partial class CentralVisualStudioTests
         Assert.DoesNotMatch(@"PGPASSWORD\s*=\s*[""'][^""'$]", texte);
         Assert.DoesNotContain("pharma_dev", texte);
         Assert.DoesNotMatch(@"(?im)^\s*(\[Parameter[^\]]*\]\s*)?\[(string|securestring)\]\s*\$\w*(MotDePasse|Password|Mdp|Secret)\w*", code.Split("$ErrorActionPreference")[0]);
-        Assert.DoesNotMatch(@"(?i)(Set-Content|Out-File|Add-Content|Write-Host|Write-Ok|Write-Info|Write-Simul)[^\n]*\$(mdpAutorite|mdpRole|MotDePasseAutorite|cxOfficine)\b", code);
+        Assert.DoesNotMatch(@"(?i)(Set-Content|Out-File|Add-Content|Write-Host|Write-Ok|Write-Info|Write-Simul)[^\n]*\$(mdpAutorite|mdpRole|mdpEtat|cxEtat|mdpEcrans|cxEcrans|MotDePasseAutorite|cxOfficine)\b", code);
         Assert.Contains("RNGCryptoServiceProvider", code);
         // etat.json : seulement le code provisoire, le libellé et la base
         Assert.Contains("[pscustomobject]@{ OfficineProvisoire = $guid; Libelle = $LibelleOfficine; Base = $BaseOfficine;", code);
         Assert.DoesNotMatch(@"(?i)Set-Content[^\n]*\$Depot|Out-File[^\n]*\$Depot", code);
         // Variables d'utilisateur : liste fermée, sans la connexion du propriétaire
-        Assert.Contains("$VariablesUtilisateur = @(\"PHARMA_CLOUD_DOSSIER\", \"PHARMA_CLOUD_MOT_DE_PASSE\", \"PHARMA_CLOUD_CONNEXION\", \"ConnectionStrings__Pharmacie\", \"Synchronisation__Dossier\")", code);
+        Assert.Contains("$VariablesUtilisateur = @(\"PHARMA_CLOUD_DOSSIER\", \"PHARMA_CLOUD_MOT_DE_PASSE\", \"PHARMA_CLOUD_CONNEXION\", \"PHARMA_CLOUD_ETAT_CONNEXION\", \"PHARMA_CLOUD_ECRANS_CONNEXION\", \"ConnectionStrings__Pharmacie\", \"Synchronisation__Dossier\")", code);
         foreach (Match m in Regex.Matches(code, @"SetEnvironmentVariable\(([^,]+),[^,]+,\s*""User""\)"))
             Assert.Contains(m.Groups[1].Value.Trim(), new[] { "$Nom", "$n" });
         Assert.Contains("$VariablesUtilisateur -notcontains $Nom", Corps(code, "Set-VariableUtilisateur"));
@@ -144,10 +149,11 @@ public partial class CentralVisualStudioTests
             Assert.Equal("Project", profil.GetProperty("commandName").GetString());
             Assert.False(profil.GetProperty("launchBrowser").GetBoolean());
             Assert.False(profil.TryGetProperty("applicationUrl", out _));      // ignorée : le central écoute sur Cloud:Adresse / Cloud:Port
-            var variables = profil.GetProperty("environmentVariables").EnumerateObject().ToList();
-            Assert.Single(variables);
-            Assert.Equal("ASPNETCORE_ENVIRONMENT", variables[0].Name);
-            Assert.Equal("Development", variables[0].Value.GetString());
+            // Development et la page d'état de développement (127.0.0.1:5092), rien d'autre
+            var variables = profil.GetProperty("environmentVariables").EnumerateObject().ToDictionary(v => v.Name, v => v.Value.GetString());
+            Assert.Equal(2, variables.Count);
+            Assert.Equal("Development", variables["ASPNETCORE_ENVIRONMENT"]);
+            Assert.Equal("true", variables["Cloud__PageEtat"]);
         }
         Assert.DoesNotMatch(@"(?i)password|mot_de_passe|PHARMA_CLOUD|ConnectionStrings", launch);
 
@@ -156,7 +162,14 @@ public partial class CentralVisualStudioTests
         Assert.True(profils.ContainsKey("API + Poste client"));
         Assert.True(profils.ContainsKey("API + Poste + Central"));
         var projets = profils["API + Poste + Central"].EnumerateArray().Select(p => p.GetProperty("Path").GetString()).ToList();
-        Assert.Equal(new[] { @"src\Pharma.Cloud.Api\Pharma.Cloud.Api.csproj", @"src\Pharma.Api\Pharma.Api.csproj", @"src\Pharma.Desktop\Pharma.Desktop.csproj" }, projets);
+        Assert.Equal(new[] { @"src\Pharma.Cloud.Api\Pharma.Cloud.Api.csproj", @"src\Pharma.Api\Pharma.Api.csproj", @"src\Pharma.Desktop\Pharma.Desktop.csproj",
+            @"src\Pharma.Cloud.Web\Pharma.Cloud.Web.csproj" }, projets);
+        // Lot S7.1 : écrans du central seuls avec le central (https://127.0.0.1:5094)
+        Assert.Equal(new[] { @"src\Pharma.Cloud.Api\Pharma.Cloud.Api.csproj", @"src\Pharma.Cloud.Web\Pharma.Cloud.Web.csproj" },
+            profils["Central + Écrans"].EnumerateArray().Select(p => p.GetProperty("Path").GetString()).ToList());
+        var ecrans = File.ReadAllText(Path.Combine(racine, "src", "Pharma.Cloud.Web", "Properties", "launchSettings.json"));
+        Assert.Contains("https://127.0.0.1:5094", ecrans);
+        Assert.DoesNotMatch(@"(?i)password|mot_de_passe|PHARMA_CLOUD|ConnectionStrings", ecrans);
         Assert.Equal(new[] { @"src\Pharma.Api\Pharma.Api.csproj", @"src\Pharma.Desktop\Pharma.Desktop.csproj" },
             profils["API + Poste client"].EnumerateArray().Select(p => p.GetProperty("Path").GetString()).ToList());
     }

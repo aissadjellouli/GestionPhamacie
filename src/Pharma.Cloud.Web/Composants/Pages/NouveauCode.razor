@@ -1,0 +1,20 @@
+@page "/officines/{Id:guid}/nouveau-code"
+
+<PageTitle>Nouveau code d'activation · écrans du central</PageTitle>
+
+<FormulaireAction Titre="@($"Nouveau code d'activation : {(Serveur == "second" ? "second serveur" : "serveur principal")}")"
+                  Explication="Code à usage unique, valable 24 heures, affiché une seule fois. Les codes précédents restent valables jusqu'à leur échéance."
+                  Etape2="Code d'activation" Action="@($"actions/officines/{Id}/nouveau-code")" Retour="@($"/officines/{Id}/nouveau-code?serveur={Serveur}")"
+                  Annuler="@($"officines/{Id}?rubrique=codes")" ConfirmationLibelle="Nom de l'officine, tel qu'affiché dans sa fiche"
+                  Bouton="Créer le code" Erreur="@Erreur" Ok="@Ok">
+    <input type="hidden" name="serveur" value="@Serveur" />
+</FormulaireAction>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    [SupplyParameterFromQuery(Name = "serveur")] private string? ServeurDemande { get; set; }
+    [SupplyParameterFromQuery(Name = "erreur")] private string? Erreur { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] private string? Ok { get; set; }
+
+    private string Serveur => ServeurDemande == "second" ? "second" : "principal";
+}

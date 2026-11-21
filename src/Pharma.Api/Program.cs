@@ -70,6 +70,12 @@ catch (Exception e) when (e is IOException or UnauthorizedAccessException)
 }
 builder.Services.AddSingleton(ged);
 
+// Mode démonstration (Demo:Actif, faux par défaut ; docs/demo-cloud.md, étape 2) : n'est permis que sur une base portant le marqueur
+// de démonstration, posé par le seul script d'init de la démo (contrôle après la composition, avant tout démarrage)
+var demo = builder.Configuration.GetSection(Pharma.Api.Demo.ReglagesDemo.Section).Get<Pharma.Api.Demo.ReglagesDemo>() ?? new Pharma.Api.Demo.ReglagesDemo();
+builder.Services.Configure<Pharma.Api.Demo.ReglagesDemo>(builder.Configuration.GetSection(Pharma.Api.Demo.ReglagesDemo.Section));
+var marqueurDemo = await Pharma.Infrastructure.Demo.MarqueurDemo.LireAsync(builder.Configuration.GetConnectionString("Pharmacie") ?? "");
+
 // Composition : cas d'usage, adaptateurs, services propres à l'hôte
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(new InfrastructureOptions(
@@ -86,7 +92,9 @@ builder.Services.AddInfrastructure(new InfrastructureOptions(
     ProtectionDataProtection.Choisir(builder.Configuration.GetSection("Protection").Get<Pharma.Infrastructure.Securite.ReglagesProtection>()
                                      ?? new Pharma.Infrastructure.Securite.ReglagesProtection(), dossierPharma, OperatingSystem.IsWindows()),
     builder.Configuration["Fiscal:DossierArchives"],
-    builder.Configuration["CopieSecours:Fichier"]));
+    builder.Configuration["CopieSecours:Fichier"],
+    // Démonstration : e-mails, SMS et export Chifa factices, filigrane « DÉMONSTRATION » sur les PDF
+    demo.Actif));
 builder.Services.AddSingleton<JetonService>();
 builder.Services.AddSingleton<IGenerateurJeton>(sp => sp.GetRequiredService<JetonService>());
 // Connexion par code comptoir : droits limités au comptoir (enveloppe le service de droits)
@@ -103,19 +111,28 @@ builder.Services.AddSingleton<Pharma.Api.Synchronisation.ClientServeurCentralHtt
 builder.Services.AddSingleton<Pharma.Application.Synchronisation.IClientServeurCentral>(sp => sp.GetRequiredService<Pharma.Api.Synchronisation.ClientServeurCentralHttp>());
 builder.Services.AddSingleton<Pharma.Application.Synchronisation.IClientChargementCentral>(sp => sp.GetRequiredService<Pharma.Api.Synchronisation.ClientServeurCentralHttp>());
 builder.Services.AddScoped<Pharma.Application.Synchronisation.ITelechargementReferentiel, Pharma.Api.Synchronisation.TelechargementReferentielHttp>();
-builder.Services.AddHostedService<Pharma.Api.Taches.EnvoiSynchronisation>();
-// Synchronisation, lot S3 : alertes au titulaire (retard, erreur persistante, certificat, quota) et purge de la file après accusé
-builder.Services.AddHostedService<Pharma.Api.Taches.SurveillanceSynchronisation>();
-builder.Services.AddHostedService<Pharma.Api.Taches.PurgeSynchronisation>();
+if (!demo.Actif)
+{
+    // Tâches qui sortent de l'officine ou touchent ses sauvegardes : jamais lancées en démonstration (docs/regles-metier.md)
+    builder.Services.AddHostedService<Pharma.Api.Taches.EnvoiSynchronisation>();
+    // Synchronisation, lot S3 : alertes au titulaire (retard, erreur persistante, certificat, quota) et purge de la file après accusé
+    builder.Services.AddHostedService<Pharma.Api.Taches.SurveillanceSynchronisation>();
+    builder.Services.AddHostedService<Pharma.Api.Taches.PurgeSynchronisation>();
+    builder.Services.AddHostedService<EnvoiNotifications>();
+    builder.Services.AddHostedService<SauvegardesAutomatiques>();
+    builder.Services.AddHostedService<SurveillanceSecondServeur>();
+}
+else
+{
+    // Démonstration : nomenclature nationale importée si la base n'en a pas (premier démarrage, remise à zéro)
+    builder.Services.AddHostedService<Pharma.Api.Demo.ImportNomenclatureDemo>();
+}
 builder.Services.AddHostedService<AlertesQuotidiennes>();
-builder.Services.AddHostedService<EnvoiNotifications>();
-builder.Services.AddHostedService<SauvegardesAutomatiques>();
 builder.Services.AddHostedService<SurveillancePeriodique>();
 builder.Services.AddHostedService<VerificationIntegriteNocturne>();
 builder.Services.AddHostedService<ScellementMensuelRegistre>();
 builder.Services.AddHostedService<ClotureFiscaleMensuelle>();
 builder.Services.AddHostedService<SerialisationHorsLigne>();
-builder.Services.AddHostedService<SurveillanceSecondServeur>();
 builder.Services.AddProblemDetails();
 // Limite de débit par adresse IP sur les routes de connexion (mots de passe, codes comptoir, super admin)
 builder.Services.AjouterLimiteConnexions(builder.Configuration);
@@ -137,6 +154,28 @@ builder.Services
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+
+// Démonstration sur une base sans marqueur (base réelle, ou marqueur illisible) : refus de démarrer, message clair.
+// Base de démonstration sans Demo:Actif, hors développement : avertissement seulement (le démarrage reste permis).
+if (Pharma.Application.Demo.ModeDemo.RefusDemarrage(demo.Actif, marqueurDemo) is { } refusDemo)
+{
+    app.Logger.LogCritical("{Refus}", refusDemo);
+    Console.Error.WriteLine(refusDemo);
+    return 3;
+}
+if (Pharma.Application.Demo.ModeDemo.AvertissementDemarrage(demo.Actif, marqueurDemo, app.Environment.IsDevelopment()) is { } avertissementDemo)
+    app.Logger.LogWarning("{Avertissement}", avertissementDemo);
+if (demo.Actif)
+{
+    app.Logger.LogWarning("Mode démonstration actif : données fictives ; SMS, e-mails, synchronisation, sauvegardes, super admin, 2e serveur, "
+                          + "reprise ODBC et export Chifa coupés");
+    // Le compte super admin ne se crée pas en démonstration (super admin coupé)
+    if (args.Contains(ConsoleSuperAdmin.Argument) || ConsoleCleScellement.Concerne(args))
+    {
+        Console.Error.WriteLine(Pharma.Application.Demo.ModeDemo.Indisponible("commandes du super admin et de la clé de scellement"));
+        return 3;
+    }
+}
 
 // Création ou modification du compte super admin sur le PC serveur : Pharma.Api.exe --super-admin (le serveur ne démarre pas)
 if (args.Contains(ConsoleSuperAdmin.Argument))
@@ -236,6 +275,7 @@ app.Use(async (ctx, suite) =>
 {
     var chemin = ctx.Request.Path;
     if (chemin.StartsWithSegments("/api") && !chemin.StartsWithSegments("/api/super-admin") && !chemin.StartsWithSegments("/api/healthcheck")
+        && !chemin.StartsWithSegments("/api/demo")
         && ctx.RequestServices.GetRequiredService<Pharma.Application.SuperAdmin.RestaurationsSuperAdmin>().BaseEnCours)
     {
         ctx.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
@@ -244,6 +284,9 @@ app.Use(async (ctx, suite) =>
     }
     await suite();
 });
+
+// Démonstration : fonctions coupées refusées (422 « Indisponible en démonstration : … »), avant toute authentification
+if (demo.Actif) app.Use(Pharma.Api.Demo.FonctionsCoupeesDemo.FiltrerAsync);
 
 app.UseAuthentication();
 app.UseAuthorization();

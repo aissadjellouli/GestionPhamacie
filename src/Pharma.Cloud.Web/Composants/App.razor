@@ -1,0 +1,23 @@
+@* Document : rendu serveur STATIQUE (aucun script Blazor, aucune interactivité) ; thème clair / sombre / automatique (cookie) *@
+<!DOCTYPE html>
+<html lang="fr" data-theme="@Theme">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <base href="/" />
+    <title>Tracodex Réseau · écrans du central</title>
+    <link rel="icon" href="img/logo.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="css/app.css" />
+    <script src="js/ecrans.js" defer></script>
+</head>
+<body>
+    <Routes />
+</body>
+</html>
+
+@code {
+    [CascadingParameter] private HttpContext? Contexte { get; set; }
+
+    private string? Theme => Contexte?.Request.Cookies[Jetons.CookieTheme] is "clair" or "sombre" ? Contexte.Request.Cookies[Jetons.CookieTheme] : null;
+}

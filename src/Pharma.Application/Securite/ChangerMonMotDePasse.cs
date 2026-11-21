@@ -10,7 +10,7 @@ namespace Pharma.Application.Securite;
 /// mot de passe provisoire ; ensuite possible à tout moment. Un nouveau jeton, avec les droits du rôle, est délivré.
 /// </summary>
 public sealed class ChangerMonMotDePasse(IComptesLecture comptes, IVerificateurMotDePasse verificateur, IHacheurMotDePasse hacheur,
-    IGenerateurJeton jetons, IJournal journal, EssaisConnexion? essais = null, IHorloge? horloge = null)
+    IGenerateurJeton jetons, IJournal journal, EssaisConnexion? essais = null, IHorloge? horloge = null, Demo.ModeDemo? demo = null)
 {
     /// <summary>
     /// Mot de passe actuel faux : compté avec les essais de connexion du même identifiant (même blocage), chaque refus inscrit
@@ -18,6 +18,9 @@ public sealed class ChangerMonMotDePasse(IComptesLecture comptes, IVerificateurM
     /// </summary>
     public async Task<Session> ExecuterAsync(long utilisateurId, string? actuel, string? nouveau, string? confirmation, CancellationToken ct = default)
     {
+        // Démonstration : les trois comptes communs gardent le mot de passe de démonstration (docs/regles-metier.md)
+        if (demo is { Actif: true } && await comptes.ParIdAsync(utilisateurId, ct) is { } demande && Demo.ModeDemo.EstCompteDemo(demande.Identifiant))
+            demo.Exiger("changement du mot de passe d'un compte de démonstration");
         // Vérification du mot de passe actuel partagée avec les actions sensibles qui le font ressaisir (VerificationMotDePasseActuel)
         var compte = await new VerificationMotDePasseActuel(comptes, verificateur, journal, essais, horloge)
             .VerifierAsync(utilisateurId, actuel, "changement_mot_de_passe", "mot_de_passe_actuel", ct);

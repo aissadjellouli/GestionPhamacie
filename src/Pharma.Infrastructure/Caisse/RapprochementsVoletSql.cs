@@ -30,12 +30,21 @@ public sealed class RapprochementsVoletSql(NpgsqlDataSource db) : IRapprochement
              ELSE COALESCE((SELECT mr.libelle FROM motif_reglable mr WHERE mr.liste = 'volet_absent' AND mr.code = v.chifa_attente_motif_code),
                            v.chifa_attente_motif_code) END,
         v.date_vente < now() - make_interval(days => COALESCE((SELECT pc.delai_volet_chifa_jours FROM parametre_caisse pc WHERE pc.id = 1), 7)),
-        -- Majoration Chifa (script 100) : ajoutée des deux côtés de la comparaison de part organisme (2026-11-15)
-        v.chifa_majoration_montant
+        -- Majoration Chifa (script 100) : ajoutée des deux côtés de la comparaison de part organisme (2026-11-15) ; celle encore due
+        -- (script 155 : retirée quand plus aucune boîte remboursée ne reste)
+        COALESCE(po.majoration_chifa, v.chifa_majoration_montant),
+        -- Retours déjà faits (script 157) : part organisme retirée, part du patient rendue, boîtes rendues
+        rt.organisme, rt.patient, rt.boites
         FROM vente v
         JOIN utilisateur u ON u.id = v.utilisateur_id
         LEFT JOIN patient p ON p.id = v.patient_id
         LEFT JOIN organisme o ON o.id = v.organisme_id
+        LEFT JOIN v_vente_part_organisme po ON po.vente_id = v.id
+        CROSS JOIN LATERAL (
+            SELECT COALESCE(sum(rl.montant_organisme), 0) AS organisme, COALESCE(sum(rl.montant), 0) AS patient,
+                   COALESCE(sum(rl.quantite), 0)::int AS boites
+            FROM retour_client_ligne rl JOIN ligne_vente lr ON lr.id = rl.ligne_vente_id
+            WHERE lr.vente_id = v.id) rt
         """;
 
     // Recherche : n° de vente, nom du patient, n° d'assuré (chiffres seuls)
@@ -93,6 +102,19 @@ public sealed class RapprochementsVoletSql(NpgsqlDataSource db) : IRapprochement
         {
             throw new RegleMetierException($"Le volet Chifa n° {r.Qr.NumeroFacture} vient d’être rattaché à une autre vente.", "volet_chifa");
         }
+        // Vente verrouillée par la mise à jour : un retour enregistré depuis la comparaison (boîtes ou part organisme rendues) la rend
+        // caduque (script 157), comme la défense en base sur la régularisation
+        await using (var retours = new NpgsqlCommand("""
+            SELECT COALESCE(sum(rl.quantite), 0)::int, COALESCE(sum(rl.montant_organisme), 0)
+            FROM retour_client_ligne rl JOIN ligne_vente l ON l.id = rl.ligne_vente_id WHERE l.vente_id = $1
+            """, cx, tx))
+        {
+            retours.Parameters.AddWithValue(r.VenteId);
+            await using var rd = await retours.ExecuteReaderAsync(ct);
+            await rd.ReadAsync(ct);
+            if (rd.GetInt32(0) != r.BoitesRendues || rd.GetDecimal(1) != r.OrganismeRenduAvant)
+                throw new RegleMetierException("Un retour vient d’être enregistré sur cette vente : rescannez le volet.", "vente");
+        }
         if (r.Regularisation is { } g) await RegulariserAsync(cx, tx, r, g, ct);
         await tx.CommitAsync(ct);
         return true;
@@ -118,9 +140,10 @@ public sealed class RapprochementsVoletSql(NpgsqlDataSource db) : IRapprochement
         }
         await using var ins = new NpgsqlCommand($"""
             INSERT INTO regularisation_part_organisme (vente_id, organisme_id, part_organisme_vente, part_organisme_chifa, ecart, sort,
-                montant_patient, montant_dette_diminuee, montant_a_rendre, montant_pharmacie, credit_mouvement_id, utilisateur_id)
+                montant_patient, montant_dette_diminuee, montant_a_rendre, montant_pharmacie, credit_mouvement_id, utilisateur_id,
+                part_organisme_rendue_avant)
             SELECT v.id, v.organisme_id, v.part_organisme, $2, $3, $4, $5, $6, $7, $8,
-                   {(avecMouvement ? "currval(pg_get_serial_sequence('credit_mouvement', 'id'))" : "NULL")}, $9
+                   {(avecMouvement ? "currval(pg_get_serial_sequence('credit_mouvement', 'id'))" : "NULL")}, $9, $10
             FROM vente v WHERE v.id = $1
             """, cx, tx);
         ins.Parameters.AddWithValue(r.VenteId);
@@ -132,6 +155,8 @@ public sealed class RapprochementsVoletSql(NpgsqlDataSource db) : IRapprochement
         ins.Parameters.AddWithValue(g.ARendre);
         ins.Parameters.AddWithValue(g.MontantPharmacie);
         ins.Parameters.AddWithValue(r.UtilisateurId);
+        // Part organisme déjà rendue avant le rattachement (script 157) : la part Chifa ne porte que sur les boîtes gardées
+        ins.Parameters.AddWithValue(r.OrganismeRenduAvant);
         await ins.ExecuteNonQueryAsync(ct);
     }
 
@@ -201,7 +226,8 @@ public sealed class RapprochementsVoletSql(NpgsqlDataSource db) : IRapprochement
             liste.Add(new VenteAttenteVolet(r.GetInt64(0), r.GetString(1), r.GetDateTime(2), r.IsDBNull(3) ? null : r.GetInt64(3),
                 r.IsDBNull(4) ? null : r.GetString(4), r.IsDBNull(5) ? null : r.GetString(5), r.IsDBNull(6) ? null : r.GetString(6),
                 r.IsDBNull(7) ? null : r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(9), r.GetString(10), [],
-                r.GetDecimal(11), r.GetDecimal(12), r.IsDBNull(13) ? null : r.GetString(13), r.GetBoolean(14), r.GetDecimal(15)));
+                r.GetDecimal(11), r.GetDecimal(12), r.IsDBNull(13) ? null : r.GetString(13), r.GetBoolean(14), r.GetDecimal(15),
+                r.GetDecimal(16), r.GetDecimal(17), r.GetInt32(18)));
         return liste;
     }
 
@@ -211,14 +237,16 @@ public sealed class RapprochementsVoletSql(NpgsqlDataSource db) : IRapprochement
         if (ventes.Count == 0) return ventes;
         var lignes = ventes.ToDictionary(v => v.Id, _ => new List<LigneVenteRapprochee>());
         await using var cmd = new NpgsqlCommand("""
-            SELECT l.vente_id, l.produit_id, pr.nom_commercial, l.quantite, l.prix_unitaire
+            SELECT l.vente_id, l.produit_id, pr.nom_commercial, l.quantite, l.prix_unitaire,
+                   -- Boîtes déjà rendues (script 157) : déduites des boîtes servies comparées au volet
+                   COALESCE((SELECT sum(rl.quantite) FROM retour_client_ligne rl WHERE rl.ligne_vente_id = l.id), 0)::int
             FROM ligne_vente l JOIN produit pr ON pr.id = l.produit_id
             WHERE l.vente_id = ANY($1) ORDER BY l.vente_id, l.id
             """, cx);
         cmd.Parameters.AddWithValue(ventes.Select(v => v.Id).ToArray());
         await using (var r = await cmd.ExecuteReaderAsync(ct))
             while (await r.ReadAsync(ct))
-                lignes[r.GetInt64(0)].Add(new LigneVenteRapprochee(r.GetInt64(1), r.GetString(2), r.GetInt32(3), r.GetDecimal(4)));
+                lignes[r.GetInt64(0)].Add(new LigneVenteRapprochee(r.GetInt64(1), r.GetString(2), r.GetInt32(3), r.GetDecimal(4), r.GetInt32(5)));
         return ventes.Select(v => v with { Lignes = lignes[v.Id] }).ToList();
     }
 }

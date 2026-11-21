@@ -16,10 +16,22 @@ namespace Pharma.Application.Caisse;
 /// <remarks>
 /// PartPatient, DettePatient : pour la régularisation de la part organisme (script 097). MotifAttente : motif de la vente encaissée
 /// sans n° de facture Chifa (libellé, ou « Autre : … » ; null avant 097).
+/// Retours déjà faits sur la vente (script 157) : OrganismeRendu (part organisme retirée), PatientRendu (part du patient rendue ou retirée
+/// de sa dette), BoitesRendues ; Majoration : majoration encore due (retirée quand plus aucune boîte remboursée ne reste). PartOrganisme,
+/// Total et PartPatient restent ceux de la caisse ; les parts NETTES des retours sont calculées ici.
 /// </remarks>
 public sealed record VenteAttenteVolet(long Id, string Numero, DateTime Date, long? PatientId, string? Patient, string? NumAssure, string? Organisme,
     decimal? Taux, decimal Total, decimal PartOrganisme, string Vendeur, IReadOnlyList<LigneVenteRapprochee> Lignes,
-    decimal PartPatient = 0, decimal DettePatient = 0, string? MotifAttente = null, bool EnRetard = false, decimal Majoration = 0);
+    decimal PartPatient = 0, decimal DettePatient = 0, string? MotifAttente = null, bool EnRetard = false, decimal Majoration = 0,
+    decimal OrganismeRendu = 0, decimal PatientRendu = 0, int BoitesRendues = 0)
+{
+    /// <summary>Part organisme encore retenue (hors majoration) : part de la caisse moins celle des boîtes rendues.</summary>
+    public decimal PartOrganismeNette => PartOrganisme - OrganismeRendu;
+    /// <summary>Montant des boîtes encore chez le patient : total moins les parts (patient et organisme) des boîtes rendues.</summary>
+    public decimal TotalNet => Total - PatientRendu - OrganismeRendu;
+    /// <summary>Part du patient encore due ou payée pour les boîtes gardées.</summary>
+    public decimal PartPatientNette => PartPatient - PatientRendu;
+}
 
 /// <summary>
 /// Volet rattaché malgré des différences ou avec une régularisation de part organisme : motif, résumé des différences, écart de part
@@ -32,8 +44,13 @@ public sealed record VoletAvecEcart(long VenteId, string Numero, DateTime DateVe
 
 /// <summary>Ce qui s'écrit sur la vente au rattachement (n° de facture, date, QR, date d'ordonnance, qui, motif et différences éventuels).</summary>
 /// <param name="Regularisation">Écart de part organisme régularisé (script 097), écrit dans la même transaction ; null : écart nul.</param>
+/// <param name="OrganismeRenduAvant">
+/// Part organisme déjà retirée par des retours (script 157), écrite sur la régularisation ; avec BoitesRendues, relue sous le verrou de
+/// la vente : un retour enregistré entre la comparaison et le rattachement le fait refuser (rescanner le volet).
+/// </param>
 public sealed record RattachementVolet(long VenteId, QrChifa Qr, long UtilisateurId, string? Motif, string? DetailEcarts, decimal? EcartPartOrganisme,
-    RegularisationCalculee? Regularisation = null, long? PatientId = null, long? OrganismeId = null, string? Reference = null);
+    RegularisationCalculee? Regularisation = null, long? PatientId = null, long? OrganismeId = null, string? Reference = null,
+    decimal OrganismeRenduAvant = 0, int BoitesRendues = 0);
 
 public interface IRapprochementsVolet
 {
@@ -103,7 +120,7 @@ public sealed class RapprocherVoletChifa(IVoletsChifa volets, IRapprochementsVol
             {
                 var meme = assure.Length > 0 && RegleNumAssure.Chiffres(v.NumAssure) == assure;
                 return new CandidateVolet(v, meme,
-                    RapprochementVolet.AvecAssure(RapprochementVolet.Comparer(lignesVolet, v.Lignes, seuil, v.Taux, v.PartOrganisme, v.Majoration), lu.Qr.AssureComplet, v.NumAssure, v.Patient),
+                    RapprochementVolet.AvecAssure(RapprochementVolet.Comparer(lignesVolet, v.Lignes, seuil, v.Taux, v.PartOrganismeNette, v.Majoration), lu.Qr.AssureComplet, v.NumAssure, v.Patient),
                     !meme && RapprochementVolet.MemeCarte(lu.Qr.NumeroAssure, v.NumAssure), DateTime.SpecifyKind(v.Date, DateTimeKind.Utc) < limite);
             })
             .ToList();
@@ -124,7 +141,7 @@ public sealed class RapprocherVoletChifa(IVoletsChifa volets, IRapprochementsVol
         var vente = await ventes.VenteAsync(venteId, ct)
                     ?? throw new RegleMetierException("Cette vente n’attend plus de volet Chifa (déjà rattachée, annulée ou hors Chifa).", "vente");
         var seuil = (await sessions.ParametresAsync(ct)).SeuilEcartChifa;
-        var comparaison = RapprochementVolet.AvecAssure(RapprochementVolet.Comparer(LignesVolet(lu), vente.Lignes, seuil, vente.Taux, vente.PartOrganisme, vente.Majoration),
+        var comparaison = RapprochementVolet.AvecAssure(RapprochementVolet.Comparer(LignesVolet(lu), vente.Lignes, seuil, vente.Taux, vente.PartOrganismeNette, vente.Majoration),
             lu.Qr.AssureComplet, vente.NumAssure, vente.Patient);
         var m = string.IsNullOrWhiteSpace(motif) ? null : string.Join(' ', motif.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
         string? resume = null;
@@ -147,12 +164,13 @@ public sealed class RapprocherVoletChifa(IVoletsChifa volets, IRapprochementsVol
         {
             if (RegularisationPartOrganisme.ChoixExige(ecartPart))
                 await ExigerPrixAsync(utilisateurId, "régulariser l’écart de part organisme du volet Chifa", ct);
-            regul = RegularisationPartOrganisme.Calculer(ecartPart, partChifa, vente.Total, vente.PartPatient, vente.PatientId is not null,
+            // Après un retour (script 157) : boîtes encore chez le patient seulement (total, part du patient et part Chifa nets des retours)
+            regul = RegularisationPartOrganisme.Calculer(ecartPart, partChifa, vente.TotalNet, vente.PartPatientNette, vente.PatientId is not null,
                 vente.DettePatient, regularisation?.Trim());
         }
         var reference = $"{RegularisationPartOrganisme.PrefixeReference} · vente {vente.Numero} · volet {lu.Qr.NumeroFacture}";
         if (!await ventes.RattacherAsync(new RattachementVolet(vente.Id, lu.Qr, utilisateurId, m, resume, ecartPart == 0 ? null : ecartPart,
-                regul, vente.PatientId, null, reference), ct))
+                regul, vente.PatientId, null, reference, vente.OrganismeRendu, vente.BoitesRendues), ct))
             throw new RegleMetierException("Cette vente vient de recevoir un volet ou d’être annulée : rescannez le volet.", "vente");
         string? libelleRegul = null;
         if (regul is not null)
@@ -164,7 +182,8 @@ public sealed class RapprocherVoletChifa(IVoletsChifa volets, IRapprochementsVol
                     ["ticket"] = vente.Numero, ["volet"] = lu.Qr.NumeroFacture, ["organisme"] = vente.Organisme, ["patient"] = vente.Patient,
                     ["part_organisme_vente"] = comparaison.PartOrganismeVente, ["part_organisme_chifa"] = regul.PartOrganismeChifa,
                     ["ecart"] = regul.Ecart, ["sort"] = regul.Sort, ["montant_patient"] = regul.MontantPatient,
-                    ["dette_diminuee"] = regul.DetteDiminuee, ["a_rendre"] = regul.ARendre, ["montant_pharmacie"] = regul.MontantPharmacie
+                    ["dette_diminuee"] = regul.DetteDiminuee, ["a_rendre"] = regul.ARendre, ["montant_pharmacie"] = regul.MontantPharmacie,
+                    ["part_organisme_rendue_avant"] = vente.OrganismeRendu > 0 ? vente.OrganismeRendu : null
                 }, RegularisationPartOrganisme.ChoixExige(regul.Ecart) ? Permissions.PrixModifier : Permissions.CaisseVendre, ct);
         }
 
@@ -178,7 +197,9 @@ public sealed class RapprocherVoletChifa(IVoletsChifa volets, IRapprochementsVol
                     .Select(l => new { produit = l.Produit, code = l.Code, ecart = l.Ecart, qte_volet = l.QuantiteVolet, qte_vente = l.QuantiteVente, prix_chifa = l.PrixChifa, notre_prix = l.NotrePrix })
                     .ToList(),
                 ["part_organisme_vente"] = comparaison.PartOrganismeVente, ["part_organisme_chifa"] = comparaison.PartOrganismeChifa,
-                ["ecart_part_organisme"] = ecartPart, ["majoration"] = comparaison.Majoration
+                ["ecart_part_organisme"] = ecartPart, ["majoration"] = comparaison.Majoration,
+                ["boites_rendues"] = vente.BoitesRendues > 0 ? vente.BoitesRendues : null,
+                ["part_organisme_rendue_avant"] = vente.OrganismeRendu > 0 ? vente.OrganismeRendu : null
             }, comparaison.Concorde ? Permissions.CaisseVendre : Permissions.PrixModifier, ct);
 
         // Catalogue d'après le volet (règle existante) : un échec n'annule pas le rattachement

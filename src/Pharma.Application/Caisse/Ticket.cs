@@ -21,6 +21,28 @@ public static class LibelleTicket
         tauxTva is { } t ? $"{produit} (prestation, TVA {t.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"))} %)" : produit;
 }
 
+/// <summary>
+/// Ligne « Retour du … » du ticket d'une vente (imprimé et PDF : même texte). Rendu, avoir recrédité, part déduite de la dette ; retour
+/// d'une vente en tiers payant (script 155) : « Part organisme retirée : X DA », et pour une vente Chifa dont la facture n'est pas encore
+/// marquée corrigée, le rappel « facture à corriger dans CHIFA-Officine ». Sans part organisme : rien de plus qu'avant.
+/// </summary>
+public static class RetourTicket
+{
+    public const string RappelChifa = "facture à corriger dans CHIFA-Officine";
+
+    public static string PartOrganisme(decimal montant) => $"Part organisme retirée : {montant:N2} DA";
+
+    /// <param name="quandLocal">Date et heure du retour, heure locale.</param>
+    /// <param name="chifaACorriger">Vente Chifa, retour avec part organisme pas encore marqué « Corrigé dans CHIFA-Officine ».</param>
+    public static string Libelle(DateTime quandLocal, string? produits, decimal rendu, decimal deduit, decimal avoir, decimal partOrganisme = 0,
+        bool chifaACorriger = false) =>
+        $"Retour du {quandLocal:dd/MM/yyyy HH:mm} : {produits ?? "produits"}"
+        + (avoir > 0 ? $" · recrédité en avoir {avoir:N2} DA" : "")
+        + (rendu > 0 || (deduit == 0 && avoir == 0) ? $" · rendu {rendu:N2} DA" : "")
+        + (deduit > 0 ? $" · déduit de la dette {deduit:N2} DA" : "")
+        + (partOrganisme > 0 ? $" · {PartOrganisme(partOrganisme)}" + (chifaACorriger ? $" · {RappelChifa}" : "") : "");
+}
+
 /// <summary>Contenu du ticket de caisse ; le poste le met en page et l'imprime.</summary>
 public sealed record TicketVente(
     string Numero, DateTime Date, string Vendeur, string? Poste, string Statut,

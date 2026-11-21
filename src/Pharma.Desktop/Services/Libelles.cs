@@ -200,6 +200,14 @@ public static class Libelles
         _ => "Absent de la nomenclature"
     };
 
+    /// <summary>Réglage « facture et retour laissés » (script 156) : libellé des deux choix.</summary>
+    public static string ConservationTachesLaissees(string? mode) => mode switch
+    {
+        ReglageTachesLaisseesDto.Chiffre => "Chiffré (AES-256, compte Windows)",
+        ReglageTachesLaisseesDto.Desactive => "Désactivé (gardé en mémoire seulement, perdu au redémarrage)",
+        _ => mode ?? "—"
+    };
+
     // ---- Journal des actions sensibles ------------------------------------
 
     public static string ActionJournal(string action) => action switch
@@ -209,6 +217,7 @@ public static class Libelles
         "delivrance_psychotrope" => "Délivrance de psychotrope",
         "ecart_caisse" => "Écart de caisse",
         "parametres_caisse" => "Paramètres de caisse",
+        "taches_laissees_poste" => "Facture et retour laissés sur les postes",
         "droits_modifies" => "Droits modifiés",
         "utilisateur_cree" => "Compte créé",
         "utilisateur_modifie" => "Compte modifié",
@@ -441,6 +450,7 @@ public static class Libelles
                                                + (T("valideur") is "—" ? "" : $" · autorisé par {T("valideur")}"),
                 "ecart_caisse" => $"Écart {Dinars(N("ecart"), 2)} (attendu {Dinars(N("attendu"), 2)}, compté {Dinars(N("compte"), 2)})" + (B("releve") ? " · relève" : ""),
                 "parametres_caisse" => "Règles de caisse modifiées",
+                "taches_laissees_poste" => $"{ConservationTachesLaissees(T("avant"))} → {ConservationTachesLaissees(T("apres"))}",
                 "droits_modifies" => Droits(d),
                 "utilisateur_cree" => $"{T("nom")} ({T("identifiant")}), rôle {T("role")}",
                 "utilisateur_modifie" => $"{T("identifiant")} : rôle {T("role")}, {(B("actif") ? "compte actif" : "compte désactivé")}"

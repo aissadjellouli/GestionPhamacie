@@ -118,8 +118,26 @@
             <p class="detail" style="margin: 0">La relève est facultative.</p>
             <div style="display: flex; gap: 8px; flex-wrap: wrap">
                 <button type="button" class="btn btn-principal" @onclick="FaireReleve">Faire la relève</button>
-                <button type="button" class="btn" @onclick="ConfirmerChangement">Changer sans relève</button>
+                <button type="button" class="btn" disabled="@changementEnCours" @onclick="ConfirmerChangementAsync">Changer sans relève</button>
                 <button type="button" class="btn" @onclick="() => proposerReleve = false">Annuler</button>
+            </div>
+        </section>
+    </div>
+}
+@* « ⇄ Changer » alors que la vente de la Caisse n'a pas pu être mise en attente (serveur injoignable…) : rien n'est fermé,
+   le panier reste affiché ; l'employé réessaie ou reste sur la vente (docs/regles-metier.md, 2026-11-21) *@
+@if (echecChangement is not null)
+{
+    <div class="voile" role="alertdialog" aria-modal="true" aria-labelledby="t-echec-changer" aria-describedby="d-echec-changer" tabindex="-1" @onkeydown="ToucheEchecChangement">
+        <section class="panneau fenetre-releve">
+            <h2 id="t-echec-changer">Changement d’utilisateur impossible : la vente n’est pas mise en attente</h2>
+            <div class="erreur" role="alert">@echecChangement</div>
+            <p id="d-echec-changer">Le panier en cours n’a pas pu être confié au serveur. Pour ne pas le perdre, vous restez connecté et le panier
+                reste affiché à la Caisse. Vérifiez que le PC serveur est allumé et relié, puis réessayez ; ou restez sur la vente pour la terminer.</p>
+            <p class="detail">Le poste ne garde aucune copie du panier : tant qu’il n’est pas mis en attente sur le serveur, ne fermez pas le logiciel.</p>
+            <div class="actions">
+                <button type="button" class="btn btn-principal" disabled="@changementEnCours" @onclick="ConfirmerChangementAsync">@(changementEnCours ? "Nouvel essai…" : "Réessayer")</button>
+                <button type="button" class="btn" disabled="@changementEnCours" @onclick="ResterSurLaVente">Rester sur la vente</button>
             </div>
         </section>
     </div>
@@ -402,12 +420,21 @@
             var (etat, _) = await Api.EtatCaisseAsync();
             if (etat?.SessionId is not null) { proposerReleve = true; return; }
         }
-        ConfirmerChangement();
+        await ConfirmerChangementAsync();
     }
 
-    private void ConfirmerChangement()
+    // Vente de la Caisse non mise en attente (serveur injoignable, encaissement en cours) : message bloquant, la session reste ouverte
+    private string? echecChangement;
+    private bool changementEnCours;
+
+    private async Task ConfirmerChangementAsync()
     {
         proposerReleve = false;
+        if (changementEnCours) return;
+        changementEnCours = true;
+        try { echecChangement = await Session.PreparerChangementUtilisateurAsync(); }
+        finally { changementEnCours = false; }
+        if (echecChangement is not null) return;
         Session.Fermer($"{Session.NomComplet} a quitté le poste. La caisse reste ouverte.", changementUtilisateur: true);
         Nav.NavigateTo("connexion");
     }
@@ -419,6 +446,10 @@
     }
 
     private void ToucheReleve(KeyboardEventArgs e) { if (e.Key == "Escape") proposerReleve = false; }
+
+    private void ResterSurLaVente() => echecChangement = null;
+
+    private void ToucheEchecChangement(KeyboardEventArgs e) { if (e.Key == "Escape") ResterSurLaVente(); }
 
     public void Dispose()
     {

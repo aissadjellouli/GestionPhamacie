@@ -297,6 +297,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\152_controle_demarrage_encaissement.sql = database\migration\152_controle_demarrage_encaissement.sql
 		database\migration\153_alertes_psychotropes_traitement_en_cours.sql = database\migration\153_alertes_psychotropes_traitement_en_cours.sql
 		database\migration\154_parapharmacie_catalogue.sql = database\migration\154_parapharmacie_catalogue.sql
+		database\migration\155_retour_partiel_tiers_payant.sql = database\migration\155_retour_partiel_tiers_payant.sql
+		database\migration\156_reglage_taches_laissees_poste.sql = database\migration\156_reglage_taches_laissees_poste.sql
+		database\migration\157_rapprochement_volet_apres_retour.sql = database\migration\157_rapprochement_volet_apres_retour.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52-9A41-4B8E-A5F2-3C6D11B0E111}"
@@ -331,6 +334,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52
 		database\tests\152_controle_demarrage_encaissement_tests.sql = database\tests\152_controle_demarrage_encaissement_tests.sql
 		database\tests\153_alertes_psychotropes_traitement_en_cours_tests.sql = database\tests\153_alertes_psychotropes_traitement_en_cours_tests.sql
 		database\tests\154_parapharmacie_catalogue_tests.sql = database\tests\154_parapharmacie_catalogue_tests.sql
+		database\tests\155_retour_partiel_tiers_payant_tests.sql = database\tests\155_retour_partiel_tiers_payant_tests.sql
+		database\tests\156_reglage_taches_laissees_poste_tests.sql = database\tests\156_reglage_taches_laissees_poste_tests.sql
+		database\tests\157_rapprochement_volet_apres_retour_tests.sql = database\tests\157_rapprochement_volet_apres_retour_tests.sql
 		database\tests\117_registre_renforce_tests.sql = database\tests\117_registre_renforce_tests.sql
 		database\tests\101b_suppression_num_facture_chifa_tests.sql = database\tests\101b_suppression_num_facture_chifa_tests.sql
 		database\tests\rejeu_complet.ps1 = database\tests\rejeu_complet.ps1
@@ -371,6 +377,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "scripts", "scripts", "{5C0D
 		scripts\basculer-pc-secours.ps1 = scripts\basculer-pc-secours.ps1
 		scripts\creer_paquet_essai.ps1 = scripts\creer_paquet_essai.ps1
 		scripts\dev\preparer_central_vs.ps1 = scripts\dev\preparer_central_vs.ps1
+		docs\ecrans-central.md = docs\ecrans-central.md
 		scripts\paquet\installer.ps1 = scripts\paquet\installer.ps1
 	EndProjectSection
 EndProject
@@ -380,9 +387,17 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pharma.Cloud.Tests", "tests
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pharma.Cloud.Charge", "tests\Pharma.Cloud.Charge\Pharma.Cloud.Charge.csproj", "{5ACC9FA3-CC1C-4AF0-8044-FD8EAC39D542}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pharma.Cloud.Web", "src\Pharma.Cloud.Web\Pharma.Cloud.Web.csproj", "{4E2B8C61-7A3D-4F19-9B52-C0D1E2F3A4B5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pharma.Cloud.Web.Tests", "tests\Pharma.Cloud.Web.Tests\Pharma.Cloud.Web.Tests.csproj", "{8A1C3E5F-2B4D-4C6E-8F70-91A2B3C4D5E6}"
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "cloud", "cloud", "{9B1E6C2A-3D4F-4A5B-8C7D-1E2F3A4B5C6D}"
 	ProjectSection(SolutionItems) = preProject
 		database\cloud\README.md = database\cloud\README.md
+		database\cloud\030_comptes_distants.sql = database\cloud\030_comptes_distants.sql
+		database\cloud\031_ecrans_editeur.sql = database\cloud\031_ecrans_editeur.sql
+		database\cloud\tests\030_comptes_distants_tests.sql = database\cloud\tests\030_comptes_distants_tests.sql
+		database\cloud\tests\031_ecrans_editeur_tests.sql = database\cloud\tests\031_ecrans_editeur_tests.sql
 		database\cloud\001_base_centrale.sql = database\cloud\001_base_centrale.sql
 		database\cloud\002_tables_miroir.sql = database\cloud\002_tables_miroir.sql
 		database\cloud\003_chargement_complet_officine.sql = database\cloud\003_chargement_complet_officine.sql
@@ -634,6 +649,30 @@ Global
 		{5ACC9FA3-CC1C-4AF0-8044-FD8EAC39D542}.Release|x64.Build.0 = Release|Any CPU
 		{5ACC9FA3-CC1C-4AF0-8044-FD8EAC39D542}.Release|x86.ActiveCfg = Release|Any CPU
 		{5ACC9FA3-CC1C-4AF0-8044-FD8EAC39D542}.Release|x86.Build.0 = Release|Any CPU
+		{4E2B8C61-7A3D-4F19-9B52-C0D1E2F3A4B5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4E2B8C61-7A3D-4F19-9B52-C0D1E2F3A4B5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4E2B8C61-7A3D-4F19-9B52-C0D1E2F3A4B5}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4E2B8C61-7A3D-4F19-9B52-C0D1E2F3A4B5}.Debug|x64.Build.0 = Debug|Any CPU
+		{4E2B8C61-7A3D-4F19-9B52-C0D1E2F3A4B5}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{4E2B8C61-7A3D-4F19-9B52-C0D1E2F3A4B5}.Debug|x86.Build.0 = Debug|Any CPU
+		{4E2B8C61-7A3D-4F19-9B52-C0D1E2F3A4B5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4E2B8C61-7A3D-4F19-9B52-C0D1E2F3A4B5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4E2B8C61-7A3D-4F19-9B52-C0D1E2F3A4B5}.Release|x64.ActiveCfg = Release|Any CPU
+		{4E2B8C61-7A3D-4F19-9B52-C0D1E2F3A4B5}.Release|x64.Build.0 = Release|Any CPU
+		{4E2B8C61-7A3D-4F19-9B52-C0D1E2F3A4B5}.Release|x86.ActiveCfg = Release|Any CPU
+		{4E2B8C61-7A3D-4F19-9B52-C0D1E2F3A4B5}.Release|x86.Build.0 = Release|Any CPU
+		{8A1C3E5F-2B4D-4C6E-8F70-91A2B3C4D5E6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8A1C3E5F-2B4D-4C6E-8F70-91A2B3C4D5E6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8A1C3E5F-2B4D-4C6E-8F70-91A2B3C4D5E6}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{8A1C3E5F-2B4D-4C6E-8F70-91A2B3C4D5E6}.Debug|x64.Build.0 = Debug|Any CPU
+		{8A1C3E5F-2B4D-4C6E-8F70-91A2B3C4D5E6}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{8A1C3E5F-2B4D-4C6E-8F70-91A2B3C4D5E6}.Debug|x86.Build.0 = Debug|Any CPU
+		{8A1C3E5F-2B4D-4C6E-8F70-91A2B3C4D5E6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8A1C3E5F-2B4D-4C6E-8F70-91A2B3C4D5E6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8A1C3E5F-2B4D-4C6E-8F70-91A2B3C4D5E6}.Release|x64.ActiveCfg = Release|Any CPU
+		{8A1C3E5F-2B4D-4C6E-8F70-91A2B3C4D5E6}.Release|x64.Build.0 = Release|Any CPU
+		{8A1C3E5F-2B4D-4C6E-8F70-91A2B3C4D5E6}.Release|x86.ActiveCfg = Release|Any CPU
+		{8A1C3E5F-2B4D-4C6E-8F70-91A2B3C4D5E6}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -664,6 +703,8 @@ Global
 		{6D7EDF33-6E97-443F-9818-AD4EFFFCE50A} = {891AAAF3-F7CF-430C-87DE-15B9E19C57E4}
 		{C3F1DD1B-52F0-4D59-9333-73BC940384B4} = {AE6C7AA5-8869-44C5-8489-62A9DAD0AC10}
 		{5ACC9FA3-CC1C-4AF0-8044-FD8EAC39D542} = {AE6C7AA5-8869-44C5-8489-62A9DAD0AC10}
+		{4E2B8C61-7A3D-4F19-9B52-C0D1E2F3A4B5} = {891AAAF3-F7CF-430C-87DE-15B9E19C57E4}
+		{8A1C3E5F-2B4D-4C6E-8F70-91A2B3C4D5E6} = {AE6C7AA5-8869-44C5-8489-62A9DAD0AC10}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {82509D8C-BF89-40EE-96D5-21A0C4CD1E18}

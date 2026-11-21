@@ -1,0 +1,35 @@
+@page "/code"
+
+<PageTitle>Code de confirmation · écrans du central</PageTitle>
+
+<div class="page connexion">
+    <div class="entete-connexion">
+        <img class="logo-connexion" src="img/logo.svg" alt="Tracodex Réseau" />
+        <h1>Code de confirmation</h1>
+        <p class="sous-titre">Saisissez le code à 6 chiffres reçu (valable 5 minutes, 5 essais).</p>
+    </div>
+    <Message Erreur="@Erreur" Ok="@Ok" />
+    <form class="carte" method="post" action="actions/code">
+        <AntiforgeryToken />
+        <div class="champ">
+            <label for="code" class="requis">Code</label>
+            <input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required autofocus />
+        </div>
+        <button class="btn btn-principal" type="submit">Valider</button>
+    </form>
+    <div class="actions">
+        <form method="post" action="actions/renvoyer-code">
+            <AntiforgeryToken />
+            <button type="submit" class="lien-bouton">Recevoir un nouveau code</button>
+        </form>
+        <form method="post" action="actions/deconnexion">
+            <AntiforgeryToken />
+            <button type="submit" class="lien-bouton">Abandonner</button>
+        </form>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "erreur")] private string? Erreur { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] private string? Ok { get; set; }
+}

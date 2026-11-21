@@ -11,13 +11,14 @@ public sealed record LigneVenteAnnulable(string Produit, int Quantite, decimal M
 /// <summary>
 /// Vente vue pour l'annulation. CaisseOuverte : la caisse où elle a été encaissée n'est pas clôturée (vente récente).
 /// PayeSurVente (vente à crédit) : remboursements réellement versés par le patient, imputés à cette vente.
+/// DansUnBordereau : sur un bordereau (en préparation ou déposé) ; Deposee : sur un bordereau sorti de « préparation » (script 155).
 /// </summary>
 public sealed record VenteAnnulable(
     long Id, string Numero, DateTime Date, string Vendeur, string? Patient, decimal Total, decimal PartPatient, decimal PartOrganisme,
     string? Mode, string Statut, bool CaisseOuverte, bool DansUnBordereau, IReadOnlyList<LigneVenteAnnulable> Lignes,
     decimal DejaRendu = 0, decimal SoldeCreditPatient = 0, string? FactureNumero = null, long? VendeurId = null, long? PatientId = null,
     decimal PayeSurVente = 0, string? Remise = null, RegularisationVente? Regularisation = null, decimal PayeParAvoir = 0,
-    decimal AvoirRecrediteParRetours = 0);
+    decimal AvoirRecrediteParRetours = 0, bool Deposee = false);
 
 /// <summary>
 /// Régularisation de part organisme active de la vente (script 097) : sort, montant mis à la charge du patient et part qu'il en a déjà
@@ -119,7 +120,7 @@ public sealed class AnnulerVente(IAnnulationsVente annulations, ISessionsCaisse 
         var nomPoste = PosteCaisse.Exiger(poste);
         var texte = RegleAnnulation.Motif(motif);
         var v = await annulations.TrouverAsync(venteId, null, ct) ?? throw new RegleMetierException("Vente introuvable.");
-        RegleAnnulation.VerifierAnnulable(v.Statut, v.DansUnBordereau, v.FactureNumero);
+        RegleAnnulation.VerifierAnnulable(v.Statut, v.DansUnBordereau, v.FactureNumero, v.Deposee);
 
         long? validePar = null;
         string? nomValidateur = null;

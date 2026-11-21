@@ -35,6 +35,19 @@ internal static class AdminEndpoints
             })
            .ExigerPermission(Permissions.AdminParametres);
 
+        // Facture et retour laissés au changement d'utilisateur (script 156) : lu par chaque poste à la connexion (tout employé
+        // connecté, mot de passe provisoire compris : aucune donnée sensible), changé par le titulaire seul (journal avant / après)
+        api.MapGet("/reglage-taches-laissees", async (ObtenirReglageTachesLaissees obtenir, CancellationToken ct) =>
+                Results.Ok(new ReglageTachesLaisseesDto(await obtenir.ExecuterAsync(ct))))
+           .ExigerConnexion(motDePasseProvisoire: true);
+
+        admin.MapPut("/reglage-taches-laissees", async (ReglageTachesLaisseesDto req, ModifierReglageTachesLaissees modifier, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await modifier.ExecuterAsync(req.Mode, user.UtilisateurId(), ct);
+                return Results.NoContent();
+            })
+           .ExigerTitulaire();
+
         // Journal paginé, filtré par période et par employé
         admin.MapGet("/journal", async (DateOnly? du, DateOnly? au, string? employe, string? categorie, int? page, int? taille, ConsulterJournal consulter,
                 CancellationToken ct) =>

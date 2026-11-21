@@ -19,7 +19,9 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
                    COALESCE((SELECT SUM(r.quantite) FROM retour_client_ligne r WHERE r.ligne_vente_id = l.id), 0)::int,
                    -- Part du patient de la ligne, réductions de la ligne déduites (remise automatique, remise du vendeur, don partiel) :
                    -- le retour rend ce que le patient a payé pour ce produit-là (ventes antérieures : prorata de la remise de la vente)
-                   l.montant_patient - l.reduction_auto - l.reduction_manuelle
+                   l.montant_patient - l.reduction_auto - l.reduction_manuelle,
+                   -- Part de l'organisme de la ligne enregistrée à la caisse (script 155 : retirée au prorata des boîtes rendues)
+                   l.montant_organisme
             -- Lignes produit seulement : une prestation (script 105, D-12) ne se rend pas (annulation de la vente ou avoir)
             FROM ligne_vente l JOIN produit p ON p.id = l.produit_id JOIN lot lo ON lo.id = l.lot_id
             WHERE l.vente_id = $1 ORDER BY l.id
@@ -28,7 +30,31 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
             cmd.Parameters.AddWithValue(venteId);
             await using var r = await cmd.ExecuteReaderAsync(ct);
             while (await r.ReadAsync(ct))
-                lignes.Add(new LigneRetournable(r.GetInt64(0), r.GetInt64(1), r.GetString(2), r.GetString(3), r.GetInt32(4), r.GetInt32(5), r.GetDecimal(6), []));
+                lignes.Add(new LigneRetournable(r.GetInt64(0), r.GetInt64(1), r.GetString(2), r.GetString(3), r.GetInt32(4), r.GetInt32(5), r.GetDecimal(6), [],
+                    r.GetDecimal(7)));
+        }
+
+        // Part de l'organisme (script 155) : part retenue hors majoration (Chifa si régularisée, plus la part rendue avant le rattachement,
+        // script 157 ; sinon caisse), déjà retirée par des
+        // retours, canal, facture d'organisme émise par le logiciel (avoir AV- manuel), n° de facture Chifa
+        OrganismeRetour? organisme = null;
+        await using (var cmd = db.CreateCommand("""
+            SELECT v.canal_organisme, COALESCE(g.part_organisme_chifa + g.part_organisme_rendue_avant, v.part_organisme),
+                   COALESCE((SELECT sum(rl.montant_organisme) FROM retour_client_ligne rl JOIN ligne_vente l ON l.id = rl.ligne_vente_id
+                             WHERE l.vente_id = v.id), 0),
+                   (SELECT fc.numero FROM facture_client_ligne fl JOIN facture_client fc ON fc.id = fl.facture_id
+                    WHERE fl.vente_id = v.id AND fl.part = 'organisme' AND fc.type = 'facture' AND fc.statut IN ('emise', 'rejetee')
+                    ORDER BY fc.id LIMIT 1),
+                   v.chifa_facture
+            FROM vente v LEFT JOIN regularisation_part_organisme g ON g.vente_id = v.id AND g.statut = 'active'
+            WHERE v.id = $1
+            """))
+        {
+            cmd.Parameters.AddWithValue(venteId);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            if (await r.ReadAsync(ct))
+                organisme = new OrganismeRetour(r.GetDecimal(1), r.GetDecimal(2), r.GetString(0), r.IsDBNull(3) ? null : r.GetString(3),
+                    r.IsDBNull(4) ? null : r.GetString(4));
         }
 
         // Boîtes identifiées encore chez le patient
@@ -48,7 +74,7 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
                 liste.Add(new BoiteVendue(r.GetInt64(1), r.GetString(2)));
             }
         }
-        return new VenteRetournable(vente, lignes.Select(l => l with { Boites = boites.GetValueOrDefault(l.LigneVenteId) ?? [] }).ToList());
+        return new VenteRetournable(vente, lignes.Select(l => l with { Boites = boites.GetValueOrDefault(l.LigneVenteId) ?? [] }).ToList(), organisme);
     }
 
     public async Task EnregistrerAsync(RetourAEcrire a, CancellationToken ct = default)
@@ -56,12 +82,38 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
 
-        // Vente verrouillée : deux retours simultanés ne peuvent pas rendre plus que vendu
-        await using (var cmd = new NpgsqlCommand("SELECT statut, patient_id FROM vente WHERE id = $1 FOR UPDATE", cx, tx))
+        // Vente verrouillée : deux retours simultanés ne peuvent pas rendre plus que vendu. Le rattachement à un bordereau
+        // (BordereauxSql.AjouterVentesAsync) met à jour la même ligne de vente : il attend ce verrou, ou ce retour attend le sien ;
+        // l'état du bordereau est donc relu ici, sous le verrou (script 155)
+        bool dansUnBordereau, deposee;
+        await using (var cmd = new NpgsqlCommand("""
+            SELECT v.statut, v.patient_id, v.bordereau_id IS NOT NULL,
+                   EXISTS (SELECT 1 FROM bordereau_vente bv JOIN bordereau b ON b.id = bv.bordereau_id
+                           WHERE bv.vente_id = v.id AND b.statut <> 'preparation')
+            FROM vente v WHERE v.id = $1 FOR UPDATE OF v
+            """, cx, tx))
         {
             cmd.Parameters.AddWithValue(a.VenteId);
             await using var r = await cmd.ExecuteReaderAsync(ct);
             if (!await r.ReadAsync(ct) || r.GetString(0) != "validee") throw new RegleMetierException("Cette vente n’est plus encaissée (annulée ?).");
+            (dansUnBordereau, deposee) = (r.GetBoolean(2), r.GetBoolean(3));
+        }
+        var partOrganisme = a.Lignes.Sum(l => l.MontantOrganisme);
+        if (partOrganisme > 0)
+        {
+            // Même règle que l'application, revérifiée sous le verrou : vente sur aucun bordereau
+            RegleRetour.VerifierPartOrganisme(deposee, dansUnBordereau);
+            // Part organisme retirée : jamais plus que ce qui reste de la part retenue (hors majoration)
+            await using var cmd = new NpgsqlCommand("""
+                SELECT COALESCE(g.part_organisme_chifa + g.part_organisme_rendue_avant, v.part_organisme)
+                     - COALESCE((SELECT sum(rl.montant_organisme) FROM retour_client_ligne rl JOIN ligne_vente l ON l.id = rl.ligne_vente_id
+                                 WHERE l.vente_id = v.id), 0)
+                FROM vente v LEFT JOIN regularisation_part_organisme g ON g.vente_id = v.id AND g.statut = 'active'
+                WHERE v.id = $1
+                """, cx, tx);
+            cmd.Parameters.AddWithValue(a.VenteId);
+            if ((decimal)(await cmd.ExecuteScalarAsync(ct))! < partOrganisme)
+                throw new RegleMetierException("La part de l’organisme de cette vente vient de changer (autre retour ou régularisation) : rechargez la vente.");
         }
         // Sous le verrou de la vente : l'avoir recrédité ne dépasse jamais ce qui a été payé par avoir moins ce que les retours ont déjà recrédité
         if (a.AvoirRecredite > 0)
@@ -110,8 +162,9 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
         foreach (var l in a.Lignes)
         {
             await Executer(cx, tx, """
-                INSERT INTO retour_client_ligne (retour_id, ligne_vente_id, quantite, destination, montant) VALUES ($1, $2, $3, $4, $5)
-                """, ct, retourId, l.LigneVenteId, l.Quantite, l.Destination.Code(), l.Montant);
+                INSERT INTO retour_client_ligne (retour_id, ligne_vente_id, quantite, destination, montant, montant_organisme)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                """, ct, retourId, l.LigneVenteId, l.Quantite, l.Destination.Code(), l.Montant, l.MontantOrganisme);
 
             // La boîte revient à l'officine (lot et registre), puis repart à la destruction si le pharmacien l'a décidé
             await Executer(cx, tx, "UPDATE lot SET quantite_disponible = quantite_disponible + $2 WHERE id = $1", ct, l.LotId, l.Quantite);

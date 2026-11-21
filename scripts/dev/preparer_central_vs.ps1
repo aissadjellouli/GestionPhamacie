@@ -16,22 +16,34 @@
         3. mots de passe tirés au sort (autorité : 32 caractères ; rôle : 32 caractères), RÉUTILISÉS s'ils existent déjà dans les
            variables d'utilisateur ; jamais écrits ailleurs que dans ces variables, jamais affichés ;
         4. rôle de connexion pharma_cloud_dev_vs (LOGIN, membre de pharma_cloud_api : non propriétaire, cloisonnement appliqué) ;
+           rôle de connexion pharma_cloud_etat_vs (LOGIN, membre de pharma_cloud_etat, script central 029 : lecture technique seule,
+           pour la page d'état http://127.0.0.1:5092) ; si 029 n'est pas passé ou si pharma_app n'a pas l'option ADMIN sur
+           pharma_cloud_etat, cette étape est sautée avec un avertissement (le reste est préparé) ;
         5. variables d'environnement de l'UTILISATEUR Windows (lues par Visual Studio après son redémarrage) :
               PHARMA_CLOUD_DOSSIER, PHARMA_CLOUD_MOT_DE_PASSE, PHARMA_CLOUD_CONNEXION (rôle pharma_cloud_dev_vs, base pharmacie_cloud_dev),
+              PHARMA_CLOUD_ETAT_CONNEXION (rôle pharma_cloud_etat_vs, base pharmacie_cloud_dev ; page d'état),
               ConnectionStrings__Pharmacie (pharmacie_dev), Synchronisation__Dossier (dossier propre à pharmacie_dev).
            PHARMA_CLOUD_ADMIN_CONNEXION (propriétaire) n'est JAMAIS posée au niveau utilisateur : seulement passée au processus de l'outil ;
         6. outil d'administration du central compilé HORS du dépôt (%LOCALAPPDATA%\PharmaOfficine\central-dev\outil) : Visual Studio
            verrouille les dossiers bin du dépôt ;
         7. autorité et certificat HTTPS du central (localhost, 127.0.0.1) s'ils manquent ;
         8. officine « Développement (pharmacie_dev) » créée au central si elle manque (son code provisoire va dans etat.json, sans
-           secret), sinon nouveau code. Le code d'activation (usage unique, 24 h) est AFFICHÉ, jamais écrit.
+           secret), sinon nouveau code. Le code d'activation (usage unique, 24 h) est AFFICHÉ, jamais écrit ;
+        9. écrans du central (lot S7.1, scripts centraux 030 et 031) : rôle de connexion pharma_cloud_ecrans_dev_vs (LOGIN, membre de
+           pharma_cloud_ecrans : aucun droit sur les tables, seulement les fonctions cloud_ecran_*), variable d'utilisateur
+           PHARMA_CLOUD_ECRANS_CONNEXION, dossier des codes de second facteur %LOCALAPPDATA%\PharmaOfficine\central-dev\codes
+           (réservé au compte courant), compte de test editeur.dev (mot de passe PROVISOIRE affiché une seule fois, à changer à la
+           première connexion sur https://127.0.0.1:5094). Si 030 ou 031 ne sont pas passés sur pharmacie_cloud_dev, ou si pharma_app
+           n'a pas l'option ADMIN sur pharma_cloud_ecrans : RIEN n'est fait pour les écrans (avertissement), le reste est préparé.
 
     -Activer   Visual Studio lancé (profil « API + Poste + Central ») : vérifie l'API (5080, /api/healthcheck) et le central (5090),
                affiche la marche à suivre à l'écran Administration > Synchronisation et un code neuf si besoin, puis l'état.
-    -Etat      lecture seule : variables (noms seulement), dossiers, rôle, officine au central, synchronisation de pharmacie_dev, ports.
-    -Retirer   retire les variables d'utilisateur, le rôle pharma_cloud_dev_vs et le dossier %LOCALAPPDATA%\PharmaOfficine\central-dev.
-               Rien n'est supprimé dans les bases (l'officine reste au central, la synchronisation de pharmacie_dev reste réglée).
-               A lancer d'abord avec -WhatIf ; refusé tant que le central écoute sur 5090.
+    -Etat      lecture seule : variables (noms seulement), dossiers, rôles, officine au central, synchronisation de pharmacie_dev, ports
+               (dont la page d'état 5092).
+    -Retirer   retire les variables d'utilisateur, les rôles pharma_cloud_dev_vs, pharma_cloud_etat_vs et pharma_cloud_ecrans_dev_vs et
+               le dossier %LOCALAPPDATA%\PharmaOfficine\central-dev (codes de second facteur compris).
+               Rien n'est supprimé dans les bases (l'officine et le compte editeur.dev restent au central, la synchronisation de
+               pharmacie_dev reste réglée). A lancer d'abord avec -WhatIf ; refusé tant que le central écoute sur 5090 ou les écrans sur 5094.
 
     Mot de passe de pharma_app : variable PGPASSWORD déjà définie, ou pgpass.conf, ou saisie masquée (docs\poste-de-developpement.md).
     Il entre dans ConnectionStrings__Pharmacie (variable d'utilisateur, hors dépôt), comme dans appsettings.Development.json.
@@ -46,7 +58,7 @@
     Affiche l'état, sans rien modifier.
 
 .PARAMETER Retirer
-    Retire variables, rôle et dossier (à lancer d'abord avec -WhatIf).
+    Retire variables, rôles et dossier (à lancer d'abord avec -WhatIf).
 
 .PARAMETER Recompiler
     Avec -Preparer : recompile l'outil d'administration même s'il existe.
@@ -84,6 +96,13 @@ $BaseCentrale = "pharmacie_cloud_dev"
 $BaseOfficine = "pharmacie_dev"
 $RoleCentral = "pharma_cloud_dev_vs"
 $RoleGroupe = "pharma_cloud_api"
+$RoleEtat = "pharma_cloud_etat_vs"           # connexion de la page d'état (lecture technique seule)
+$RoleGroupeEtat = "pharma_cloud_etat"         # rôle sans connexion du script central 029
+$PortPageEtat = 5092                          # page d'état du central (développement), lu seulement
+$RoleEcrans = "pharma_cloud_ecrans_dev_vs"    # connexion des écrans du central (lot S7.1)
+$RoleGroupeEcrans = "pharma_cloud_ecrans"     # rôle sans connexion du script central 030 (fonctions cloud_ecran_* seulement)
+$PortEcrans = 5094                            # écrans du central (développement), lu seulement
+$CompteEditeur = "editeur.dev"                # compte de test des écrans (mot de passe provisoire affiché une fois)
 $LibelleOfficine = "Développement (pharmacie_dev)"
 $PortApi = 5080                               # lu seulement (santé), jamais pris
 $PortCentral = 5090
@@ -95,7 +114,8 @@ $DossierSync = Join-Path $Racine "sync-pharmacie_dev"
 $Outil = Join-Path $Racine "outil"
 $ExeCentral = Join-Path $Outil "bin\Pharma.Cloud.Api\debug\Pharma.Cloud.Api.exe"
 $FichierEtat = Join-Path $Racine "etat.json"
-$VariablesUtilisateur = @("PHARMA_CLOUD_DOSSIER", "PHARMA_CLOUD_MOT_DE_PASSE", "PHARMA_CLOUD_CONNEXION", "ConnectionStrings__Pharmacie", "Synchronisation__Dossier")
+$DossierCodes = Join-Path $Racine "codes"     # codes de second facteur des écrans (mode fichier, développement seulement)
+$VariablesUtilisateur = @("PHARMA_CLOUD_DOSSIER", "PHARMA_CLOUD_MOT_DE_PASSE", "PHARMA_CLOUD_CONNEXION", "PHARMA_CLOUD_ETAT_CONNEXION", "PHARMA_CLOUD_ECRANS_CONNEXION", "ConnectionStrings__Pharmacie", "Synchronisation__Dossier")
 $VariableInterdite = "PHARMA_CLOUD_ADMIN_CONNEXION"
 
 function Write-Etape2([string]$t) { Write-Host ""; Write-Host "== $t" -ForegroundColor Cyan }
@@ -267,12 +287,16 @@ function Invoke-Preparer {
         Write-Simul "dossier $Racine ; $DossierAutorite et $DossierSync réservés (icacls : compte courant, SYSTEM, Administrateurs)"
         Write-Simul "mots de passe de l'autorité et du rôle tirés au sort, ou réutilisés depuis les variables d'utilisateur ; jamais affichés"
         Write-Simul "rôle $RoleCentral créé ou mis à jour (connexion, mot de passe), puis rendu membre de $RoleGroupe"
+        Write-Simul "rôle $RoleEtat créé ou mis à jour (connexion, mot de passe tiré au sort ou réutilisé), puis rendu membre de $RoleGroupeEtat (script central 029 ; sauté avec un avertissement s'il manque)"
         Write-Simul "variables d'utilisateur : $($VariablesUtilisateur -join ', ') ($VariableInterdite jamais au niveau utilisateur)"
         Write-Simul "   ConnectionStrings__Pharmacie -> base $BaseOfficine (compte $CompteBase) ; Synchronisation__Dossier -> $DossierSync"
         Write-Simul "   PHARMA_CLOUD_CONNEXION -> base $BaseCentrale (rôle $RoleCentral) ; PHARMA_CLOUD_DOSSIER -> $DossierAutorite"
+        Write-Simul "   PHARMA_CLOUD_ETAT_CONNEXION -> base $BaseCentrale (rôle $RoleEtat) : page d'état http://${AdresseLocale}:$PortPageEtat"
         Write-Simul "outil d'administration compilé dans $Outil (hors des dossiers bin du dépôt) s'il manque"
         Write-Simul "autorité et certificat HTTPS (localhost, $AdresseLocale) dans $DossierAutorite s'ils manquent"
         Write-Simul "officine « $LibelleOfficine » créée au central si elle manque (code provisoire dans $FichierEtat), sinon nouveau code ; code affiché, jamais écrit"
+        Write-Simul "écrans du central (seulement si les scripts centraux 030 et 031 sont passés) : rôle $RoleEcrans membre de $RoleGroupeEcrans,"
+        Write-Simul "   variable PHARMA_CLOUD_ECRANS_CONNEXION, dossier $DossierCodes réservé, compte $CompteEditeur (mot de passe provisoire affiché une fois)"
         Write-Simul "rien n'est créé, supprimé ni restauré dans $BaseOfficine ni $BaseCentrale (hors l'officine et son code au central)"
         return
     }
@@ -307,17 +331,31 @@ function Invoke-Preparer {
     if ($r.Code -ne 0) { throw "Le rôle $RoleCentral ne se connecte pas à $BaseCentrale.`n$($r.Texte)" }
     Write-Ok "Rôle $RoleCentral prêt ($(if ($existe) { 'mis à jour' } else { 'créé' })), connexion à $BaseCentrale vérifiée."
 
+    Write-Etape2 "Rôle $RoleEtat (membre de $RoleGroupeEtat : page d'état, lecture seule)"
+    $cxEtat = Invoke-PreparerRoleEtat
+
+    Write-Etape2 "Rôle $RoleEcrans (membre de $RoleGroupeEcrans : écrans du central, lot S7.1)"
+    $cxEcrans = Invoke-PreparerRoleEcrans
+    if ($cxEcrans) { Set-DossierRestreint $DossierCodes }
+
     Write-Etape2 "Variables d'utilisateur Windows"
     Set-VariableUtilisateur "PHARMA_CLOUD_DOSSIER" $DossierAutorite
     Set-VariableUtilisateur "PHARMA_CLOUD_MOT_DE_PASSE" $mdpAutorite
     Set-VariableUtilisateur "PHARMA_CLOUD_CONNEXION" (Get-ChaineConnexion $BaseCentrale $RoleCentral $mdpRole)
+    if ($cxEtat) { Set-VariableUtilisateur "PHARMA_CLOUD_ETAT_CONNEXION" $cxEtat }
+    else { Write-Avert "PHARMA_CLOUD_ETAT_CONNEXION non posée : la page d'état ne démarrera pas (le central démarre quand même)." }
+    if ($cxEcrans) { Set-VariableUtilisateur "PHARMA_CLOUD_ECRANS_CONNEXION" $cxEcrans }
+    else { Write-Avert "PHARMA_CLOUD_ECRANS_CONNEXION non posée : les écrans du central (https://${AdresseLocale}:$PortEcrans) refuseront de démarrer." }
     $cxOfficine = Get-ChaineConnexion $BaseOfficine $CompteBase (Get-MotDePassePg)
     if ((Get-BaseDeChaine $cxOfficine) -cne "pharmacie_dev") { throw "Refusé : ConnectionStrings__Pharmacie doit viser pharmacie_dev." }
     Set-VariableUtilisateur "ConnectionStrings__Pharmacie" $cxOfficine
     Set-VariableUtilisateur "Synchronisation__Dossier" $DossierSync
 
     Write-Etape2 "Outil d'administration du central (dans $Outil)"
-    if ((Test-Path -LiteralPath $ExeCentral) -and -not $Recompiler) { Write-Ok "Déjà compilé (-Recompiler pour refaire)." }
+    # Outil compilé avant le lot S7.1 : il ne connaît pas --creer-compte-editeur (il démarrerait le serveur) ; recompilé d'office
+    $sourceComptes = Join-Path $Depot "src\Pharma.Cloud.Api\Comptes\ComptesDistantsAdministration.cs"
+    $perime = (Test-Path -LiteralPath $ExeCentral) -and (Get-Item -LiteralPath $ExeCentral).LastWriteTime -lt (Get-Item -LiteralPath $sourceComptes).LastWriteTime
+    if ((Test-Path -LiteralPath $ExeCentral) -and -not $Recompiler -and -not $perime) { Write-Ok "Déjà compilé (-Recompiler pour refaire)." }
     else {
         Write-Info "dotnet build Pharma.Cloud.Api (hors des dossiers bin du dépôt) ..."
         $ea = $ErrorActionPreference; $ErrorActionPreference = "Continue"
@@ -344,10 +382,88 @@ function Invoke-Preparer {
 
     Write-Etape2 "Officine « $LibelleOfficine » au central"
     Invoke-CodeActivation $mdpAutorite
+    if ($cxEcrans) {
+        Write-Etape2 "Compte $CompteEditeur des écrans du central"
+        Invoke-CompteEditeur $mdpAutorite
+    }
     Write-Etape2 "Suite"
     Write-Info "1. Fermer TOUTES les fenêtres de Visual Studio, puis le rouvrir (il lit les variables d'utilisateur à son démarrage)."
     Write-Info "2. Profil « API + Poste + Central », F5."
     Write-Info "3. .\scripts\dev\preparer_central_vs.ps1 -Activer (marche à suivre à l'écran, code neuf si besoin)."
+    if ($cxEtat) { Write-Info "4. Pendant le débogage : page d'état du central http://${AdresseLocale}:$PortPageEtat (lecture seule, rafraîchie toutes les 10 s)." }
+    if ($cxEcrans) {
+        Write-Info "5. Écrans du central : profil « Central + Écrans » (ou « API + Poste + Central »), F5, puis https://${AdresseLocale}:$PortEcrans/"
+        Write-Info "   compte $CompteEditeur ; code de second facteur dans $DossierCodes\$CompteEditeur.txt (développement seulement)."
+    }
+}
+
+# Rôle de connexion des écrans (membre de pharma_cloud_ecrans, scripts centraux 030 et 031). Rend la chaîne de connexion, ou $null
+# (avertissement, RIEN de fait pour les écrans) si 030 ou 031 ne sont pas passés ou si pharma_app n'a pas l'option ADMIN.
+function Invoke-PreparerRoleEcrans {
+    $groupe = Get-Scalaire -Compte $CompteBase -Base $BaseMaintenance -Sql "SELECT count(*) FROM pg_roles WHERE rolname = '$RoleGroupeEcrans' AND NOT rolcanlogin"
+    $fonctions = Get-ScalaireCentral "SELECT (to_regprocedure('public.cloud_ecran_ouvrir(text,uuid)') IS NOT NULL AND to_regprocedure('public.cloud_ecran_officines(text,text,text,integer,integer)') IS NOT NULL)::text"
+    if ($groupe -eq "0" -or $fonctions -ne "true") {
+        Write-Avert "Scripts centraux 030 et 031 non passés sur $BaseCentrale (rôle $RoleGroupeEcrans ou fonctions cloud_ecran_* absents) : les passer (database\cloud\030_comptes_distants.sql, puis 031_ecrans_editeur.sql), puis relancer -Preparer. Écrans du central non préparés, rien n'a été fait pour eux."
+        return $null
+    }
+    $admin = Get-Scalaire -Compte $CompteBase -Base $BaseMaintenance -Sql "SELECT count(*) FROM pg_auth_members am JOIN pg_roles r ON r.oid = am.roleid JOIN pg_roles m ON m.oid = am.member WHERE r.rolname = '$RoleGroupeEcrans' AND m.rolname = current_user AND am.admin_option"
+    if ($admin -eq "0") { Write-Avert "pharma_app n'a pas l'option ADMIN sur $RoleGroupeEcrans (GRANT $RoleGroupeEcrans TO pharma_app WITH ADMIN OPTION, par l'administrateur PostgreSQL). Le script ne s'élève pas lui-même. Écrans du central non préparés."; return $null }
+    $mdpEcrans = Get-MotDePasseDeChaine (Get-VariableUtilisateur "PHARMA_CLOUD_ECRANS_CONNEXION")
+    if ($mdpEcrans) { Write-Ok "Mot de passe du rôle $RoleEcrans réutilisé (variable d'utilisateur)." }
+    else { $mdpEcrans = New-MotDePasseAleatoire 32; Write-Ok "Mot de passe du rôle $RoleEcrans tiré au sort (32 caractères)." }
+    $existe = (Get-Scalaire -Compte $CompteBase -Base $BaseMaintenance -Sql "SELECT count(*) FROM pg_roles WHERE rolname = '$RoleEcrans'") -ne "0"
+    $sql = if ($existe) { "ALTER ROLE $RoleEcrans LOGIN PASSWORD '$mdpEcrans';" } else { "CREATE ROLE $RoleEcrans LOGIN PASSWORD '$mdpEcrans';" }
+    $r = Invoke-Psql -Compte $CompteBase -Base $BaseMaintenance -Arguments @("-f", "-") -Entree $sql -Tolerant
+    if ($r.Code -ne 0) { throw "Création du rôle $RoleEcrans impossible.`n$($r.Texte -replace [regex]::Escape($mdpEcrans), '***')" }
+    $r = Invoke-Psql -Compte $CompteBase -Base $BaseMaintenance -Arguments @("-c", "GRANT $RoleGroupeEcrans TO $RoleEcrans") -Tolerant
+    if ($r.Code -ne 0) { throw "GRANT $RoleGroupeEcrans TO $RoleEcrans refusé.`n$($r.Texte)" }
+    # Contrôle : connexion, membre du rôle des écrans, ni superutilisateur ni BYPASSRLS (mot de passe par PGPASSWORD, ce processus seulement)
+    Set-MotDePasseMemoire $RoleEcrans $mdpEcrans
+    $r = Invoke-Psql -Compte $RoleEcrans -Base $BaseCentrale -Arguments @("-tAc", "SELECT (pg_has_role(current_user, '$RoleGroupeEcrans', 'MEMBER') AND NOT rolsuper AND NOT rolbypassrls)::text FROM pg_roles WHERE rolname = current_user") -Tolerant
+    if ($r.Code -ne 0 -or (($r.Lignes | Where-Object { $_ }) -join "") -ne "true") { throw "Le rôle $RoleEcrans ne se connecte pas à $BaseCentrale ou n'est pas conforme.`n$($r.Texte)" }
+    Write-Ok "Rôle $RoleEcrans prêt ($(if ($existe) { 'mis à jour' } else { 'créé' })), connexion à $BaseCentrale vérifiée."
+    return (Get-ChaineConnexion $BaseCentrale $RoleEcrans $mdpEcrans)
+}
+
+# Compte de test editeur.dev : créé par l'outil s'il manque (mot de passe provisoire affiché UNE fois) ; jamais recréé ni modifié
+function Invoke-CompteEditeur([string]$MotDePasseAutorite) {
+    $present = Get-ScalaireCentral "SELECT count(*) FROM compte_distant WHERE identifiant = '$CompteEditeur'"
+    if ($present -ne "0") {
+        Write-Ok "Compte $CompteEditeur déjà présent : mot de passe inchangé (perdu : voir docs\ecrans-central.md, « Développement local »)."
+        return
+    }
+    $r = Invoke-Outil -Arguments @("--creer-compte-editeur", $CompteEditeur, "--nom", "Éditeur (développement)", "--email", "editeur.dev@exemple.invalid") -Variables (Get-VariablesOutil $MotDePasseAutorite)
+    if ($r.Code -ne 0) { throw "--creer-compte-editeur en échec :`n$($r.Texte)" }
+    $motProvisoire = ($r.Lignes | Where-Object { $_.Trim() } | Select-Object -Last 1).Trim()
+    Write-Host ""
+    Write-Host "   Compte $CompteEditeur : mot de passe PROVISOIRE (affiché une seule fois, à changer à la première connexion ; écrit nulle part) :" -ForegroundColor Cyan
+    Write-Host "   $motProvisoire" -ForegroundColor White
+}
+
+# Rôle de connexion de la page d'état (membre de pharma_cloud_etat, script central 029). Rend la chaîne de connexion, ou $null (avertissement)
+# si 029 n'est pas passé ou si pharma_app n'a pas l'option ADMIN sur pharma_cloud_etat : jamais bloquant pour le reste de la préparation.
+function Invoke-PreparerRoleEtat {
+    $groupe = Get-Scalaire -Compte $CompteBase -Base $BaseMaintenance -Sql "SELECT count(*) FROM pg_roles WHERE rolname = '$RoleGroupeEtat' AND NOT rolcanlogin"
+    if ($groupe -eq "0") { Write-Avert "Rôle $RoleGroupeEtat absent (ou avec connexion) : passer le script central database\cloud\029_role_lecture_etat.sql sur $BaseCentrale, puis relancer -Preparer. Page d'état non préparée."; return $null }
+    $droits = Get-ScalaireCentral "SELECT count(*) FROM information_schema.column_privileges WHERE grantee = '$RoleGroupeEtat' AND table_name = 'officine' AND column_name = 'libelle' AND privilege_type = 'SELECT'"
+    if ($droits -eq "0") { Write-Avert "Le script central 029 n'est pas passé sur $BaseCentrale (aucun droit de $RoleGroupeEtat) : le passer, puis relancer -Preparer. Page d'état non préparée."; return $null }
+    $admin = Get-Scalaire -Compte $CompteBase -Base $BaseMaintenance -Sql "SELECT count(*) FROM pg_auth_members am JOIN pg_roles r ON r.oid = am.roleid JOIN pg_roles m ON m.oid = am.member WHERE r.rolname = '$RoleGroupeEtat' AND m.rolname = current_user AND am.admin_option"
+    if ($admin -eq "0") { Write-Avert "pharma_app n'a pas l'option ADMIN sur $RoleGroupeEtat (GRANT $RoleGroupeEtat TO pharma_app WITH ADMIN OPTION, par l'administrateur PostgreSQL). Le script ne s'élève pas lui-même. Page d'état non préparée."; return $null }
+    $mdpEtat = Get-MotDePasseDeChaine (Get-VariableUtilisateur "PHARMA_CLOUD_ETAT_CONNEXION")
+    if ($mdpEtat) { Write-Ok "Mot de passe du rôle $RoleEtat réutilisé (variable d'utilisateur)." }
+    else { $mdpEtat = New-MotDePasseAleatoire 32; Write-Ok "Mot de passe du rôle $RoleEtat tiré au sort (32 caractères)." }
+    $existe = (Get-Scalaire -Compte $CompteBase -Base $BaseMaintenance -Sql "SELECT count(*) FROM pg_roles WHERE rolname = '$RoleEtat'") -ne "0"
+    $sql = if ($existe) { "ALTER ROLE $RoleEtat LOGIN PASSWORD '$mdpEtat';" } else { "CREATE ROLE $RoleEtat LOGIN PASSWORD '$mdpEtat';" }
+    $r = Invoke-Psql -Compte $CompteBase -Base $BaseMaintenance -Arguments @("-f", "-") -Entree $sql -Tolerant
+    if ($r.Code -ne 0) { throw "Création du rôle $RoleEtat impossible.`n$($r.Texte -replace [regex]::Escape($mdpEtat), '***')" }
+    $r = Invoke-Psql -Compte $CompteBase -Base $BaseMaintenance -Arguments @("-c", "GRANT $RoleGroupeEtat TO $RoleEtat") -Tolerant
+    if ($r.Code -ne 0) { throw "GRANT $RoleGroupeEtat TO $RoleEtat refusé.`n$($r.Texte)" }
+    # Contrôle : connexion, membre du rôle de lecture, ni superutilisateur ni BYPASSRLS (mot de passe par PGPASSWORD, ce processus seulement)
+    Set-MotDePasseMemoire $RoleEtat $mdpEtat
+    $r = Invoke-Psql -Compte $RoleEtat -Base $BaseCentrale -Arguments @("-tAc", "SELECT (pg_has_role(current_user, '$RoleGroupeEtat', 'MEMBER') AND NOT rolsuper AND NOT rolbypassrls)::text FROM pg_roles WHERE rolname = current_user") -Tolerant
+    if ($r.Code -ne 0 -or (($r.Lignes | Where-Object { $_ }) -join "") -ne "true") { throw "Le rôle $RoleEtat ne se connecte pas à $BaseCentrale ou n'est pas conforme.`n$($r.Texte)" }
+    Write-Ok "Rôle $RoleEtat prêt ($(if ($existe) { 'mis à jour' } else { 'créé' })), connexion à $BaseCentrale vérifiée."
+    return (Get-ChaineConnexion $BaseCentrale $RoleEtat $mdpEtat)
 }
 
 # Code d'activation : officine créée si elle manque, sinon code neuf ; rien si pharmacie_dev est déjà activée au central
@@ -442,11 +558,30 @@ function Invoke-Etat {
     try { $sante = (Invoke-RestMethod -Uri "http://localhost:$PortApi/api/healthcheck" -TimeoutSec 5).statut } catch { $sante = "sans réponse" }
     Write-Info "API officine $PortApi : $sante"
     Write-Info ("Central $PortCentral : {0}" -f $(if (Test-PortOuvert $PortCentral) { "à l'écoute" } else { "n'écoute pas" }))
+    Write-Info ("Page d'état $PortPageEtat (http://${AdresseLocale}:$PortPageEtat) : {0}" -f $(if (Test-PortOuvert $PortPageEtat) { "à l'écoute" } else { "n'écoute pas" }))
+    Write-Info ("Écrans du central $PortEcrans (https://${AdresseLocale}:$PortEcrans) : {0}" -f $(if (Test-PortOuvert $PortEcrans) { "à l'écoute" } else { "n'écoute pas" }))
+    Write-Info ("Dossier des codes de second facteur {0} : {1}" -f $DossierCodes, $(if (Test-Path -LiteralPath $DossierCodes) { "présent" } else { "absent" }))
     if (-not (Initialize-Pg $true)) { Write-Avert "Sans mot de passe de pharma_app (PGPASSWORD) : état des bases non lu."; return }
     Write-Etape2 "Rôle $RoleCentral"
     $role = Get-Scalaire -Compte $CompteBase -Base $BaseMaintenance -Sql "SELECT count(*) FROM pg_roles WHERE rolname = '$RoleCentral' AND rolcanlogin"
     $membre = Get-Scalaire -Compte $CompteBase -Base $BaseMaintenance -Sql "SELECT count(*) FROM pg_auth_members am JOIN pg_roles r ON r.oid = am.roleid JOIN pg_roles m ON m.oid = am.member WHERE r.rolname = '$RoleGroupe' AND m.rolname = '$RoleCentral'"
     Write-Info ("Rôle : {0} ; membre de {1} : {2}" -f $(if ($role -ne "0") { "présent (LOGIN)" } else { "absent" }), $RoleGroupe, $(if ($membre -ne "0") { "oui" } else { "non" }))
+    Write-Etape2 "Rôle $RoleEtat (page d'état)"
+    $groupe = Get-Scalaire -Compte $CompteBase -Base $BaseMaintenance -Sql "SELECT count(*) FROM pg_roles WHERE rolname = '$RoleGroupeEtat'"
+    $role = Get-Scalaire -Compte $CompteBase -Base $BaseMaintenance -Sql "SELECT count(*) FROM pg_roles WHERE rolname = '$RoleEtat' AND rolcanlogin"
+    $membre = Get-Scalaire -Compte $CompteBase -Base $BaseMaintenance -Sql "SELECT count(*) FROM pg_auth_members am JOIN pg_roles r ON r.oid = am.roleid JOIN pg_roles m ON m.oid = am.member WHERE r.rolname = '$RoleGroupeEtat' AND m.rolname = '$RoleEtat'"
+    Write-Info ("Rôle {0} (script 029) : {1} ; rôle {2} : {3} ; membre : {4}" -f $RoleGroupeEtat, $(if ($groupe -ne "0") { "présent" } else { "absent" }),
+        $RoleEtat, $(if ($role -ne "0") { "présent (LOGIN)" } else { "absent" }), $(if ($membre -ne "0") { "oui" } else { "non" }))
+    Write-Etape2 "Rôle $RoleEcrans (écrans du central)"
+    $groupe = Get-Scalaire -Compte $CompteBase -Base $BaseMaintenance -Sql "SELECT count(*) FROM pg_roles WHERE rolname = '$RoleGroupeEcrans'"
+    $role = Get-Scalaire -Compte $CompteBase -Base $BaseMaintenance -Sql "SELECT count(*) FROM pg_roles WHERE rolname = '$RoleEcrans' AND rolcanlogin"
+    $membre = Get-Scalaire -Compte $CompteBase -Base $BaseMaintenance -Sql "SELECT count(*) FROM pg_auth_members am JOIN pg_roles r ON r.oid = am.roleid JOIN pg_roles m ON m.oid = am.member WHERE r.rolname = '$RoleGroupeEcrans' AND m.rolname = '$RoleEcrans'"
+    Write-Info ("Rôle {0} (script 030) : {1} ; rôle {2} : {3} ; membre : {4}" -f $RoleGroupeEcrans, $(if ($groupe -ne "0") { "présent" } else { "absent" }),
+        $RoleEcrans, $(if ($role -ne "0") { "présent (LOGIN)" } else { "absent" }), $(if ($membre -ne "0") { "oui" } else { "non" }))
+    if ((Get-ScalaireCentral "SELECT (to_regclass('public.compte_distant') IS NOT NULL)::text") -eq "true") {
+        Write-Info ("Compte {0} : {1}" -f $CompteEditeur, $(if ((Get-ScalaireCentral "SELECT count(*) FROM compte_distant WHERE identifiant = '$CompteEditeur'") -ne "0") { "présent" } else { "absent" }))
+    }
+    else { Write-Info "Script central 030 non passé : aucun compte distant." }
     Write-Etape2 "Central ($BaseCentrale) : officines"
     Assert-BaseAutorisee $BaseCentrale "central"
     Write-Host (Invoke-Lecture $BaseCentrale "SELECT id, libelle FROM officine ORDER BY 2" "")
@@ -468,6 +603,7 @@ function Invoke-Retirer {
     $simul = [bool]$WhatIfPreference
     Assert-DossierRacine
     if (Test-PortOuvert $PortCentral) { throw "Le central écoute sur $PortCentral : arrêter le débogage dans Visual Studio (Maj+F5), puis relancer -Retirer." }
+    if (Test-PortOuvert $PortEcrans) { throw "Les écrans du central écoutent sur $PortEcrans : arrêter le débogage dans Visual Studio (Maj+F5), puis relancer -Retirer." }
     # Seules les variables posées par ce script : valeurs reconnues (chemins de $Racine, base pharmacie_dev, rôle pharma_cloud_dev_vs)
     $aRetirer = @()
     foreach ($n in $VariablesUtilisateur) {
@@ -477,6 +613,8 @@ function Invoke-Retirer {
             "PHARMA_CLOUD_DOSSIER" { $v -eq $DossierAutorite }
             "Synchronisation__Dossier" { $v -eq $DossierSync }
             "PHARMA_CLOUD_CONNEXION" { $v -match "(?i)Database=pharmacie_cloud_dev;Username=$RoleCentral(;|$)" }
+            "PHARMA_CLOUD_ETAT_CONNEXION" { $v -match "(?i)Database=pharmacie_cloud_dev;Username=$RoleEtat(;|$)" }
+            "PHARMA_CLOUD_ECRANS_CONNEXION" { $v -match "(?i)Database=pharmacie_cloud_dev;Username=$RoleEcrans(;|$)" }
             "ConnectionStrings__Pharmacie" { (Get-BaseDeChaine $v) -ceq "pharmacie_dev" }
             "PHARMA_CLOUD_MOT_DE_PASSE" { (Get-VariableUtilisateur "PHARMA_CLOUD_DOSSIER") -eq $DossierAutorite }
         }
@@ -485,9 +623,9 @@ function Invoke-Retirer {
     if ($simul) {
         Write-Etape2 "Plan (simulation, rien n'est retiré)"
         foreach ($n in $aRetirer) { Write-Simul "retrait de la variable d'utilisateur $n" }
-        Write-Simul "retrait du rôle $RoleCentral (aucun objet ni donnée en base)"
-        if (Test-Path -LiteralPath $Racine) { Write-Simul "suppression du dossier $Racine (autorité, certificat, clé de synchronisation de pharmacie_dev, outil)" }
-        Write-Simul "rien n'est supprimé dans $BaseOfficine ni $BaseCentrale"
+        Write-Simul "retrait des rôles $RoleCentral, $RoleEtat et $RoleEcrans (aucun objet ni donnée en base ; $RoleGroupeEtat (029) et $RoleGroupeEcrans (030) restent)"
+        if (Test-Path -LiteralPath $Racine) { Write-Simul "suppression du dossier $Racine (autorité, certificat, clé de synchronisation de pharmacie_dev, outil, codes de second facteur)" }
+        Write-Simul "rien n'est supprimé dans $BaseOfficine ni $BaseCentrale (le compte $CompteEditeur reste au central)"
         Write-Avert "Après retrait, pharmacie_dev garde ses réglages de synchronisation : décocher « Synchronisation activée » à l'écran avant, sur pharmacie_dev."
         return
     }
@@ -495,6 +633,10 @@ function Invoke-Retirer {
     [void](Initialize-Pg $false)
     [void](Invoke-Psql -Compte $CompteBase -Base $BaseMaintenance -Arguments @("-c", "DROP ROLE IF EXISTS $RoleCentral"))
     Write-Ok "Rôle $RoleCentral retiré."
+    [void](Invoke-Psql -Compte $CompteBase -Base $BaseMaintenance -Arguments @("-c", "DROP ROLE IF EXISTS $RoleEtat"))
+    Write-Ok "Rôle $RoleEtat retiré ($RoleGroupeEtat, du script central 029, reste)."
+    [void](Invoke-Psql -Compte $CompteBase -Base $BaseMaintenance -Arguments @("-c", "DROP ROLE IF EXISTS $RoleEcrans"))
+    Write-Ok "Rôle $RoleEcrans retiré ($RoleGroupeEcrans, du script central 030, reste ; le compte $CompteEditeur reste au central)."
     if (Test-Path -LiteralPath $Racine) {
         Assert-DossierRacine
         Remove-Item -LiteralPath $Racine -Recurse -Force

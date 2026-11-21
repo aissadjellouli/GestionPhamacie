@@ -29,6 +29,26 @@
       {
         "Path": "src\\Pharma.Desktop\\Pharma.Desktop.csproj",
         "Action": "Start"
+      },
+      {
+        "Path": "src\\Pharma.Cloud.Web\\Pharma.Cloud.Web.csproj",
+        "Action": "Start",
+        "DebugTarget": "Pharma.Cloud.Web"
+      }
+    ]
+  },
+  {
+    "Name": "Central + Écrans",
+    "Projects": [
+      {
+        "Path": "src\\Pharma.Cloud.Api\\Pharma.Cloud.Api.csproj",
+        "Action": "Start",
+        "DebugTarget": "Pharma.Cloud.Api"
+      },
+      {
+        "Path": "src\\Pharma.Cloud.Web\\Pharma.Cloud.Web.csproj",
+        "Action": "Start",
+        "DebugTarget": "Pharma.Cloud.Web"
       }
     ]
   }

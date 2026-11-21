@@ -8,6 +8,9 @@ public static class PharmaEndpoints
     {
         // Santé du serveur (2026-11-19 : /api/healthcheck, ancien nom /api/sante retiré sur demande du titulaire)
         app.MapGet("/api/healthcheck", () => Results.Ok(new { statut = "ok", heure = DateTime.Now }));
+        // Mode démonstration (docs/demo-cloud.md, étape 2) : lu sans connexion par le poste et la page mobile (bandeau permanent)
+        app.MapGet("/api/demo", (Microsoft.Extensions.Options.IOptions<Pharma.Api.Demo.ReglagesDemo> demo) =>
+            Results.Ok(new Pharma.Shared.EtatDemoDto(demo.Value.Actif, demo.Value.Actif ? Pharma.Application.Demo.ModeDemo.Libelle : null)));
 
         // Toutes les routes : refus prévus (règle métier, droit) renvoyés au poste sans être traités comme des pannes
         var racine = app.MapGroup("").GererErreursMetier();

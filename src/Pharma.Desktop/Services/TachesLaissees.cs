@@ -1,27 +1,51 @@
 namespace Pharma.Desktop.Services;
 
 /// <summary>
-/// Tâche longue laissée en cours au « Changer d'utilisateur » : le prochain employé connecté sur ce poste la voit dans un
-/// bandeau et la reprend sans rien refaire. Type : reception (n° de la réception en attente sur le serveur), facture ou retour
-/// (saisie en JSON). Droit : celui qu'il faut pour la reprendre. Comptage à l'aveugle : réservé à son auteur ou à qui décide des écarts.
-/// </summary>
-public sealed record TacheLaissee(string Type, string Libelle, string LaisseePar, string Droit, string Contenu, DateTime Le, bool ReserveAuteur = false);
-
-/// <summary>
-/// Tâches laissées sur ce poste (mémoire du poste : survit au changement d'utilisateur, pas au redémarrage du poste).
+/// Tâches laissées sur ce poste : survivent au changement d'utilisateur. Facture et retour fournisseur survivent aussi au
+/// redémarrage du poste quand le réglage de l'officine est « Chiffré » (FichierTachesLaissees : fichier chiffré du poste, relu à la
+/// première connexion qui suit le démarrage, réécrit à chaque changement) ; « Désactivé » : mémoire seule, fichier supprimé.
+/// La réception reste en mémoire : elle est déjà en attente sur le serveur.
 /// La vente de la Caisse n'y figure pas : elle est reprise directement à la Caisse (SessionPoste.PrendreVenteAReprendre).
 /// </summary>
 public sealed class TachesLaissees
 {
     private readonly List<TacheLaissee> taches = [];
+    private readonly FichierTachesLaissees? fichier;
     private TacheLaissee? choisie;
+
+    /// <param name="fichier">Fichier du poste (absent : mémoire seule). Rien n'est lu avant que le réglage soit connu (connexion).</param>
+    public TachesLaissees(FichierTachesLaissees? fichier = null) => this.fichier = fichier;
+
+    /// <summary>Réglage de l'officine en vigueur sur ce poste (null : pas encore lu depuis le démarrage).</summary>
+    public string? Mode => fichier?.Mode;
+
+    /// <summary>
+    /// Réglage de l'officine lu à la connexion (et après son changement sur ce poste) : « chiffre » relit le fichier la première fois
+    /// et le réécrit ; « desactive » le supprime, les tâches déjà sur le poste restent en mémoire jusqu'à sa fermeture.
+    /// </summary>
+    public void AppliquerReglage(string mode)
+    {
+        if (fichier is null) return;
+        int ajoutees;
+        lock (taches)
+        {
+            var ajout = fichier.Appliquer(mode, taches.ToList());
+            taches.AddRange(ajout);
+            ajoutees = ajout.Count;
+        }
+        if (ajoutees > 0) Change?.Invoke();
+    }
 
     /// <summary>La liste a changé (le bandeau se met à jour).</summary>
     public event Action? Change;
 
     public void Ajouter(TacheLaissee t)
     {
-        lock (taches) taches.Add(t);
+        lock (taches)
+        {
+            taches.Add(t);
+            fichier?.Ecrire(taches);
+        }
         Change?.Invoke();
     }
 
@@ -33,10 +57,13 @@ public sealed class TachesLaissees
                 && (!t.ReserveAuteur || t.LaisseePar == session.NomComplet || session.A("achats.valider_ecart"))).ToList();
     }
 
-    /// <summary>L'employé clique « Reprendre » : la tâche quitte la liste et attend l'écran qui la rouvre.</summary>
+    /// <summary>L'employé clique « Reprendre » : la tâche quitte la liste (et le fichier du poste) et attend l'écran qui la rouvre.</summary>
     public void Choisir(TacheLaissee t)
     {
-        lock (taches) taches.Remove(t);
+        lock (taches)
+        {
+            if (taches.Remove(t)) fichier?.Ecrire(taches);
+        }
         choisie = t;
         Change?.Invoke();
     }

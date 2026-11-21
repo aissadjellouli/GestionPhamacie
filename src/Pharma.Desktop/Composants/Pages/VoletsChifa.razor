@@ -24,6 +24,8 @@
             <button type="button" role="tab" class="puce" aria-selected="@(onglet == "ecart" ? "true" : "false")" @onclick="@(() => ChoisirAsync("ecart"))">Volets avec écart</button>
             <button type="button" role="tab" class="puce" aria-selected="@(onglet == "ventes" ? "true" : "false")" @onclick="@(() => ChoisirAsync("ventes"))">Ventes Chifa</button>
             <button type="button" role="tab" class="puce" aria-selected="@(onglet == "exclues" ? "true" : "false")" @onclick="@(() => ChoisirAsync("exclues"))">Ventes exclues</button>
+            @* Retour partiel d'une vente en tiers payant (script 155) : la facture Chifa signée se corrige dans CHIFA-Officine *@
+            <button type="button" role="tab" class="puce" aria-selected="@(onglet == "retours" ? "true" : "false")" @onclick="@(() => ChoisirAsync("retours"))">Retours à corriger dans CHIFA-Officine</button>
         </div>
 
         @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
@@ -40,7 +42,17 @@
                         @foreach (var c in centres) { <option value="@c.Id">@c.OrganismeCode · @c.Code · @c.Nom@(c.Actif ? "" : " (désactivé)")</option> }
                     </select></div>
             }
+            else if (onglet == "retours")
+            {
+                <div class="champ" style="flex: 0 1 220px"><label for="vc-etat">État</label>
+                    <select id="vc-etat" data-champ="etat" @bind="etatRetours" @bind:after="() => ChargerAsync(1, taille)">
+                        <option value="a_corriger">À corriger</option>
+                        <option value="corriges">Corrigés</option>
+                        <option value="tous">Tous</option>
+                    </select></div>
+            }
         </div>
+        @if (message is not null) { <div class="info-bandeau" role="status">@message</div> }
 
         <div class="tableau-cadre">
             @if (onglet == "attente")
@@ -71,6 +83,42 @@
                                 </tr>
                             }
                             @if (attente.Lignes.Count == 0) { <tr><td colspan="10" class="vide">Aucune vente Chifa en attente de volet.</td></tr> }
+                        }
+                    </tbody>
+                </table>
+            }
+            else if (onglet == "retours")
+            {
+                @* Retours avec part organisme (script 155) : à reporter dans CHIFA-Officine (facture signée), puis marquer « corrigé » *@
+                <table class="tableau" style="min-width: 1000px">
+                    <thead><tr><th scope="col">Vente</th><th scope="col">Retour</th><th scope="col">Patient</th><th scope="col">Facture Chifa</th><th scope="col">Produits rendus</th><th scope="col" class="nombre">Part organisme retirée</th><th scope="col">État</th><th scope="col">Actions</th></tr></thead>
+                    <tbody>
+                        @if (retours is null) { <tr><td colspan="8"><Chargement /></td></tr> }
+                        else
+                        {
+                            @foreach (var r in retours.Lignes)
+                            {
+                                <tr>
+                                    <td>@r.Numero<br /><span class="detail">@Libelles.DateHeureLocale(r.DateVente)</span></td>
+                                    <td>@Libelles.DateHeureLocale(r.RetourLe)<br /><span class="detail">@r.RetourPar</span></td>
+                                    <td>@(r.Patient ?? "—")@if (r.NumAssure is { } n) { <br /><span class="detail">@n</span> }</td>
+                                    <td>@(r.FactureChifa ?? "—")</td>
+                                    <td>@r.Produits</td>
+                                    <td class="nombre">@r.PartOrganisme.ToString("N2")</td>
+                                    <td>
+                                        @if (r.CorrigeLe is { } le) { <span class="pastille ok">corrigé</span><br /><span class="detail">@Libelles.DateHeureLocale(le) · @r.CorrigePar</span> }
+                                        else { <span class="pastille attention">à corriger</span> }
+                                        @if (r.Deposee) { <br /><span class="detail texte-urgent">vente déposée depuis</span> }
+                                    </td>
+                                    <td>
+                                        @if (r.CorrigeLe is null)
+                                        {
+                                            <button type="button" class="lien-bouton" disabled="@enCours" @onclick="() => MarquerCorrigeAsync(r)">Corrigé dans CHIFA-Officine</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                            @if (retours.Lignes.Count == 0) { <tr><td colspan="8" class="vide">@(etatRetours == "a_corriger" ? "Aucun retour à corriger dans CHIFA-Officine." : "Aucun retour.")</td></tr> }
                         }
                     </tbody>
                 </table>
@@ -173,6 +221,11 @@
             <Pagination Total="@(attente?.Total ?? 0)" Numero="@(attente?.Numero ?? 1)" Taille="taille" Occupe="enCours"
                         Libelle="Pages des ventes en attente de volet" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
         }
+        else if (onglet == "retours")
+        {
+            <Pagination Total="@(retours?.Total ?? 0)" Numero="@(retours?.Numero ?? 1)" Taille="taille" Occupe="enCours"
+                        Libelle="Pages des retours à corriger" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+        }
         else if (onglet is "ventes" or "exclues")
         {
             <Pagination Total="@(ventes?.Total ?? 0)" Numero="@(ventes?.Numero ?? 1)" Taille="taille" Occupe="enCours"
@@ -200,6 +253,10 @@
     private PageDto<VenteAttenteVoletDto>? attente;
     private PageDto<VoletAvecEcartDto>? ecarts;
     private PageDto<VenteChifaDto>? ventes;
+    // Retours à corriger dans CHIFA-Officine (script 155) : état a_corriger (défaut), corriges, tous
+    private PageDto<RetourACorrigerChifaDto>? retours;
+    private string etatRetours = "a_corriger";
+    private string? message;
     private List<CentrePayeurDto> centres = [];
     private long? centreId;
     private (long Id, string Numero)? infos, exclusion;
@@ -207,7 +264,20 @@
     private bool enCours;
     private string? erreur;
 
-    private int? NumeroCourant => onglet switch { "attente" => attente?.Numero, "ecart" => ecarts?.Numero, _ => ventes?.Numero };
+    private int? NumeroCourant => onglet switch { "attente" => attente?.Numero, "ecart" => ecarts?.Numero, "retours" => retours?.Numero, _ => ventes?.Numero };
+
+    /// <summary>« Corrigé dans CHIFA-Officine » : la facture signée a été corrigée dans le logiciel de la CNAS ; date et auteur gardés, journalisé.</summary>
+    private async Task MarquerCorrigeAsync(RetourACorrigerChifaDto r)
+    {
+        (enCours, message) = (true, null);
+        erreur = await Api.MarquerRetourCorrigeChifaAsync(r.RetourId);
+        enCours = false;
+        if (erreur is null)
+        {
+            message = $"Retour de la vente {r.Numero} marqué corrigé dans CHIFA-Officine.";
+            await ChargerAsync(NumeroCourant ?? 1, taille);
+        }
+    }
 
     private async Task ApresActionAsync()
     {
@@ -226,17 +296,20 @@
 
     protected override Task OnInitializedAsync()
     {
-        Historique.Suivre("chifa", e => { e.Mettre("onglet", onglet); e.Mettre("texte", recherche); e.Mettre("page", NumeroCourant ?? 1); e.Mettre("taille", taille); });
+        Historique.Suivre("chifa", e => { e.Mettre("onglet", onglet); e.Mettre("texte", recherche); e.Mettre("page", NumeroCourant ?? 1); e.Mettre("taille", taille); e.Mettre("etat", etatRetours); });
         var numero = 1;
         if (Historique.Restaurer("chifa") is { } h)
-            (onglet, recherche, numero, taille) = (h.Texte("onglet") is "ecart" or "ventes" or "exclues" ? h.Texte("onglet")! : "attente", h.Texte("texte") ?? "", h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+        {
+            (onglet, recherche, numero, taille) = (h.Texte("onglet") is "ecart" or "ventes" or "exclues" or "retours" ? h.Texte("onglet")! : "attente", h.Texte("texte") ?? "", h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+            etatRetours = h.Texte("etat") is "corriges" or "tous" ? h.Texte("etat")! : "a_corriger";
+        }
         return ChargerAsync(numero, taille);
     }
 
     private Task ChoisirAsync(string o)
     {
         if (o == onglet) return Task.CompletedTask;
-        onglet = o;
+        (onglet, message) = (o, null);
         return ChargerAsync(1, taille);
     }
 
@@ -247,6 +320,7 @@
         var q = recherche.Trim() == "" ? null : recherche.Trim();
         if (onglet == "attente") (attente, erreur) = await Api.VentesAttenteVoletAsync(q, numero, t);
         else if (onglet == "ecart") (ecarts, erreur) = await Api.VoletsAvecEcartAsync(q, numero, t);
+        else if (onglet == "retours") (retours, erreur) = await Api.RetoursACorrigerChifaAsync(q, etatRetours, numero, t);
         else
         {
             if (centres.Count == 0)

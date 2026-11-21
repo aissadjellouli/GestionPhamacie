@@ -192,12 +192,19 @@ d'officine (port 5191) reliés entre eux, sur des **bases jetables** (les bases 
    Prérequis : la base centrale `pharmacie_cloud_dev` (scripts `database/cloud/001` à la dernière ; voir
    [mise-en-production.md](mise-en-production.md), parcours du serveur central).
 2. **Redémarrer Visual Studio** (il ne voit les nouvelles variables qu'au redémarrage).
-3. Profil **« API + Poste + Central »** › **F5**. Le central écoute en HTTPS sur 127.0.0.1:5090.
+3. Profil **« API + Poste + Central »** › **F5**. Le central écoute en HTTPS sur 127.0.0.1:5090. Pendant le débogage, la **page d'état
+   du central** (lecture seule, développement seulement) s'ouvre sur **http://127.0.0.1:5092** : officines, certificats, codes
+   d'activation, chargement complet, derniers lots, époques, journal de sécurité. Elle demande le script central `029` passé sur
+   `pharmacie_cloud_dev` puis `-Preparer` relancé (variable `PHARMA_CLOUD_ETAT_CONNEXION`) ; sans elle, le central démarre quand même.
 4. Dans le poste, en `titulaire` : **Administration › Synchronisation** : adresse `https://127.0.0.1:5090/`, synchronisation
    activée, enregistrer, puis coller le **code d'activation** (`-Activer` réaffiche la marche à suivre et un code neuf si
    besoin ; `-Etat` montre où l'on en est).
 5. Le premier envoi charge toute la base au central : quelques minutes. Arrêter le débogage interrompt l'envoi, qui reprend
    au lancement suivant.
+6. **Écrans du central** (lot S7.1, facultatif) : passer les scripts centraux `030` puis `031` sur `pharmacie_cloud_dev`, relancer
+   `-Preparer` (compte `editeur.dev`, mot de passe provisoire affiché une fois), redémarrer Visual Studio, profil **« Central + Écrans »** :
+   https://127.0.0.1:5094/ ; code de second facteur dans `%LOCALAPPDATA%\PharmaOfficine\central-dev\codes\editeur.dev.txt`.
+   Voir [ecrans-central.md](ecrans-central.md) § 6.
 
 **Effet à connaître** : tant que les variables sont posées, **toute** API lancée par ce compte Windows (profil
 « API + Poste client », `dotnet run` compris) vise `pharmacie_dev` et non plus `pharmacie_test` : les variables

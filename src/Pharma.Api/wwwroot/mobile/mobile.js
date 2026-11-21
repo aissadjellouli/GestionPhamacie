@@ -522,5 +522,16 @@ for (const b of document.querySelectorAll("[data-onglet]")) b.addEventListener("
 // Garde le champ de scan actif pour la douchette, sauf pendant une saisie
 document.addEventListener("click", e => { if (!e.target.closest("input, select, button, summary, details")) focaliserScan(); });
 
+// Serveur de démonstration : mention permanente « Démonstration — données fictives » (route sans connexion)
+async function afficherDemo() {
+  try {
+    const r = await fetch("/api/demo", { cache: "no-store" });
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d && d.actif) { $("bandeau-demo").textContent = d.libelle || "Démonstration — données fictives"; $("bandeau-demo").hidden = false; }
+  } catch { /* serveur injoignable : rien à afficher */ }
+}
+afficherDemo();
+
 etat.jeton = sessionStorage.getItem("jeton");
 if (etat.jeton) demarrer().catch(() => deconnecter());

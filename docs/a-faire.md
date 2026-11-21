@@ -94,7 +94,14 @@ Vue d'ensemble courte (point d'avancement) : [reste-a-faire-synthese.md](reste-a
   - retrait des périmés (Alertes, « Retirer du stock ») : pas encore de sortie de stock ; le registre l'inscrira en « destruction » dès qu'elle existera ;
   - registre papier coté et paraphé : demander à la DSP de wilaya si le registre informatisé imprimé est accepté tel quel.
 - [ ] **Rapports et retours** : une vente annulée sort des chiffres de son jour d’origine ; un retour client n’est pas encore déduit du chiffre d’affaires des rapports (à afficher en ligne « retours » ou à déduire : à décider).
-- [ ] **Retour partiel en tiers payant** : aujourd’hui refusé (il faut annuler la vente complète) ; à revoir avec le format Chifa (régularisation de la part de l’organisme).
+- [x] **Retour partiel en tiers payant** (option A du titulaire, 2026-11-21, script 155) : permis avant tout dépôt (part organisme des boîtes rendues retirée de la créance), refusé après dépôt ; liste « Retours à corriger dans CHIFA-Officine » (Finances › Chifa). Restes :
+  - [x] mention « Part organisme retirée : X DA » (et « facture à corriger dans CHIFA-Officine ») sur la ligne du retour du ticket réimprimé, imprimé et PDF (2026-11-21) ;
+  - [ ] procédure de la CNAS pour une vente déjà déposée (questions dans [chifa.md](chifa.md), « Retour d’un médicament remboursé ») ; d’ici là, refus dans le logiciel ;
+  - [ ] journal fiscal d’un retour au TTC complet (part organisme comprise) : **[À VÉRIFIER avec le comptable]** ;
+  - [x] rapprochement d’un volet après un retour : **ajusté** (décision du titulaire du 2026-11-21, script 157) : comparaison nette des retours, part rendue avant le rattachement gardée sur la régularisation, aucune double déduction ;
+  - [ ] régularisation « à la charge du patient » (ou « rendu au patient ») faite avant un retour : la part de l’écart des boîtes rendues n’est pas rendue au patient : **à décider par le titulaire** ;
+  - [ ] vente MDN : la créance diminue, procédure de correction auprès du MDN inconnue ;
+  - [ ] autres créances calculées sur `vente.part_organisme` sans passer par `v_vente_part_organisme` (rapports, factures d’organisme) : à relire.
 - [ ] **Prix dans la nomenclature** : le fichier officiel actuel ne porte ni prix ni code-barres ; le prix public reste à saisir. Barème des marges (décret 98-44) à confirmer avant tout calcul automatique.
 
 - [ ] **Comparaison des tarifs des grossistes** : importer les tarifs de chaque grossiste et comparer les prix produit par produit (aide au choix du grossiste à la commande).
@@ -212,10 +219,10 @@ récemment »). Restent :
 - [x] État de la caisse et comptage intermédiaire sans clôture (070) : comptage aveugle strict, écart affiché comme à la clôture pour qui peut le voir.
 
 **Points ouverts de ces livraisons**
-- [ ] Facture et retour fournisseur laissés au changement d'utilisateur : gardés dans la mémoire du poste, perdus si le poste redémarre.
+- [x] Facture et retour fournisseur laissés au changement d'utilisateur : gardés dans un fichier chiffré du poste (`%LOCALAPPDATA%\PharmaOfficine\taches-laissees.dat`), relus au redémarrage (2026-11-21, décision du titulaire ; regles-metier.md).
 - [ ] Abandon d'une réception en attente : inscrit au journal des actions ; à décider s'il doit aussi lever une anomalie dans le Contrôle interne.
 - [ ] Mise en évidence des boutons au survol en thème clair : préciser ce qui ne convient pas (« pareil que sombre »).
-- [ ] Vente mise en attente au changement d'utilisateur : si le serveur est injoignable à ce moment-là, le panier est perdu sans signalement (la session est déjà fermée).
+- [x] Vente mise en attente au changement d'utilisateur : si le serveur est injoignable à ce moment-là, le panier est perdu sans signalement (la session est déjà fermée). Corrigé (2026-11-21) : mise en attente attendue avant la fermeture de la session ; échec → fenêtre bloquante « Réessayer » / « Rester sur la vente », panier resté affiché (regles-metier.md « Aucun panier perdu en silence »). À essayer serveur coupé.
 
 - [x] Corrections de la recette du 12/11/2026 (défauts majeurs) : mot de passe provisoire et code comptoir ; révocation des connexions (063) ; psychotrope jamais autorisé par le code d'un collègue ; portée de la connexion par code ; vrai validateur d'une annulation ou d'un retour autorisés par code ; remboursement d'une vente à crédit limité à ce qui a été payé ; annulation et retour simultanés ; aucune écriture sur une caisse clôturée (064) ; lot rappelé bloqué pour tous les grossistes ; GTIN contrôlé à la réception ; Data Matrix : lot de la date lue ; retour des boîtes non scannées ; stock vendable sans les lots bloqués (065) ; vente en attente qui garde tout, double clic, boîtes retirées signalées à la déconnexion, impression du ticket, fiche contact et « Faire autoriser » fermées ; scripts 003, 901, 903, sauvegarde planifiée et restauration par script.
 - [x] Alertes qui ont un sens : péremption seulement s'il y a quelque chose à faire (066), « RAS » à l'écran, rapport du soir sans rubrique vide, e-mails d'alerte une information par ligne.

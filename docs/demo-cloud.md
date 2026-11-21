@@ -15,7 +15,7 @@ recherche de `pg_dump.exe`, `pg_restore.exe` et `psql.exe`. Seule nouveauté vis
 |---|---|---|
 | 0 | API utilisable sous Linux (ce document) | **Faite le 2026-11-20** ; build et tests sous Windows ; **aucun essai réel sous Linux encore** |
 | 1 | Dockerfile de l'API + docker-compose local (API + PostgreSQL + volume des données) | **Fichiers écrits le 2026-11-20** (tests de contenu) ; **jamais construit ni démarré** (Docker absent du poste) : voir [Étape 1](#étape-1--image-de-lapi-et-docker-compose-local) |
-| 2 | Mode démo (données de démonstration, comptes d'essai, remise à zéro) | À faire |
+| 2 | Mode démo (données de démonstration, comptes d'essai, remise à zéro) | **Code et fichiers écrits le 2026-11-21** (tests `ModeDemoTests`) ; **jamais démarré** (Docker absent) : voir [Étape 2](#étape-2--mode-démo) |
 | 3 | Tests (démarrage du conteneur, santé, PDF, sauvegarde/restauration dans le conteneur) | À faire |
 | 4 | Documentation d'exploitation de la démo | À faire |
 
@@ -251,9 +251,115 @@ l'API (proxy inverse déclaré dans `ProxysConnus`) et certificat pour les clés
 - DataProtection propre à `AddAuthentication` (clés dans le profil du compte `app`, non persistées) : avertissements possibles.
 - Sauvegarde automatique (`pg_dump` du conteneur) : disque de destination non réglé à cette étape.
 
-### Reste pour l'étape 2
+### Reste après l'étape 1
 
-- Trancher le point des comptes de démo (A, B ou C ci-dessus) ; charger `905_jeu_de_test.sql` et la nomenclature nationale.
-- Mode démo : comptes d'essai, remise à zéro de la base.
-- Super admin de la démo (`dotnet Pharma.Api.dll --super-admin` dans le conteneur, interactif : à essayer).
-- Étape 3 : tests de démarrage du conteneur, santé, PDF (Liberation Sans, texte arabe), sauvegarde et restauration dans le conteneur.
+- Étape 2 : faite, voir ci-dessous (comptes de démo : choix A ; super admin coupé en démonstration).
+- Étape 3 : tests de démarrage du conteneur, santé, PDF (Liberation Sans, texte arabe), sauvegarde et restauration dans le conteneur
+  (en démonstration, sauvegardes et restauration sont coupées : à faire avec `Demo__Actif` retiré, sur une base jetable).
+
+## Étape 2 : mode démo
+
+« Go » du titulaire le 2026-11-21, avec les recommandations retenues de l'analyse. Code, compose et scripts écrits le
+2026-11-21 ; build et tests sous Windows seulement. **Rien n'a été démarré en conteneur** (Docker absent) : ce qui en dépend est
+marqué **[À VÉRIFIER au premier démarrage]**. Règles : [regles-metier.md](regles-metier.md), « Mode démonstration ».
+
+### Réglages
+
+| Réglage | Défaut | Démo (compose) | Rôle |
+|---|---|---|---|
+| `Demo:Actif` | `false` (`appsettings.json`) | `true` | Mode démonstration |
+| `Demo:FichierNomenclature` | vide | `/pharma/data/NOMENCLATURE NATIONALE - VERSION JUIN 2026.xlsx` | Import automatique de la nomenclature si la base n'en a pas |
+| `Jwt:DureeHeures` | 12 | 2 | Durée du jeton de connexion |
+| `REINIT_HEURE` (`.env`) | — | `04:00` | Heure de la remise à zéro quotidienne (fuseau `Africa/Algiers`) |
+
+### Marqueur de la base et démarrage
+
+- Marqueur : table `base_demonstration` (une ligne), créée **uniquement** par `deploy/demo/init/10_base_officine.sh` (étape 6
+  du script), après les migrations et les données fictives. Aucune migration, ni le seed de mise en production, ni
+  `database/data` ne la créent (test `Aucune_migration_ni_seed_ni_donnee_ne_pose_le_marqueur`).
+- `Demo:Actif=true` et marqueur absent ou illisible (base injoignable) : **l'API refuse de démarrer** (code 3), message clair.
+  Aussi refusées en démonstration : `--super-admin`, `--importer-cle`, `--empreinte-cle`.
+- **Choix (à valider)** : marqueur présent et `Demo:Actif=false`, hors `Development` : **avertissement** au journal du démarrage,
+  sans refus (une copie de la base de démonstration ouverte pour un essai reste possible ; le message dit que SMS, e-mails,
+  synchronisation et sauvegardes n'y sont pas coupés). Un refus serait plus strict : à décider par le titulaire.
+
+### Mention « Démonstration — données fictives » et filigrane
+
+- `GET /api/demo` (sans connexion) : `{ "actif": true, "libelle": "Démonstration — données fictives" }` ; hors démo `actif: false`.
+- Poste : élément permanent de la **barre d'état** (classe `.element-etat.demo`, couleurs « attention » en clair et en sombre),
+  affiché avant et après la connexion, sans bouton pour le masquer. **Choix (à valider)** : la barre d'état plutôt qu'un bandeau
+  au-dessus des écrans, pour ne pas ajouter de hauteur (règle « aucun défilement à 1 366 × 768 ») ; aucune mesure ni capture
+  faite (poste non lancé sur une API en démonstration) **[À VÉRIFIER]**.
+- Page mobile : ligne dans l'en-tête collé en haut (`#bandeau-demo`).
+- PDF de `DocumentsPdf` et `DocumentsAchats` : « DÉMONSTRATION » en diagonale, gris transparent, sur chaque page ; sujet et
+  mots-clés du document. Rendu (lisibilité, texte arabe, Liberation Sans) **[À VÉRIFIER au premier démarrage]**.
+
+### Fonctions coupées (422 « Indisponible en démonstration : … »)
+
+| Fonction | Moyen |
+|---|---|
+| Super admin (connexion, restauration base et GED, reprise, validations) | Routes `/api/super-admin/*` refusées ; commandes console refusées |
+| Reprise ODBC | Routes `/api/admin/reprise/*` refusées |
+| Synchronisation avec le central | Actions de `/api/admin/synchronisation/*` refusées (consultation permise) ; tâches d'envoi, de surveillance et de purge non lancées |
+| Sauvegardes automatiques, restauration, copie de secours | Actions de `/api/admin/sauvegardes/*` refusées ; tâche des sauvegardes non lancée ; restauration = super admin |
+| Second serveur | Actions de `/api/admin/second-serveur/*` refusées ; surveillance non lancée |
+| SMS et e-mail | Adaptateurs factices (journal du serveur, sans adresse ni texte) ; routes d'envoi (code, test, rapport, bon de commande par e-mail) refusées ; tâche d'envoi des notifications non lancée |
+| Export Chifa réel | Connecteur factice (aucune facture lue ; le connecteur réel n'est appelé par aucun cas d'usage à ce jour) |
+| Mot de passe des comptes `titulaire`, `assistant`, `vendeur` | Refus dans `ChangerMonMotDePasse` et `ModifierUtilisateur` |
+
+Le refus des routes passe par un intergiciel placé avant l'authentification (`FonctionsCoupeesDemo`), actif seulement en
+démonstration. **Non coupé (à décider)** : désactivation d'un compte de démonstration et changement de son rôle par le titulaire
+de démonstration (un visiteur pourrait gêner les suivants jusqu'à la remise à zéro du lendemain).
+
+### Nomenclature nationale et 905
+
+- La nomenclature n'existe qu'en fichier Excel : **elle ne peut pas être chargée sans l'API** (lecteur `LecteurNomenclatureXlsx`,
+  règles de l'import) — constat du code. En démonstration, l'API l'importe elle-même (`ImportNomenclatureDemo`) si la base n'a
+  aucune version : au nom du compte `titulaire`, comme depuis Administration › Nomenclature ; vérifié 20 s après le démarrage
+  puis toutes les 2 minutes. Le fichier est monté en lecture seule (`../../database/data:/pharma/data:ro`), **jamais copié
+  dans l'image**.
+- `905_jeu_de_test.sql` est passé par le service `reinit` dès que la nomenclature est présente (plus de 1 000 médicaments ;
+  attente de 30 minutes au plus), puis après chaque remise à zéro.
+- **Incertitude (à trancher par le titulaire)** : le fichier est un document public du ministère, mais ses conditions de
+  réutilisation et de redistribution ne sont **pas connues** (rien dans le dépôt ne les précise). Une démo locale ne le
+  redistribue pas ; une démo **publique** le rendrait consultable (recherche de la nomenclature, fiches produits) : à vérifier
+  avant toute ouverture au public.
+
+### Remise à zéro
+
+- Gabarit : `pharmacie_demo_gabarit`, créé par le script d'init (étape 7) juste après le marqueur : base `IS_TEMPLATE`, connexions
+  interdites. Il contient les migrations, les données fictives 900 à 904, les trois comptes et le marqueur ; **ni la nomenclature
+  ni 905**.
+- Service `reinit` du compose (image `postgres:18`, script `deploy/demo/reinit/remise_a_zero.sh`) : au démarrage, attend la
+  nomenclature puis passe 905 ; ensuite, chaque jour à `REINIT_HEURE` : vérifie le gabarit et le marqueur, `DROP DATABASE … WITH
+  (FORCE)` (connexions de l'API coupées), `CREATE DATABASE … TEMPLATE pharmacie_demo_gabarit`, repose le fuseau
+  (`ALTER DATABASE … SET timezone`, réglage de base non copié par `CREATE DATABASE`), revérifie le marqueur, attend que l'API
+  réimporte la nomenclature, repasse 905 (dates recalées sur le jour).
+- Garde-fous : noms `pharmacie_dev`, `pharmacie_test`, `pharmacie` refusés ; rien n'est supprimé si la base visée n'a pas le
+  marqueur ; ne concerne que le serveur `db` et le volume `db-donnees` de la démo.
+- Commande manuelle (remise à zéro tout de suite) :
+
+```powershell
+docker compose -f deploy/demo/docker-compose.yml --env-file deploy/demo/.env exec reinit bash /pharma/reinit/remise_a_zero.sh maintenant
+```
+
+- Le volume `api-donnees` (GED, archives fiscales, clés) n'est **pas** remis à zéro : documents de la GED déposés par les
+  visiteurs gardés d'un jour à l'autre (sans lien avec la base recréée). **À décider** si la GED doit aussi être vidée.
+- Pendant la remise à zéro (quelques secondes, plus l'import de la nomenclature et 905), l'API répond en erreur puis les postes
+  doivent se reconnecter (base « restaurée » : jetons refusés, règle inchangée).
+
+### À vérifier au premier démarrage (étape 2)
+
+- [À VÉRIFIER] Création de la table `base_demonstration` et du gabarit pendant l'init (`CREATE DATABASE … TEMPLATE` sans autre
+  connexion à la base source) ; démarrage de l'API avec `Demo__Actif=true` (ligne « Mode démonstration actif » au journal).
+- [À VÉRIFIER] Refus de démarrer de l'API sur une base sans marqueur (par exemple `ConnectionStrings__Pharmacie` vers une autre
+  base) ; avertissement d'une API sans `Demo__Actif` sur la base de démonstration.
+- [À VÉRIFIER] Montage du fichier de la nomenclature (nom avec espaces) et durée de l'import ; puis 905 passé par `reinit`
+  (journal `docker compose … logs reinit`).
+- [À VÉRIFIER] Connexion de `reinit` au serveur `db` par mot de passe sur le réseau du compose (règles `pg_hba` de l'image
+  postgres) ; `date -d` et `TZ=Africa/Algiers` dans l'image postgres ; remise à zéro manuelle (`maintenant`) puis reconnexion
+  du poste.
+- [À VÉRIFIER] L'image postgres déclare un volume pour ses données : le service `reinit` (qui ne lance pas de serveur) crée
+  un volume anonyme inutilisé.
+- [À VÉRIFIER] Mention au poste (barre d'état) et sur la page mobile ; filigrane sur un ticket, un rapport, un bon de commande.
+- [À VÉRIFIER] Jeton de 2 heures (reconnexion demandée au-delà).

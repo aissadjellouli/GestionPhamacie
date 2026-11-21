@@ -1,6 +1,6 @@
 # Reste à faire : synthèse
 
-Point d'avancement du 2026-11-20 (lots « alertes psychotropes » (script 153) et « décisions du central » (scripts centraux 026 à 028) commités ensemble le 2026-11-20, après `0939f88`). Vue d'ensemble courte ; le détail de chaque point est dans
+Point d'avancement du 2026-11-21 (défauts « vente au changement d'utilisateur » et « fiche d'un prêt » corrigés, non commités ; lots « alertes psychotropes » (script 153) et « décisions du central » (scripts centraux 026 à 028) commités ensemble le 2026-11-20, après `0939f88`). Vue d'ensemble courte ; le détail de chaque point est dans
 [a-faire.md](a-faire.md), [fonctionnalites.md](fonctionnalites.md) (inventaire complet) et dans les documents cités. À mettre à jour à chaque
 point d'avancement.
 
@@ -20,14 +20,46 @@ le 2026-11-20 (Caisse avec psychotrope, `pharmacie_test`, 1366 × 768 : case du 
 aucune bulle ; F12 → bulle sur le patient d'abord, puis, patient et médecin choisis, sur le nom du porteur ; aide de la caisse
 entièrement au-dessus de l'écran, clair et sombre).
 
-Puis, le 2026-11-20 (non commité) : lancement **API + Poste + Central** depuis Visual Studio — profil « API + Poste + Central »
+Puis, le 2026-11-20 (commité : `ce5586a`, `9f62c7c`, `4b9b51b`) : lancement **API + Poste + Central** depuis Visual Studio — profil « API + Poste + Central »
 (`PharmaOfficine.slnLaunch`), `launchSettings.json` du central sans `applicationUrl` ni navigateur, outil
 `scripts\dev\preparer_central_vs.ps1` (-Preparer, -Activer, -Etat, -Retirer), tests `CentralVisualStudioTests`, docs
 (poste-de-developpement.md, essai-cloud-officine.md). Préparation faite sur ce poste après sauvegardes
 (`C:\MesAtlassian\sauvegardes-bd\pharmacie_cloud_dev_avant_central_vs_20261120.dump`, `…\pharmacie_dev_avant_central_vs_20261120.dump`) :
 rôle `pharma_cloud_dev_vs`, variables d'utilisateur, autorité, officine « Développement (pharmacie_dev) » créée au central.
 
+Puis, le 2026-11-21 (non commité) : **page d'état du central** (développement seulement, `http://127.0.0.1:5092`, lecture seule) —
+`src\Pharma.Cloud.Api\Etat\`, script central `029_role_lecture_etat.sql` (rôle `pharma_cloud_etat` sans connexion, lecture par colonnes)
+et son test SQL, `preparer_central_vs.ps1` (connexion `pharma_cloud_etat_vs`, variable `PHARMA_CLOUD_ETAT_CONNEXION`), tests
+`PageEtatCentralTests`, docs.
+
 ## 3. Ensuite
+
+- [ ] **Retour partiel en tiers payant** (option A du 2026-11-21, non commité) : passer `155_retour_partiel_tiers_payant.sql` sur
+      `pharmacie_dev` puis `pharmacie_test` (après sauvegarde), puis `database/tests/155_retour_partiel_tiers_payant_tests.sql` sur
+      `pharmacie_test` ; régénérer ou vérifier `database/cloud/002_tables_miroir.sql` (colonnes ajoutées à la main, test d'alignement
+      vert) et le repasser sur les bases centrales ; mesurer à 1366 × 768 et 1536 × 890, clair et sombre : Caisse › Annuler / retour
+      (vente en tiers payant hors bordereau, en préparation, déposée, taux 100 %) et Finances › Chifa › « Retours à corriger dans
+      CHIFA-Officine ». Mention sur le ticket faite (2026-11-21 : réimprimer le ticket d'une vente avec un tel retour, imprimante et PDF).
+      Restes : questions à la CNAS ([chifa.md](chifa.md)), journal fiscal à
+      faire vérifier par le comptable, régularisation « à la charge du patient » suivie d'un retour (à décider), voir [a-faire.md](a-faire.md).
+
+- [ ] **Rapprochement d'un volet après un retour** (ajusté le 2026-11-21, non commité) : passer `157_rapprochement_volet_apres_retour.sql`
+      sur `pharmacie_dev` puis `pharmacie_test` (après 155, après sauvegarde), puis `database/tests/157_rapprochement_volet_apres_retour_tests.sql`
+      sur `pharmacie_test` ; repasser `database/cloud/002_tables_miroir.sql` sur les bases centrales (colonne
+      `regularisation_part_organisme.part_organisme_rendue_avant`). Vérifier à l'écran : rapprocher le volet d'une vente Chifa
+      après un retour partiel (volet corrigé : concorde ; non corrigé : « … servie(s) après N rendue(s) »).
+
+- [ ] **Réglage « facture et retour laissés »** (2026-11-21, non commité, titulaire seul) : passer
+      `156_reglage_taches_laissees_poste.sql` sur `pharmacie_dev` puis `pharmacie_test` (après sauvegarde), puis
+      `database/tests/156_reglage_taches_laissees_poste_tests.sql` sur `pharmacie_test` ; repasser `database/cloud/002_tables_miroir.sql`
+      (colonne `parametre_caisse.taches_laissees_poste`) sur les bases centrales ; mesurer à 1366 × 768 et 1536 × 890, clair et sombre :
+      Administration › Caisse et contrôle › Règles (`admin/caisse?rubrique=regles`), en titulaire (choix actifs) et en employé avec
+      `admin.parametres` sans être titulaire (choix grisés). Essai au poste : « Désactivé » → `taches-laissees.dat` supprimé à la connexion.
+      `init/schema.sql` édité à la main (aucune base touchée) : à confirmer par la régénération `pg_dump` habituelle.
+
+- [ ] **Page d'état du central** : passer `029` sur `pharmacie_cloud_dev` (après sauvegarde), puis `preparer_central_vs.ps1 -Preparer`
+      (Visual Studio arrêté : port 5090 libre), redémarrer Visual Studio, F5, ouvrir `http://127.0.0.1:5092`. `029` sur les autres
+      bases centrales (essai, test) et dans le paquet du central à la prochaine mise à jour.
 
 - [ ] **Activation de `pharmacie_dev` par l'écran** (titulaire) : redémarrer Visual Studio, profil « API + Poste + Central », F5,
       `.\scripts\dev\preparer_central_vs.ps1 -Activer`, puis Administration > Synchronisation (voir poste-de-developpement.md).
@@ -85,7 +117,13 @@ rôle `pharma_cloud_dev_vs`, variables d'utilisateur, autorité, officine « Dé
       au premier démarrage » de [demo-cloud.md](demo-cloud.md)) ; comptes de démo : **choix A du titulaire le 2026-11-20**
       (base de démo construite comme les bases de développement : migrations puis données fictives ; séquence validée sur une
       base jetable, défaut du script 149 sur base neuve corrigé et repassé sur dev et test) ;
-    - [ ] étape 2 : mode démo ;
+    - [ ] étape 2 : mode démo — **code et fichiers écrits le 2026-11-21** (réglage `Demo:Actif` faux par défaut, refus de démarrer
+      sans le marqueur `base_demonstration` posé par le seul script d'init, mention « Démonstration — données fictives » au poste
+      et sur la page mobile, filigrane des PDF, fonctions coupées en 422, adaptateurs SMS/e-mail/Chifa factices, comptes de démo
+      au mot de passe figé, jeton 2 h, gabarit et service `reinit` de remise à zéro quotidienne, nomenclature importée par l'API
+      puis 905 ; tests `ModeDemoTests` ; build et tests réussis sous Windows) ; **reste : premier démarrage réel** (Docker absent
+      du poste ; liste « À vérifier au premier démarrage » de [demo-cloud.md](demo-cloud.md), étape 2) et validation par le
+      titulaire des décisions listées dans [demo-cloud.md](demo-cloud.md) (droit de redistribuer la nomenclature si démo publique) ;
     - [ ] étape 3 : tests (démarrage du conteneur, PDF, sauvegarde et restauration dans le conteneur) ;
     - [ ] étape 4 : documentation d'exploitation de la démo ;
   - majorations Chifa : **« Garde » seule** pour l'instant ;
@@ -111,7 +149,7 @@ rôle `pharma_cloud_dev_vs`, variables d'utilisateur, autorité, officine « Dé
     caisse ; **tous les rayons** proposés dès l'entrée dans le champ ; écran **Seuils par produit à revoir** (8 à 10 lignes
     visibles à 1366 × 768) ;
   - [x] **fait le 2026-11-20 (26 bases supprimées, aucune connexion ouverte ; `pharmacie_jetable_sugg_7086638f`, reste d'un essai des
-    tests de suggestions, gardée : hors de la liste validée)** — bases : **supprimer les bases jetables seules** (`pharmacie_cloud_jetable_m11_1d7bbebb`, `pharmacie_jetable_m4_*`,
+    tests de suggestions, supprimée ensuite sur go du titulaire)** — bases : **supprimer les bases jetables seules** (`pharmacie_cloud_jetable_m11_1d7bbebb`, `pharmacie_jetable_m4_*`,
     `pharmacie_jetable_rejeu_*`), liste exacte montrée et validée avant suppression ; bases de recette gardées.
 - [x] **S6.5, intégrité après restauration** : **terminé** le 2026-11-19 (S6.5.0 à S6.5.6 ; essai de bout en bout réussi). Restent
       hors lot : avis du comptable (§ 6) ; n° repris avant la détection : traité le 2026-11-19 (§ 31.10). Synthèse :
@@ -123,8 +161,18 @@ rôle `pharma_cloud_dev_vs`, variables d'utilisateur, autorité, officine « Dé
       `d4dbe40`**, remesuré à 0 px à 1 366 × 768 (tous les écrans, toutes rubriques) et à 1 536 × 890, captures clair et sombre.
       Détail des corrections : charte graphique, « Campagne 1 366 × 768 du 2026-11-20 ». Nouvelles rubriques : Caisse et contrôle
       › « Chifa : délais et seuils », Notifications › « E-mail » et « SMS ».
-- [ ] **Décision : fiche d'un prêt ouvert** (Financements › Prêts bancaires) : défile de 77 à 226 px à 1 366 × 768 ; formulaire
-      ouvert à la demande, toléré par la règle. À corriger quand même ?
+- [ ] **Fiche d'un prêt ouvert** (Financements › Prêts bancaires) : défilait de 77 à 226 px à 1 366 × 768. **Corrigé le 2026-11-21
+      (« go 3 », non commité)** : cinq tuiles compactes sur une rangée, tableaux à 140 px au moins, onglets « Prêt et document »,
+      « Employer l'argent » et saisie de l'échéancier dans un cadre défilant ; rien n'est retiré. **Reste : mesure 0 px et captures
+      clair et sombre à 1 366 × 768 et 1 536 × 890 par le titulaire** (`/financements?rubrique=prets&pret=<id>`, les quatre onglets
+      et « Modifier ou réimporter l'échéancier… »).
+- [ ] **Vente au changement d'utilisateur, serveur injoignable** : **corrigé le 2026-11-21 (non commité)** : plus aucun panier perdu
+      en silence ; fenêtre bloquante « Réessayer » / « Rester sur la vente » (regles-metier.md « Aucun panier perdu en silence »).
+      **Reste : essai serveur coupé, mesure et captures de la fenêtre** (Caisse panier rempli, API arrêtée, « ⇄ Changer »).
+- [ ] **Facture et retour fournisseur laissés au changement d'utilisateur** : **fait le 2026-11-21 (non commité)**, décision du
+      titulaire « fichier du poste » : `%LOCALAPPDATA%\PharmaOfficine\taches-laissees.dat`, chiffré DPAPI utilisateur, relu au
+      démarrage, 7 jours au plus (regles-metier.md « Facture et retour fournisseur laissés »). **Reste : essai sur le poste**
+      (facture en préparation, « ⇄ Changer », fermer et relancer le logiciel, le suivant reprend la facture).
 - [ ] Non mesurés à 1 366 × 768 : Reprise de données et profils de reprise (super admin).
 - [x] **Bulle « À renseigner » trop tôt** (2026-11-20, corrigé, commité `d4dbe40`, vérifié à l'écran) : porteur de l'ordonnance (curseur dans le nom à la coche),
       n° de facture et « motif sans n° » Chifa, motif du rattachement d'un volet, confirmation du mot de passe (Synchronisation) ;
@@ -147,6 +195,8 @@ rôle `pharma_cloud_dev_vs`, variables d'utilisateur, autorité, officine « Dé
 
 ## 5. Décisions attendues du titulaire
 
+- [ ] **Rapprochement d'un volet après un retour en tiers payant** : déduire les boîtes rendues dans la comparaison, ou refuser la régularisation d'une vente déjà rendue en partie (risque de double déduction : [a-faire.md](a-faire.md)).
+
 - [ ] **Compte `postgres`** : fichier `pgpass.conf` (hors dépôt) pour essayer le script 111b et la méthode `SET ROLE` sur une copie.
 - [ ] **Écrans de vente** : liste des DCI d'antibiotiques, format de l'export pour les impôts et taux de TVA.
 - [ ] Autres points ouverts : voir [a-faire.md](a-faire.md), « Décisions en attente du titulaire » et « Mise en production : à décider ».
@@ -155,12 +205,12 @@ rôle `pharma_cloud_dev_vs`, variables d'utilisateur, autorité, officine « Dé
 
 - [ ] Hébergeur en Algérie agréé ARPCE et nom de domaine `.dz` (préalable au serveur central réel).
 - [ ] Déclaration à l'ANPDP ; texte du consentement SMS ; test d'intrusion avant la mise en service du central.
-- [ ] Lettre à la CNAS (format du QR Chifa, export, volets).
+- [ ] Lettre à la CNAS (format du QR Chifa, export, volets ; procédure pour une vente déjà déposée et retour d'un médicament remboursé : questions dans [chifa.md](chifa.md)).
 - [ ] Marque Tracodex : recherche d'antériorité à l'INAPI (classes 9, 42 et 5) ; avis sur le croissant du logo (emblème
       national, ordonnance 03-06) avant le dépôt ([branding/logo.md](branding/logo.md)).
 - [ ] Wilayas 59 à 69 à vérifier au Journal officiel.
 - [ ] Exports de l'ancien logiciel, catalogues des grossistes, tableaux d'amortissement des banques, modèle de feuille CVM/MDN.
-- [ ] Questions au comptable : TVA des pertes et dons, don partiel, intérêts et marge des prêts (mourabaha) ; n° de tickets sautés après une restauration (S6.5-D6).
+- [ ] Questions au comptable : TVA des pertes et dons, don partiel, intérêts et marge des prêts (mourabaha) ; n° de tickets sautés après une restauration (S6.5-D6) ; journal fiscal d'un retour en tiers payant au TTC complet (part organisme négative, script 155).
 - [ ] Questions à un juriste (loi 18-07 et loi 25-11, avant la mise en service du central) : autorisation ou déclaration ANPDP, consentement ou information des patients, secret professionnel et hébergement chez l'éditeur, hébergement en Algérie obligatoire ou non, réponse à une autorité sans le titulaire et tiers de confiance (décision DC8) : [chiffrement-data.md](chiffrement-data.md) § 12.3 ; durée de conservation au central après le départ d'une officine (6 ans par défaut) ; obligations de conservation des ordonnances.
 
 ## 7. Essais sur le terrain
@@ -174,7 +224,9 @@ rôle `pharma_cloud_dev_vs`, variables d'utilisateur, autorité, officine « Dé
 ## 8. Plus tard (sur accord explicite du titulaire)
 
 
-- [ ] **Synchronisation S7** : écrans du central, accès à distance du titulaire, multi-officines (après le choix de l'hébergeur).
+- [x] **Synchronisation S7.1** (2026-11-21, en local) : écrans de l'éditeur du serveur central, comptes distants, second facteur, journal des accès chaîné ([ecrans-central.md](ecrans-central.md)). À faire avant usage : passer les scripts centraux **030** puis **031** sur `pharmacie_cloud_dev` (après relecture), `preparer_central_vs.ps1 -Preparer`, mesurer les écrans (1 366 × 768 et 1 536 × 890, clair et sombre).
+- [ ] **Synchronisation S7.2** : écrans du titulaire à distance, multi-officines (comptes titulaires, `compte_officine`), SMS (fournisseur), remise à zéro d'un mot de passe par l'éditeur.
+- [ ] **Mise en ligne des écrans du central** (après le choix de l'hébergeur) : domaine et certificat, proxy inverse (adresse réelle pour les limites de débit), connexion de production au rôle `pharma_cloud_ecrans`, SMTP, clé HMAC commune si plusieurs instances, comptes éditeur réels, test d'intrusion.
 - [ ] Découpage par officine des grandes tables du central.
 - [ ] Script 101b (suppression de `vente.num_facture_chifa`) : à exécuter à la mise à jour de l'officine, conflits tranchés.
 - [ ] Sauvegarde chiffrée de la GED hors de l'officine (après le lot 9 et l'hébergeur).

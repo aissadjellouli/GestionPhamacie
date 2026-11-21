@@ -45,12 +45,26 @@ Décisions du titulaire (« go bordereaux complet ») ; écran **Finances › Bo
 - **Un bordereau par organisme (CNAS, CASNOS) et par centre payeur** ; MDN : même mécanisme, canal `mdn`, centre facultatif. Il contient plusieurs factures Chifa, **une par ordonnance, donc par vente** ; une vente n'est que sur un seul bordereau.
 - **Ventes « à déposer »** : ventes Chifa rattachées à leur volet (n° de facture Chifa) ou ventes MDN, sur aucun bordereau ; signalées en retard au-delà de 7 jours (réglable, Administration › Caisse). On les rattache cochées, « toutes », ou en scannant / saisissant le n° de facture Chifa.
 - **Montant attendu** = somme des parts organisme retenues (après régularisation du volet, majoration comprise) ; **montant déclaré** = total de CHIFA-Officine, saisi ; l'écart s'affiche en rouge.
-- **Statuts** : en préparation → déposé (ventes figées, plus d'annulation : régularisation Chifa) → payé en partie / payé → soldé.
+- **Statuts** : en préparation → déposé (ventes figées, plus d'annulation ni de retour d'une boîte remboursée : « Vente déposée à la CNAS : retour impossible dans le logiciel tant que la procédure de la CNAS n’est pas connue », 2026-11-21) → payé en partie / payé → soldé.
 - **Rejets** : facture rejetée (motif réglable, montant ≤ part organisme), puis redéposer (vente de nouveau « à déposer »), passer en perte, ou réclamer au patient (sa dette).
 - **Paiement** : la CNAS / CASNOS paie **par bordereau**, en entier ou en partie (factures rejetées retenues), environ un mois après le dépôt (information du titulaire). Trésorerie › « Versement d'un organisme » impute un virement à un ou plusieurs bordereaux ; l'écart reste à justifier ; un bordereau dont rien ne reste à recevoir (hors rejets) passe à « soldé ». Alerte au-delà de 45 jours après le dépôt (réglable).
 - **Non fait** : import d'un export de bordereaux ou de factures de CHIFA-Officine (format inconnu, voir « Coexistence »).
 
 Règles détaillées : `docs/regles-metier.md` (section « Bordereaux »).
+
+## Retour d'un médicament remboursé (2026-11-21, option A, script 155)
+
+- **Avant tout dépôt** (vente sur aucun bordereau, ou retirée d'un bordereau en préparation) : le retour partiel est permis ; la part de l'organisme des boîtes rendues est retirée de la créance (attendu du bordereau à venir diminué) ; la facture Chifa **signée** doit être corrigée dans CHIFA-Officine : liste **Finances › Chifa › « Retours à corriger dans CHIFA-Officine »**, puis « Corrigé dans CHIFA-Officine ».
+- **Après dépôt** : refusé dans le logiciel tant que la procédure de la CNAS n'est pas connue (une boîte non remboursée se rend toujours).
+- **Volet rapproché après un retour** (script 157) : la comparaison porte sur les boîtes servies nettes des retours ; une régularisation ne porte que sur les boîtes gardées, la part déjà rendue n'est jamais déduite deux fois de la créance (voir regles-metier.md, « Rapprochement d'un volet après un retour »).
+- **Ticket** : sur le ticket de la vente réimprimé (imprimé et PDF), la ligne du retour porte « Part organisme retirée : X DA » et, tant que le retour n'est pas marqué corrigé, « facture à corriger dans CHIFA-Officine ».
+- **Questions à poser à la CNAS** (lettre du titulaire, avec celles du format du QR) :
+  1. Comment corriger dans CHIFA-Officine une facture **signée par l'assuré, pas encore déposée**, quand le patient rend une partie des médicaments (annulation et nouvelle facture ? avenant ? nouvelle signature de la carte ?) ;
+  2. Même question pour une facture **déjà déposée** (bordereau transmis) : correction possible, ou seulement après paiement ;
+  3. **Procédure d'indu** : la pharmacie doit-elle signaler et rembourser d'elle-même la part d'une boîte rendue après paiement, ou la CNAS la retient-elle sur un paiement suivant ;
+  4. **Retour d'un médicament remboursé** par l'assuré : la pharmacie a-t-elle le droit de le reprendre et de le remettre en stock (médicament remboursé, vignette décollée) ;
+  5. **Avoir sur un bordereau** : CHIFA-Officine sait-il produire un avoir (ou une facture négative) sur un bordereau suivant, et sous quelle forme.
+- **Vente MDN** : même mécanisme côté logiciel (créance diminuée avant dépôt, refus après) ; procédure de correction auprès du MDN non connue.
 
 ## Démarche officielle à mener
 

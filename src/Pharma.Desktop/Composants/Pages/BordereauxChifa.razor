@@ -581,7 +581,7 @@
         enCours = true;
         erreur = await Api.DeposerBordereauAsync(f.Bordereau.Id, dateDepot);
         enCours = false;
-        if (erreur is null) { message = "Bordereau déposé : ses ventes ne s’annulent plus (régularisation Chifa)."; await RechargerFicheAsync(); }
+        if (erreur is null) { message = "Bordereau déposé : ses ventes ne s’annulent plus et leurs boîtes remboursées ne se rendent plus dans le logiciel."; await RechargerFicheAsync(); }
     }
 
     private async Task OuvrirRejet(LigneBordereauDto l, bool traiter)

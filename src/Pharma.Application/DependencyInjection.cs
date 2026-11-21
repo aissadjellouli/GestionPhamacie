@@ -63,6 +63,9 @@ public static class DependencyInjection
         services.AddScoped<ObtenirRapportCloture>();
         services.AddScoped<ObtenirParametresCaisse>();
         services.AddScoped<ModifierParametresCaisse>();
+        // Facture et retour laissés au changement d'utilisateur : fichier chiffré du poste ou mémoire seule (titulaire, script 156)
+        services.AddScoped<ObtenirReglageTachesLaissees>();
+        services.AddScoped<ModifierReglageTachesLaissees>();
         services.AddScoped<ConsulterJournal>();
         services.AddScoped<RechercherPatients>();
         services.AddScoped<CreerPatient>();

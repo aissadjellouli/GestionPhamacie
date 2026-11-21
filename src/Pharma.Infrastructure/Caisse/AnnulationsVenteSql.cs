@@ -46,7 +46,10 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                -- Part payée par l'avoir du patient (script 106)
                (SELECT COALESCE(SUM(p.montant), 0) FROM paiement p WHERE p.vente_id = v.id AND p.mode = 'avoir'),
                -- Part déjà recréditée en avoir par des retours (script 109)
-               (SELECT COALESCE(SUM(rc.montant_rembourse), 0) FROM retour_client rc WHERE rc.vente_id = v.id AND rc.mode = 'avoir')
+               (SELECT COALESCE(SUM(rc.montant_rembourse), 0) FROM retour_client rc WHERE rc.vente_id = v.id AND rc.mode = 'avoir'),
+               -- Portée sur un bordereau déposé (sorti de « préparation ») : ni annulation ni retour avec part organisme (script 155)
+               EXISTS (SELECT 1 FROM bordereau_vente bv JOIN bordereau bb ON bb.id = bv.bordereau_id
+                       WHERE bv.vente_id = v.id AND bb.statut <> 'preparation')
         FROM vente v
         JOIN utilisateur u ON u.id = v.utilisateur_id
         LEFT JOIN patient pa ON pa.id = v.patient_id
@@ -143,7 +146,8 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                     r.IsDBNull(8) ? null : r.GetString(8), r.GetString(9), r.GetBoolean(10), r.GetBoolean(11), [],
                     r.GetDecimal(12), r.GetDecimal(13), r.IsDBNull(14) ? null : r.GetString(14), r.GetInt64(15), r.IsDBNull(16) ? null : r.GetInt64(16), r.GetDecimal(17),
                     RemiseVente.Complement(r.IsDBNull(18) ? null : r.GetString(18), r.IsDBNull(19) ? null : r.GetString(19)),
-                    r.IsDBNull(20) ? null : new RegularisationVente(r.GetInt64(20), r.GetString(21), r.GetDecimal(22), r.GetDecimal(23)), r.GetDecimal(24), r.GetDecimal(25))));
+                    r.IsDBNull(20) ? null : new RegularisationVente(r.GetInt64(20), r.GetString(21), r.GetDecimal(22), r.GetDecimal(23)), r.GetDecimal(24), r.GetDecimal(25),
+                    r.GetBoolean(26))));
         if (ventes.Count == 0) return [];
 
         var lignes = new Dictionary<long, List<LigneVenteAnnulable>>();
@@ -185,15 +189,20 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
 
-        // 1. La vente passe à « annulée » (une seule fois, même si deux postes annulent en même temps)
+        // 1. La vente passe à « annulée » (une seule fois, même si deux postes annulent en même temps) ; sous le verrou de la ligne,
+        //    elle n'est toujours sur aucun bordereau (rattachement fait entre la lecture et l'annulation : refus, script 155)
         string numero;
         long? patientId;
-        await using (var cmd = new NpgsqlCommand(
-            "UPDATE vente SET statut = 'annulee' WHERE id = $1 AND statut = 'validee' RETURNING numero, patient_id", cx, tx))
+        await using (var cmd = new NpgsqlCommand("""
+            UPDATE vente v SET statut = 'annulee' WHERE v.id = $1 AND v.statut = 'validee' AND v.bordereau_id IS NULL
+              AND NOT EXISTS (SELECT 1 FROM bordereau_vente bv JOIN bordereau b ON b.id = bv.bordereau_id
+                              WHERE bv.vente_id = v.id AND b.statut <> 'preparation')
+            RETURNING v.numero, v.patient_id
+            """, cx, tx))
         {
             cmd.Parameters.AddWithValue(a.VenteId);
             await using var r = await cmd.ExecuteReaderAsync(ct);
-            if (!await r.ReadAsync(ct)) throw new RegleMetierException("Cette vente vient d’être annulée ou n’est plus encaissée.");
+            if (!await r.ReadAsync(ct)) throw new RegleMetierException("Cette vente vient d’être annulée, n’est plus encaissée ou vient d’être portée sur un bordereau Chifa : rechargez-la.");
             (numero, patientId) = (r.GetString(0), r.IsDBNull(1) ? null : r.GetInt64(1));
         }
         // Vente verrouillée : un retour enregistré entre la lecture et l'annulation changerait le montant à rendre (double remboursement)

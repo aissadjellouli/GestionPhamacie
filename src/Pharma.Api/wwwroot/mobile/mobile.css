@@ -22,6 +22,10 @@ body { margin: 0; background: var(--fond); color: var(--texte); font: 16px/1.45 
 .entete img { background: #FFF; border-radius: 8px; padding: 3px; }
 .entete-titre { display: flex; flex-direction: column; line-height: 1.2; flex: 1; min-width: 0; }
 .entete-titre span { font-size: 13px; opacity: .85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Serveur de démonstration : ligne entière sous le titre, dans l'en-tête collé en haut (toujours visible) */
+.entete { flex-wrap: wrap; }
+.bandeau-demo { flex-basis: 100%; margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--attention-fond); color: var(--attention);
+  font-size: 14px; font-weight: 600; text-align: center; }
 .lien-clair { background: none; border: 0; color: #FFF; font: inherit; font-size: 14px; text-decoration: underline; padding: 8px 0; }
 
 main { padding: 12px 16px 32px; max-width: 640px; margin: 0 auto; }

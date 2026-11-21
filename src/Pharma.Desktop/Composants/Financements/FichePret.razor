@@ -15,22 +15,27 @@ else
 {
     var p = d.Pret;
     var cout = Cout(d);
-    @* Écran fixe (2026-11-15) : pendant la saisie de l'échéancier, les tuiles du résumé sont masquées (le tableau de saisie garde la place) *@
-    <div class="tuiles" style="@(vue == "editer" ? "display: none" : null)">
-        <div class="tuile"><span class="tuile-libelle">Prêt @p.Reference · @p.Banque</span><span class="tuile-valeur">@Libelles.Dinars(p.Montant, 2)</span>
-            <span class="tuile-pied">du @p.DatePret.ToString("dd/MM/yyyy") · taux @Libelles.TauxPret(p.Taux) · durée @Libelles.DureePret(p.DureeMois)@(p.Objet is { } o ? $" · {o}" : "")</span></div>
-        @* Mensualité : montant de la prochaine échéance non payée, assurance comprise (tiré de l'échéancier) *@
-        <div class="tuile"><span class="tuile-libelle">Mensualité</span><span class="tuile-valeur">@(p.ProchainMontant is { } m ? Libelles.Dinars(m, 2) : "—")</span>
-            <span class="tuile-pied">@(p.ProchainMontant is null ? (p.Echeances == 0 ? "échéancier à saisir" : "aucune échéance à payer")
-                : $"prochaine échéance{(p.ProchaineEcheance is { } pe ? $" le {pe:dd/MM/yyyy}" : "")}{(p.ProchaineAssurance is > 0 ? $" · dont assurance {Libelles.Dinars(p.ProchaineAssurance.Value, 2)}" : "")}")</span></div>
-        <div class="tuile"><span class="tuile-libelle">Capital restant dû</span><span class="tuile-valeur">@Libelles.Dinars(p.ResteDu, 2)</span>
-            <span class="tuile-pied">@p.EcheancesPayees échéance(s) payée(s) sur @p.Echeances</span></div>
-        @* Coût du crédit : tout ce que l'échéancier fait payer en plus du capital *@
-        <div class="tuile"><span class="tuile-libelle">Coût total du crédit</span><span class="tuile-valeur">@(d.Echeances.Count == 0 ? "—" : Libelles.Dinars(cout.CoutTotal, 2))</span>
-            <span class="tuile-pied">intérêts @Libelles.Dinars(cout.Interets, 2) · assurance @Libelles.Dinars(cout.Assurance, 2)@(cout.Tva + cout.Marge > 0 ? $" · TVA et marge {Libelles.Dinars(cout.Tva + cout.Marge, 2)}" : "")</span></div>
-        <div class="tuile"><span class="tuile-libelle">Reste à employer</span><span class="tuile-valeur">@Libelles.Dinars(p.Montant - p.Utilise, 2)</span>
-            <span class="tuile-pied">versé, dépenses, factures et traites : @Libelles.Dinars(p.Utilise, 2)</span></div>
-    </div>
+    @* Écran fixe (2026-11-15) : pendant la saisie de l'échéancier, les tuiles du résumé sont masquées (le tableau de saisie garde la place).
+       Fiche tenue sans défilement à 1 366 × 768 (2026-11-21) : les cinq tuiles sont compactes, sur une seule rangée ; la partie
+       longue de chaque onglet (formulaire, saisie de l'échéancier) défile dans son cadre, les tableaux acceptent 140 px. *@
+    @if (vue != "editer")
+    {
+        <div class="tuiles tuiles-compactes tuiles-pret">
+            <div class="tuile"><span class="tuile-libelle">Prêt @p.Reference · @p.Banque</span><span class="tuile-valeur">@Libelles.Dinars(p.Montant, 2)</span>
+                <span class="tuile-pied">du @p.DatePret.ToString("dd/MM/yyyy") · taux @Libelles.TauxPret(p.Taux) · durée @Libelles.DureePret(p.DureeMois)@(p.Objet is { } o ? $" · {o}" : "")</span></div>
+            @* Mensualité : montant de la prochaine échéance non payée, assurance comprise (tiré de l'échéancier) *@
+            <div class="tuile"><span class="tuile-libelle">Mensualité</span><span class="tuile-valeur">@(p.ProchainMontant is { } m ? Libelles.Dinars(m, 2) : "—")</span>
+                <span class="tuile-pied">@(p.ProchainMontant is null ? (p.Echeances == 0 ? "échéancier à saisir" : "aucune échéance à payer")
+                    : $"prochaine échéance{(p.ProchaineEcheance is { } pe ? $" le {pe:dd/MM/yyyy}" : "")}{(p.ProchaineAssurance is > 0 ? $" · dont assurance {Libelles.Dinars(p.ProchaineAssurance.Value, 2)}" : "")}")</span></div>
+            <div class="tuile"><span class="tuile-libelle">Capital restant dû</span><span class="tuile-valeur">@Libelles.Dinars(p.ResteDu, 2)</span>
+                <span class="tuile-pied">@p.EcheancesPayees échéance(s) payée(s) sur @p.Echeances</span></div>
+            @* Coût du crédit : tout ce que l'échéancier fait payer en plus du capital *@
+            <div class="tuile"><span class="tuile-libelle">Coût total du crédit</span><span class="tuile-valeur">@(d.Echeances.Count == 0 ? "—" : Libelles.Dinars(cout.CoutTotal, 2))</span>
+                <span class="tuile-pied">intérêts @Libelles.Dinars(cout.Interets, 2) · assurance @Libelles.Dinars(cout.Assurance, 2)@(cout.Tva + cout.Marge > 0 ? $" · TVA et marge {Libelles.Dinars(cout.Tva + cout.Marge, 2)}" : "")</span></div>
+            <div class="tuile"><span class="tuile-libelle">Reste à employer</span><span class="tuile-valeur">@Libelles.Dinars(p.Montant - p.Utilise, 2)</span>
+                <span class="tuile-pied">versé, dépenses, factures et traites : @Libelles.Dinars(p.Utilise, 2)</span></div>
+        </div>
+    }
     <div class="filtres" role="tablist" aria-label="Fiche du prêt">
         @foreach (var (code, libelle) in Vues)
         {
@@ -52,6 +57,7 @@ else
     @switch (vue)
     {
         case "modifier":
+            <div class="cadre-defilant" data-hauteur-min="160">
             <section class="panneau" aria-labelledby="t-modifier-pret">
                 <h2 id="t-modifier-pret">Modifier le prêt</h2>
                 @if (p.EcheancesPayees > 0 || p.Utilise > 0) { <p class="detail" style="margin: 0">Une échéance est payée ou une part du prêt est employée : seuls la référence, l’objet, le taux, la durée et l’orthographe du nom d’un prêteur hors trésorerie changent (pas de changement de banque ni de type de prêteur).</p> }
@@ -86,9 +92,11 @@ else
                     @if (p.Document is { } doc) { <span class="detail" style="align-self: center">Document joint : GED du serveur, @doc</span> }
                 </div>
             </section>
+            </div>
             break;
 
         case "employer":
+            <div class="cadre-defilant" data-hauteur-min="160">
             <section class="panneau" aria-labelledby="t-employer">
                 <h2 id="t-employer">Employer l’argent du prêt · reste @Libelles.Dinars(p.Montant - p.Utilise, 2)</h2>
                 <p class="detail" style="margin: 0">Pour payer une facture ou une traite d’un grossiste avec ce prêt (hors trésorerie) : Achats, Payer un grossiste ou Traites à payer, « Prêt ou apport ».</p>
@@ -98,10 +106,14 @@ else
                 }
                 <UsageSource Source="@($"pret:{p.Id}")" Comptes="Comptes" Categories="Categories" VersementPermis="@(p.CompteId is not null)" OnEnregistre="ApresUsageAsync" />
             </section>
+            </div>
             break;
 
         case "editer":
-            <EditeurEcheancier Pret="p" Echeances="d.Echeances" OnEnregistre="ApresEcheancierAsync" OnAnnule='() => Ouvrir("echeancier")' />
+            @* Saisie ou import de l'échéancier : un seul cadre défile (ses tableaux n'ont pas de hauteur propre, pas de barres imbriquées) *@
+            <div class="cadre-defilant cadre-unique" data-hauteur-min="160">
+                <EditeurEcheancier Pret="p" Echeances="d.Echeances" OnEnregistre="ApresEcheancierAsync" OnAnnule='() => Ouvrir("echeancier")' />
+            </div>
             break;
 
         case "usages":
@@ -112,7 +124,7 @@ else
                         <option value="reglement">Facture de grossiste</option><option value="traite">Traite</option>
                     </select></div>
             </div>
-            <div class="tableau-cadre">
+            <div class="tableau-cadre" data-hauteur-min="140">
                 <table class="tableau">
                     <thead><tr><th scope="col">Date</th><th scope="col">Usage</th><th scope="col">Libellé</th><th scope="col" class="nombre">Montant</th><th scope="col">Par</th></tr></thead>
                     <tbody>
@@ -128,7 +140,7 @@ else
             break;
 
         default:
-            <div class="tableau-cadre">
+            <div class="tableau-cadre" data-hauteur-min="140">
                 <table class="tableau">
                     <thead><tr><th scope="col">N°</th><th scope="col">Date</th><th scope="col" class="nombre">Capital</th><th scope="col" class="nombre">Intérêts</th><th scope="col" class="nombre">TVA</th><th scope="col" class="nombre">Marge</th><th scope="col" class="nombre">Assurance</th><th scope="col" class="nombre">Échéance</th><th scope="col" class="nombre">Capital restant dû</th><th scope="col">Paiement</th></tr></thead>
                     <tbody>

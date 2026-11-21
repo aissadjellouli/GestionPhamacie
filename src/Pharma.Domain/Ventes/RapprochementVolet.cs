@@ -1,7 +1,10 @@
 namespace Pharma.Domain.Ventes;
 
-/// <summary>Ligne d'une vente déjà encaissée, vue pour le rapprochement d'un volet : produit, boîtes servies, prix unitaire appliqué.</summary>
-public sealed record LigneVenteRapprochee(long ProduitId, string Produit, int Quantite, decimal PrixUnitaire);
+/// <summary>
+/// Ligne d'une vente déjà encaissée, vue pour le rapprochement d'un volet : produit, boîtes vendues, prix unitaire appliqué ; Rendues :
+/// boîtes déjà rendues par le patient (retour client, script 155), déduites des boîtes servies comparées au volet (script 157).
+/// </summary>
+public sealed record LigneVenteRapprochee(long ProduitId, string Produit, int Quantite, decimal PrixUnitaire, int Rendues = 0);
 
 /// <summary>Ligne du volet Chifa : code, boîtes, prix Chifa ; produit du catalogue associé au code (null : code non associé).</summary>
 public sealed record LigneVoletRapprochee(string Code, int Quantite, decimal PrixChifa, long? ProduitId, string? Produit);
@@ -10,8 +13,9 @@ public sealed record LigneVoletRapprochee(string Code, int Quantite, decimal Pri
 /// Ligne comparée volet / vente. Ecart : <see cref="RapprochementVolet.Concorde"/>, <see cref="RapprochementVolet.PrixSousSeuil"/> (acceptés)
 /// ou une différence en rouge (prix au-delà du seuil, quantité, produit absent d'un côté, code Chifa non associé).
 /// </summary>
+/// <remarks>QuantiteVente : boîtes servies NETTES des retours ; QuantiteRendue : boîtes déjà rendues de ce produit (0 sans retour).</remarks>
 public sealed record LigneComparee(string? Code, long? ProduitId, string Produit, int? QuantiteVolet, int? QuantiteVente, decimal? PrixChifa,
-    decimal? NotrePrix, string Ecart)
+    decimal? NotrePrix, string Ecart, int QuantiteRendue = 0)
 {
     public bool EnRouge => Ecart is not (RapprochementVolet.Concorde or RapprochementVolet.PrixSousSeuil);
 }
@@ -76,14 +80,21 @@ public static class RapprochementVolet
     };
 
     /// <param name="taux">
-    /// Taux de prise en charge de la vente (%) ; null : part Chifa non calculée. Part Chifa : prix Chifa × boîtes servies (au plus celles
-    /// du volet), l'écart de quantité restant une différence en rouge.
+    /// Taux de prise en charge de la vente (%) ; null : part Chifa non calculée. Part Chifa : prix Chifa × boîtes servies NETTES des
+    /// retours (au plus celles du volet), l'écart de quantité restant une différence en rouge.
     /// </param>
+    /// <param name="partOrganismeVente">
+    /// Part organisme encore retenue sur la vente (hors majoration) : part de la caisse moins la part déjà retirée par des retours
+    /// (script 157 : comparée à la part Chifa des seules boîtes encore chez le patient, jamais déduite deux fois).
+    /// </param>
+    /// <param name="majoration">Majoration encore due (v_vente_part_organisme : retirée quand plus aucune boîte remboursée ne reste).</param>
     public static ComparaisonVolet Comparer(IEnumerable<LigneVoletRapprochee> volet, IEnumerable<LigneVenteRapprochee> vente, decimal seuil,
         decimal? taux, decimal partOrganismeVente, decimal majoration = 0)
     {
         var servis = vente.GroupBy(l => l.ProduitId)
-            .Select(g => (Id: g.Key, Nom: g.First().Produit, Qte: g.Sum(l => l.Quantite),
+            // Boîtes servies NETTES des retours (2026-11-21, script 157) ; prix moyen sur les boîtes vendues
+            .Select(g => (Id: g.Key, Nom: g.First().Produit, Qte: g.Sum(l => l.Quantite - Math.Clamp(l.Rendues, 0, l.Quantite)),
+                Rendues: g.Sum(l => Math.Clamp(l.Rendues, 0, l.Quantite)),
                 Prix: g.Sum(l => l.Quantite) is > 0 and var q ? Math.Round(g.Sum(l => l.PrixUnitaire * l.Quantite) / q, 2, MidpointRounding.AwayFromZero) : 0m))
             .ToDictionary(x => x.Id);
         var lignes = new List<LigneComparee>();
@@ -119,10 +130,11 @@ public static class RapprochementVolet
                 : s.Prix == prixChifa ? Concorde
                 : EcartPrixChifa.AChoisir(prixChifa, s.Prix, seuil) ? Prix
                 : PrixSousSeuil;
-            lignes.Add(new LigneComparee(g.Key, id, s.Nom, qteVolet, s.Qte, prixChifa, s.Prix, ecart));
+            lignes.Add(new LigneComparee(g.Key, id, s.Nom, qteVolet, s.Qte, prixChifa, s.Prix, ecart, s.Rendues));
         }
-        foreach (var s in servis.Values.Where(s => !vus.Contains(s.Id)))
-            lignes.Add(new LigneComparee(null, s.Id, s.Nom, null, s.Qte, null, s.Prix, AbsentVolet));
+        // Produit entièrement rendu, absent du volet (volet déjà corrigé) : rien à comparer
+        foreach (var s in servis.Values.Where(s => !vus.Contains(s.Id) && s.Qte > 0))
+            lignes.Add(new LigneComparee(null, s.Id, s.Nom, null, s.Qte, null, s.Prix, AbsentVolet, s.Rendues));
         // Majoration Chifa de la vente (2026-11-15) : comprise des DEUX côtés de la part organisme comparée (vente et volet), elle ne crée
         // jamais d'écart à elle seule
         return new ComparaisonVolet(lignes, partOrganismeVente + majoration, taux is null ? null : partChifa + majoration, majoration);
@@ -133,7 +145,8 @@ public static class RapprochementVolet
     {
         var parties = c.Lignes.Where(l => l.EnRouge).Select(l => l.Ecart switch
         {
-            Quantite => $"{l.Produit} : {l.QuantiteVolet} sur le volet, {l.QuantiteVente} servie(s)",
+            Quantite => $"{l.Produit} : {l.QuantiteVolet} sur le volet, {l.QuantiteVente} servie(s)"
+                        + (l.QuantiteRendue > 0 ? $" après {l.QuantiteRendue} rendue(s)" : ""),
             AssureDifferent => l.Produit,
             Prix => $"{l.Produit} : prix Chifa {l.PrixChifa:N2} DA, notre prix {l.NotrePrix:N2} DA",
             AbsentVente => $"{l.Produit} : sur le volet ({l.QuantiteVolet}), pas dans la vente",

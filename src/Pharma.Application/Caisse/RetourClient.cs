@@ -8,16 +8,32 @@ namespace Pharma.Application.Caisse;
 
 public sealed record BoiteVendue(long Id, string NumeroSerie);
 
-/// <summary>Ligne de la vente : ce qui peut encore être rendu, et les boîtes identifiées encore chez le patient.</summary>
+/// <summary>
+/// Ligne de la vente : ce qui peut encore être rendu, et les boîtes identifiées encore chez le patient. MontantOrganisme : part de
+/// l'organisme de la ligne enregistrée à la caisse (0 : ligne non remboursée, toujours rendable).
+/// </summary>
 public sealed record LigneRetournable(long LigneVenteId, long LotId, string Produit, string NumeroLot, int QuantiteVendue, int DejaRendue,
-    decimal MontantPatient, IReadOnlyList<BoiteVendue> Boites);
+    decimal MontantPatient, IReadOnlyList<BoiteVendue> Boites, decimal MontantOrganisme = 0);
 
-public sealed record VenteRetournable(VenteAnnulable Vente, IReadOnlyList<LigneRetournable> Lignes);
+/// <summary>
+/// Part de l'organisme de la vente vue pour un retour (script 155). PartRetenue : part Chifa si la vente a été régularisée, sinon part
+/// de la caisse (majoration non comprise) ; DejaRetiree : part organisme déjà retirée par des retours ; Canal : logiciel, chifa ou mdn ;
+/// FactureOrganisme : facture d'organisme émise par le logiciel qui porte la vente (canal logiciel : avoir AV- manuel à faire) ;
+/// FactureChifa : n° de facture Chifa de la vente (à corriger dans CHIFA-Officine).
+/// </summary>
+public sealed record OrganismeRetour(decimal PartRetenue, decimal DejaRetiree, string Canal, string? FactureOrganisme = null, string? FactureChifa = null)
+{
+    public static readonly OrganismeRetour Aucun = new(0, 0, "logiciel");
+}
+
+public sealed record VenteRetournable(VenteAnnulable Vente, IReadOnlyList<LigneRetournable> Lignes, OrganismeRetour? Organisme = null);
 
 /// <summary>Produit rendu : quantité, destination choisie, boîtes identifiées rendues (si la ligne en a).</summary>
 public sealed record LigneRetourDemandee(long LigneVenteId, int Quantite, string? Destination, IReadOnlyList<long>? Boites);
 
-public sealed record LigneRetourAEcrire(long LigneVenteId, long LotId, int Quantite, DestinationRetour Destination, decimal Montant, IReadOnlyList<long> Boites);
+/// <summary>Montant : part payée par le patient rendue ; MontantOrganisme : part de l'organisme retirée de sa créance (script 155).</summary>
+public sealed record LigneRetourAEcrire(long LigneVenteId, long LotId, int Quantite, DestinationRetour Destination, decimal Montant, IReadOnlyList<long> Boites,
+    decimal MontantOrganisme = 0);
 
 /// <summary>
 /// Montant : part payée par le patient pour les boîtes rendues. Vente à crédit : ReductionDette en est la part retirée de la dette,
@@ -33,9 +49,14 @@ public interface IRetoursClient
     Task EnregistrerAsync(RetourAEcrire r, CancellationToken ct = default);
 }
 
-/// <summary>DetteDiminuee : part du retour retirée de la dette du patient (vente à crédit, ou dette soldée à la demande du caissier).</summary>
+/// <summary>
+/// DetteDiminuee : part du retour retirée de la dette du patient (vente à crédit, ou dette soldée à la demande du caissier).
+/// PartOrganismeRetiree : part de l'organisme des boîtes rendues, retirée de sa créance (script 155) ; Canal, FactureOrganisme et
+/// FactureChifa : pour le rappel affiché (correction dans CHIFA-Officine, avoir AV- manuel d'une facture d'organisme).
+/// </summary>
 public sealed record ResultatRetour(string Numero, decimal ARendre, string? Mode, int RemisEnStock, int ADetruire, string? ValidePar,
-    decimal DetteDiminuee = 0, decimal AvoirRecredite = 0);
+    decimal DetteDiminuee = 0, decimal AvoirRecredite = 0, decimal PartOrganismeRetiree = 0, string? Canal = null, string? FactureOrganisme = null,
+    string? FactureChifa = null);
 
 public sealed class LireVenteRetournable(IRetoursClient retours)
 {
@@ -49,6 +70,9 @@ public sealed class LireVenteRetournable(IRetoursClient retours)
 /// la caisse ouverte du poste ; vente à crédit : la dette du patient diminue, et ce qu'il a déjà remboursé lui est rendu en espèces.
 /// Remboursement d'une vente payée entièrement retiré de la dette, avec l'accord du client : rien ne sort de la caisse, le
 /// caissier valide seul.
+/// Vente en tiers payant (script 155, option A du 2026-11-21) : la part de l'organisme des boîtes rendues est retirée de sa créance
+/// (prorata de la part retenue) si la vente n'est sur aucun bordereau ; déposée, refus ; ligne non remboursée, toujours permise.
+/// Taux 100 % : rien n'est rendu au patient (stock et créance seulement), motif et validation du droit « caisse.retour_especes » exigés.
 /// </summary>
 public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCaisse sessions, IPermissionService droits,
     VerificationCodeComptoir codes, IJournal journal, Patients.IPatients? patients = null, Securite.AutorisationCourante? autorisation = null,
@@ -77,8 +101,14 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
         else texte = RegleAnnulation.Motif(motif);
         var vr = await retours.LireAsync(venteId, ct) ?? throw new RegleMetierException("Vente introuvable.");
         var v = vr.Vente;
-        RegleRetour.VerifierVente(v.Statut, v.DansUnBordereau, v.PartOrganisme);
+        RegleRetour.VerifierVente(v.Statut);
         if (demandees.Count == 0) throw new RegleMetierException("Choisissez au moins un produit rendu.");
+
+        // Part organisme (script 155, ajusté par le script 157) : ce qui reste de la part retenue (Chifa si régularisée), réparti au
+        // prorata de la part de la caisse des boîtes remboursées encore chez le patient ; majoration à part (v_vente_part_organisme)
+        var organisme = vr.Organisme ?? OrganismeRetour.Aucun;
+        var ratioOrganisme = RegleRetour.RatioRetenu(organisme.PartRetenue - organisme.DejaRetiree,
+            vr.Lignes.Sum(l => RegleRetour.PartCaisseRestante(l.MontantOrganisme, l.QuantiteVendue, l.DejaRendue)));
 
         // Lignes nettes de leurs réductions (remise, don partiel) ; ventes antérieures sans réduction par ligne : prorata de ce que le patient a payé
         var brutPatient = vr.Lignes.Sum(l => l.MontantPatient);
@@ -89,6 +119,8 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
                     ?? throw new RegleMetierException("Ce produit ne fait pas partie de la vente.");
             if (lignes.Any(x => x.LigneVenteId == l.LigneVenteId)) throw new RegleMetierException($"{l.Produit} : produit indiqué deux fois.");
             RegleRetour.VerifierQuantite(l.Produit, d.Quantite, l.QuantiteVendue, l.DejaRendue);
+            // Boîte remboursée : vente sur aucun bordereau (en préparation : la retirer d'abord ; déposée : refus)
+            if (l.MontantOrganisme > 0) RegleRetour.VerifierPartOrganisme(v.Deposee, v.DansUnBordereau);
             var destination = RegleRetour.Destination(d.Destination);
 
             // Boîtes identifiées cochées parmi celles de la vente ; le reste de la quantité, ce sont des boîtes vendues sans
@@ -102,8 +134,20 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
                     ? $"{l.Produit} : cochez les {d.Quantite} boîte(s) rendue(s) parmi celles vendues (n° de série ou étiquette)."
                     : $"{l.Produit} : {nonIdentifiees} boîte(s) vendue(s) sans identité ; cochez les autres boîtes rendues parmi celles vendues.");
             lignes.Add(new LigneRetourAEcrire(l.LigneVenteId, l.LotId, d.Quantite, destination,
-                RegleRetour.MontantPaye(l.MontantPatient, l.QuantiteVendue, d.Quantite, v.PartPatient, brutPatient), boites));
+                RegleRetour.MontantPaye(l.MontantPatient, l.QuantiteVendue, d.Quantite, v.PartPatient, brutPatient), boites,
+                RegleRetour.MontantOrganisme(l.MontantOrganisme, l.QuantiteVendue, d.Quantite, ratioOrganisme)));
         }
+        // Part organisme : au plus ce qui reste de la part retenue ; dernières boîtes remboursées rendues : le solde exact (arrondis),
+        // l'écart porté sur la dernière ligne rendue qui a une part organisme
+        var avecOrganisme = vr.Lignes.Where(l => l.MontantOrganisme > 0).ToList();
+        var toutRembourseRendu = avecOrganisme.Count > 0 && lignes.Any(x => x.MontantOrganisme > 0)
+            && avecOrganisme.All(l => l.DejaRendue + (lignes.FirstOrDefault(x => x.LigneVenteId == l.LigneVenteId)?.Quantite ?? 0) >= l.QuantiteVendue);
+        var calculeOrganisme = lignes.Sum(l => l.MontantOrganisme);
+        var totalOrganisme = ratioOrganisme == 0 ? 0
+            : RegleRetour.TotalOrganisme(calculeOrganisme, organisme.PartRetenue, organisme.DejaRetiree, toutRembourseRendu);
+        if (totalOrganisme != calculeOrganisme && lignes.FindLastIndex(x => x.MontantOrganisme > 0) is var dernier and >= 0)
+            lignes[dernier] = lignes[dernier] with { MontantOrganisme = Math.Max(lignes[dernier].MontantOrganisme + totalOrganisme - calculeOrganisme, 0) };
+        var partOrganismeRetiree = lignes.Sum(l => l.MontantOrganisme);
         // Total au plus ce qui reste de la part payée ; dernier retour : le solde exact (arrondis)
         var toutRendu = vr.Lignes.All(l => l.DejaRendue + (lignes.FirstOrDefault(x => x.LigneVenteId == l.LigneVenteId)?.Quantite ?? 0) >= l.QuantiteVendue);
         var total = RegleRetour.TotalARendre(lignes.Sum(l => l.Montant), v.PartPatient, v.DejaRendu, toutRendu);
@@ -170,12 +214,15 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
                 ["dette_diminuee"] = reductionDette, ["rendu"] = aRendre, ["dette_soldee_au_choix"] = solderDette && v.Mode != "credit" && reductionDette > 0,
                 ["patient_dette"] = reductionDette > 0 ? patientDette : null, ["accord_client"] = deduitAuChoix ? true : null,
                 ["avoir_recredite"] = avoirRecredite > 0 ? avoirRecredite : null,
+                ["part_organisme_retiree"] = partOrganismeRetiree > 0 ? partOrganismeRetiree : null,
+                ["canal_organisme"] = partOrganismeRetiree > 0 ? organisme.Canal : null,
                 ["remis_en_stock"] = lignes.Where(l => l.Destination == DestinationRetour.Stock).Sum(l => l.Quantite),
                 ["a_detruire"] = lignes.Where(l => l.Destination == DestinationRetour.Destruction).Sum(l => l.Quantite),
                 ["valide_par"] = validePar
             }, Permissions.CaisseRetourEspeces, ct);
         return new ResultatRetour(v.Numero, aRendre, v.Mode == "credit" && aRendre > 0 ? "especes" : v.Mode,
             lignes.Where(l => l.Destination == DestinationRetour.Stock).Sum(l => l.Quantite),
-            lignes.Where(l => l.Destination == DestinationRetour.Destruction).Sum(l => l.Quantite), nomValidateur, reductionDette, avoirRecredite);
+            lignes.Where(l => l.Destination == DestinationRetour.Destruction).Sum(l => l.Quantite), nomValidateur, reductionDette, avoirRecredite,
+            partOrganismeRetiree, organisme.Canal, organisme.FactureOrganisme, organisme.FactureChifa);
     }
 }

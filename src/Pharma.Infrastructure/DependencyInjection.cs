@@ -32,9 +32,11 @@ namespace Pharma.Infrastructure;
 /// <param name="Protection">Protection des secrets locaux, choisie par l'hôte (vide : DPAPI machine, comportement d'origine).</param>
 /// <param name="DossierArchivesFiscales">Archives des rapports fiscaux scellés (réglage Fiscal:DossierArchives ; vide : racine\archives-fiscales).</param>
 /// <param name="FichierCopieSecours">Réglages et état de la copie de secours (réglage CopieSecours:Fichier ; vide : racine\copie-secours.json).</param>
+/// <param name="ModeDemo">Mode démonstration (réglage Demo:Actif) : e-mails, SMS et export Chifa factices, filigrane des PDF.</param>
 public sealed record InfrastructureOptions(string ChaineConnexion, string DossierExportChifa, string DossierOrdonnances, string? CheminPgDump = null,
     string? DossierArchiveChifa = null, string? FichierSuperAdmin = null, string? FichierCleIntegrite = null, string? DossierSynchronisation = null,
-    string? RacineDonnees = null, IProtectionDonnees? Protection = null, string? DossierArchivesFiscales = null, string? FichierCopieSecours = null);
+    string? RacineDonnees = null, IProtectionDonnees? Protection = null, string? DossierArchivesFiscales = null, string? FichierCopieSecours = null,
+    bool ModeDemo = false);
 
 public static class DependencyInjection
 {
@@ -65,6 +67,10 @@ public static class DependencyInjection
         services.AddSingleton(protection);
         static string Choisir(string? reglage, string defaut) => string.IsNullOrWhiteSpace(reglage) ? defaut : reglage;
         services.AddDbContext<PharmaDbContext>((sp, o) => o.UseNpgsql(sp.GetRequiredService<NpgsqlDataSource>()));
+        // Mode démonstration (docs/demo-cloud.md, étape 2) : lu par les cas d'usage (mots de passe des comptes de démonstration)
+        // et par les générateurs de PDF (filigrane) ; les adaptateurs factices remplacent les envois réels plus bas
+        services.AddSingleton(new Application.Demo.ModeDemo(options.ModeDemo));
+        services.AddSingleton(new FiligranePdf(options.ModeDemo));
 
         services.AddSingleton<IHorloge, HorlogeSysteme>();
         services.AddSingleton<VerificateurBcrypt>();
@@ -144,6 +150,7 @@ public static class DependencyInjection
         services.AddScoped<IRemisesAutomatiques>(sp => sp.GetRequiredService<RemisesAutomatiquesSql>());
         services.AddScoped<IRemisesAutomatiquesAdmin>(sp => sp.GetRequiredService<RemisesAutomatiquesSql>());
         services.AddScoped<ISessionsCaisse, SessionsCaisseSql>();
+        services.AddScoped<IReglageTachesLaissees, ReglageTachesLaisseesSql>();
         services.AddScoped<IEcartsCaisseRecents, EcartsCaisseRecentsSql>();
         services.AddSingleton<IDocumentsPdf, DocumentsPdf>();
         services.AddSingleton<Pharma.Application.Rapports.IDocumentsRapports, DocumentsPdf>();
@@ -202,9 +209,19 @@ public static class DependencyInjection
         services.AddScoped<Application.Notifications.IDonneesRapport, Notifications.DonneesRapportSql>();
         services.AddScoped<Application.Notifications.IAlertesNonEnvoyees, Notifications.AlertesNonEnvoyeesSql>();
         services.AddSingleton<Application.Notifications.IProtectionSecret, Notifications.ProtectionSecretSmtp>();
-        services.AddSingleton<Application.Notifications.IEnvoiEmail, Notifications.EnvoiEmailMailKit>();
-        services.AddSingleton<Application.Achats.IEnvoiEmailPieceJointe, Notifications.EnvoiEmailMailKit>();
-        services.AddSingleton<Application.Notifications.IEnvoiSms, Notifications.EnvoiSmsModemGsm>();
+        if (options.ModeDemo)
+        {
+            // Démonstration : rien ne sort (journal du serveur seulement, refus « indisponible en démonstration »)
+            services.AddSingleton<Application.Notifications.IEnvoiEmail, Demo.EnvoiEmailDemo>();
+            services.AddSingleton<Application.Achats.IEnvoiEmailPieceJointe, Demo.EnvoiEmailDemo>();
+            services.AddSingleton<Application.Notifications.IEnvoiSms, Demo.EnvoiSmsDemo>();
+        }
+        else
+        {
+            services.AddSingleton<Application.Notifications.IEnvoiEmail, Notifications.EnvoiEmailMailKit>();
+            services.AddSingleton<Application.Achats.IEnvoiEmailPieceJointe, Notifications.EnvoiEmailMailKit>();
+            services.AddSingleton<Application.Notifications.IEnvoiSms, Notifications.EnvoiSmsModemGsm>();
+        }
         services.AddSingleton<Application.SuperAdmin.ICompteSuperAdmin>(new Securite.CompteSuperAdminFichier(
             Choisir(options.FichierSuperAdmin, Path.Combine(racine, "super-admin.dat")), protection));
         services.AddScoped<Application.SuperAdmin.ITitulaireLecture, Securite.TitulaireLecture>();
@@ -253,9 +270,12 @@ public static class DependencyInjection
             options.ChaineConnexion, options.CheminPgDump, Path.Combine(AppContext.BaseDirectory, "database"), sp.GetRequiredService<NpgsqlDataSource>()));
         services.AddSingleton<Application.Ged.IGed, Ged.GedFichiers>();
         services.AddSingleton<Application.Sauvegardes.IStockageSauvegarde>(new Sauvegardes.StockagePgDump(options.ChaineConnexion, options.CheminPgDump));
-        services.AddSingleton<IChifaConnecteur>(sp => new ChifaFichiersConnecteur(
-            options.DossierExportChifa,
-            sp.GetRequiredService<ILogger<ChifaFichiersConnecteur>>(), options.DossierArchiveChifa));
+        if (options.ModeDemo)
+            services.AddSingleton<IChifaConnecteur, Demo.ChifaConnecteurDemo>();
+        else
+            services.AddSingleton<IChifaConnecteur>(sp => new ChifaFichiersConnecteur(
+                options.DossierExportChifa,
+                sp.GetRequiredService<ILogger<ChifaFichiersConnecteur>>(), options.DossierArchiveChifa));
 
         return services;
     }

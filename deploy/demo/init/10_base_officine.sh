@@ -15,6 +15,13 @@
 #   4. toutes les données FICTIVES database/data/*.sql, par ordre de nom (905, le grand jeu de test, ne fait rien tant que
 #      la nomenclature nationale n'est pas importée : étape 2) ;
 #   avec le compte pharma_app, ON_ERROR_STOP et PGOPTIONS « pharma.reglage_central=on » (comme en développement).
+# Étape 2 (mode démo) :
+#   5. vérifications (fuseau, données fictives, trois comptes) ;
+#   6. MARQUEUR de démonstration (table base_demonstration) : posé ICI SEULEMENT, jamais par une migration ni un seed ;
+#      l'API réglée Demo:Actif=true refuse de démarrer sans lui ;
+#   7. GABARIT de remise à zéro (base TEMPLATE, connexions interdites) : copie de la base à ce stade ; le service « reinit »
+#      (deploy/demo/reinit/remise_a_zero.sh) recrée la base depuis lui. La nomenclature nationale (fichier Excel, lu par l'API
+#      seulement) et le grand jeu de test 905 ne sont PAS dans le gabarit : l'API les importe, le service « reinit » passe 905.
 #
 # Mots de passe : lus dans les fichiers des secrets compose, jamais écrits dans un fichier ni sur une ligne de commande.
 # =====================================================================
@@ -29,6 +36,7 @@ fi
 set -euo pipefail
 
 BASE="${PHARMA_BASE:-pharmacie_demo}"
+GABARIT="${PHARMA_GABARIT:-${BASE}_gabarit}"
 SCRIPTS="${PHARMA_SCRIPTS:-/pharma/database}"
 ROLE_APP="pharma_app"
 
@@ -46,6 +54,7 @@ lire_secret() {
 }
 
 [[ "$BASE" =~ ^[a-z_][a-z0-9_]*$ ]] || erreur "nom de base refusé : $BASE"
+[[ "$GABARIT" =~ ^[a-z_][a-z0-9_]*$ && "$GABARIT" != "$BASE" ]] || erreur "nom du gabarit refusé : $GABARIT"
 
 # Migrations : NNN_*.sql seulement (les scripts « b » sont exclus), triées par numéro
 # Numéros toujours sur trois chiffres : l'ordre alphabétique est l'ordre des numéros
@@ -102,5 +111,27 @@ comptes="$(psql_app -tA -c "SELECT count(*) FROM utilisateur WHERE identifiant I
 [[ "$comptes" == "3" ]] || erreur "comptes de démonstration incomplets ($comptes sur 3 : titulaire, assistant, vendeur)"
 info "données fictives chargées ; comptes titulaire, assistant, vendeur (mot de passe de démonstration : voir docs/demo-cloud.md)"
 
+# 6. Marqueur de démonstration : SEUL endroit où il est posé (ni migration, ni seed, ni données fictives de database/data)
+info "marqueur de démonstration (table base_demonstration)"
+psql_app <<'SQL'
+CREATE TABLE IF NOT EXISTS base_demonstration (
+    id       smallint PRIMARY KEY CHECK (id = 1),
+    libelle  text NOT NULL,
+    posee_le timestamptz NOT NULL DEFAULT now()
+);
+COMMENT ON TABLE base_demonstration IS 'Marqueur de la base de démonstration (données fictives) : posé par deploy/demo/init/10_base_officine.sh seulement. L''API réglée Demo:Actif=true refuse de démarrer sans lui.';
+INSERT INTO base_demonstration (id, libelle) VALUES (1, 'Démonstration — données fictives') ON CONFLICT (id) DO NOTHING;
+SQL
+marqueur="$(psql_app -tA -c "SELECT count(*) FROM base_demonstration")"
+[[ "$marqueur" == "1" ]] || erreur "marqueur de démonstration non posé"
+
+# 7. Gabarit de remise à zéro (superutilisateur) : copie de la base à ce stade, puis base TEMPLATE fermée aux connexions.
+#    Les réglages de base (fuseau, ALTER DATABASE … SET) ne sont pas copiés par CREATE DATABASE : le service reinit les repose.
+info "gabarit de remise à zéro : $GABARIT"
+psql -X -q -v ON_ERROR_STOP=1 --username "${POSTGRES_USER:-postgres}" --dbname postgres -v base="$BASE" -v gabarit="$GABARIT" <<'SQL'
+CREATE DATABASE :"gabarit" TEMPLATE :"base" OWNER pharma_app;
+ALTER DATABASE :"gabarit" WITH IS_TEMPLATE true ALLOW_CONNECTIONS false;
+SQL
+
 unset PGPASSWORD MDP_APP
-info "terminé : base $BASE prête"
+info "terminé : base $BASE prête, gabarit $GABARIT créé"

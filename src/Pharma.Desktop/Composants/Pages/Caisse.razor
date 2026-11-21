@@ -1647,6 +1647,8 @@
     protected override async Task OnInitializedAsync()
     {
         Session.AvantFermeture += PanierAbandonne;
+        // « Changer d'utilisateur » panier rempli : la vente part en attente avant la fermeture de la session, réponse attendue
+        Session.AvantChangementUtilisateur(LaisserAuSuivantAsync);
         // Quitter la Caisse panier rempli (menu, lien, « Retour ») : la vente part en attente, « Retour » la reprend
         Historique.AvantDeQuitter("caisse", QuitterAsync);
         // La partie affichée (annulation, crédit) est dans l'adresse : « Retour » y revient d'elle-même
@@ -1769,6 +1771,33 @@
         }
         venteMiseDeCoteEnPartant = derniereMiseEnAttente;
         return true;
+    }
+
+    /// <summary>
+    /// « Changer d'utilisateur » panier rempli (2026-11-21) : la vente est mise en attente sur le serveur AVANT la fermeture de la
+    /// session, et la réponse est attendue. Réussite : le poste la retient pour le prochain employé connecté. Échec (serveur
+    /// injoignable, délai dépassé) ou encaissement en cours : le panier reste affiché, la session reste ouverte et le message est
+    /// renvoyé à l'en-tête, qui l'affiche dans une fenêtre bloquante (« Réessayer » / « Rester sur la vente »).
+    /// Aucune copie locale du panier n'existe sur le poste : le serveur est la seule sauvegarde (ventes en attente).
+    /// </summary>
+    private async Task<string?> LaisserAuSuivantAsync()
+    {
+        if (!lignes.Any(l => l.Quantite > 0)) return null;
+        if (enCours) return "Encaissement en cours : attendez la fin de l’encaissement avant de changer d’utilisateur.";
+        var quitte = Session.NomComplet ?? "l’employé précédent";
+        enCours = true;
+        try { derniereMiseEnAttente = null; await MettreDeCoteAsync(DemandeAttente($" · laissée par {quitte}")); }
+        finally { enCours = false; }
+        if (erreurAttente is not null || derniereMiseEnAttente is not { } id)
+        {
+            var echec = erreurAttente ?? "La vente n’a pas pu être mise en attente.";
+            erreurAttente = "Changement d’utilisateur annulé : la vente n’a pas pu être mise en attente, le panier est resté affiché.";
+            await InvokeAsync(StateHasChanged);
+            return echec;
+        }
+        Session.RetenirVenteAReprendre(id, quitte);
+        await InvokeAsync(StateHasChanged);
+        return null;
     }
 
     /// <summary>Vente mise en attente au changement d'utilisateur : retenue par le poste pour le prochain employé connecté.</summary>
@@ -3195,8 +3224,9 @@
     // déconnexion, appelé juste avant que le jeton soit effacé (SessionPoste.AvantFermeture).
     private void PanierAbandonne()
     {
-        // « Changer d'utilisateur » panier rempli : la vente part en attente (rien n'est perdu ni signalé « retiré ») et le
-        // prochain employé connecté sur ce poste la retrouve à la Caisse. Requête partie avant la fermeture de la session.
+        // « Changer d'utilisateur » : le panier est déjà parti en attente, réponse attendue (LaisserAuSuivantAsync, appelé par
+        // l'en-tête avant de fermer la session ; un échec arrête le changement). Filet si un panier est encore là malgré tout :
+        // la vente part en attente sans attendre la réponse (rien n'est signalé « retiré »).
         if (Session.ChangementUtilisateur && lignes.Any(l => l.Quantite > 0))
         {
             var quitte = Session.NomComplet ?? "l’employé précédent";
@@ -3236,6 +3266,7 @@
     public async ValueTask DisposeAsync()
     {
         Session.AvantFermeture -= PanierAbandonne;
+        Session.OublierAvantChangement(LaisserAuSuivantAsync);
         // Actualisation du bandeau « produit redevenu disponible » arrêtée (2026-11-16)
         arretAlertesDispo.Cancel();
         arretAlertesDispo.Dispose();

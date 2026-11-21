@@ -1,6 +1,7 @@
 ﻿@page "/admin/caisse"
 @inject ApiClient Api
 @inject HistoriqueNavigation Historique
+@inject SessionPoste Session
 
 <div class="page admin">
     <NavAdmin Actif="admin/caisse" Rubrique="@Rubrique" />
@@ -58,6 +59,21 @@
                     <label class="case"><input type="radio" name="versement" checked="@(parametres.VersementCloture == "automatique")" @onchange="@(() => parametres.VersementCloture = "automatique")" />
                         <span>Automatiquement : le compté moins le fond de caisse (@Libelles.Dinars(parametres.FondCaisseDefaut)), qui reste dans le tiroir ; pas à la relève d’équipe</span></label>
                 </fieldset>
+                @if (tachesLaissees is not null)
+                {
+                    @* Réglage de l'officine (script 156), titulaire seul : deux choix sur une ligne, l'écran tient à 1366 × 768 *@
+                    <fieldset class="champ" style="border: 0; padding: 0; margin: 0" data-champ="taches_laissees_poste"
+                              title="Facture en préparation et retour fournisseur laissés au « Changer d’utilisateur » : gardés sur chaque poste dans un fichier chiffré par le compte Windows (relus au redémarrage), ou en mémoire seulement (perdus à la fermeture du poste ; le fichier du poste est supprimé à sa prochaine connexion). Jamais en clair. Réservé au titulaire, inscrit au journal.">
+                        <legend class="etiquette-champ">Facture et retour fournisseur laissés au changement d’utilisateur@(Titulaire ? "" : " (réglé par le titulaire)") :</legend>
+                        <div style="display: flex; flex-wrap: wrap; column-gap: 24px">
+                            @foreach (var mode in new[] { ReglageTachesLaisseesDto.Chiffre, ReglageTachesLaisseesDto.Desactive })
+                            {
+                                <label class="case"><input type="radio" name="taches-laissees" value="@mode" disabled="@(!Titulaire)" checked="@(tachesLaissees == mode)"
+                                                           @onchange="@(() => tachesLaissees = mode)" /><span>@Libelles.ConservationTachesLaissees(mode)</span></label>
+                            }
+                        </div>
+                    </fieldset>
+                }
             </section>
             }
             @if (rubrique == "chifa")
@@ -170,6 +186,9 @@
     }
 
     private Saisie? parametres;
+    // Facture et retour laissés (script 156) : valeur affichée et valeur enregistrée ; null si le réglage n'a pas pu être lu
+    private string? tachesLaissees, tachesLaisseesEnregistre;
+    private bool Titulaire => Session.A("role.titulaire");
     private List<EntreeJournalDto> journal = [];
     // Journal paginé et filtré : période et employé
     private int journalTotal, journalPage = 1, journalTaille = Pagination.TailleParDefaut;
@@ -240,6 +259,9 @@
                 DelaiDepotChifaJours = p.DelaiDepotChifaJours, DelaiPaiementBordereauJours = p.DelaiPaiementBordereauJours,
                 ExigerProduitsRepriseHistorique = p.ExigerProduitsRepriseHistorique
             };
+        var (taches, errTaches) = await Api.ReglageTachesLaisseesAsync();
+        erreur ??= errTaches;
+        (tachesLaissees, tachesLaisseesEnregistre) = (taches?.Mode, taches?.Mode);
         (employesJournal, _) = await Api.EmployesJournalAsync();
         await ChargerJournalAsync(retour?.Entier("page") ?? 1, retour?.Entier("taille"));
     }
@@ -260,9 +282,17 @@
             parametres.SeuilAnnulations, parametres.AutorisationParCode, parametres.SeuilEcartChifa, DelaiVoletChifaJours: parametres.DelaiVoletChifaJours, SeuilSortieTiroir: parametres.SeuilSortieTiroir,
             JoursAlerteFinDroit: parametres.JoursAlerteFinDroit, DelaiDepotChifaJours: parametres.DelaiDepotChifaJours,
             DelaiPaiementBordereauJours: parametres.DelaiPaiementBordereauJours, ExigerProduitsRepriseHistorique: parametres.ExigerProduitsRepriseHistorique));
+        // Facture et retour laissés : titulaire seul, enregistré seulement s'il a changé (le serveur revérifie le rôle)
+        var tachesChangees = erreur is null && Titulaire && tachesLaissees is not null && tachesLaissees != tachesLaisseesEnregistre;
+        if (tachesChangees)
+        {
+            erreur = await Api.ModifierReglageTachesLaisseesAsync(tachesLaissees!);
+            if (erreur is null) tachesLaisseesEnregistre = tachesLaissees;
+        }
         enCours = false;
         if (erreur is not null) return;
-        message = "Paramètres enregistrés (inscrits au journal). La déconnexion automatique s’applique à la prochaine connexion.";
+        message = "Paramètres enregistrés (inscrits au journal). La déconnexion automatique s’applique à la prochaine connexion."
+                  + (tachesChangees ? " Facture et retour laissés : appliqué sur ce poste, sur les autres à leur prochaine connexion." : "");
         await ChargerJournalAsync(1);
     }
 }

@@ -147,8 +147,8 @@ Décision du titulaire (2026-11-16, « ok proposition familles ») : `parametre_
 | `remboursement_titulaire` | montante | id | - | - | |
 | `remise_cheque_paiement` | montante | remise_id, paiement_id | - | - | |
 | `remise_cheques` | montante | id | - | - | |
-| `retour_client` | montante | id | - | - | |
-| `retour_client_ligne` | montante | id | - | - | |
+| `retour_client` | montante | id | - | - | colonnes `chifa_corrige_le`, `chifa_corrige_par` ajoutées par le script 155 (miroir `002` à repasser) |
+| `retour_client_ligne` | montante | id | - | - | colonne `montant_organisme` ajoutée par le script 155 (miroir `002` à repasser) |
 | `retour_fournisseur` | montante | id | - | - | |
 | `rupture_grossiste` | montante | id | - | - | |
 | `sceau_integrite` | montante | id | - | - | Sceaux recopiés tels quels ; la clé ne part jamais |

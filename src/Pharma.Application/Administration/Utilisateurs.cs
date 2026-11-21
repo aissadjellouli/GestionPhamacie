@@ -67,7 +67,8 @@ public sealed class CreerUtilisateur(IUtilisateursAdmin admin, IHacheurMotDePass
     }
 }
 
-public sealed class ModifierUtilisateur(IUtilisateursAdmin admin, IHacheurMotDePasse hacheur, IJournal journal, IPermissionService droits)
+public sealed class ModifierUtilisateur(IUtilisateursAdmin admin, IHacheurMotDePasse hacheur, IJournal journal, IPermissionService droits,
+    Demo.ModeDemo? demo = null)
 {
     /// <param name="nouveauMotDePasse">Vide : le mot de passe ne change pas.</param>
     public async Task ExecuterAsync(long id, string? nomComplet, long roleId, bool actif, string? nouveauMotDePasse,
@@ -90,6 +91,8 @@ public sealed class ModifierUtilisateur(IUtilisateursAdmin admin, IHacheurMotDeP
         string? hash = null;
         if (!string.IsNullOrEmpty(nouveauMotDePasse))
         {
+            // Démonstration : les trois comptes communs gardent le mot de passe de démonstration (docs/regles-metier.md)
+            if (Demo.ModeDemo.EstCompteDemo(cible.Identifiant)) demo?.Exiger("changement du mot de passe d'un compte de démonstration");
             RegleCompte.VerifierMotDePasse(nouveauMotDePasse);
             hash = hacheur.Hacher(nouveauMotDePasse);
         }

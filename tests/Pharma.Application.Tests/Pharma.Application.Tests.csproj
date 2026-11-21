@@ -7,6 +7,8 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <!-- DPAPI du fichier des tâches laissées du poste (version centrale : Directory.Packages.props) -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
@@ -18,5 +20,7 @@
     <!-- Saisie de la remise au poste (fichiers sans dépendance à l'interface), testée sans référencer le projet du poste -->
     <Compile Include="..\..\src\Pharma.Desktop\Services\SaisieRemise.cs" Link="Poste\SaisieRemise.cs" />
     <Compile Include="..\..\src\Pharma.Desktop\Services\CodeComptoirSaisie.cs" Link="Poste\CodeComptoirSaisie.cs" />
+    <!-- Fichier des tâches laissées du poste (chiffré DPAPI utilisateur) : écriture, relecture, purge, fichier abîmé -->
+    <Compile Include="..\..\src\Pharma.Desktop\Services\FichierTachesLaissees.cs" Link="Poste\FichierTachesLaissees.cs" />
   </ItemGroup>
 </Project>

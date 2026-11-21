@@ -1,6 +1,6 @@
 # Conception : synchronisation officine ↔ serveur central (lot 12)
 
-> **Statut : conception (GO « go conception sync », 2026-11-16) ; lot S1 réalisé (§ 11) ; lot S2 réalisé (2026-11-16, § 12)** : base centrale commune cloisonnée, autorité de certification, API centrale (activation, jeton, dépôt, accusé), envoi depuis l'officine, écran « Admin › Synchronisation » ; **lot S6 (chargement complet, § 13), réglages descendants (§ 14, § 15) et corrections (§ 18) réalisés ; lot S3 réalisé le 2026-11-16 pour la supervision et la purge (§ 20 : purge de `sync_sortie`, bandeau des postes, alertes au titulaire, écran Supervision et purge)**. Serveur central **local** pour l'instant (`pharmacie_cloud_dev`, port 5090), aucune connexion vers l'extérieur. **Restent : la mutualisation imposé / proposé des réglages (§ 16, attend des décisions du titulaire), les ordres descendants (S5), l'intégrité au central (S4), les écrans à distance (S7).** ; **lot S4 réalisé le 2026-11-17 (§ 22 : vérification d'intégrité au serveur central, ajout seul des journaux reçus)** ; **lots S5.1 et S5.5 réalisés le 2026-11-18 (§ 24 : ordres du central, employés et droits, confirmation du titulaire)** ; **lot S5.2 réalisé le 2026-11-18 (§ 25 : prix d'un produit, confirmation au-delà de 20 %)** ; **lot S5.3 réalisé le 2026-11-18 (§ 26 : nomenclature nationale envoyée par le central)** ; **lot S5.4 réalisé le 2026-11-18 (§ 27 : commandes en brouillon envoyées par le central)** ; **référentiels (antibiotiques suivis, organismes et centres payeurs) réalisés le 2026-11-18 (§ 28)**
+> **Statut : conception (GO « go conception sync », 2026-11-16) ; lot S1 réalisé (§ 11) ; lot S2 réalisé (2026-11-16, § 12)** : base centrale commune cloisonnée, autorité de certification, API centrale (activation, jeton, dépôt, accusé), envoi depuis l'officine, écran « Admin › Synchronisation » ; **lot S6 (chargement complet, § 13), réglages descendants (§ 14, § 15) et corrections (§ 18) réalisés ; lot S3 réalisé le 2026-11-16 pour la supervision et la purge (§ 20 : purge de `sync_sortie`, bandeau des postes, alertes au titulaire, écran Supervision et purge)**. Serveur central **local** pour l'instant (`pharmacie_cloud_dev`, port 5090), aucune connexion vers l'extérieur. **Restent : la mutualisation imposé / proposé des réglages (§ 16, attend des décisions du titulaire), les ordres descendants (S5), l'intégrité au central (S4), les écrans à distance (S7).** ; **lot S4 réalisé le 2026-11-17 (§ 22 : vérification d'intégrité au serveur central, ajout seul des journaux reçus)** ; **lots S5.1 et S5.5 réalisés le 2026-11-18 (§ 24 : ordres du central, employés et droits, confirmation du titulaire)** ; **lot S5.2 réalisé le 2026-11-18 (§ 25 : prix d'un produit, confirmation au-delà de 20 %)** ; **lot S5.3 réalisé le 2026-11-18 (§ 26 : nomenclature nationale envoyée par le central)** ; **lot S5.4 réalisé le 2026-11-18 (§ 27 : commandes en brouillon envoyées par le central)** ; **référentiels (antibiotiques suivis, organismes et centres payeurs) réalisés le 2026-11-18 (§ 28)** ; **lot S7.1 réalisé en local le 2026-11-21 (§ 32 : écrans de l'éditeur, [ecrans-central.md](ecrans-central.md))**
 > Les éléments marqués **[À VÉRIFIER]** ne sont pas établis ; les éléments marqués **[DÉCISION]** attendent le titulaire.
 > Le chiffrement des données (lot 9) n'est **pas** décidé ici : la conception indique seulement où il pourra s'insérer.
 
@@ -126,7 +126,7 @@ Le choix « pseudonymiser ou envoyer en clair » est structurant pour la sauvega
 - **Transport** : TLS 1.2 minimum (1.3 de préférence), certificat serveur vérifié par l'officine (épinglage de l'autorité **[DÉCISION]**).
 - **Authentification de l'officine** : proposition **certificat client** (mTLS) délivré à l'inscription, stocké sur le PC serveur (magasin machine, même protection que la clé de scellement) + jeton court émis par l'API cloud. Rotation annuelle et révocation depuis le cloud **[DÉCISION durée]**. Le 2e serveur reçoit le certificat avec l'export protégé existant de la clé, ou un certificat propre **[DÉCISION]**.
 - **Cloisonnement** : chaque requête est liée à l'id officine du certificat ; jamais à un id fourni dans le corps. Base centrale : une base ou un schéma par officine avec rôle propre **[DÉCISION]** ; tests de non-fuite entre officines obligatoires.
-- **Comptes distants** (titulaire, multi-officines, éditeur) : authentification forte (mot de passe + code SMS, comme le super admin) ; droits limités à leurs officines ; l'éditeur (support) n'a pas accès aux données nominatives sans accord tracé **[DÉCISION]**.
+- **Comptes distants** (titulaire, multi-officines, éditeur) : authentification forte (mot de passe + code SMS, comme le super admin) ; droits limités à leurs officines ; l'éditeur (support) n'a **jamais** accès aux données nominatives (**corrigé le 2026-11-21**, décision n° 4 du § 6.2 : la mention antérieure « sans accord tracé » est abandonnée ; écrans de l'éditeur limités à l'état technique, § 32).
 - **Journal des accès** côté cloud : qui, quoi, quand, quelle officine ; ajout seul ; consultable par le titulaire.
 - **Minimisation (loi 18-07)** : voir § 2 ; journaux techniques sans données personnelles (règle du lot 1 reprise).
 - **Lot 9 (non lancé)** : points d'insertion possibles, sans décision — chiffrement des colonnes sensibles avant mise en outbox, chiffrement au repos de la base centrale, chiffrement des sauvegardes cloud. **Option C retenue par le titulaire le 2026-11-17** (copie chiffrée des données nominatives au central, ouverture à deux titulaire + éditeur) : conception et décisions dans [chiffrement-data.md](chiffrement-data.md), non lancée.
@@ -192,7 +192,7 @@ Principe : défense en profondeur ; si une couche cède, les autres tiennent. L'
 | S4 | Vérification d'intégrité côté cloud (chaînes, continuité, ancrages des sceaux) — **réalisé le 2026-11-17 (§ 22)** | S2 ; lots 2, 3, 8 (faits) |
 | S5 | Ordres descendants (prix, réglages, nomenclature) appliqués par l'API locale, conflits, journalisation — **analysé, décisions S5-D1 à D5 du 2026-11-18 (§ 23) ; S5.1 (socle des ordres) et S5.5 (employés et droits) réalisés le 2026-11-18 (§ 24) ; S5.2 (prix) réalisé le 2026-11-18 (§ 25) ; S5.3 (nomenclature) réalisé le 2026-11-18 (§ 26) ; S5.4 (commandes en brouillon) réalisé le 2026-11-18 (§ 27) ; référentiels : antibiotiques suivis, organismes et centres payeurs, prestations, indications, DCI réalisés le 2026-11-18 (§ 28)** | S3 |
 | S6 | Cas particuliers : chargement initial, bascule 2e serveur, restauration (époques), départ d'une officine | S3, S4 |
-| S7 | Écrans à distance du titulaire, multi-officines, journal des accès | S2, S5 |
+| S7 | **S7.1 réalisé le 2026-11-21 en local (§ 32 : écrans de l'éditeur, comptes distants, journal des accès)** ; S7.2 : écrans à distance du titulaire, multi-officines ; journal des accès (la page d'état de développement `http://127.0.0.1:5092` du 2026-11-21 n'est **pas** un écran S7 : outil de développement en lecture seule ; seul son rôle `pharma_cloud_etat`, script central 029, servira à S7) | S2, S5 |
 | (lot 9) | Chiffrement des données : **non lancé**, s'insérera aux points du § 6 | « go chiffrement » |
 
 ### Décisions demandées au titulaire
@@ -2063,3 +2063,24 @@ ventes faites entre le redémarrage et la détection (30 s au moins avant) repre
 
 **Limites** : pendant l'attente, seul l'encaissement est refusé (une vente déjà en panier attend) ; au-delà du délai sans Internet, les
 n° repris restent possibles : ils sont alors signalés par le central (A). **[À VÉRIFIER : avis du comptable sur les n° repris et sautés.]**
+
+## 32. Lot S7.1 : écrans de l'éditeur (réalisé en local le 2026-11-21, go du titulaire, recommandations de la conception retenues)
+
+Détail, routes, sécurité et marche à suivre : [ecrans-central.md](ecrans-central.md). Rien n'est en ligne.
+
+- **Projet `src/Pharma.Cloud.Web`** : Blazor en rendu serveur **statique** (formulaires classiques), processus et port distincts du serveur central ;
+  `https://127.0.0.1:5094` en développement (refus de démarrer hors boucle locale) ; **jamais la clé de l'autorité** (certificat public `autorite.crt`
+  seulement, pour l'épinglage du code d'activation, comme `NouveauCodeAsync` de la console).
+- **Scripts centraux `030_comptes_distants.sql` et `031_ecrans_editeur.sql`** (le n° 030 libéré par un autre lot) : rôle `pharma_cloud_ecrans`
+  (sans connexion, aucun droit sur les tables, fonctions `cloud_ecran_*` `SECURITY DEFINER` seulement) ; `compte_distant`, `compte_officine` (vide,
+  pour S7.2), `session_distante` (empreinte du jeton), `code_second_facteur` (empreinte HMAC), `journal_acces_distant` (ajout seul, chaîné SHA-256,
+  § 6.1 point 8) ; officine courante posée **par la base** dans `cloud_ecran_ouvrir` après contrôle de la session et du droit.
+- **Décision n° 4 appliquée** : l'éditeur ne voit **aucune** donnée nominative ni aucun contenu (jamais `ordre_central.donnees`, cible, auteur ou
+  motif ; jamais `cloud_anomalie_integrite.detail` / `attendu` / `trouve` / `cle_ligne` ; jamais `lot_recu.contenu` ; jamais un code d'activation ni
+  son empreinte ; jamais le motif d'une révocation ; aucune table miroir) ; contrôlé par les tests SQL et C#.
+- **Actions** (code de second facteur à chaque action, motif, ressaisie ; journaux des accès et de sécurité) : créer une officine, nouveau code
+  d'activation (principal / second), révoquer un certificat, révoquer un serveur. Départ, effacement, purges, familles, autorité : **console**.
+- **Comptes** : console du central `--creer-compte-editeur`, `--comptes-distants`, `--desactiver-compte`, `--deverrouiller-compte` (journalisées) ;
+  BCrypt coût 12 ; mot de passe provisoire à changer ; verrouillage 5 échecs → 15 min doublées jusqu'à 24 h ; second facteur en **mode fichier**
+  en développement seulement, e-mail par le SMTP du central en production, SMS sans fournisseur.
+- **Reste** : mise en ligne ; S7.2 (titulaire, multi-officines) ; mesure des écrans (écran fixe) ; voir [ecrans-central.md](ecrans-central.md) § 8.

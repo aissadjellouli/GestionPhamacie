@@ -115,6 +115,17 @@ commander, En attente, Grossistes, Notifications › File d'attente, Suivi des a
 (`titre-actions-cote` : Nomenclature, Sauvegardes, Suivi des antibiotiques) ; histogramme de la Synthèse financière à 90 px
 en fenêtre basse (≤ 800 px) ; marge du bas des pages à menu ramenée de 36 à 20 px en fenêtre basse. Reste : la fiche d'un prêt
 ouvert (Financements, formulaire ouvert à la demande, toléré) défile de 77 à 226 px.
+**Fiche d'un prêt ouvert revue le 2026-11-21** (Financements › Prêts bancaires, `/financements?rubrique=prets&pret=<id>` ; elle
+défilait de 77 à 226 px à 1 366 × 768) : les cinq tuiles du résumé en `.tuiles.tuiles-compactes.tuiles-pret` (une seule rangée,
+pied en 12 px), affichées sauf pendant la saisie de l'échéancier ; tableaux Échéancier et Usages en `.tableau-cadre`
+`data-hauteur-min="140"` ; onglets « Prêt et document… » et « Employer l'argent… » dans un `.cadre-defilant` (160 px au moins) ;
+saisie ou import de l'échéancier dans un `.cadre-defilant.cadre-unique` (un seul cadre, ses tableaux sans hauteur propre). Aucune
+information retirée. **Mesure à faire** (titulaire, clair et sombre, 1 366 × 768 et 1 536 × 890) : 0 px attendu sur les quatre
+onglets et sur « Modifier ou réimporter l'échéancier… » (saisie et étape « correspondance des colonnes »).
+**Fenêtre « Changement d'utilisateur impossible » ajoutée le 2026-11-21** (en-tête, « ⇄ Changer » quand la vente de la Caisse n'a
+pas pu être mise en attente) : `.voile` + `.panneau.fenetre-releve` (comme la relève), message en `.erreur`, boutons en `.actions`
+(« Réessayer » principal, « Rester sur la vente ») ; aucun style en ligne. À capturer en clair et en sombre (Caisse panier rempli,
+serveur arrêté).
 **Rapports › Synthèse revu le 2026-11-20** : la vue Mois défilait de 102 px à 1 366 × 768 (tuile Chiffre d'affaires sur dix
 lignes : répartition médicaments · parapharmacie · prestations et retours clients dans son pied) ; tuiles « Parapharmacie »
 (répartition) et « Retours clients » à part, affichées seulement quand elles ont une valeur. Mesuré 0 px en Jour, Semaine et Mois,

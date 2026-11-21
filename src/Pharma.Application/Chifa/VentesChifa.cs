@@ -33,8 +33,34 @@ public sealed record FiltreVentesChifa(string? Recherche, long? CentrePayeurId, 
     };
 }
 
+/// <summary>
+/// Retour avec part organisme d'une vente Chifa (script 155) : la facture Chifa signée doit être corrigée dans CHIFA-Officine. Produits :
+/// « 2 × Nom » séparés par « ; » ; PartOrganisme : part de l'organisme retirée par ce retour ; Deposee : vente portée depuis sur un
+/// bordereau déposé ; CorrigeLe / CorrigePar : correction marquée faite.
+/// </summary>
+public sealed record RetourACorrigerChifa(long RetourId, DateTime RetourLe, string RetourPar, long VenteId, string Numero, DateTime DateVente,
+    string? Patient, string? NumAssure, string? FactureChifa, string Produits, decimal PartOrganisme, bool Deposee, DateTime? CorrigeLe, string? CorrigePar);
+
+/// <summary>Filtre de la liste des retours à corriger : recherche (n° de vente, patient, n° d'assuré, facture Chifa) et état.</summary>
+public sealed record FiltreRetoursACorriger(string? Recherche, string Etat = FiltreRetoursACorriger.ACorriger)
+{
+    public const string ACorriger = "a_corriger";
+    public const string Corriges = "corriges";
+    public const string Tous = "tous";
+    public static string Lire(string? etat) => etat?.Trim().ToLowerInvariant() switch
+    {
+        Corriges => Corriges,
+        Tous => Tous,
+        _ => ACorriger
+    };
+}
+
 public interface IVentesChifa
 {
+    /// <summary>Retours avec part organisme des ventes Chifa (script 155), les plus récents d'abord.</summary>
+    Task<Page<RetourACorrigerChifa>> RetoursACorrigerAsync(FiltreRetoursACorriger filtre, DemandePage page, CancellationToken ct = default);
+    /// <summary>Marque la facture corrigée dans CHIFA-Officine ; null si le retour n'est pas à corriger (inconnu ou déjà marqué).</summary>
+    Task<RetourACorrigerChifa?> MarquerRetourCorrigeAsync(long retourId, long utilisateurId, CancellationToken ct = default);
     Task<VenteChifa?> LireAsync(long venteId, CancellationToken ct = default);
     Task<Page<VenteChifa>> ListerAsync(FiltreVentesChifa filtre, DemandePage page, CancellationToken ct = default);
     /// <summary>Écrit les informations Chifa ; retenirCentre : le centre devient le centre habituel du patient. Faux si la vente est annulée entre-temps.</summary>
@@ -104,6 +130,25 @@ public sealed class EnregistrerInfosChifa(IVentesChifa ventes, ICentresPayeurs c
     IMotifsReglables? motifs = null)
 {
     public const string Action = "vente_chifa_infos";
+    /// <summary>Journal : facture d'un retour avec part organisme corrigée dans CHIFA-Officine (script 155).</summary>
+    public const string ActionRetourCorrige = "retour_chifa_corrige";
+
+    /// <summary>
+    /// Retour avec part organisme d'une vente Chifa : l'employé marque la facture corrigée dans CHIFA-Officine (date et auteur gardés,
+    /// journalisé). Droit de vendre, comme les informations Chifa.
+    /// </summary>
+    public async Task MarquerRetourCorrigeAsync(long retourId, long utilisateurId, CancellationToken ct = default)
+    {
+        await droits.ExigerAsync(utilisateurId, Permissions.CaisseVendre, "marquer un retour corrigé dans CHIFA-Officine", ct);
+        var r = await ventes.MarquerRetourCorrigeAsync(retourId, utilisateurId, ct)
+                ?? throw new RegleMetierException("Ce retour n’est pas à corriger dans CHIFA-Officine (déjà marqué ?) : rechargez la liste.");
+        await journal.EcrireAsync(utilisateurId, ActionRetourCorrige, "vente", r.VenteId,
+            new Dictionary<string, object?>
+            {
+                ["ticket"] = r.Numero, ["retour"] = r.RetourId, ["facture_chifa"] = r.FactureChifa, ["part_organisme"] = r.PartOrganisme,
+                ["produits"] = r.Produits
+            }, Permissions.CaisseVendre, ct);
+    }
 
     public async Task ExecuterAsync(long venteId, InfosChifa saisie, bool retenirCentre, long utilisateurId, CancellationToken ct = default)
     {
@@ -212,6 +257,15 @@ public sealed class ExclureVenteChifa(IVentesChifa ventes, IPermissionService dr
 /// <summary>Liste des ventes Chifa (Finances › Chifa) : filtrée (recherche, centre, exclues) et paginée ; droit de vendre.</summary>
 public sealed class ConsulterVentesChifa(IVentesChifa ventes, IPermissionService droits)
 {
+    /// <summary>Retours à corriger dans CHIFA-Officine (Finances › Chifa, script 155) : droit de vendre, comme les autres listes Chifa.</summary>
+    public async Task<Page<RetourACorrigerChifa>> RetoursACorrigerAsync(FiltreRetoursACorriger filtre, DemandePage page, long utilisateurId,
+        CancellationToken ct = default)
+    {
+        await droits.ExigerAsync(utilisateurId, Permissions.CaisseVendre, "voir les retours à corriger dans CHIFA-Officine", ct);
+        var q = string.IsNullOrWhiteSpace(filtre.Recherche) ? null : filtre.Recherche.Trim()[..Math.Min(filtre.Recherche.Trim().Length, 60)];
+        return await ventes.RetoursACorrigerAsync(filtre with { Recherche = q, Etat = FiltreRetoursACorriger.Lire(filtre.Etat) }, page, ct);
+    }
+
     public async Task<Page<VenteChifa>> ListerAsync(FiltreVentesChifa filtre, DemandePage page, long utilisateurId, CancellationToken ct = default)
     {
         await droits.ExigerAsync(utilisateurId, Permissions.CaisseVendre, "voir les ventes Chifa", ct);

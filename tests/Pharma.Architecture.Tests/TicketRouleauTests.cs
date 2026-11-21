@@ -41,6 +41,37 @@ public class TicketRouleauTests
         Assert.True(a.Pages[0].Height.Millimeter > s.Pages[0].Height.Millimeter);
     }
 
+    // Retour d'une vente en tiers payant (script 155) : la mention de la part organisme retirée et le rappel Chifa allongent la ligne du
+    // retour sur le ticket PDF ; en démonstration, le filigrane reste posé
+    private static readonly DateTime QuandRetour = new(2026, 11, 21, 10, 30, 0);
+
+    [Fact]
+    public void Retour_avec_part_organisme_mentionne_sur_le_ticket_PDF()
+    {
+        var sans = Ticket(1) with { Retours = [RetourTicket.Libelle(QuandRetour, "Produit fictif 1 × 1", 30m, 0, 0)] };
+        var avec = Ticket(1) with { Retours = [RetourTicket.Libelle(QuandRetour, "Produit fictif 1 × 1", 30m, 0, 0, 70m, chifaACorriger: true)] };
+        Assert.Contains("Part organisme retirée", avec.Retours![0]);
+        Assert.DoesNotContain("Part organisme retirée", sans.Retours![0]);
+        using var a = PdfReader.Open(new MemoryStream(new DocumentsPdf().Ticket(avec, null, 58)), PdfDocumentOpenMode.Import);
+        using var s = PdfReader.Open(new MemoryStream(new DocumentsPdf().Ticket(sans, null, 58)), PdfDocumentOpenMode.Import);
+        Assert.Equal(1, a.PageCount);
+        Assert.True(a.Pages[0].Height.Millimeter > s.Pages[0].Height.Millimeter);
+    }
+
+    [Fact]
+    public void Ticket_PDF_d_un_retour_avec_part_organisme_garde_le_filigrane_en_demonstration()
+    {
+        var t = Ticket(1) with { Retours = [RetourTicket.Libelle(QuandRetour, "Produit fictif 1 × 1", 0, 0, 0, 70m, chifaACorriger: true)] };
+        var demo = new DocumentsPdf(new FiligranePdf(true)).Ticket(t, null, 80);
+        var normal = new DocumentsPdf().Ticket(t, null, 80);
+        using var d = PdfReader.Open(new MemoryStream(demo), PdfDocumentOpenMode.Import);
+        using var n = PdfReader.Open(new MemoryStream(normal), PdfDocumentOpenMode.Import);
+        Assert.Equal(FiligranePdf.Texte, d.Info.Keywords);
+        Assert.Equal(FiligranePdf.Mention, d.Info.Subject);
+        Assert.NotEqual(FiligranePdf.Texte, n.Info.Keywords);
+        Assert.True(demo.Length > normal.Length);
+    }
+
     [Fact]
     public void Hauteur_selon_le_contenu_sans_saut_de_page()
     {

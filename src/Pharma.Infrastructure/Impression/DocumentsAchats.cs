@@ -20,6 +20,11 @@ public sealed class DocumentsAchats : IDocumentsAchats
     // Polices : celles de Windows sous Windows (inchangé), Liberation Sans embarquée ailleurs
     static DocumentsAchats() => PolicesPdf.Configurer();
 
+    // Mode démonstration : filigrane « DÉMONSTRATION » sur chaque page (FiligranePdf ; absent = PDF inchangés)
+    private readonly FiligranePdf filigrane;
+
+    public DocumentsAchats(FiligranePdf? filigrane = null) => this.filigrane = filigrane ?? new FiligranePdf(false);
+
     // ---- Bon de commande ------------------------------------------------------
 
     public byte[] BonCommande(CommandeDetail c, Fournisseur f, string? pharmacie, bool avecPrix)
@@ -141,6 +146,7 @@ public sealed class DocumentsAchats : IDocumentsAchats
                         new XRect(x + Mm(2), y + Mm(HauteurMm - 4.2), Mm(LargeurMm / 2), Mm(3)), XStringFormats.TopLeft);
             }
         }
+        filigrane.Poser(pdf);
         using var flux = new MemoryStream();
         pdf.Save(flux, false);
         return flux.ToArray();
@@ -244,10 +250,11 @@ public sealed class DocumentsAchats : IDocumentsAchats
 
     private static string Da(decimal montant) => montant.ToString("N2", Fr) + " DA";
 
-    private static byte[] Rendre(Document doc)
+    private byte[] Rendre(Document doc)
     {
         var renderer = new PdfDocumentRenderer { Document = doc };
         renderer.RenderDocument();
+        filigrane.Poser(renderer.PdfDocument);
         using var flux = new MemoryStream();
         renderer.PdfDocument.Save(flux, false);
         return flux.ToArray();

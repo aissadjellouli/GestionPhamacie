@@ -93,7 +93,16 @@ app.Use(async (ctx, suite) =>
 app.UseRateLimiter();
 app.MapServeurCentral();
 app.Logger.LogInformation("Serveur central prêt ; autorité {Empreinte}", autorite.EmpreinteRacine[..16]);
+// Page d'état de DÉVELOPPEMENT (serveur séparé, http://127.0.0.1:5092) : seulement en Development avec Cloud:PageEtat=true et
+// PHARMA_CLOUD_ETAT_CONNEXION (rôle pharma_cloud_etat). Sans effet sur ce serveur : refus ou échec journalisés, jamais bloquants.
+var pageEtat = await Pharma.Cloud.Api.Etat.PageEtatCentral.DemarrerSiDemandeeAsync(builder.Environment.IsDevelopment(), builder.Configuration,
+    Environment.GetEnvironmentVariable(Pharma.Cloud.Api.Etat.PageEtatCentral.VariableConnexion), app.Logger);
 await app.RunAsync();
+if (pageEtat is not null)
+{
+    await pageEtat.StopAsync();
+    await pageEtat.DisposeAsync();
+}
 return 0;
 
 public partial class Program

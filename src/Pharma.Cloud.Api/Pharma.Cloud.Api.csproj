@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Pharma.Cloud.Api</RootNamespace>
@@ -11,6 +11,8 @@
     <PackageReference Include="SharpZipLib" />
     <!-- Mot de passe de l'archive de départ envoyé au titulaire par le compte SMTP de l'éditeur (TLS obligatoire) -->
     <PackageReference Include="MailKit" />
+    <!-- Comptes distants des écrans (lot S7.1) : mot de passe provisoire, empreinte BCrypt coût 12 -->
+    <PackageReference Include="BCrypt.Net-Next" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Pharma.Shared\Pharma.Shared.csproj" />

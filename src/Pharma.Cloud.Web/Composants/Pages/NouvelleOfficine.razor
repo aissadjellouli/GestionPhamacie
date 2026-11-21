@@ -1,0 +1,24 @@
+@page "/officines/nouvelle"
+
+<PageTitle>Créer une officine · écrans du central</PageTitle>
+
+<FormulaireAction Titre="Créer une officine" Explication="Crée l'officine au central et son code d'activation (24 heures, usage unique), affiché une seule fois."
+                  Etape2="Officine" Action="actions/creer-officine" Retour="/officines/nouvelle" Annuler="officines"
+                  ConfirmationLibelle="Nom de l'officine, à nouveau" Bouton="Créer l'officine et son code" Erreur="@Erreur" Ok="@Ok">
+    <div class="champ">
+        <label for="libelle" class="requis">Nom de l'officine</label>
+        <input id="libelle" name="libelle" required maxlength="200" autocomplete="off" />
+    </div>
+    <div class="champ">
+        <label for="serveur">Serveur à activer</label>
+        <select id="serveur" name="serveur">
+            <option value="principal" selected>Principal</option>
+            <option value="second">Second serveur</option>
+        </select>
+    </div>
+</FormulaireAction>
+
+@code {
+    [SupplyParameterFromQuery(Name = "erreur")] private string? Erreur { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] private string? Ok { get; set; }
+}

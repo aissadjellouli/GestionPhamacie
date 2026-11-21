@@ -1,0 +1,29 @@
+@page "/connexion"
+
+<PageTitle>Connexion · écrans du central</PageTitle>
+
+<div class="page connexion">
+    <div class="entete-connexion">
+        <img class="logo-connexion" src="img/logo.svg" alt="Tracodex Réseau" />
+        <h1>Écrans du central</h1>
+        <p class="sous-titre">Compte distant : identifiant, mot de passe, puis code de confirmation.</p>
+    </div>
+    <Message Erreur="@Erreur" />
+    <form class="carte" method="post" action="actions/connexion">
+        <AntiforgeryToken />
+        <div class="champ">
+            <label for="identifiant" class="requis">Identifiant</label>
+            <input id="identifiant" name="identifiant" autocomplete="username" required maxlength="60" autofocus />
+        </div>
+        <div class="champ">
+            <label for="mot_de_passe" class="requis">Mot de passe</label>
+            <input id="mot_de_passe" name="mot_de_passe" type="password" autocomplete="current-password" required maxlength="128" />
+        </div>
+        <button class="btn btn-principal" type="submit">Continuer</button>
+    </form>
+    <p class="pied-page">Après 5 essais manqués, le compte est bloqué 15 minutes, puis deux fois plus longtemps à chaque nouveau blocage. Chaque accès est noté au journal des accès.</p>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "erreur")] private string? Erreur { get; set; }
+}

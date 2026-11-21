@@ -5,7 +5,7 @@
 #   docker compose -f deploy/demo/docker-compose.yml --env-file deploy/demo/.env up -d --build
 #
 # Aucun mot de passe ni clé dans ce fichier : tout vient de deploy/demo/.env (jamais dans git).
-# Aucun service central à cette étape.
+# Aucun service central. Étape 2 : mode démonstration de l'API (Demo__Actif) et service « reinit » (remise à zéro).
 # =====================================================================
 name: pharmaofficine-demo
 
@@ -21,6 +21,7 @@ services:
       # Lus par le script d'init (deploy/demo/init/10_base_officine.sh)
       PHARMA_APP_MDP_FILE: /run/secrets/pharma_app_mdp
       PHARMA_BASE: pharmacie_demo
+      PHARMA_GABARIT: pharmacie_demo_gabarit
       PHARMA_SCRIPTS: /pharma/database
     secrets:
       - postgres_mdp
@@ -63,6 +64,11 @@ services:
       # LOCAL SEULEMENT : HTTP sans chiffrement accepté, l'API n'étant joignable que depuis ce PC (port lié à 127.0.0.1).
       # Démo publique : HTTPS devant l'API (proxy inverse qui termine TLS, déclaré dans ProxysConnus), jamais HTTP exposé.
       AutoriserHttpReseau: "true"
+      # Étape 2 : mode démonstration (refus de démarrer si la base n'a pas le marqueur posé par init/10_base_officine.sh),
+      # jeton de 2 heures, nomenclature nationale importée par l'API si la base n'en a pas
+      Demo__Actif: "true"
+      Demo__FichierNomenclature: "/pharma/data/NOMENCLATURE NATIONALE - VERSION JUIN 2026.xlsx"
+      Jwt__DureeHeures: "2"
     ports:
       # Lié à 127.0.0.1 : rien n'est ouvert sur le réseau. 5080 est aussi le port de l'API de développement : arrêter
       # celle-ci avant, ou régler PORT_API_DEMO dans deploy/demo/.env.
@@ -70,12 +76,42 @@ services:
     volumes:
       # Données de l'API (Donnees:Racine) : clés DataProtection, clé de scellement, GED, archives fiscales, journaux
       - api-donnees:/var/lib/pharmaofficine
+      # Fichier de la nomenclature nationale (document public du dépôt), lecture seule ; jamais copié dans l'image
+      - ../../database/data:/pharma/data:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/api/healthcheck"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 60s
+
+  # Étape 2 : remise à zéro quotidienne de la base de démonstration depuis le gabarit (deploy/demo/reinit/remise_a_zero.sh),
+  # puis grand jeu de test 905 une fois la nomenclature importée par l'API. Ne touche que la base de ce volume db-donnees.
+  # Remise à zéro tout de suite : docker compose … exec reinit bash /pharma/reinit/remise_a_zero.sh maintenant
+  reinit:
+    image: postgres:18
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["bash", "/pharma/reinit/remise_a_zero.sh"]
+    command: ["boucle"]
+    environment:
+      TZ: Africa/Algiers
+      PHARMA_HOTE: db
+      PHARMA_BASE: pharmacie_demo
+      PHARMA_GABARIT: pharmacie_demo_gabarit
+      PHARMA_SCRIPTS: /pharma/database
+      REINIT_HEURE: "${REINIT_HEURE:-04:00}"
+      # Mots de passe : fichiers des secrets (jamais en clair ici)
+      POSTGRES_MDP_FILE: /run/secrets/postgres_mdp
+      PHARMA_APP_MDP_FILE: /run/secrets/pharma_app_mdp
+    secrets:
+      - postgres_mdp
+      - pharma_app_mdp
+    volumes:
+      - ./reinit:/pharma/reinit:ro
+      - ../../database/data:/pharma/database/data:ro
 
 secrets:
   postgres_mdp:

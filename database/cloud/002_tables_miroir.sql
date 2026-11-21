@@ -1734,6 +1734,7 @@ ALTER TABLE public."parametre_caisse" ADD COLUMN IF NOT EXISTS "jours_alerte_fin
 ALTER TABLE public."parametre_caisse" ADD COLUMN IF NOT EXISTS "chifa_delai_depot_jours" integer;
 ALTER TABLE public."parametre_caisse" ADD COLUMN IF NOT EXISTS "chifa_delai_paiement_jours" integer;
 ALTER TABLE public."parametre_caisse" ADD COLUMN IF NOT EXISTS "reprise_exiger_produits_historique" boolean;
+ALTER TABLE public."parametre_caisse" ADD COLUMN IF NOT EXISTS "taches_laissees_poste" text;
 ALTER TABLE public."parametre_caisse" ADD COLUMN IF NOT EXISTS sync_chargement integer;
 ALTER TABLE public."parametre_caisse" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."parametre_caisse" ENABLE ROW LEVEL SECURITY;
@@ -1741,7 +1742,7 @@ ALTER TABLE public."parametre_caisse" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."parametre_caisse";
 CREATE POLICY cloisonnement ON public."parametre_caisse" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
 GRANT SELECT, INSERT, UPDATE, DELETE ON public."parametre_caisse" TO pharma_cloud_api;
-INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('parametre_caisse', '{id}', '{id,comptage_aveugle,fond_caisse_defaut,seuil_ecart,deconnexion_minutes,versement_cloture,delai_alerte_dette_jours,plafond_credit_defaut,seuil_annulations,autorisation_par_code,seuil_ecart_chifa,seuil_sortie_tiroir,delai_volet_chifa_jours,jours_alerte_fin_droit,chifa_delai_depot_jours,chifa_delai_paiement_jours,reprise_exiger_produits_historique,officine_id}')
+INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('parametre_caisse', '{id}', '{id,comptage_aveugle,fond_caisse_defaut,seuil_ecart,deconnexion_minutes,versement_cloture,delai_alerte_dette_jours,plafond_credit_defaut,seuil_annulations,autorisation_par_code,seuil_ecart_chifa,seuil_sortie_tiroir,delai_volet_chifa_jours,jours_alerte_fin_droit,chifa_delai_depot_jours,chifa_delai_paiement_jours,reprise_exiger_produits_historique,officine_id,taches_laissees_poste}')
     ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
 
 CREATE TABLE IF NOT EXISTS public."parametre_fiscal" (
@@ -2410,6 +2411,7 @@ ALTER TABLE public."regularisation_part_organisme" ADD COLUMN IF NOT EXISTS "ann
 ALTER TABLE public."regularisation_part_organisme" ADD COLUMN IF NOT EXISTS "annulation_trop_paye_impute" numeric(12,2);
 ALTER TABLE public."regularisation_part_organisme" ADD COLUMN IF NOT EXISTS "annulation_rembourse" numeric(12,2);
 ALTER TABLE public."regularisation_part_organisme" ADD COLUMN IF NOT EXISTS "annulation_mouvement_tiroir_id" bigint;
+ALTER TABLE public."regularisation_part_organisme" ADD COLUMN IF NOT EXISTS "part_organisme_rendue_avant" numeric(12,2);
 ALTER TABLE public."regularisation_part_organisme" ADD COLUMN IF NOT EXISTS sync_chargement integer;
 ALTER TABLE public."regularisation_part_organisme" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."regularisation_part_organisme" ENABLE ROW LEVEL SECURITY;
@@ -2417,7 +2419,7 @@ ALTER TABLE public."regularisation_part_organisme" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."regularisation_part_organisme";
 CREATE POLICY cloisonnement ON public."regularisation_part_organisme" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
 GRANT SELECT, INSERT, UPDATE, DELETE ON public."regularisation_part_organisme" TO pharma_cloud_api;
-INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('regularisation_part_organisme', '{id}', '{id,vente_id,organisme_id,part_organisme_vente,part_organisme_chifa,ecart,sort,montant_patient,montant_dette_diminuee,montant_a_rendre,montant_pharmacie,credit_mouvement_id,utilisateur_id,valide_par,cree_le,statut,annulee_le,annulee_par,motif_annulation,annulation_credit_mouvement_id,annulation_dette_annulee,annulation_trop_paye_impute,annulation_rembourse,annulation_mouvement_tiroir_id,officine_id}')
+INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('regularisation_part_organisme', '{id}', '{id,vente_id,organisme_id,part_organisme_vente,part_organisme_chifa,ecart,sort,montant_patient,montant_dette_diminuee,montant_a_rendre,montant_pharmacie,credit_mouvement_id,utilisateur_id,valide_par,cree_le,statut,annulee_le,annulee_par,motif_annulation,annulation_credit_mouvement_id,annulation_dette_annulee,annulation_trop_paye_impute,annulation_rembourse,annulation_mouvement_tiroir_id,officine_id,part_organisme_rendue_avant}')
     ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
 
 CREATE TABLE IF NOT EXISTS public."remboursement_titulaire" (
@@ -2538,6 +2540,8 @@ ALTER TABLE public."retour_client" ADD COLUMN IF NOT EXISTS "poste" text;
 ALTER TABLE public."retour_client" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
 ALTER TABLE public."retour_client" ADD COLUMN IF NOT EXISTS "motif_code" text;
 ALTER TABLE public."retour_client" ADD COLUMN IF NOT EXISTS "motif_texte" text;
+ALTER TABLE public."retour_client" ADD COLUMN IF NOT EXISTS "chifa_corrige_le" timestamp with time zone;
+ALTER TABLE public."retour_client" ADD COLUMN IF NOT EXISTS "chifa_corrige_par" bigint;
 ALTER TABLE public."retour_client" ADD COLUMN IF NOT EXISTS sync_chargement integer;
 ALTER TABLE public."retour_client" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."retour_client" ENABLE ROW LEVEL SECURITY;
@@ -2545,7 +2549,7 @@ ALTER TABLE public."retour_client" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."retour_client";
 CREATE POLICY cloisonnement ON public."retour_client" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
 GRANT SELECT, INSERT, UPDATE, DELETE ON public."retour_client" TO pharma_cloud_api;
-INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('retour_client', '{id}', '{id,vente_id,motif,utilisateur_id,valide_par,mode,montant_rembourse,session_caisse_id,poste,cree_le,motif_code,motif_texte,officine_id}')
+INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('retour_client', '{id}', '{id,vente_id,motif,utilisateur_id,valide_par,mode,montant_rembourse,session_caisse_id,poste,cree_le,motif_code,motif_texte,officine_id,chifa_corrige_le,chifa_corrige_par}')
     ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
 
 CREATE TABLE IF NOT EXISTS public."retour_client_ligne" (
@@ -2561,6 +2565,7 @@ ALTER TABLE public."retour_client_ligne" ADD COLUMN IF NOT EXISTS "ligne_vente_i
 ALTER TABLE public."retour_client_ligne" ADD COLUMN IF NOT EXISTS "quantite" integer;
 ALTER TABLE public."retour_client_ligne" ADD COLUMN IF NOT EXISTS "destination" text;
 ALTER TABLE public."retour_client_ligne" ADD COLUMN IF NOT EXISTS "montant" numeric(12,2);
+ALTER TABLE public."retour_client_ligne" ADD COLUMN IF NOT EXISTS "montant_organisme" numeric(12,2);
 ALTER TABLE public."retour_client_ligne" ADD COLUMN IF NOT EXISTS sync_chargement integer;
 ALTER TABLE public."retour_client_ligne" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."retour_client_ligne" ENABLE ROW LEVEL SECURITY;
@@ -2568,7 +2573,7 @@ ALTER TABLE public."retour_client_ligne" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."retour_client_ligne";
 CREATE POLICY cloisonnement ON public."retour_client_ligne" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
 GRANT SELECT, INSERT, UPDATE, DELETE ON public."retour_client_ligne" TO pharma_cloud_api;
-INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('retour_client_ligne', '{id}', '{id,retour_id,ligne_vente_id,quantite,destination,montant,officine_id}')
+INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('retour_client_ligne', '{id}', '{id,retour_id,ligne_vente_id,quantite,destination,montant,officine_id,montant_organisme}')
     ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
 
 CREATE TABLE IF NOT EXISTS public."retour_fournisseur" (

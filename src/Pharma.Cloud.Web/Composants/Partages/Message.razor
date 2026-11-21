@@ -1,0 +1,14 @@
+@* Message d'erreur ou de réussite d'après la clé de l'adresse (?erreur= / ?ok=) : textes fixes, jamais un texte saisi *@
+@if (Messages.Erreur(Erreur) is { } erreur)
+{
+    <div class="erreur" role="alert">@erreur</div>
+}
+else if (Messages.Reussite(Ok) is { } ok)
+{
+    <div class="succes" role="status">@ok</div>
+}
+
+@code {
+    [Parameter] public string? Erreur { get; set; }
+    [Parameter] public string? Ok { get; set; }
+}

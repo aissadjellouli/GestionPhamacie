@@ -1,0 +1,20 @@
+@page "/officines/{Id:guid}/revoquer-serveur"
+
+<PageTitle>Révoquer un serveur · écrans du central</PageTitle>
+
+<FormulaireAction Titre="@($"Révoquer le {(Serveur == "second" ? "second serveur" : "serveur principal")}")"
+                  Explication="Tous les certificats valables de ce serveur sont révoqués : il est refusé dès son prochain appel. Irréversible : il faudra un nouveau code d'activation."
+                  Etape2="Révocation" Action="@($"actions/officines/{Id}/revoquer-serveur")" Retour="@($"/officines/{Id}/revoquer-serveur?serveur={Serveur}")"
+                  Annuler="@($"officines/{Id}?rubrique=certificats")" ConfirmationLibelle="Nom de l'officine, tel qu'affiché dans sa fiche"
+                  Bouton="Révoquer le serveur" Danger="true" Erreur="@Erreur" Ok="@Ok">
+    <input type="hidden" name="serveur" value="@Serveur" />
+</FormulaireAction>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    [SupplyParameterFromQuery(Name = "serveur")] private string? ServeurDemande { get; set; }
+    [SupplyParameterFromQuery(Name = "erreur")] private string? Erreur { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] private string? Ok { get; set; }
+
+    private string Serveur => ServeurDemande == "second" ? "second" : "principal";
+}

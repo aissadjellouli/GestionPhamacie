@@ -23,7 +23,8 @@ public static class CategoriesJournal
             "prix_modifie", "produit_modifie", "produit_cree", "patient_cree", "patient_modifie", "coordonnees_modifiees", "utilisateur_cree",
             "utilisateur_modifie", "droits_modifies", "code_comptoir", "pharmacie_modifiee", "parametres_caisse", "seuils_alerte", "seuil_stock",
             "seuils_inventaire", "tva_sorties", "delai_alerte_dettes", "reglages_surveillance", "reglages_notification", "reglages_sauvegarde",
-            "destinataire_notification", "produit_bloque", "produit_debloque", "produit_sensible", "produit_non_sensible", "emplacement", "produit_range"
+            "destinataire_notification", "produit_bloque", "produit_debloque", "produit_sensible", "produit_non_sensible", "emplacement", "produit_range",
+            "taches_laissees_poste"
         ],
         ["autorisations"] = ["autorisation_code", "code_comptoir_bloque", "connexion_bloquee"]
     };

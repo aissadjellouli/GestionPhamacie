@@ -1,0 +1,66 @@
+@page "/"
+@page "/officines"
+@inject DepotEcrans Depot
+
+<PageTitle>Officines · écrans du central</PageTitle>
+
+<div class="page page-serree">
+    <div class="titre-page">
+        <div>
+            <h1>Officines</h1>
+            <p class="sous-titre">État technique de chaque officine reliée au central : aucune donnée de patient ni de vente.</p>
+        </div>
+        <div class="actions">
+            <a class="btn btn-principal" href="officines/nouvelle">Créer une officine</a>
+        </div>
+    </div>
+    <Message Erreur="@Erreur" Ok="@Ok" />
+    <form method="get" action="officines" class="filtres-liste" role="search">
+        <div class="champ">
+            <label for="texte">Nom de l'officine</label>
+            <input id="texte" name="texte" value="@Texte" maxlength="100" />
+        </div>
+        <div class="champ">
+            <label for="etat">État</label>
+            <select id="etat" name="etat">
+                @foreach (var (cle, libelle) in Etats)
+                {
+                    <option value="@cle" selected="@(EtatChoisi == cle)">@libelle</option>
+                }
+            </select>
+        </div>
+        <button type="submit" class="btn btn-contour">Filtrer</button>
+    </form>
+    <TableauEcran Table="@Table" Vide="Aucune officine pour ce filtre.">
+        <Action Context="ligne">
+            <a class="lien" href="@($"officines/{Table.Valeur(ligne, "id")}")">Ouvrir</a>
+        </Action>
+    </TableauEcran>
+    <PaginationEcran Page="@PageCourante" Taille="@Taille" Total="@Table.Total" Base="@Base" />
+    <p class="pied-page">« En retard » : officine active sans lot ni certificat reçu depuis 24 heures. Ouvrir une officine est noté au journal des accès.</p>
+</div>
+
+@code {
+    private const int Taille = 20;
+
+    private static readonly (string Cle, string Libelle)[] Etats =
+        [("toutes", "Toutes"), ("active", "Actives"), ("en_attente", "En attente d'activation"), ("sans_certificat_valable", "Sans certificat valable"), ("partie", "Parties")];
+
+    [CascadingParameter] private HttpContext? Contexte { get; set; }
+    [SupplyParameterFromQuery(Name = "texte")] private string? Texte { get; set; }
+    [SupplyParameterFromQuery(Name = "etat")] private string? Etat { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] private int? Numero { get; set; }
+    [SupplyParameterFromQuery(Name = "erreur")] private string? Erreur { get; set; }
+    [SupplyParameterFromQuery(Name = "ok")] private string? Ok { get; set; }
+
+    private TableEcran Table { get; set; } = TableEcran.Vide;
+    private string EtatChoisi => Etats.Any(e => e.Cle == Etat) ? Etat! : "toutes";
+    private int PageCourante => Math.Clamp(Numero ?? 1, 1, 100_000);
+    private string Base => $"officines?texte={Uri.EscapeDataString(Texte ?? "")}&etat={EtatChoisi}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Contexte?.EmpreinteJeton() is { } jeton)
+            Table = await Depot.OfficinesAsync(jeton, Texte, EtatChoisi, PageCourante, Taille, Contexte.RequestAborted);
+    }
+}

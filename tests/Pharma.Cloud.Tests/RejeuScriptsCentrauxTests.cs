@@ -1,4 +1,4 @@
-using Npgsql;
+﻿using Npgsql;
 using BaseCentraleJetable = Pharma.Cloud.Tests.DescendantsMutuV1Tests.BaseCentraleJetable;
 
 namespace Pharma.Cloud.Tests;
@@ -13,7 +13,8 @@ public class RejeuScriptsCentrauxTests
 {
     /// <summary>
     /// Empreinte de l'état : fonctions (md5 de la définition), déclencheurs (table, nom, fonction appelée ; partitions de lot_recu exclues),
-    /// contraintes (md5 de la définition) et droits d'exécution des fonctions.
+    /// contraintes (md5 de la définition), droits d'exécution des fonctions (dont ceux des écrans, scripts 030 et 031, rôle pharma_cloud_ecrans)
+    /// et droits par colonnes (script 029, rôle pharma_cloud_etat).
     /// </summary>
     private const string Empreinte = """
         SELECT 'f', p.oid::regprocedure::text, md5(pg_get_functiondef(p.oid)) FROM pg_proc p
@@ -23,6 +24,8 @@ public class RejeuScriptsCentrauxTests
         UNION ALL SELECT 'c', conrelid::regclass::text || '.' || conname, md5(pg_get_constraintdef(oid)) FROM pg_constraint
           WHERE connamespace = 'public'::regnamespace AND conrelid::regclass::text !~ '^lot_recu_'
         UNION ALL SELECT 'a', p.oid::regprocedure::text, coalesce(p.proacl::text, '') FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace
+        UNION ALL SELECT 'g', a.attrelid::regclass::text || '.' || a.attname, a.attacl::text FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid
+          WHERE c.relnamespace = 'public'::regnamespace AND a.attacl IS NOT NULL AND c.relname !~ '^lot_recu_'
         ORDER BY 1, 2, 3
         """;
 
@@ -37,7 +40,7 @@ public class RejeuScriptsCentrauxTests
         Assert.True(avant.Count > 200, $"empreinte trop courte ({avant.Count} lignes) : la requête ne lit pas la base");
 
         var scripts = Directory.GetFiles(Path.Combine(Depot.Racine(), "database", "cloud"), "0*.sql").Order(StringComparer.Ordinal).ToList();
-        Assert.True(scripts.Count >= 28, $"scripts attendus : au moins 28, trouvés {scripts.Count}");
+        Assert.True(scripts.Count >= 31, $"scripts attendus : au moins 31, trouvés {scripts.Count}");
         foreach (var script in scripts) base_.Rejouer(script);
 
         var apres = await Lire(db, ct);

@@ -1,0 +1,26 @@
+@* Pagination par liens (rendu statique) : page précédente / suivante, position *@
+@if (Total > 0)
+{
+    <nav class="pagination" aria-label="Pagination">
+        @if (Page > 1)
+        {
+            <a class="btn btn-contour" href="@Lien(Page - 1)">← Précédente</a>
+        }
+        <span>Page @Page sur @Pages · @Total ligne(s)</span>
+        @if (Page < Pages)
+        {
+            <a class="btn btn-contour" href="@Lien(Page + 1)">Suivante →</a>
+        }
+    </nav>
+}
+
+@code {
+    [Parameter] public int Page { get; set; } = 1;
+    [Parameter] public int Taille { get; set; } = 20;
+    [Parameter] public long Total { get; set; }
+    /// <summary>Adresse de base avec ses filtres, sans le numéro de page (ex. « officines?texte=a&amp;etat=toutes »).</summary>
+    [Parameter, EditorRequired] public string Base { get; set; } = "";
+
+    private long Pages => Math.Max(1, (Total + Taille - 1) / Taille);
+    private string Lien(int page) => Base + (Base.Contains('?') ? "&" : "?") + "page=" + page;
+}

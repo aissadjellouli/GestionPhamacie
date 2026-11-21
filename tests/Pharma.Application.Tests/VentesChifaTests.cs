@@ -36,6 +36,23 @@ internal sealed class VentesChifaEnMemoire : IVentesChifa
     public Task<string?> EmployeActifAsync(long id, CancellationToken ct = default) => Task.FromResult<string?>(id == 5 ? "Opératrice" : null);
     public Task<IReadOnlyList<(long Id, string Nom)>> EmployesAsync(CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<(long, string)>>([(1, "Vendeur"), (5, "Opératrice")]);
+
+    // Retours à corriger dans CHIFA-Officine (script 155)
+    public List<RetourACorrigerChifa> Retours { get; } = [];
+    public FiltreRetoursACorriger? DernierFiltre { get; private set; }
+    public Task<Page<RetourACorrigerChifa>> RetoursACorrigerAsync(FiltreRetoursACorriger f, DemandePage page, CancellationToken ct = default)
+    {
+        DernierFiltre = f;
+        return Task.FromResult(PageEnMemoire.Paginer(Retours.Where(r => f.Etat == FiltreRetoursACorriger.Tous
+            || (f.Etat == FiltreRetoursACorriger.Corriges) == (r.CorrigeLe is not null)).ToList(), page));
+    }
+    public Task<RetourACorrigerChifa?> MarquerRetourCorrigeAsync(long id, long u, CancellationToken ct = default)
+    {
+        var i = Retours.FindIndex(r => r.RetourId == id && r.CorrigeLe is null);
+        if (i < 0) return Task.FromResult<RetourACorrigerChifa?>(null);
+        Retours[i] = Retours[i] with { CorrigeLe = DateTime.UtcNow, CorrigePar = "Opératrice" };
+        return Task.FromResult<RetourACorrigerChifa?>(Retours[i]);
+    }
 }
 
 internal sealed class CentresEnMemoire : ICentresPayeurs
@@ -116,6 +133,32 @@ public class VentesChifaTests
         await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(10, new InfosChifa(null, 5, null, null, 0), false, 1));
         await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(10, new InfosChifa(null, null, 99, null, 0), false, 1));
         await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(11, new InfosChifa(null, null, null, null, 0), false, 1));
+    }
+
+    [Fact]
+    public async Task Retours_a_corriger_dans_CHIFA_Officine_filtres_puis_marques_corriges_une_seule_fois_et_journalises()
+    {
+        var ventes = new VentesChifaEnMemoire();
+        ventes.Retours.Add(new RetourACorrigerChifa(40, DateTime.UtcNow, "Vendeur", 10, "T-000010", DateTime.UtcNow, "Patient", null, "06931126",
+            "1 × Sirop fictif", 400m, false, null, null));
+        var journal = new JournalEspion();
+        var consulter = new ConsulterVentesChifa(ventes, new DroitsFactices(Permissions.CaisseVendre));
+        var marquer = new EnregistrerInfosChifa(ventes, new CentresEnMemoire(), new DroitsFactices(Permissions.CaisseVendre), journal, new HorlogeFixe(Aujourdhui), Motifs());
+
+        // État inconnu : « à corriger » par défaut
+        var p = await consulter.RetoursACorrigerAsync(new FiltreRetoursACorriger("  T-0000  ", "n'importe"), new DemandePage(1, 20), 1);
+        Assert.Equal((FiltreRetoursACorriger.ACorriger, "T-0000"), (ventes.DernierFiltre!.Etat, ventes.DernierFiltre.Recherche));
+        Assert.Single(p.Lignes);
+
+        await marquer.MarquerRetourCorrigeAsync(40, 1);
+        Assert.Equal(EnregistrerInfosChifa.ActionRetourCorrige, Assert.Single(journal.Actions));
+        Assert.Empty((await consulter.RetoursACorrigerAsync(new FiltreRetoursACorriger(null), new DemandePage(1, 20), 1)).Lignes);
+        Assert.Single((await consulter.RetoursACorrigerAsync(new FiltreRetoursACorriger(null, FiltreRetoursACorriger.Corriges), new DemandePage(1, 20), 1)).Lignes);
+        // Déjà marqué : refusé
+        await Assert.ThrowsAsync<RegleMetierException>(() => marquer.MarquerRetourCorrigeAsync(40, 1));
+        // Sans le droit de vendre : refusé
+        await Assert.ThrowsAsync<DroitRefuseException>(() =>
+            new ConsulterVentesChifa(ventes, new DroitsFactices()).RetoursACorrigerAsync(new FiltreRetoursACorriger(null), new DemandePage(1, 20), 1));
     }
 
     [Fact]

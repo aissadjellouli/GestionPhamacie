@@ -1,0 +1,13 @@
+{
+  "profiles": {
+    "Pharma.Cloud.Web": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "launchUrl": "",
+      "applicationUrl": "https://127.0.0.1:5094",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

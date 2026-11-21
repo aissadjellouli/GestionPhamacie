@@ -51,6 +51,28 @@ internal static class ChifaEndpoints
            .ExigerPermission(Permissions.CaisseVendre)
            .GererErreursMetier();
 
+        // Retours avec part organisme à corriger dans CHIFA-Officine (script 155) : etat = a_corriger (défaut), corriges, tous
+        api.MapGet("/chifa/retours-a-corriger", async (string? q, string? etat, int? page, int? taille, ConsulterVentesChifa consulter,
+                ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var p = await consulter.RetoursACorrigerAsync(new FiltreRetoursACorriger(q, FiltreRetoursACorriger.Lire(etat)),
+                    DemandePage.Lire(page, taille), user.UtilisateurId(), ct);
+                return Results.Ok(new PageDto<RetourACorrigerChifaDto>(p.Lignes.Select(r => new RetourACorrigerChifaDto(r.RetourId, r.RetourLe, r.RetourPar,
+                    r.VenteId, r.Numero, r.DateVente, r.Patient, r.NumAssure, r.FactureChifa, r.Produits, r.PartOrganisme, r.Deposee, r.CorrigeLe,
+                    r.CorrigePar)).ToList(), p.Total, p.Numero, p.Taille));
+            })
+           .ExigerPermission(Permissions.CaisseVendre)
+           .GererErreursMetier();
+
+        api.MapPost("/chifa/retours-a-corriger/{retourId:long}/corrige", async (long retourId, EnregistrerInfosChifa enregistrer, ClaimsPrincipal user,
+                CancellationToken ct) =>
+            {
+                await enregistrer.MarquerRetourCorrigeAsync(retourId, user.UtilisateurId(), ct);
+                return Results.NoContent();
+            })
+           .ExigerPermission(Permissions.CaisseVendre)
+           .GererErreursMetier();
+
         api.MapGet("/chifa/employes", async (ConsulterVentesChifa consulter, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok((await consulter.EmployesAsync(user.UtilisateurId(), ct)).Select(e => new EmployeChoixDto(e.Id, e.Nom)).ToList()))
            .ExigerPermission(Permissions.CaisseVendre)

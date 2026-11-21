@@ -1,0 +1,36 @@
+@page "/mot-de-passe"
+
+<PageTitle>Mot de passe · écrans du central</PageTitle>
+
+<div class="page connexion">
+    <div class="entete-connexion">
+        <img class="logo-connexion" src="img/logo.svg" alt="Tracodex Réseau" />
+        <h1>@(Provisoire ? "Choisir votre mot de passe" : "Changer le mot de passe")</h1>
+        <p class="sous-titre">@(Provisoire ? "Le mot de passe provisoire doit être remplacé avant d'aller plus loin." : "Vos autres sessions seront fermées.")</p>
+    </div>
+    <Message Erreur="@Erreur" />
+    <form class="carte" method="post" action="actions/mot-de-passe">
+        <AntiforgeryToken />
+        <div class="champ">
+            <label for="actuel" class="requis">Mot de passe actuel@(Provisoire ? " (provisoire)" : "")</label>
+            <input id="actuel" name="actuel" type="password" autocomplete="current-password" required maxlength="128" autofocus />
+        </div>
+        <div class="champ">
+            <label for="nouveau" class="requis">Nouveau mot de passe</label>
+            <input id="nouveau" name="nouveau" type="password" autocomplete="new-password" required minlength="12" maxlength="128" />
+        </div>
+        <div class="champ">
+            <label for="confirmation" class="requis">Nouveau mot de passe, à nouveau</label>
+            <input id="confirmation" name="confirmation" type="password" autocomplete="new-password" required minlength="12" maxlength="128" />
+        </div>
+        <button class="btn btn-principal" type="submit">Enregistrer</button>
+    </form>
+    <p class="pied-page">12 caractères au moins, avec des lettres et des chiffres, sans votre identifiant.</p>
+</div>
+
+@code {
+    [CascadingParameter] private HttpContext? Contexte { get; set; }
+    [SupplyParameterFromQuery(Name = "erreur")] private string? Erreur { get; set; }
+
+    private bool Provisoire => Contexte?.Session() is { Provisoire: true };
+}

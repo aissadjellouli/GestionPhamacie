@@ -1,4 +1,4 @@
-using Npgsql;
+﻿using Npgsql;
 using Pharma.Cloud.Api.Reglages;
 using Pharma.Cloud.Api.Schema;
 using Pharma.Cloud.Api.Securite;
@@ -19,7 +19,7 @@ public static class ConsoleAdministration
          "--reglages", "--regler-famille", "--effacer-famille", "--conservation", "--purge-lots", "--purger-lots",
          "--reglages-mutualises", "--publier-reglage", "--mode-reglage", "--modele-depuis-officine", "--liberer-reglages", "--retablir-reglages", "--journal-reglages",
          "--verifier-integrite", "--anomalies-integrite", "--restaurations-integrite", "--conservation-depart", "--depart-officine", "--effacer-officine",
-         .. Ordres.OrdresAdministration.Commandes];
+         .. Ordres.OrdresAdministration.Commandes, .. Comptes.ComptesDistantsAdministration.Commandes];
 
     public static bool Concerne(string[] args) => args.Length > 0 && Commandes.Contains(args[0]);
 
@@ -32,6 +32,12 @@ public static class ConsoleAdministration
                 // Lots S5.1 et S5.5 : ordres envoyés aux officines (script central 013)
                 await using var db = Admin();
                 return await Ordres.OrdresAdministration.ExecuterAsync(db, args, Console.Out);
+            }
+            if (Comptes.ComptesDistantsAdministration.Concerne(args[0]))
+            {
+                // Lot S7.1 : comptes distants des écrans du central (script central 030)
+                await using var db = Admin();
+                return await Comptes.ComptesDistantsAdministration.ExecuterAsync(db, args, Console.Out);
             }
             if (ArgumentsReglages.Concerne(args[0]))
                 // Réglages mutualisés (lot M6) : fonctions d'administration du script central 010, connexion du propriétaire

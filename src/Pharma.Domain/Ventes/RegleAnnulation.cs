@@ -22,12 +22,15 @@ public static class RegleAnnulation
     public static AutorisationAnnulation Autorisation(bool caisseDeLaVenteOuverte, bool employeHabilite) =>
         caisseDeLaVenteOuverte || employeHabilite ? AutorisationAnnulation.Directe : AutorisationAnnulation.ValidationRequise;
 
-    public static void VerifierAnnulable(string statut, bool dansUnBordereau, string? factureNumero = null)
+    /// <param name="deposee">Vente portée sur un bordereau déposé (sorti de « préparation ») : refus avec le message du titulaire (2026-11-21).</param>
+    public static void VerifierAnnulable(string statut, bool dansUnBordereau, string? factureNumero = null, bool deposee = false)
     {
         if (statut == "annulee") throw new RegleMetierException("Cette vente est déjà annulée.");
         if (statut != "validee") throw new RegleMetierException("Seule une vente encaissée peut être annulée.");
+        // Aucune procédure de la CNAS connue pour corriger une vente déjà déposée (pas de « régularisation Chifa » dans le logiciel)
+        if (deposee) throw new RegleMetierException(RegleRetour.MessageDeposee);
         if (dansUnBordereau)
-            throw new RegleMetierException("Cette vente figure sur un bordereau Chifa : en préparation, retirez-la d’abord du bordereau ; déposé à l’organisme, l’annulation doit passer par la régularisation Chifa.");
+            throw new RegleMetierException("Cette vente figure sur un bordereau Chifa en préparation : retirez-la d’abord du bordereau (Finances › Bordereaux Chifa), puis annulez-la.");
         // Sinon la facture continuerait de facturer des produits remboursés
         if (factureNumero is not null)
             throw new RegleMetierException($"Cette vente figure sur la facture {factureNumero} : retirez-la d’abord de la facture (Factures : rejet puis correction), ou faites un retour client.");

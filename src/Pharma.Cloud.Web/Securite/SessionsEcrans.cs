@@ -1,0 +1,123 @@
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
+using Pharma.Cloud.Web.Donnees;
+
+namespace Pharma.Cloud.Web.Securite;
+
+/// <summary>Jeton de session : 32 octets tirés au sort, dans un cookie ; la base ne reçoit que son empreinte SHA-256.</summary>
+public static class Jetons
+{
+    public const string Cookie = "__Host-pharma-ecrans";
+    public const string CookieTheme = "__Host-pharma-ecrans-theme";
+    public const string CookieAntiFalsification = "__Host-pharma-ecrans-af";
+
+    public static string Nouveau() => Base64Url(RandomNumberGenerator.GetBytes(32));
+
+    public static string Empreinte(string jeton) => Convert.ToHexStringLower(SHA256.HashData(Encoding.ASCII.GetBytes(jeton)));
+
+    /// <summary>Cookie __Host- : Secure, HttpOnly, SameSite=Strict, Path=/, sans domaine, sans date (fermé avec le navigateur).</summary>
+    public static CookieOptions Options() => new() { Secure = true, HttpOnly = true, SameSite = SameSiteMode.Strict, Path = "/", IsEssential = true };
+
+    public static void Poser(HttpResponse reponse, string jeton) => reponse.Cookies.Append(Cookie, jeton, Options());
+
+    public static void Retirer(HttpResponse reponse) => reponse.Cookies.Delete(Cookie, Options());
+
+    private static string Base64Url(byte[] o) => Convert.ToBase64String(o).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+}
+
+/// <summary>Session de la requête (posée par le contrôle d'accès, lue par les pages et les actions).</summary>
+public static class ContexteEcran
+{
+    private const string CleSession = "ecrans-session";
+    private const string CleEmpreinte = "ecrans-empreinte";
+
+    public static SessionEcran? Session(this HttpContext ctx) => ctx.Items[CleSession] as SessionEcran;
+
+    public static string? EmpreinteJeton(this HttpContext ctx) => ctx.Items[CleEmpreinte] as string;
+
+    internal static void Poser(HttpContext ctx, SessionEcran? session, string? empreinte)
+    {
+        ctx.Items[CleSession] = session;
+        ctx.Items[CleEmpreinte] = empreinte;
+    }
+}
+
+/// <summary>
+/// Contrôle d'accès de chaque requête : session lue en base par l'empreinte du jeton, puis aiguillage selon l'étape.
+/// Sans session : seulement /connexion et les fichiers statiques. Étape « code » : /code. Étape « mot_de_passe » : /mot-de-passe.
+/// Session ouverte : écrans de l'éditeur (un titulaire n'a pas encore d'écran en S7.1 : page « accès refusé »).
+/// </summary>
+public static class ControleAcces
+{
+    private static readonly string[] Statiques = ["/css/", "/js/", "/img/", "/fonts/", "/favicon"];
+    private static readonly string[] Publiques = ["/connexion", "/actions/connexion", "/actions/theme"];
+    private static readonly string[] EtapeCode = ["/code", "/actions/code", "/actions/renvoyer-code", "/actions/deconnexion", "/actions/theme"];
+    private static readonly string[] EtapeMotDePasse = ["/mot-de-passe", "/actions/mot-de-passe", "/actions/deconnexion", "/actions/theme"];
+
+    public static bool Statique(PathString chemin) => Statiques.Any(s => chemin.Value?.StartsWith(s, StringComparison.OrdinalIgnoreCase) == true);
+
+    /// <summary>Adresse de redirection, ou null si la requête peut passer (règle pure, testée).</summary>
+    public static string? Redirection(PathString chemin, SessionEcran? session)
+    {
+        var c = chemin.Value ?? "/";
+        if (Statique(chemin)) return null;
+        bool Parmi(string[] liste) => liste.Any(p => string.Equals(c, p, StringComparison.OrdinalIgnoreCase));
+        if (session is null) return Parmi(Publiques) ? null : "/connexion";
+        return session.Etape switch
+        {
+            "code" => Parmi(EtapeCode) || Parmi(Publiques) ? null : "/code",
+            "mot_de_passe" => Parmi(EtapeMotDePasse) || Parmi(Publiques) ? null : "/mot-de-passe",
+            _ when !session.Editeur => c is "/acces-refuse" or "/actions/deconnexion" or "/actions/theme" ? null : "/acces-refuse",
+            _ => c is "/connexion" or "/code" ? "/officines" : null,
+        };
+    }
+
+    public static async Task Appliquer(HttpContext ctx, RequestDelegate suite)
+    {
+        SessionEcran? session = null;
+        string? empreinte = null;
+        if (!Statique(ctx.Request.Path) && ctx.Request.Cookies[Jetons.Cookie] is { Length: > 20 and < 100 } jeton)
+        {
+            empreinte = Jetons.Empreinte(jeton);
+            session = await ctx.RequestServices.GetRequiredService<DepotEcrans>().SessionAsync(empreinte, ctx.RequestAborted);
+            if (session is null)
+            {
+                Jetons.Retirer(ctx.Response);
+                empreinte = null;
+            }
+        }
+        ContexteEcran.Poser(ctx, session, empreinte);
+        if (Redirection(ctx.Request.Path, session) is { } vers)
+        {
+            ctx.Response.Redirect(vers);
+            return;
+        }
+        await suite(ctx);
+    }
+}
+
+/// <summary>
+/// Code d'activation tout juste créé : gardé en MÉMOIRE seulement, 2 minutes, pour la seule session qui l'a créé, et rendu une
+/// seule fois (page « code affiché ») ; jamais en base, dans un journal ni sur disque.
+/// </summary>
+public sealed class CodesAffiches(TimeProvider horloge)
+{
+    private sealed record Entree(long Session, Guid Officine, string Serveur, string Code, DateTimeOffset Expire);
+
+    private readonly ConcurrentDictionary<string, Entree> entrees = new();
+
+    public string Garder(long session, Guid officine, string serveur, string code)
+    {
+        foreach (var (cle, e) in entrees) if (e.Expire < horloge.GetUtcNow()) entrees.TryRemove(cle, out _);
+        var reference = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
+        entrees[reference] = new Entree(session, officine, serveur, code, horloge.GetUtcNow().AddMinutes(2));
+        return reference;
+    }
+
+    public (Guid Officine, string Serveur, string Code)? Prendre(string? reference, long session)
+    {
+        if (reference is null || !entrees.TryRemove(reference, out var e)) return null;
+        return e.Session == session && e.Expire >= horloge.GetUtcNow() ? (e.Officine, e.Serveur, e.Code) : null;
+    }
+}

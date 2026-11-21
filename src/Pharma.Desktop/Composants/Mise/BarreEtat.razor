@@ -42,6 +42,11 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
         <span class="voyant @(serveurJoignable switch { true => "ok", false => "ko", _ => null })" aria-hidden="true"></span>
         @(serveurJoignable switch { true => "Serveur connecté", false => "Serveur injoignable", _ => "Serveur…" })
     </button>
+    @if (demo is { Actif: true })
+    {
+        @* Serveur de démonstration (GET /api/demo) : mention permanente, sans bouton pour la masquer, avant comme après la connexion *@
+        <span class="element-etat demo" role="status" data-zone="demonstration" title="Serveur de démonstration : toutes les données sont fictives">@(demo.Libelle ?? "Démonstration — données fictives")</span>
+    }
 
     @if (Session.EstConnecte && etat is { } e)
     {
@@ -100,6 +105,7 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
     }
     private EtatPosteDto? etat;
     private AttenteSynchronisationDto? attenteSync;
+    private EtatDemoDto? demo;
     private DateTime maintenant = DateTime.Now;
     private PeriodicTimer? minuterie;
     private int tours;
@@ -138,6 +144,8 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
         maintenant = DateTime.Now;
         serveurJoignable = await Api.ServeurJoignableAsync();
         injoignableDepuis = serveurJoignable == false ? injoignableDepuis ?? DateTime.Now : null;
+        // Mode démonstration : relu à chaque tour complet (une erreur garde l'état connu : la mention ne disparaît pas sur un incident)
+        if (serveurJoignable == true && (complet || demo is null) && await Api.EtatDemoAsync() is ({ } d, null)) demo = d;
         if (complet && serveurJoignable == true && Session.EstConnecte)
         {
             var (e, erreur) = await Api.EtatPosteAsync();
