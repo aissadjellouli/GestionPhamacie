@@ -80,7 +80,7 @@ public sealed class DepotCentral(NpgsqlDataSource db)
         (string, long) res;
         await using (var r = await cmd.ExecuteReaderAsync(ct))
         {
-            await r.ReadAsync(ct);
+            await LigneAttendueAsync(r, "cloud_appliquer_lot", ct);
             res = (r.GetString(0), r.GetInt64(1));
         }
         await tx.CommitAsync(ct);
@@ -110,7 +110,7 @@ public sealed class DepotCentral(NpgsqlDataSource db)
         (long, int) res;
         await using (var r = await cmd.ExecuteReaderAsync(ct))
         {
-            await r.ReadAsync(ct);
+            await LigneAttendueAsync(r, "cloud_dernier_lot", ct);
             res = (r.GetInt64(0), r.GetInt32(1));
         }
         await tx.CommitAsync(ct);
@@ -167,7 +167,7 @@ public sealed class DepotCentral(NpgsqlDataSource db)
         ReponseDeclarationEpoqueDto rep;
         await using (var r = await cmd.ExecuteReaderAsync(ct))
         {
-            await r.ReadAsync(ct);
+            await LigneAttendueAsync(r, "cloud_declarer_changement_epoque", ct);
             rep = new ReponseDeclarationEpoqueDto(r.GetInt64(0), r.GetFieldValue<DateTimeOffset>(1), r.GetBoolean(2), r.GetBoolean(3));
         }
         await tx.CommitAsync(ct);
@@ -195,26 +195,65 @@ public sealed class DepotCentral(NpgsqlDataSource db)
         return contenu;
     }
 
-    /// <summary>Voie descendante (script 005) : éléments de version plus grande que celle appliquée par l'officine (acquittement enregistré).</summary>
+    /// <summary>
+    /// Voie descendante (script 005) : éléments de version plus grande que celle appliquée par l'officine (acquittement enregistré),
+    /// par ordre de version et BORNÉS (revue du 2026-11-22) : au plus MaxElements éléments et OctetsDonneesParReponse octets de données
+    /// (au moins un élément) ; les suivants partent au passage suivant. Sans borne, une file de plus de 1 Mio faisait échouer la lecture
+    /// de chaque réponse côté officine (plus aucun lot accusé).
+    /// </summary>
     public async Task<Pharma.Shared.ChangementsDescendantsDto> DescendantsAsync(Guid officine, long versionAppliquee, CancellationToken ct)
     {
         await using var cnx = await db.OpenConnectionAsync(ct);
         await using var tx = await cnx.BeginTransactionAsync(ct);
         await PoserOfficineAsync(cnx, tx, officine, ct);
-        await using var cmd = new NpgsqlCommand("SELECT nom_table, cle, version, donnees::text, version_max FROM cloud_descendants($1)", cnx, tx);
+        await using var cmd = new NpgsqlCommand(
+            "SELECT nom_table, cle, version, donnees::text, version_max FROM cloud_descendants($1) ORDER BY version LIMIT $2", cnx, tx);
         cmd.Parameters.AddWithValue(versionAppliquee);
-        var liste = new List<Pharma.Shared.ChangementDescendantDto>();
+        cmd.Parameters.AddWithValue(Pharma.Shared.ChangementsDescendantsDto.MaxElements);
+        var lus = new List<Pharma.Shared.ChangementDescendantDto>();
         long max = versionAppliquee;
         await using (var r = await cmd.ExecuteReaderAsync(ct))
         {
             while (await r.ReadAsync(ct))
             {
-                liste.Add(new(r.GetString(0), r.GetString(1), r.GetInt64(2), r.GetString(3)));
+                lus.Add(new(r.GetString(0), r.GetString(1), r.GetInt64(2), r.GetString(3)));
                 max = r.GetInt64(4);
             }
         }
+        var liste = Borner(lus);
         await tx.CommitAsync(ct);
         return new(Pharma.Shared.ChangementsDescendantsDto.ContratV1, max, liste);
+    }
+
+    /// <summary>
+    /// Ligne unique attendue d'une fonction SQL (revue du 2026-11-22) : aucune ligne (filtre de cloisonnement, fonction modifiée) donne
+    /// une <see cref="ReponseCentraleVideException"/> nommant la fonction, au lieu d'une lecture sur une ligne absente.
+    /// </summary>
+    public static async Task LigneAttendueAsync(NpgsqlDataReader r, string fonction, CancellationToken ct)
+    {
+        if (!await r.ReadAsync(ct)) throw new ReponseCentraleVideException(fonction);
+    }
+
+    /// <summary>Options JSON des réponses de l'API (valeurs par défaut des API minimales).</summary>
+    public static readonly System.Text.Json.JsonSerializerOptions OptionsReponse = new(System.Text.Json.JsonSerializerDefaults.Web);
+
+    /// <summary>
+    /// Éléments d'une réponse descendante, dans l'ordre des versions : au plus MaxElements et OctetsDonneesParReponse octets écrits,
+    /// toujours au moins le premier (un élément seul trop gros est écarté par l'officine, qui passe alors au suivant).
+    /// </summary>
+    public static List<Pharma.Shared.ChangementDescendantDto> Borner(IEnumerable<Pharma.Shared.ChangementDescendantDto> tries)
+    {
+        var liste = new List<Pharma.Shared.ChangementDescendantDto>();
+        var octets = 0L;
+        foreach (var c in tries)
+        {
+            // Taille réelle dans la réponse (mêmes options que les réponses JSON de l'API : échappements compris)
+            octets += System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(c, OptionsReponse).Length + 1;
+            if (liste.Count >= Pharma.Shared.ChangementsDescendantsDto.MaxElements
+                || (liste.Count > 0 && octets > Pharma.Shared.ChangementsDescendantsDto.OctetsDonneesParReponse)) break;
+            liste.Add(c);
+        }
+        return liste;
     }
 
     /// <summary>Début d'un chargement complet (script 003) : (dernier lot attendu avant les suivants, lots abandonnés).</summary>
@@ -233,7 +272,7 @@ public sealed class DepotCentral(NpgsqlDataSource db)
         (long, long) res;
         await using (var r = await cmd.ExecuteReaderAsync(ct))
         {
-            await r.ReadAsync(ct);
+            await LigneAttendueAsync(r, "cloud_debut_chargement", ct);
             res = (r.GetInt64(0), r.GetInt64(1));
         }
         await tx.CommitAsync(ct);
@@ -255,7 +294,7 @@ public sealed class DepotCentral(NpgsqlDataSource db)
         (long, string, string) res;
         await using (var r = await cmd.ExecuteReaderAsync(ct))
         {
-            await r.ReadAsync(ct);
+            await LigneAttendueAsync(r, "cloud_fin_chargement", ct);
             res = (r.GetInt64(0), r.GetString(1), r.GetString(2));
         }
         await tx.CommitAsync(ct);
@@ -268,4 +307,10 @@ public sealed class DepotCentral(NpgsqlDataSource db)
         cmd.Parameters.AddWithValue(officine.ToString("D"));
         await cmd.ExecuteScalarAsync(ct);
     }
+}
+
+/// <summary>Fonction SQL du central qui n'a rendu aucune ligne alors qu'une était attendue (anomalie de la base, jamais une donnée).</summary>
+public sealed class ReponseCentraleVideException(string fonction) : Exception($"Aucune ligne rendue par {fonction}.")
+{
+    public string Fonction { get; } = fonction;
 }

@@ -355,6 +355,19 @@ public class CaisseApplicationTests
     }
 
     [Fact]
+    public async Task Renvoi_d_une_vente_payee_en_partie_par_avoir_rend_la_monnaie_sur_le_reste()
+    {
+        // Part patient 350 DA dont 100 DA par avoir : 250 DA restaient en espèces, 300 DA reçus, 50 DA à rendre
+        var cle = Guid.NewGuid();
+        var ventes = new VentesEspion();
+        ventes.ParCle[cle] = new VenteDejaEncaissee(42, "T-000042", 350, 0, 350, ModePaiement.Especes, false, PayeParAvoir: 100);
+        var r = await Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), ventes)
+            .ExecuterAsync(Commande(2, 20) with { MontantRecu = 300, CleEncaissement = cle }, 5, "Caisse 1");
+        Assert.Equal((50m, 100m), (r.Rendu, r.PayeParAvoir));
+        Assert.Equal(0, ventes.Enregistrements);
+    }
+
+    [Fact]
     public async Task Panier_deja_encaisse_puis_annule_refuse_clairement()
     {
         var cle = Guid.NewGuid();

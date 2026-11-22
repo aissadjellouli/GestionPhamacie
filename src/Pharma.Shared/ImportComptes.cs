@@ -241,14 +241,15 @@ public sealed class EnvoiSmsMotDePasseIndisponible : IEnvoiSmsMotDePasse
 public sealed record CompteATransmettre(Guid Compte, string Identifiant, string Role, string? Email, string? Telephone, string MotDePasse);
 
 /// <summary>
-/// Compte transmis, montré UNE fois à l'éditeur. Email : ok, echec, non_demande, sans_adresse. Sms : envoye, manuel,
+/// Compte transmis, montré UNE fois à l'éditeur. Email : ok, echec, non_demande, sans_adresse, adresse_reservee. Sms : envoye, manuel,
 /// manuel_sans_telephone, echec. Jamais en base ni au journal.
 /// </summary>
 public sealed record CompteTransmis(Guid Compte, string Identifiant, string Role, string MotDePasse, string Email, string Sms)
 {
     public string EmailTexte => Email switch
     {
-        "ok" => "oui", "echec" => "échec", "non_demande" => "non (case décochée)", "sans_adresse" => "non (aucune adresse)", _ => "non",
+        "ok" => "oui", "echec" => "échec", "non_demande" => "non (case décochée)", "sans_adresse" => "non (aucune adresse)",
+        "adresse_reservee" => "non (adresse .invalid : rien envoyé)", _ => "non",
     };
 
     public string SmsTexte => Sms switch
@@ -280,13 +281,26 @@ public static class TransmissionComptes
     /// <summary>Délai propre de CHAQUE envoi (e-mail ou SMS) : au-delà, « echec » pour ce compte, les autres continuent.</summary>
     public static readonly TimeSpan DelaiParEnvoi = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// Délai de l'ENSEMBLE des envois : au-delà, les envois en cours et ceux pas encore tentés passent en « echec » (à transmettre à la
+    /// main), et la liste des mots de passe est rendue. Sans cette borne, 200 comptes avec un serveur d'e-mail muet prendraient
+    /// ~25 minutes et le navigateur couperait avant d'afficher la liste (mots de passe perdus).
+    /// </summary>
+    public static readonly TimeSpan DelaiTotal = TimeSpan.FromSeconds(45);
+
+    /// <summary>Adresse d'un domaine réservé qui n'existe jamais (« .invalid », RFC 2606) : aucun e-mail n'y est envoyé.</summary>
+    public static bool AdresseReservee(string? adresse) =>
+        adresse is not null && adresse.TrimEnd().EndsWith(".invalid", StringComparison.OrdinalIgnoreCase);
+
     public static async Task<IReadOnlyList<CompteTransmis>> TransmettreAsync(IReadOnlyList<CompteATransmettre> comptes, bool envoyerIdentifiant,
         Func<string, string, string, CancellationToken, Task>? courriel, IEnvoiSmsMotDePasse sms, string? adresseEcrans, bool remise,
-        Func<Guid, string, string, CancellationToken, Task>? noter, CancellationToken ct, TimeSpan? delaiParEnvoi = null)
+        Func<Guid, string, string, CancellationToken, Task>? noter, CancellationToken ct, TimeSpan? delaiParEnvoi = null, TimeSpan? delaiTotal = null)
     {
         var delai = delaiParEnvoi ?? DelaiParEnvoi;
         var resultats = new CompteTransmis[comptes.Count];
         var notes = new List<(Guid, string, string)>();
+        // Borne de l'ensemble : séparée de ct (annulation voulue par l'appelant, qui reste propagée)
+        using var total = new CancellationTokenSource(delaiTotal ?? DelaiTotal);
         await Parallel.ForEachAsync(Enumerable.Range(0, comptes.Count), new ParallelOptions { MaxDegreeOfParallelism = EnvoisSimultanes, CancellationToken = ct },
             async (i, jeton) =>
             {
@@ -294,12 +308,13 @@ public static class TransmissionComptes
                 string email;
                 if (!envoyerIdentifiant) email = "non_demande";
                 else if (c.Email is null) email = "sans_adresse";
-                else if (courriel is null) email = "echec";
+                else if (AdresseReservee(c.Email)) email = "adresse_reservee";   // voulu : rien ne part, ce n'est pas un échec
+                else if (courriel is null || total.IsCancellationRequested) email = "echec";
                 else
                 {
                     try
                     {
-                        using var unite = CancellationTokenSource.CreateLinkedTokenSource(jeton);
+                        using var unite = CancellationTokenSource.CreateLinkedTokenSource(jeton, total.Token);
                         unite.CancelAfter(delai);
                         await courriel(c.Email, MessageIdentifiant.Objet, MessageIdentifiant.Texte(c.Identifiant, c.Role, adresseEcrans, remise), unite.Token);
                         email = "ok";
@@ -313,15 +328,17 @@ public static class TransmissionComptes
                         email = "echec";
                     }
                 }
+                // adresse_reservee : rien tenté, rien noté
                 if (email is "ok" or "echec") lock (notes) notes.Add((c.Compte, "identifiant_envoi", "email:" + email));
                 string texto;
                 if (c.Telephone is null) texto = "manuel_sans_telephone";
                 else if (!sms.Disponible) texto = "manuel";
+                else if (total.IsCancellationRequested) texto = "echec";
                 else
                 {
                     try
                     {
-                        using var unite = CancellationTokenSource.CreateLinkedTokenSource(jeton);
+                        using var unite = CancellationTokenSource.CreateLinkedTokenSource(jeton, total.Token);
                         unite.CancelAfter(delai);
                         await sms.EnvoyerAsync(c.Telephone, c.Identifiant, c.MotDePasse, unite.Token);
                         texto = "envoye";

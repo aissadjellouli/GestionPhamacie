@@ -904,7 +904,7 @@
                                             <strong>@medecin.Nom</strong>
                                             @* Wilaya du médecin (2026-11-22) : proposée d'après sa fiche, à choisir si la fiche n'en a pas, rectifiable ; enregistrée dans
                                                la fiche dès le choix (contrôle « hors zone » des psychotropes). Invisible tant qu'aucun médecin n'est choisi. *@
-                                            <select class="wilaya-medecin @(string.IsNullOrEmpty(medecin.Wilaya) ? "manquant" : null)" aria-label="Wilaya d’exercice du médecin" data-champ="wilaya_medecin"
+                                            <select @key="versionWilaya" class="wilaya-medecin @(string.IsNullOrEmpty(medecin.Wilaya) ? "manquant" : null)" aria-label="Wilaya d’exercice du médecin" data-champ="wilaya_medecin"
                                                     title="@(string.IsNullOrEmpty(medecin.Wilaya) ? "Wilaya du médecin à choisir : enregistrée dans sa fiche (contrôle « hors zone »)" : "Wilaya de la fiche du médecin : rectifiable, la fiche est mise à jour")"
                                                     value="@(medecin.Wilaya ?? "")" @onchange="ChangerWilayaMedecinAsync" disabled="@enregistrementWilaya">
                                                 <option value="">Wilaya ?</option>
@@ -2811,22 +2811,38 @@
     // Wilaya du médecin choisi (2026-11-22) : liste chargée au choix du médecin ; un changement met à jour sa fiche aussitôt
     private bool enregistrementWilaya;
     private string? messageWilaya;
+    // Change après un refus : la liste est reconstruite (Blazor ne remet pas à jour un <select> dont la valeur liée n'a pas changé)
+    private int versionWilaya;
 
     private async Task ChoisirMedecinAsync(MedecinDto m)
     {
         (medecin, medecinTexte, clientEdition, messageWilaya) = (m, m.Nom, true, null);
-        if (wilayas.Count == 0) await ChargerWilayasAsync();
+        await ChargerWilayasAsync();
     }
+
+    // Un seul chargement des wilayas, partagé par tous les chemins (ouverture de la caisse, choix ou création d'un médecin) ;
+    // un échec le laisse rejouable au prochain besoin
+    private Task<bool>? chargementWilayas;
 
     /// <summary>Liste des wilayas chargée une fois ; un échec laisse seulement « Wilaya ? » (rien d'autre n'est bloqué).</summary>
     private async Task ChargerWilayasAsync()
     {
+        if (wilayas.Count > 0) return;
+        var chargement = chargementWilayas ??= LireWilayasAsync();
+        if (!await chargement && ReferenceEquals(chargementWilayas, chargement)) chargementWilayas = null;
+    }
+
+    private async Task<bool> LireWilayasAsync()
+    {
         try
         {
             var (liste, _) = await Api.WilayasAsync();
-            if (liste.Count > 0) { wilayas = liste; await InvokeAsync(StateHasChanged); }
+            if (liste.Count == 0) return false;
+            wilayas = liste;
+            await InvokeAsync(StateHasChanged);
+            return true;
         }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException) { }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException) { return false; }
     }
 
     private async Task ChangerWilayaMedecinAsync(ChangeEventArgs e)
@@ -2837,18 +2853,26 @@
         enregistrementWilaya = true;
         try
         {
-            var refus = await Api.ModifierMedecinAsync(m.Id, new NouveauMedecinDto(m.Nom, m.Specialite, m.Telephone, m.Adresse, m.Email, m.NumeroOrdre, m.CodeCnas, choisie));
+            // Fiche relue juste avant : seule la wilaya change (une correction faite ailleurs depuis la recherche ou la mise en attente
+            // n'est pas écrasée par la copie gardée dans la caisse)
+            var (trouves, erreurLecture) = await Api.RechercherMedecinsAsync(m.Nom);
+            if (erreurLecture is not null || trouves.FirstOrDefault(x => x.Id == m.Id) is not { } fiche)
+            {
+                RefuserWilaya(m, erreurLecture ?? "Fiche du médecin introuvable : wilaya non enregistrée. Rouvrez la fiche depuis Factures › Médecins.");
+                return;
+            }
+            var refus = await Api.ModifierMedecinAsync(fiche.Id, new NouveauMedecinDto(fiche.Nom, fiche.Specialite, fiche.Telephone, fiche.Adresse, fiche.Email,
+                fiche.NumeroOrdre, fiche.CodeCnas, choisie));
             if (refus is null)
             {
-                medecin = m with { Wilaya = choisie };
+                medecin = fiche with { Wilaya = choisie };
                 messageWilaya = choisie is null ? "Wilaya retirée de la fiche du médecin." : $"Wilaya enregistrée dans la fiche du médecin ({wilayas.FirstOrDefault(x => x.Code == choisie)?.Nom ?? choisie}).";
             }
-            else
-            {
-                medecin = m;   // la liste revient à la wilaya de la fiche
-                messageWilaya = null;
-                erreur = refus;
-            }
+            else RefuserWilaya(fiche, refus);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            RefuserWilaya(m, "Serveur injoignable : wilaya non enregistrée.");
         }
         finally
         {
@@ -2856,10 +2880,19 @@
         }
     }
 
+    /// <summary>Refus : la liste revient à la wilaya de la fiche (reconstruite), le motif est affiché.</summary>
+    private void RefuserWilaya(MedecinDto fiche, string motif)
+    {
+        medecin = fiche;
+        messageWilaya = null;
+        erreur = motif;
+        versionWilaya++;
+    }
+
     private async Task OuvrirNouveauMedecin()
     {
         (nouveauMedecin, erreurMedecin) = (new FicheMedecin { Nom = medecinTexte.Trim() }, null);
-        if (wilayas.Count == 0) (wilayas, _) = await Api.WilayasAsync();
+        await ChargerWilayasAsync();
     }
 
     private async Task CreerMedecinAsync()

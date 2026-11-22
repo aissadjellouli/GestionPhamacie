@@ -92,7 +92,8 @@ internal static class RupturesEndpoints
             })
            .ExigerPermission(Permissions.CaisseVendre);
 
-        var s = api.MapGroup("/substitution");
+        // Connexion exigée sur tout le groupe (revue du 2026-11-22) : le réglage et son auteur étaient lisibles sans jeton
+        var s = api.MapGroup("/substitution").ExigerConnexion();
         s.MapGet("/parametre", async (ConsulterParametreSubstitution c, CancellationToken ct) =>
             {
                 var p = await c.ExecuterAsync(ct);

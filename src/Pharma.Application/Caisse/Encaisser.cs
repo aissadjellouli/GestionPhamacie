@@ -135,9 +135,10 @@ public static class PlafondEncaissement
 /// <summary>
 /// Vente déjà enregistrée avec une clé d'encaissement. Mode : celui du paiement enregistré (null si le patient n'avait rien à payer) ;
 /// Annulee : la vente a été annulée depuis. Lignes : produits, lots et quantités enregistrés (null : non relus, pas comparés).
+/// PayeParAvoir : part payée par l'avoir du patient (paiements « avoir » de la vente).
 /// </summary>
 public sealed record VenteDejaEncaissee(long VenteId, string Numero, decimal MontantTotal, decimal PartOrganisme, decimal PartPatient,
-    ModePaiement? Mode, bool Annulee, IReadOnlyList<LigneDejaEncaissee>? Lignes = null);
+    ModePaiement? Mode, bool Annulee, IReadOnlyList<LigneDejaEncaissee>? Lignes = null, decimal PayeParAvoir = 0);
 
 /// <summary>Ligne d'une vente déjà enregistrée avec une clé d'encaissement.</summary>
 /// <summary>Ligne d'une vente déjà enregistrée : produit et lot, ou prestation (TypePrestationId, script 105).</summary>
@@ -581,8 +582,10 @@ public sealed class Encaisser(
             throw new RegleMetierException(
                 $"Cette vente a déjà été enregistrée (ticket N° {v.Numero}) avec un contenu différent : vérifiez avant de réencaisser.");
         var mode = v.Mode ?? commande.Mode;
-        var rendu = mode == ModePaiement.Especes && commande.MontantRecu is { } recu && recu > v.PartPatient ? recu - v.PartPatient : 0;
-        return new VenteEncaissee(v.VenteId, v.Numero, v.MontantTotal, v.PartOrganisme, v.PartPatient, mode, rendu);
+        // Monnaie sur ce qui restait à payer dans le mode choisi : la part payée par l'avoir est retirée, comme au premier envoi
+        var reste = v.PartPatient - v.PayeParAvoir;
+        var rendu = mode == ModePaiement.Especes && commande.MontantRecu is { } recu && recu > reste ? recu - reste : 0;
+        return new VenteEncaissee(v.VenteId, v.Numero, v.MontantTotal, v.PartOrganisme, v.PartPatient, mode, rendu, PayeParAvoir: v.PayeParAvoir);
     }
 
     /// <summary>

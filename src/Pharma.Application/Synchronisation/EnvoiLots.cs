@@ -23,8 +23,11 @@ public sealed record ParametresEnvoiSync(bool Active, Guid? OfficineId, int Epoq
 /// <summary>Élément descendant reçu du serveur central (contrat desc-v1) : table locale, clé, version, données JSON.</summary>
 public sealed record ChangementDescendantSync(string Table, string Cle, long Version, string DonneesJson);
 
-/// <summary>Éléments descendants reçus et version maximale annoncée par le serveur central.</summary>
-public sealed record DescendantsRecus(IReadOnlyList<ChangementDescendantSync> Changements, long VersionMax)
+/// <summary>
+/// Éléments descendants reçus et version maximale annoncée par le serveur central. Ecartes : éléments reçus mais écartés à la lecture
+/// (mal formés ou trop gros) : jamais appliqués ni redonnés, signalés dans la note du passage.
+/// </summary>
+public sealed record DescendantsRecus(IReadOnlyList<ChangementDescendantSync> Changements, long VersionMax, int Ecartes = 0)
 {
     public static readonly DescendantsRecus Aucun = new([], 0);
 }
@@ -325,9 +328,11 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
             if (chargement is not null) await chargement.TerminerSiAccuseAsync(p.Adresse, ct);
             // Éléments reçus avec l'accusé d'un lot : appliqués dans le même passage
             if (descendantsAAppliquer) await AppliquerReglagesAsync(ct);
-            if (cert.EcheanceUtc - maintenantUtc < RenouvelerAvant) await RenouvelerAsync(p.Adresse, ct);
+            // Renouvellement hors du sort des lots (revue du 2026-11-22) : un refus ou un quota n'est qu'une note, les lots accusés le restent
+            var renouvellement = cert.EcheanceUtc - maintenantUtc < RenouvelerAvant ? await EssayerRenouvelerAsync(p.Adresse, cert.EcheanceUtc, ct) : null;
             var note = string.Join(" ", new[] { p.LotsAutresEpoques > 0
-                ? $"{p.LotsAutresEpoques} lot(s) d'une époque précédente jamais accusé(s) : à examiner (non renvoyés automatiquement)." : null, erreurDescendante }
+                ? $"{p.LotsAutresEpoques} lot(s) d'une époque précédente jamais accusé(s) : à examiner (non renvoyés automatiquement)." : null, erreurDescendante,
+                renouvellement }
                 .Where(m => m is not null));
             await depot.NoterEnvoiAsync(note.Length > 0 ? note : null, ct);
             await depot.NoterPassageAsync(null, ct);
@@ -409,6 +414,8 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
     /// </summary>
     private async Task AppliquerDescendantsAsync(DescendantsRecus d, CancellationToken ct)
     {
+        if (d.Ecartes > 0)
+            erreurDescendante = $"{d.Ecartes} élément(s) descendant(s) écarté(s) à la réception (mal formés ou trop gros) : non appliqués, voir le journal du serveur.";
         if (d.Changements.Count == 0) return;
         descendantsAAppliquer = true;
         try
@@ -421,7 +428,8 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
             var p = await depot.ParametresAsync(ct);
             (versionDescendante, interdites) = (p.DescendantVersion, p.ColonnesInterdites ?? []);
             if (bloquants.Count > 0)
-                erreurDescendante = $"{bloquants.Count} élément(s) descendant(s) ignoré(s) (table non prévue ou refusé) : voir le journal sync_journal_descendant.";
+                erreurDescendante = (erreurDescendante is null ? "" : erreurDescendante + " ")
+                    + $"{bloquants.Count} élément(s) descendant(s) ignoré(s) (table non prévue ou refusé) : voir le journal sync_journal_descendant.";
         }
         catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
         {
@@ -610,6 +618,24 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
         var demande = certificat.NouvelleDemande();
         var r = await client.RenouvelerAsync(adresse, demande, ct);
         certificat.Installer(r.CertificatPem, r.AutoritePem, null);
+    }
+
+    /// <summary>
+    /// Renouvellement tenté à chaque passage dans les 60 jours de l'échéance ; un échec (refus, quota d'un renouvellement par jour,
+    /// central injoignable) ne fait jamais échouer le passage : rendu comme une note, nouvel essai au passage suivant.
+    /// </summary>
+    private async Task<string?> EssayerRenouvelerAsync(string adresse, DateTime echeanceUtc, CancellationToken ct)
+    {
+        try
+        {
+            await RenouvelerAsync(adresse, ct);
+            return null;
+        }
+        catch (Exception e) when (e is ServeurCentralException or HttpRequestException || (e is TaskCanceledException && !ct.IsCancellationRequested))
+        {
+            var cause = e is ServeurCentralException s ? s.Message : "serveur central injoignable";
+            return $"Certificat de synchronisation non renouvelé ({cause}) : nouvel essai au prochain passage, échéance le {echeanceUtc:dd/MM/yyyy}.";
+        }
     }
 
     private async Task<ResultatEnvoi> ErreurAsync(int accuses, string erreur, bool bloquant, CancellationToken ct, bool quota = false)

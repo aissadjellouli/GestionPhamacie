@@ -138,6 +138,12 @@ UPDATE compte_distant SET cree_le = now() - interval '4 days' WHERE identifiant 
 UPDATE compte_distant SET cree_le = now() - interval '2 days' WHERE identifiant = 'nouveau.b400';
 UPDATE compte_distant SET cree_le = now() - interval '30 days', mot_de_passe_change_le = now() - interval '1 day' WHERE identifiant = 'existe.400';
 UPDATE compte_distant SET cree_le = now() - interval '60 days' WHERE identifiant = 'titulaire.t400';
+-- Script 041 passé : le contrôle d'expiration est supposé en place depuis longtemps (sinon son délai de grâce couvre ces comptes)
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'parametre_envoi_codes' AND column_name = 'provisoire_controle_depuis') THEN
+        EXECUTE 'UPDATE parametre_envoi_codes SET provisoire_controle_depuis = now() - interval ''1 year'' WHERE id = 1';
+    END IF;
+END $$;
 SET LOCAL ROLE pharma_cloud_ecrans;
 DO $$ DECLARE ida uuid; idb uuid; idx uuid; idt uuid; BEGIN
     SELECT compte_id INTO ida FROM cloud_ecran_debut_connexion('nouveau.a400');

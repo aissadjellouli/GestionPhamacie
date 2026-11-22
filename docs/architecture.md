@@ -2,6 +2,23 @@
 
 Tout tourne dans la pharmacie : un PC serveur héberge PostgreSQL et l’API ; les postes (caisse, back-office) passent toujours par l’API, jamais directement par la base.
 
+Vue de bout en bout avec le serveur central (synchronisation, écrans) et diagrammes de séquence : [diagrammes-sequence.md](diagrammes-sequence.md).
+
+## Déploiement
+
+Où tourne chaque composant (détail, ports et dossiers : [diagrammes-sequence.md § 1 bis](diagrammes-sequence.md#1-bis-déploiement--où-tourne-chaque-composant)
+et [mise-en-production.md](mise-en-production.md)) :
+
+```mermaid
+flowchart LR
+    subgraph OFF["Officine (réseau privé)"]
+        P["Postes<br/>Pharma.Desktop"] -->|HTTPS 5443| S["PC serveur<br/>service PharmaOfficine API<br/>+ PostgreSQL 18 (localhost)"]
+        T["Téléphones<br/>scanner mobile"] -->|HTTPS 5443| S
+        S -. réplication .-> R["2e serveur / PC de secours<br/>(facultatifs, API arrêtée)"]
+    end
+    S -->|HTTPS sortant| C["Serveur central<br/>Pharma.Cloud.Api 5090<br/>Pharma.Cloud.Web 5094<br/>PostgreSQL central<br/>[hébergement À CONFIRMER]"]
+```
+
 ```mermaid
 flowchart TB
     subgraph Postes["Postes de la pharmacie"]

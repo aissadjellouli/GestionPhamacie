@@ -88,11 +88,14 @@ public class OrdresCentrauxTests
             return Task.FromResult(c);
         }
         public readonly List<(long Grossiste, IReadOnlyList<Pharma.Domain.Achats.LigneCommandeSaisie> Lignes, string Auteur, Guid Ordre)> Commandes = [];
-        public Task<string> CreerCommandeAsync(long fournisseurId, IReadOnlyList<Pharma.Domain.Achats.LigneCommandeSaisie> lignes, string auteurCentral,
+        /// <summary>Durée de l'exécution d'une commande ou d'un prix (essais de traitements simultanés) ; 0 : immédiat.</summary>
+        public TimeSpan Delai;
+        public async Task<string> CreerCommandeAsync(long fournisseurId, IReadOnlyList<Pharma.Domain.Achats.LigneCommandeSaisie> lignes, string auteurCentral,
             Guid ordre, CancellationToken ct = default)
         {
-            Commandes.Add((fournisseurId, lignes, auteurCentral, ordre));
-            return Task.FromResult($"C-{Commandes.Count:000000}");
+            if (Delai > TimeSpan.Zero) await Task.Delay(Delai, ct);
+            lock (Commandes) Commandes.Add((fournisseurId, lignes, auteurCentral, ordre));
+            return $"C-{Commandes.Count:000000}";
         }
         public readonly List<OrdreRecu> Ordres = [];
         public readonly List<(Guid Id, string Statut, string? Motif, long? Par)> Notes = [];
@@ -112,14 +115,15 @@ public class OrdresCentrauxTests
         public string Statut(Guid id) => Ordres.Single(o => o.Id == id).Statut;
         public ProduitsModifEnMemoire Produits = new();
         public readonly List<(long Produit, decimal? Prix, decimal? Tarif, long? Par)> Prix = [];
-        public Task<bool> ModifierPrixAsync(long produitId, decimal? prix, decimal? tarif, decimal prixAttendu, decimal? tarifAttendu, long? par,
+        public async Task<bool> ModifierPrixAsync(long produitId, decimal? prix, decimal? tarif, decimal prixAttendu, decimal? tarifAttendu, long? par,
             string auteurCentral, Guid ordre, CancellationToken ct = default)
         {
             var f = Produits.Fiche;
-            if (f.Id != produitId || f.PrixPublic != prixAttendu || f.TarifReference != tarifAttendu) return Task.FromResult(false);
+            if (f.Id != produitId || f.PrixPublic != prixAttendu || f.TarifReference != tarifAttendu) return false;
+            if (Delai > TimeSpan.Zero) await Task.Delay(Delai, ct);
             Produits.Fiche = f with { PrixPublic = prix ?? f.PrixPublic, TarifReference = tarif ?? f.TarifReference };
-            Prix.Add((produitId, prix, tarif, par));
-            return Task.FromResult(true);
+            lock (Prix) Prix.Add((produitId, prix, tarif, par));
+            return true;
         }
     }
 
@@ -524,6 +528,44 @@ public class OrdresCentrauxTests
         Assert.Equal((1L, "admin.essai", o.Id), (c.Grossiste, c.Auteur, c.Ordre));
         Assert.Equal([(3L, 5, 120.5m), (4L, 2, 80m)], c.Lignes.Select(l => (l.ProduitId, l.Quantite, l.PrixAchatHt)));  // sans prix : dernier achat
         Assert.Contains(m.Alertes.Objets, a => a.Contains("commande préparée"));
+    }
+
+    [Fact]
+    public async Task Refus_pendant_l_application_attend_et_ne_marque_pas_refuse_un_ordre_applique()
+    {
+        // Revue du 2026-11-22 : la tâche de fond applique la commande pendant que le titulaire la refuse
+        var m = Monter();
+        m.Depot.Achats.Dernier = new Pharma.Application.Achats.DernierAchat(80m, 1);
+        m.Depot.Delai = TimeSpan.FromMilliseconds(300);
+        var o = Commande("1", new { produit = 3, nom = "Produit 3", quantite = 5, prix_achat_ht = 120.5m });
+        m.Depot.Ordres.Add(o);
+        var auto = m.Auto.ExecuterAsync();
+        await Task.Delay(50);   // la tâche de fond est dans l'exécution de l'ordre
+        var refus = await Assert.ThrowsAsync<RegleMetierException>(() => m.Refuser.ExecuterAsync(o.Id, "pas voulu", 1));
+        await auto;
+        Assert.Contains("déjà traité", refus.Message);
+        Assert.Single(m.Depot.Commandes);
+        Assert.Equal(StatutsOrdre.Applique, m.Depot.Statut(o.Id));
+        Assert.DoesNotContain(m.Depot.Notes, n => n.Id == o.Id && n.Statut == StatutsOrdre.Refuse);
+    }
+
+    [Fact]
+    public async Task Double_confirmation_simultanee_n_execute_l_ordre_qu_une_fois()
+    {
+        // Revue du 2026-11-22 : double clic sur « Confirmer », ou confirmation depuis deux postes
+        var m = Monter();
+        var o = Prix("""{"nom":"Produit","prix_public":130}""");
+        m.Depot.Ordres.Add(o);
+        await m.Auto.ExecuterAsync();
+        Assert.Equal(StatutsOrdre.AConfirmer, m.Depot.Statut(o.Id));
+        m.Depot.Delai = TimeSpan.FromMilliseconds(300);
+        var un = m.Confirmer.ExecuterAsync(o.Id, null, 1);
+        var deux = m.Confirmer.ExecuterAsync(o.Id, null, 1);
+        var resultats = await Task.WhenAll(un.ContinueWith(t => t.Exception?.InnerException), deux.ContinueWith(t => t.Exception?.InnerException));
+        Assert.Single(m.Depot.Prix);
+        var erreur = Assert.Single(resultats, e => e is not null);
+        Assert.Contains("n’attend plus de confirmation", erreur!.Message);
+        Assert.Equal(StatutsOrdre.Applique, m.Depot.Statut(o.Id));
     }
 
     [Fact]

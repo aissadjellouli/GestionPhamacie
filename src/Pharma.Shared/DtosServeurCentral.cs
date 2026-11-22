@@ -32,6 +32,19 @@ public sealed record ChangementsDescendantsDto(string Contrat, long VersionMax, 
     public const string ContratV1 = "desc-v1";
     /// <summary>En-tête HTTP portant la plus grande version descendante appliquée par l'officine.</summary>
     public const string EnTeteVersion = "X-Sync-Descendants";
+
+    /// <summary>Réponse lue au plus par l'officine (toutes routes du central) : au-delà, l'appel échoue.</summary>
+    public const int MaxReponse = 1024 * 1024;
+    /// <summary>Éléments par réponse : le central n'en met pas davantage, l'officine ne garde pas davantage.</summary>
+    public const int MaxElements = 1000;
+    /// <summary>Taille d'un élément (données JSON) : au-delà, l'officine l'écarte.</summary>
+    public const int MaxDonnees = 64 * 1024;
+    /// <summary>
+    /// Éléments mis au plus dans une réponse par le central, mesurés TELS QU'ÉCRITS (JSON de la réponse, échappements compris : un
+    /// guillemet ou une lettre accentuée des données peut prendre 6 octets) (revue du 2026-11-22) : laisse sous <see cref="MaxReponse"/>
+    /// la place de l'enveloppe ; les éléments suivants partent au passage suivant (l'officine n'acquitte que ce qu'elle a reçu).
+    /// </summary>
+    public const int OctetsDonneesParReponse = 768 * 1024;
 }
 
 public sealed record ChangementDescendantDto(string Table, string Cle, long Version, string DonneesJson);
@@ -150,6 +163,24 @@ public static class StatutsLot
     public const string DejaRecu = "deja_recu";
     public const string Trou = "trou";
     public const string EmpreinteDifferente = "empreinte_differente";
+}
+
+/// <summary>
+/// Refus 409 d'un dépôt de lot : le serveur central y joint l'accusé (JSON) pour un trou ou un lot déjà reçu avec un autre contenu,
+/// afin que l'officine sache où il en est (reprise des lots manquants, détection d'un retour en arrière). Un autre 409 (ProblemDetails
+/// d'un central plus ancien) n'a pas d'accusé.
+/// </summary>
+public static class AccuseConflitLot
+{
+    public const string TypeJson = "application/json";
+
+    /// <summary>Accusé joint à la réponse, ou null si ce n'est pas un 409 portant un accusé JSON.</summary>
+    public static async Task<AccuseLotDto?> LireAsync(HttpResponseMessage reponse, CancellationToken ct = default)
+    {
+        if (reponse.StatusCode != System.Net.HttpStatusCode.Conflict || reponse.Content.Headers.ContentType?.MediaType != TypeJson) return null;
+        try { return await System.Net.Http.Json.HttpContentJsonExtensions.ReadFromJsonAsync<AccuseLotDto>(reponse.Content, ct); }
+        catch (System.Text.Json.JsonException) { return null; }
+    }
 }
 
 /// <summary>

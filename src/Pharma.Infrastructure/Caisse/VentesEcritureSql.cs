@@ -360,7 +360,8 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
         await using var cmd = db.CreateCommand("""
             SELECT v.id, v.numero, v.montant_total, v.part_organisme, v.part_patient,
                    (SELECT p.mode FROM paiement p WHERE p.vente_id = v.id AND p.mode <> 'avoir' ORDER BY p.id LIMIT 1),
-                   v.statut = 'annulee'
+                   v.statut = 'annulee',
+                   (SELECT COALESCE(SUM(p.montant), 0) FROM paiement p WHERE p.vente_id = v.id AND p.mode = 'avoir')
             FROM vente v
             WHERE v.cle_encaissement = $1 AND v.statut IN ('validee', 'annulee')
             """);
@@ -370,7 +371,7 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
         {
             if (!await r.ReadAsync(ct)) return null;
             vente = new VenteDejaEncaissee(r.GetInt64(0), r.GetString(1), r.GetDecimal(2), r.GetDecimal(3), r.GetDecimal(4),
-                r.IsDBNull(5) ? null : CodesMetier.ModePaiementDepuisCode(r.GetString(5)), r.GetBoolean(6));
+                r.IsDBNull(5) ? null : CodesMetier.ModePaiementDepuisCode(r.GetString(5)), r.GetBoolean(6), PayeParAvoir: r.GetDecimal(7));
         }
         // Lignes enregistrées : comparées au panier renvoyé (contenu différent : refus)
         await using var lignes = db.CreateCommand("SELECT produit_id, lot_id, quantite, type_prestation_id FROM ligne_vente WHERE vente_id = $1 ORDER BY id");

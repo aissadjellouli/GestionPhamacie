@@ -72,8 +72,10 @@ internal static class RegistreEndpoints
                     f.Messages, f.Motif, f.Patient, f.Medecin, f.NumeroOrdonnance, f.Produits)).ToList(), p.Total, p.Numero, p.Taille));
             });
 
-        // Délivrance (droit psychotropes.delivrer, vérifié par le cas d'usage) : contrôle des alertes et forçage avec motif
-        var psy = api.MapGroup("/psychotropes");
+        // Délivrance (droit psychotropes.delivrer, vérifié par le cas d'usage) : contrôle des alertes et forçage avec motif.
+        // Connexion exigée sur tout le groupe (revue du 2026-11-22) : sans elle, un jeton de mot de passe provisoire passait et un
+        // appel sans jeton finissait en erreur 500 ; les droits restent vérifiés par chaque cas d'usage
+        var psy = api.MapGroup("/psychotropes").ExigerConnexion();
         psy.MapPost("/controle", async (DelivrancePsychotropeDto d, ControlerDelivrancePsychotrope controler, ClaimsPrincipal user, CancellationToken ct) =>
         {
             var r = await controler.ExecuterAsync(user.UtilisateurId(), Vers(d), ct);

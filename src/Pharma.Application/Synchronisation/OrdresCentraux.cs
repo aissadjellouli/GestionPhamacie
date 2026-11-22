@@ -472,15 +472,20 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
 /// Rien sur une base en lecture seule (2e serveur en veille). Jamais sur le chemin d'une vente.
 /// </summary>
 public sealed class AppliquerOrdresCentraux(IOrdresCentrauxDepot depot, ExecuterOrdreCentral executer, IHorloge horloge, IAlertesTitulaire alertes,
-    ITraceErreurs? trace = null)
+    ITraceErreurs? trace = null, VerrouOrdresCentraux? verrou = null)
 {
+    private readonly VerrouOrdresCentraux verrou = verrou ?? VerrouOrdresCentraux.Partage;
+
     /// <returns>Nombre d'ordres dont l'état a changé.</returns>
     public async Task<int> ExecuterAsync(CancellationToken ct = default)
     {
         if (await depot.BaseEnLectureSeuleAsync(ct)) return 0;
         var n = 0;
-        foreach (var o in await depot.EnCoursAsync(ct))
+        foreach (var lu in await depot.EnCoursAsync(ct))
         {
+            // Un ordre à la fois, relu sous le verrou : confirmé ou refusé entre-temps par le titulaire, il n'est plus touché ici
+            using var _ = await verrou.PrendreAsync(ct);
+            if (await depot.LireAsync(lu.Id, ct) is not { } o || o.Statut is not (StatutsOrdre.AConfirmer or StatutsOrdre.AAppliquer)) continue;
             if (horloge.MaintenantUtc >= o.ExpireLeUtc)
             {
                 await NoterEtPrevenirAsync(o, StatutsOrdre.Expire, "non traité avant sa date limite (horloge de l’officine)", ct);
@@ -553,8 +558,10 @@ public sealed class AppliquerOrdresCentraux(IOrdresCentrauxDepot depot, Executer
 
 /// <summary>Confirmation par le titulaire d'un ordre « à confirmer » ; mot de passe provisoire pour une création de compte.</summary>
 public sealed class ConfirmerOrdreCentral(IOrdresCentrauxDepot depot, ExecuterOrdreCentral executer, IPermissionService droits, IHorloge horloge,
-    VerificationMotDePasseActuel? motDePasseActuel = null)
+    VerificationMotDePasseActuel? motDePasseActuel = null, VerrouOrdresCentraux? verrou = null)
 {
+    private readonly VerrouOrdresCentraux verrou = verrou ?? VerrouOrdresCentraux.Partage;
+
     public Task<string> ExecuterAsync(Guid id, string? motDePasse, long titulaireId, CancellationToken ct = default) =>
         ExecuterAsync(id, motDePasse, null, titulaireId, ct);
 
@@ -563,6 +570,8 @@ public sealed class ConfirmerOrdreCentral(IOrdresCentrauxDepot depot, ExecuterOr
     public async Task<string> ExecuterAsync(Guid id, string? motDePasse, string? motDePasseTitulaire, long titulaireId, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(titulaireId, "confirmer un ordre du serveur central", ct);
+        // Double clic, deux postes, ou tâche de fond en même temps : un seul traitement, état relu sous le verrou (revue du 2026-11-22)
+        using var _ = await verrou.PrendreAsync(ct);
         var o = await depot.LireAsync(id, ct) ?? throw new RegleMetierException("Ordre introuvable.");
         if (o.Statut != StatutsOrdre.AConfirmer) throw new RegleMetierException("Cet ordre n’attend plus de confirmation.");
         if (TypesOrdre.MotDePasseTitulaireRequis(o.Type))
@@ -590,8 +599,11 @@ public sealed class ConfirmerOrdreCentral(IOrdresCentrauxDepot depot, ExecuterOr
 }
 
 /// <summary>Refus par le titulaire d'un ordre pas encore appliqué, avec son motif (envoyé au serveur central, filtré comme les textes libres).</summary>
-public sealed class RefuserOrdreCentral(IOrdresCentrauxDepot depot, IPermissionService droits, VerificationMotDePasseActuel? motDePasseActuel = null)
+public sealed class RefuserOrdreCentral(IOrdresCentrauxDepot depot, IPermissionService droits, VerificationMotDePasseActuel? motDePasseActuel = null,
+    VerrouOrdresCentraux? verrou = null)
 {
+    private readonly VerrouOrdresCentraux verrou = verrou ?? VerrouOrdresCentraux.Partage;
+
     public Task ExecuterAsync(Guid id, string? motif, long titulaireId, CancellationToken ct = default) => ExecuterAsync(id, motif, null, titulaireId, ct);
 
     /// <param name="motDePasseTitulaire">Lot S7.4 : mot de passe du titulaire qui refuse des réglages communs (ressaisi).</param>
@@ -600,12 +612,38 @@ public sealed class RefuserOrdreCentral(IOrdresCentrauxDepot depot, IPermissionS
         await droits.ExigerTitulaireAsync(titulaireId, "refuser un ordre du serveur central", ct);
         var m = (motif ?? "").Trim();
         if (m.Length is < 3 or > 300) throw new RegleMetierException("Motif du refus : 3 à 300 caractères.", "motif");
+        // Jamais pendant que la tâche de fond applique cet ordre : il serait affiché « refusé » alors qu'appliqué (revue du 2026-11-22)
+        using var _ = await verrou.PrendreAsync(ct);
         var o = await depot.LireAsync(id, ct) ?? throw new RegleMetierException("Ordre introuvable.");
         if (o.Statut is not (StatutsOrdre.AConfirmer or StatutsOrdre.AAppliquer)) throw new RegleMetierException("Cet ordre est déjà traité.");
         if (TypesOrdre.MotDePasseTitulaireRequis(o.Type))
             await (motDePasseActuel ?? throw new RegleMetierException("Vérification du mot de passe indisponible."))
                 .VerifierAsync(titulaireId, motDePasseTitulaire, "refuser_reglages_communs", ReglagesCommunsOrdre.ChampMotDePasse, ct);
         await depot.NoterAsync(id, StatutsOrdre.Refuse, "refusé par le titulaire : " + m, titulaireId, ct);
+    }
+}
+
+/// <summary>
+/// Un seul traitement d'ordre du central à la fois (confirmation, refus, application par la tâche de fond), l'état étant relu sous le
+/// verrou : un ordre n'est jamais exécuté deux fois, ni exécuté après un refus (revue du 2026-11-22). Propre au processus : un seul
+/// serveur écrit dans la base de l'officine (2e serveur en veille : lecture seule) ; la base refuse en plus une 2e note (« déjà traité »).
+/// </summary>
+public sealed class VerrouOrdresCentraux
+{
+    public static VerrouOrdresCentraux Partage { get; } = new();
+
+    private readonly SemaphoreSlim semaphore = new(1, 1);
+
+    public async Task<IDisposable> PrendreAsync(CancellationToken ct = default)
+    {
+        await semaphore.WaitAsync(ct);
+        return new Liberation(semaphore);
+    }
+
+    private sealed class Liberation(SemaphoreSlim s) : IDisposable
+    {
+        private int libere;
+        public void Dispose() { if (Interlocked.Exchange(ref libere, 1) == 0) s.Release(); }
     }
 }
 

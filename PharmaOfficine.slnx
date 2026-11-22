@@ -6,6 +6,7 @@
     <File Path="docs/a-faire.md" />
     <File Path="docs/acces-distant.md" />
     <File Path="docs/architecture.md" />
+    <File Path="docs/diagrammes-sequence.md" />
     <File Path="docs/base-de-donnees.md" />
     <File Path="docs/scripts-base-de-donnees.md" />
     <File Path="docs/essai-cloud-officine.md" />
@@ -378,7 +379,9 @@
     <File Path="database/cloud/039_creation_compte_ecran.sql" />
     <File Path="database/cloud/tests/039_creation_compte_ecran_tests.sql" />
     <File Path="database/cloud/040_import_comptes_duree_provisoire.sql" />
+    <File Path="database/cloud/041_delai_provisoire_comptes_anterieurs.sql" />
     <File Path="database/cloud/tests/040_import_comptes_duree_provisoire_tests.sql" />
+    <File Path="database/cloud/tests/041_delai_provisoire_comptes_anterieurs_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

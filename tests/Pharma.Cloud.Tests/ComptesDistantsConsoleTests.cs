@@ -123,12 +123,12 @@ public class ComptesDistantsConsoleTests
         Assert.Contains("n'est pas un compte titulaire", sortie.ToString());
         Assert.Equal(1, await ComptesDistantsAdministration.ExecuterAsync(db, ["--code-rattachement", "titulaire.console", Guid.NewGuid().ToString(), "--auteur", "A"], new StringWriter()));
 
-        // Tests SQL des écrans (transaction annulée) sur la même base : 030 à 040
+        // Tests SQL des écrans (transaction annulée) sur la même base : 030 à 041
         foreach (var t in new[] { "030_comptes_distants_tests.sql", "031_ecrans_editeur_tests.sql", "032_ecrans_titulaire_tests.sql", "033_code_rattachement_poste_tests.sql",
                      "034_titulaire_multi_officines_ordres_tests.sql", "035_reglages_communs_titulaire_tests.sql",
                      "036_lignes_absentes_ecrans_tests.sql", "037_envoi_codes_reglage_tests.sql",
                      "038_remise_mot_de_passe_retrait_message_tests.sql", "039_creation_compte_ecran_tests.sql",
-                     "040_import_comptes_duree_provisoire_tests.sql" })
+                     "040_import_comptes_duree_provisoire_tests.sql", "041_delai_provisoire_comptes_anterieurs_tests.sql" })
             base_.Rejouer(Path.Combine(Depot.Racine(), "database", "cloud", "tests", t));
     }
 

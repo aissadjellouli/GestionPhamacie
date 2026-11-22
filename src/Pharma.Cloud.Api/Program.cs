@@ -85,7 +85,8 @@ app.Use(async (ctx, suite) =>
     if (!chemin.StartsWithSegments("/api/v1/lots")
         && ctx.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } taille)
         taille.MaxRequestBodySize = 16 * 1024;
-    if (ctx.Connection.ClientCertificate is { } c && autorite.ValiderClient(c, DateTimeOffset.UtcNow))
+    // Même horloge que PointsEntree.CertificatAsync, qui réutilise ce résultat (chaîne X509 construite une seule fois par appel)
+    if (ctx.Connection.ClientCertificate is { } c && autorite.ValiderClient(c, ctx.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow()))
     {
         ctx.Items[CertificatVerifie] = c;
         if (chemin.StartsWithSegments("/api/v1/lots"))

@@ -14,7 +14,8 @@ namespace Pharma.Architecture.Tests;
 /// </summary>
 public class CertificatsHttpsTests
 {
-    private static string Script() => File.ReadAllText(Path.Combine(RacineDepot(), "scripts", "certificat_https.ps1"));
+    // Fins de ligne ramenées à LF : un clone avec core.autocrlf=true reçoit le script en CRLF
+    private static string Script() => File.ReadAllText(Path.Combine(RacineDepot(), "scripts", "certificat_https.ps1")).Replace("\r\n", "\n");
 
     private static string RacineDepot()
     {

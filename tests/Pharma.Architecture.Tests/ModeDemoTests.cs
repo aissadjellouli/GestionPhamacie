@@ -64,7 +64,9 @@ public class ModeDemoTests
         Assert.False(new ReglagesDemo().Actif);
         using var json = JsonDocument.Parse(Lire("src", "Pharma.Api", "appsettings.json"));
         Assert.False(json.RootElement.GetProperty("Demo").GetProperty("Actif").GetBoolean());
-        Assert.DoesNotContain("\"Demo\"", Lire("src", "Pharma.Api", "appsettings.Development.json"));
+        // Fichier local du poste, exclu du dépôt (.gitignore) : contrôlé seulement s'il existe (absent d'un clone neuf)
+        if (File.Exists(Chemin("src", "Pharma.Api", "appsettings.Development.json")))
+            Assert.DoesNotContain("\"Demo\"", Lire("src", "Pharma.Api", "appsettings.Development.json"));
     }
 
     // ---- Fonctions coupées (422) ----

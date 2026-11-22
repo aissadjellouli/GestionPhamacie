@@ -63,8 +63,8 @@ public class EnvoiDelaiTests
     {
         var comptes = new[]
         {
-            new CompteATransmettre(Guid.NewGuid(), "lent.delai", "titulaire", "lent@exemple.invalid", null, "Provisoire-1"),
-            new CompteATransmettre(Guid.NewGuid(), "rapide.delai", "titulaire", "rapide@exemple.invalid", null, "Provisoire-2"),
+            new CompteATransmettre(Guid.NewGuid(), "lent.delai", "titulaire", "lent@exemple.test", null, "Provisoire-1"),
+            new CompteATransmettre(Guid.NewGuid(), "rapide.delai", "titulaire", "rapide@exemple.test", null, "Provisoire-2"),
         };
         var partis = new List<string>();
         Task Courriel(string adresse, string objet, string texte, CancellationToken ct)
@@ -77,6 +77,6 @@ public class EnvoiDelaiTests
         var r = await TransmissionComptes.TransmettreAsync(comptes, true, Courriel, new EnvoiSmsMotDePasseIndisponible(), null, false, null,
             CancellationToken.None, TimeSpan.FromMilliseconds(100));
         Assert.Equal(["echec", "ok"], r.Select(t => t.Email));
-        Assert.Equal(["rapide@exemple.invalid"], partis);
+        Assert.Equal(["rapide@exemple.test"], partis);
     }
 }

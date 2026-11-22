@@ -21,6 +21,9 @@ public static class ActionsImportComptes
     public const string PageImport = "/comptes?action=importer";
     public const string CaseIdentifiant = "envoyer_identifiant";
 
+    /// <summary>Empreintes BCrypt calculées en même temps à l'import (le reste du serveur des écrans garde des cœurs libres).</summary>
+    public const int EmpreintesSimultanees = 2;
+
     public static void Mapper(RouteGroupBuilder g)
     {
         // Dépôt du fichier : lecture (forme, séparateur, BOM, 200 lignes), puis avis de la base sur chaque ligne (doublon, identifiant
@@ -64,7 +67,8 @@ public static class ActionsImportComptes
             }
             var provisoires = lignes.ToDictionary(l => l.Numero, _ => ComptesDistants.MotDePasseProvisoire());
             var empreintes = new System.Collections.Concurrent.ConcurrentDictionary<int, string>();
-            await Parallel.ForEachAsync(provisoires, ct, (p, _) =>
+            // Coût BCrypt élevé : 2 calculs à la fois au plus, pour ne pas priver les autres requêtes (connexions, contrôles de session)
+            await Parallel.ForEachAsync(provisoires, new ParallelOptions { MaxDegreeOfParallelism = EmpreintesSimultanees, CancellationToken = ct }, (p, _) =>
             {
                 empreintes[p.Key] = BCrypt.Net.BCrypt.HashPassword(p.Value, ComptesDistants.CoutBcrypt);
                 return ValueTask.CompletedTask;
@@ -146,7 +150,8 @@ public static class ActionsImportComptes
             courriel = envoi.EnvoyerAsync;
         }
         var journal = ctx.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Pharma.Cloud.Web.Comptes");
-        // Comptes créés : les envois (délai propre par envoi) et leur trace ne dépendent plus de la requête du navigateur
+        // Comptes créés : les envois (délai propre par envoi, délai total TransmissionComptes.DelaiTotal pour que la liste des mots de
+        // passe arrive avant que le navigateur ne coupe) et leur trace ne dépendent plus de la requête du navigateur
         var transmis = await TransmissionComptes.TransmettreAsync(comptes, envoyerIdentifiant, courriel, sms, reglages.AdressePublique, remise,
             (compte, evenement, objet, jt) => depot.NoterEnvoiCompteAsync(jeton, compte, evenement, objet, jt), CancellationToken.None);
         var echecs = transmis.Count(t => t.Email == "echec");

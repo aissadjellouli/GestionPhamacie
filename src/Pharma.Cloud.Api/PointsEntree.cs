@@ -67,9 +67,7 @@ public static class PointsEntree
             var (appelant, refus) = await AppelantAsync(ctx, ct);
             if (appelant is null) return refus!;
             var log = lf.CreateLogger("Pharma.Cloud.Lots");
-            using var flux = new MemoryStream();
-            await ctx.Request.Body.CopyToAsync(flux, ct);
-            var contenu = flux.ToArray();
+            var contenu = await LireCorpsAsync(ctx.Request, ct);
             var c = ControleLot.Controler(contenu, appelant.Officine);
             if (!c.Valide)
             {
@@ -85,7 +83,8 @@ public static class PointsEntree
                 {
                     await depot.JournaliserAsync(appelant.Officine, appelant.EmpreinteCertificat, "lot_anomalie", $"lot {e.Epoque}/{e.NumeroLot} : empreinte différente", ct);
                     log.LogWarning("Officine {Officine} : lot {Epoque}/{Numero} déjà reçu avec une autre empreinte", appelant.Officine, e.Epoque, e.NumeroLot);
-                    return Results.Problem("Lot déjà reçu avec un autre contenu : anomalie signalée.", statusCode: 409);
+                    // Accusé JSON (et non ProblemDetails) : l'officine lit le dernier lot reçu et détecte un retour en arrière (revue du 2026-11-22)
+                    return AccuseConflit(new AccuseLotDto(e.Epoque, e.NumeroLot, statut, dernier));
                 }
                 if (statut is "quota_depasse")
                 {
@@ -99,7 +98,7 @@ public static class PointsEntree
                         System.Globalization.CultureInfo.InvariantCulture, out var vd))
                     desc = await depot.DescendantsAsync(appelant.Officine, vd, ct);
                 if (statut is StatutsLot.Trou)
-                    return Results.Json(new AccuseLotDto(e.Epoque, e.NumeroLot, statut, dernier, desc), statusCode: StatusCodes.Status409Conflict);
+                    return AccuseConflit(new AccuseLotDto(e.Epoque, e.NumeroLot, statut, dernier, desc));
                 log.LogInformation("Officine {Officine} : lot {Epoque}/{Numero} {Statut} ({Lignes} lignes)", appelant.Officine, e.Epoque, e.NumeroLot, statut, e.NombreLignes);
                 return Results.Ok(new AccuseLotDto(e.Epoque, e.NumeroLot, statut, dernier, desc));
             }
@@ -110,6 +109,13 @@ public static class PointsEntree
                 await depot.JournaliserAsync(appelant.Officine, appelant.EmpreinteCertificat, "lot_refuse", detail, ct);
                 log.LogWarning("Officine {Officine} : {Detail}", appelant.Officine, detail);
                 return Results.Problem("Lot refusé : contenu incompatible avec la base centrale (détail au journal du serveur central).", statusCode: 422);
+            }
+            catch (ReponseCentraleVideException v)
+            {
+                // Anomalie de la base centrale (aucune ligne rendue) : notée, et passagère pour l'officine (503 : elle réessaie)
+                await depot.JournaliserAsync(appelant.Officine, appelant.EmpreinteCertificat, "lot_refuse", $"lot {e.Epoque}/{e.NumeroLot} : réponse vide de {v.Fonction}", ct);
+                log.LogError("Officine {Officine} : lot {Epoque}/{Numero}, aucune ligne rendue par {Fonction}", appelant.Officine, e.Epoque, e.NumeroLot, v.Fonction);
+                return Results.Problem("Serveur central momentanément indisponible : nouvel essai au prochain passage.", statusCode: StatusCodes.Status503ServiceUnavailable);
             }
         }).RequireRateLimiting("lots");
 
@@ -329,13 +335,39 @@ public static class PointsEntree
         }).RequireRateLimiting("renouvellement");
     }
 
+    /// <summary>
+    /// Corps d'un dépôt de lot lu UNE fois (revue du 2026-11-22 : il était copié deux fois, jusqu'à 17 Mio) : tableau de la taille annoncée
+    /// (Content-Length), sinon flux en mémoire ; la taille maximale reste celle du serveur. Un corps plus court que l'annonce : erreur.
+    /// </summary>
+    public static async Task<byte[]> LireCorpsAsync(HttpRequest requete, CancellationToken ct)
+    {
+        if (requete.ContentLength is long n && n >= 0 && n <= Array.MaxLength)
+        {
+            var contenu = new byte[n];
+            await requete.Body.ReadExactlyAsync(contenu, ct);
+            return contenu;
+        }
+        using var flux = new MemoryStream();
+        await requete.Body.CopyToAsync(flux, ct);
+        return flux.ToArray();
+    }
+
+    /// <summary>
+    /// Refus 409 d'un dépôt de lot avec son accusé en JSON (trou, lot déjà reçu avec un autre contenu), lu côté officine par
+    /// <see cref="AccuseConflitLot.LireAsync"/>.
+    /// </summary>
+    public static IResult AccuseConflit(AccuseLotDto accuse) =>
+        Results.Json(accuse, statusCode: StatusCodes.Status409Conflict, contentType: AccuseConflitLot.TypeJson);
+
     /// <summary>Certificat client émis par l'autorité, connu, ni révoqué ni échu, officine non résiliée.</summary>
     private static async Task<((EtatCertificat Etat, string Empreinte)?, IResult?)> CertificatAsync(HttpContext ctx, CancellationToken ct)
     {
         var c = ctx.Connection.ClientCertificate ?? await ctx.Connection.GetClientCertificateAsync(ct);
         if (c is null) return (null, Results.Problem("Certificat client exigé.", statusCode: 401));
         var temps = ctx.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow();
-        if (!ctx.RequestServices.GetRequiredService<AutoriteCertification>().ValiderClient(c, temps))
+        // Chaîne déjà vérifiée par le middleware pour CE certificat (revue du 2026-11-22) : pas une 2e construction de X509Chain
+        var dejaVerifie = ctx.Items[Program.CertificatVerifie] is X509Certificate2 v && ReferenceEquals(v, c);
+        if (!dejaVerifie && !ctx.RequestServices.GetRequiredService<AutoriteCertification>().ValiderClient(c, temps))
             return (null, Results.Problem("Certificat client non reconnu.", statusCode: 401));
         var empreinte = AutoriteCertification.Empreinte(c);
         var depot = ctx.RequestServices.GetRequiredService<DepotCentral>();

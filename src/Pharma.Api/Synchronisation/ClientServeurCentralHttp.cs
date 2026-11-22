@@ -20,6 +20,13 @@ public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogge
     private DateTimeOffset jetonExpire;
     private string? jetonCertificat;
     private (string Cle, HttpClient Http, X509Certificate2 Cert, X509Certificate2? Autorite)? cache;
+    private readonly RetraitDiffere<LiberationClient> retires = new(RetraitDiffere<LiberationClient>.DelaiParDefaut);
+
+    /// <summary>Ancien client HTTP et ses certificats, libérés ensemble.</summary>
+    private sealed class LiberationClient(HttpClient http, X509Certificate2 cert, X509Certificate2? autorite) : IDisposable
+    {
+        public void Dispose() { http.Dispose(); cert.Dispose(); autorite?.Dispose(); }
+    }
 
     public async Task<ReponseActivationSync> ActiverAsync(string adresse, string code, string demandePem, Guid officine, CancellationToken ct = default)
     {
@@ -39,12 +46,9 @@ public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogge
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", j);
         req.Headers.Add(ChangementsDescendantsDto.EnTeteVersion, versionDescendante.ToString(System.Globalization.CultureInfo.InvariantCulture));
         using var rep = await http.SendAsync(req, ct);
-        if (rep.StatusCode == System.Net.HttpStatusCode.Conflict && rep.Content.Headers.ContentType?.MediaType == "application/json")
-        {
-            // Trou : accusé portant le dernier lot reçu
-            var a = await rep.Content.ReadFromJsonAsync<AccuseLotDto>(ct);
-            if (a is not null) return new AccuseLotSync(a.Epoque, a.Numero, a.Statut, a.DernierRecu, Descendants(a.Descendants));
-        }
+        // Trou ou lot déjà reçu avec un autre contenu : accusé JSON portant le dernier lot reçu (retour en arrière détecté par EnvoiLots)
+        if (await AccuseConflitLot.LireAsync(rep, ct) is { } a)
+            return new AccuseLotSync(a.Epoque, a.Numero, a.Statut, a.DernierRecu, Descendants(a.Descendants));
         if (rep.StatusCode == System.Net.HttpStatusCode.Unauthorized) await OublierJetonAsync(ct);
         var acc = await LireAsync<AccuseLotDto>(rep, ct);
         return new AccuseLotSync(acc.Epoque, acc.Numero, acc.Statut, acc.DernierRecu, Descendants(acc.Descendants));
@@ -67,12 +71,15 @@ public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogge
     public async Task<DescendantsRecus> EchangerAsync(string adresse, long versionAppliquee, CancellationToken ct = default) =>
         Descendants(await PosterAsync<EchangeDescendantDto, ChangementsDescendantsDto>(adresse, "api/v1/echange", new EchangeDescendantDto(versionAppliquee), ct));
 
-    /// <summary>Plafonds de la voie descendante : réponse (MaxReponse, toutes routes), nombre d'éléments, taille d'un élément.</summary>
-    public const int MaxReponse = 1024 * 1024, MaxElements = 1000, MaxDonnees = 64 * 1024;
+    /// <summary>Plafonds de la voie descendante, communs avec le serveur central : réponse (toutes routes), éléments, taille d'un élément.</summary>
+    public const int MaxReponse = ChangementsDescendantsDto.MaxReponse, MaxElements = ChangementsDescendantsDto.MaxElements,
+        MaxDonnees = ChangementsDescendantsDto.MaxDonnees;
 
     /// <summary>
-    /// Contrat desc-v1 seulement ; au-delà de MaxElements, seuls les premiers par version sont gardés ; un élément trop gros, sans
-    /// table ni clé ou dont les données ne sont pas un objet JSON est ignoré (journalisé sans données) ; il reviendra au passage suivant.
+    /// Contrat desc-v1 seulement ; au-delà de MaxElements, seuls les premiers par version sont gardés (les suivants reviennent au
+    /// passage suivant, la version acquittée ne dépassant pas le dernier gardé). Un élément trop gros, sans table ni clé ou dont les
+    /// données ne sont pas un objet JSON est ÉCARTÉ (journalisé sans données, compté dans Ecartes et signalé dans la note du passage) :
+    /// il ne redeviendra pas valable, il n'est donc pas redonné.
     /// </summary>
     public DescendantsRecus Descendants(ChangementsDescendantsDto? d)
     {
@@ -83,18 +90,20 @@ public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogge
             return DescendantsRecus.Aucun;
         }
         var gardes = new List<ChangementDescendantSync>();
+        var ecartes = 0;
         foreach (var c in d.Changements.Where(c => c is not null).OrderBy(c => c.Version).Take(MaxElements))
         {
             if (string.IsNullOrEmpty(c.Table) || string.IsNullOrEmpty(c.Cle) || c.DonneesJson is null || c.DonneesJson.Length > MaxDonnees || !ObjetJson(c.DonneesJson))
             {
-                logger.LogWarning("Synchronisation : élément descendant {Table} version {Version} ignoré (mal formé ou trop gros)", c.Table?.Length > 63 ? "?" : c.Table, c.Version);
+                logger.LogWarning("Synchronisation : élément descendant {Table} version {Version} écarté (mal formé ou trop gros)", c.Table?.Length > 63 ? "?" : c.Table, c.Version);
+                ecartes++;
                 continue;
             }
             gardes.Add(new ChangementDescendantSync(c.Table, c.Cle, c.Version, c.DonneesJson));
         }
         if (d.Changements.Count > MaxElements)
             logger.LogWarning("Synchronisation : {Nombre} éléments descendants reçus, {Max} gardés pour ce passage", d.Changements.Count, MaxElements);
-        return new DescendantsRecus(gardes, d.VersionMax);
+        return new DescendantsRecus(gardes, d.VersionMax, ecartes);
     }
 
     private static bool ObjetJson(string json)
@@ -229,8 +238,11 @@ public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogge
         {
             var info = certificats.Lire() ?? throw new ServeurCentralException("certificat de synchronisation absent");
             var cle = adresse + "|" + info.Empreinte + "|" + info.EmpreinteAutorite;
+            retires.Purger(DateTime.UtcNow);
             if (cache is { } c && c.Cle == cle) return (c.Http, c.Cert);
-            if (cache is { } ancien) { ancien.Http.Dispose(); ancien.Cert.Dispose(); ancien.Autorite?.Dispose(); }
+            // Libération DIFFÉRÉE (revue du 2026-11-22) : un appel en cours (téléchargement de référentiel, appel admin) peut encore
+            // utiliser l'ancien client et l'ancien certificat, obtenus avant le renouvellement
+            if (cache is { } ancien) retires.Retirer(new LiberationClient(ancien.Http, ancien.Cert, ancien.Autorite), DateTime.UtcNow);
             cache = null;
             jeton = null;
             var cert = certificats.CertificatClient() ?? throw new ServeurCentralException("certificat de synchronisation absent");
@@ -292,5 +304,29 @@ public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogge
                 quota: (int)rep.StatusCode == 429 && !string.IsNullOrWhiteSpace(detail));
         }
         return await rep.Content.ReadFromJsonAsync<T>(ct) ?? throw new ServeurCentralException("réponse vide du serveur central");
+    }
+}
+
+/// <summary>
+/// Objets remplacés mais peut-être encore utilisés par un appel en cours : libérés seulement une fois le délai passé (au passage
+/// suivant qui purge). Non sûr entre fils : l'appelant tient son propre verrou.
+/// </summary>
+public sealed class RetraitDiffere<T>(TimeSpan delai) where T : IDisposable
+{
+    /// <summary>Bien au-delà d'un appel au central (60 s) ou d'un téléchargement de référentiel.</summary>
+    public static readonly TimeSpan DelaiParDefaut = TimeSpan.FromMinutes(30);
+
+    private readonly List<(DateTime RetireLe, T Objet)> attente = [];
+
+    public int EnAttente => attente.Count;
+
+    public void Retirer(T objet, DateTime maintenantUtc) => attente.Add((maintenantUtc, objet));
+
+    /// <returns>Nombre d'objets libérés.</returns>
+    public int Purger(DateTime maintenantUtc)
+    {
+        var echus = attente.Where(a => maintenantUtc - a.RetireLe >= delai).ToList();
+        foreach (var a in echus) { a.Objet.Dispose(); attente.Remove(a); }
+        return echus.Count;
     }
 }

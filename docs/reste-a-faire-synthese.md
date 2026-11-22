@@ -1,14 +1,53 @@
 # Reste à faire : synthèse
 
-Point d'avancement du 2026-11-22 : **tout est commité** jusqu'à `d429b90` (branche `develop`, rien poussé depuis `f399e6d` ou avant :
-l'utilisateur pousse lui-même). Scripts centraux **037 à 040** passés sur `pharmacie_cloud_dev` (sauvegardes dans
-`C:\MesAtlassian\sauvegardes-bd` avant 037, après 038, avant 039 et avant 040) ; script local **160** passé sur `pharmacie_dev` et
-`pharmacie_test`. Détail : [a-faire.md](a-faire.md), [fonctionnalites.md](fonctionnalites.md) (inventaire complet) et documents cités.
+Point d'avancement du 2026-11-22 (soir) : commité jusqu'à `5790875` ; **48 fichiers modifiés ou ajoutés non commités** dans
+`develop` (revue de code complète, correctifs, recette, documentation : section 1). Rien poussé : **7 commits à pousser** par
+l'utilisateur (`5790875`, `d429b90`, `141f058`, `c617380`, `3a79e77`, `2902442`, `076df06`, puis les suivants s'il y a lieu).
+Scripts centraux **037 à 041** passés sur `pharmacie_cloud_dev` (sauvegardes dans `C:\MesAtlassian\sauvegardes-bd`, dont
+`…_avant_041_…` et `…_avant_recette_central_…`) ; script local **160** passé sur `pharmacie_dev` et `pharmacie_test` (aucun script
+local nouveau aujourd'hui). Détail : [a-faire.md](a-faire.md), [fonctionnalites.md](fonctionnalites.md) (inventaire complet),
+[diagrammes-sequence.md](diagrammes-sequence.md) (architecture, déploiement, synchronisation) et documents cités.
 À mettre à jour à chaque point d'avancement.
 
 ## 1. En cours
 
 Rien en cours de développement. Démonstration cloud : étapes 1 et 2 écrites, premier démarrage réel en attente de Docker (section 3).
+
+**À commiter par l'utilisateur** (48 fichiers, tests au vert : Domain 719, Application 1 822, Architecture 391, Cloud 159 + 1 ignoré,
+Cloud.Web 54). Nouveaux fichiers à indexer : `database/cloud/041_delai_provisoire_comptes_anterieurs.sql` et son test SQL,
+`docs/diagrammes-sequence.md`, `tests/Pharma.Architecture.Tests/RoutesProtegeesTests.cs`, `RetraitDiffereTests.cs`,
+`tests/Pharma.Cloud.Tests/AccuseConflitLotTests.cs`, `DescendantsBornesCentralTests.cs`, `DepotLotsCentralTests.cs`.
+Comptes rendus (hors git) : `docs/taches/2026-11-22-recette/recette.md`. Copie de travail de la revue à supprimer quand le commit
+est fait : `C:\MesAtlassian\pharmaofficine-revue` (branche locale `correctifs-revue`, `appsettings.Development.json` copié).
+
+**Correctifs de la revue de code du 2026-11-22 (non commités)**, faits dans la copie `C:\MesAtlassian\pharmaofficine-revue`
+(branche locale `correctifs-revue`, partie de `5790875`) puis reportés dans `develop` ; script central 041 passé sur
+`pharmacie_cloud_dev` (sauvegarde avant 041 dans `C:\MesAtlassian\sauvegardes-bd`) :
+- caisse : monnaie au renvoi d'une vente déjà encaissée calculée sans la part payée par l'avoir (corrigé, test) ;
+- import de comptes : transmission bornée à 45 s au total, la liste des mots de passe s'affiche toujours (test) ; adresses `.invalid`
+  ni envoyées ni comptées en échec ni notées (test) ; empreintes BCrypt 2 à la fois ;
+- écrans du central : une coupure réseau sur le signal d'activité ne déconnecte plus (seule une session refusée termine) ;
+- caisse : wilaya du médecin, fiche relue avant l'enregistrement (plus d'écrasement), liste remise à la fiche après un refus,
+  un seul chargement des wilayas ; panneau d'annulation sans `async void` ;
+- script central **041** `041_delai_provisoire_comptes_anterieurs.sql` (délai de grâce des mots de passe provisoires antérieurs au 040) ;
+- tests d'architecture rendus indépendants du poste (`appsettings.Development.json` absent, fins de ligne CRLF).
+**Suite de la revue (2026-11-22, non commités, même report)** :
+- sécurité : `/api/psychotropes/*` et `/api/substitution/*` exigent la connexion (étaient ouvertes sans jeton, 500 au lieu de 401) ;
+  test d'architecture `RoutesProtegeesTests` (toute route gardée, liste fermée des routes publiques) ;
+- synchronisation : accusé JSON du central pour « autre contenu » (retour en arrière enfin détecté au dépôt), ordres du central
+  traités un à la fois (plus de double exécution ni d'ordre « refusé » mais appliqué), renouvellement du certificat non bloquant,
+  voie descendante bornée par le central (1 000 éléments, 768 Kio écrits) et éléments écartés signalés, ancien client HTTP libéré
+  après 30 min.
+- Derniers points de la revue, corrigés aussi : certificat client vérifié une seule fois par appel et corps des lots lu une seule
+  fois au central ; lecture SQL contrôlée dans `DepotCentral` (réponse vide : journal de sécurité et 503 au lieu d'un 500 sans trace).
+**Recette du 2026-11-22** (API 5081 sur `pharmacie_test`, poste piloté, écrans du central en mode « codes dans un fichier ») :
+172 routes GET sans erreur 500 ; 17 scénarios de caisse conformes (dont le correctif de la monnaie avec avoir) ; 54 écrans du poste
+et 21 écrans du central sans défilement ni erreur ; import CSV, contact gardé, inactivité et coupure réseau vérifiés en réel.
+**Documentation** : [diagrammes-sequence.md](diagrammes-sequence.md) (composants, déploiement, vente, activation, passage de
+synchronisation, retour en arrière, ordres, connexion au central, workflow entre officines, cycle de vie d'un changement) ;
+[architecture.md](architecture.md) (section Déploiement) ; page explicative privée de la synchronisation (lien donné en séance).
+Le test SQL du 040 n'est valable que sur une base neuve (il compte toutes les lignes d'inactivité du journal) : il échoue sur
+`pharmacie_cloud_dev`, il passe sur les bases jetables.
 
 ## 2. Fait et commité les 2026-11-21 (soir) et 2026-11-22
 
@@ -34,19 +73,23 @@ Rien en cours de développement. Démonstration cloud : étapes 1 et 2 écrites,
 ## 2 ter. À faire en premier (point du 2026-11-22, 03:30)
 
 Commités depuis `3a79e77` : `141f058` (7 points de la revue du central, adresses `.invalid` jamais envoyées, tableau des comptes et
-aperçu d'import, wilaya du médecin à la caisse) et `d429b90` (montant reçu obligatoire en espèces). **À pousser** par l'utilisateur :
-`d429b90`, `141f058`, `c617380`, `3a79e77`, `2902442`, `076df06`, `98fbae7`, `c3b8532`.
+aperçu d'import, wilaya du médecin à la caisse) et `d429b90` (montant reçu obligatoire en espèces). **À pousser** par l'utilisateur
+(constaté le 2026-11-22 au soir, `origin/develop..develop`) : `5790875`, `d429b90`, `141f058`, `c617380`, `3a79e77`, `2902442`, `076df06`.
+
+**Vérifiés le 2026-11-22 (recette, détail dans docs/taches/2026-11-22-recette/recette.md)** : bandeau « Rester connecté » et
+déconnexion après inactivité ; liste des mots de passe provisoires après un vrai import CSV ; formulaire contact gardé après un
+refus (e-mail et téléphone gardés, code vidé) ; wilaya enregistrée depuis la caisse (fiche relue, rien d'autre écrasé). Les points
+correspondants ci-dessous sont faits.
 
 **Mesures et essais non faits**
-- Page « Ordres de l'officine » (titulaire) après la revue (« Durée d'affichage » sans heure) : non mesurée (connexion titulaire =
-  code envoyé dans la boîte du titulaire ; prévoir un compte titulaire de mesure en `@exemple.invalid`, comme `editeur.mesure`).
-- Bandeau « Rester connecté » et message « Session fermée après inactivité » (lot 040) : jamais vus dans un navigateur (régler
-  l'inactivité sur 5 min pour l'essai).
-- Liste des mots de passe provisoires après un vrai import CSV (`/comptes/mot-de-passe-affiche` à plusieurs comptes) : non vue.
-- Caisse : ligne « Durée du traitement » collée à son libellé (psychotrope au panier) non vue ; enregistrement réel d'une wilaya
-  depuis la caisse non essayé (aucun médecin de `pharmacie_test` n'a de wilaya).
-- Formulaire « contact » de « Comptes » : vérifier que l'e-mail et le téléphone saisis reviennent après un refus (`ecrans.js` les
-  garde dans l'onglet ; l'agent de la revue a dit le contraire sans essai).
+- Page « Ordres à distance » (titulaire) après la revue (« Durée d'affichage » sans heure) : compte `titulaire.recette` rattaché à
+  l'officine « Essai (pharmacie_test) » le 2026-11-22, mais la page refuse tant que le droit « ordres » n'est pas accordé depuis le
+  poste de l'officine ; il faut l'API de `pharmacie_test` synchronisée vers le central de développement (« go ordres complet »).
+- Caisse : ligne « Durée du traitement » collée à son libellé (psychotrope au panier, ordonnance complète) non vue.
+- Caisse : liste de la wilaya remise à la fiche après un refus (correctif 3 de la revue) : refus non provoqué à l'écran.
+- « Comptes » garde la page de la liste après un refus : essayé en page 1 seulement (moins de 20 comptes).
+- Thème sombre et balayage du poste en connexion vendeur ; parcours complets du 15/11 (réception, retours, factures, inventaire,
+  clôture définitive) : non rejoués le 2026-11-22.
 
 **À corriger ou à décider**
 - Test instable `TicketRouleauTests.Hauteur_selon_le_contenu_sans_saut_de_page` : 1 échec en suite complète le 2026-11-22, réussi
@@ -57,13 +100,21 @@ aperçu d'import, wilaya du médecin à la caisse) et `d429b90` (montant reçu o
 - 2e serveur en local : plan proposé le 2026-11-22 (seconde instance PostgreSQL 5433 répliquée, seconde API 5082, slot
   `second_serveur`, redémarrage du PostgreSQL de développement, retour arrière) ; attend « go 2e serveur local ».
 - Bases jetables à supprimer par l'utilisateur (suppression refusée à l'assistant) : `pharmacie_jetable_m4_*` (3),
-  `pharmacie_jetable_rejeu_*` (3), `pharmacie_jetable_sugg_*` (2) ; à décider : `pharmacie_essai_restauration*`,
-  `pharmacie_recette_*`.
+  `pharmacie_jetable_rejeu_*` (3), `pharmacie_jetable_sugg_*` (2), `pharmacie_cloud_jetable_m11_*` (10) et
+  `pharmacie_cloud_jetable_s71_*` (5) laissées par des tests ; à décider : `pharmacie_essai_restauration*`, `pharmacie_recette_*`.
+- Hébergement du serveur central **[À CONFIRMER]** : hébergeur, Windows ou Linux, service (aucun service Windows dans le code),
+  exposition des ports 5090 (API centrale) et 5094 (écrans) ; marqué ainsi dans mise-en-production.md et diagrammes-sequence.md.
+- Journal des écrans du central : avertissement du cadre « Cache-Control / Pragma remplacés » (anti-falsification) à chaque page
+  (42 en quelques minutes) : bruit à filtrer (niveau du journal `Microsoft.AspNetCore.Antiforgery`).
+- Données de recette du 2026-11-22 dans `pharmacie_test` : ventes T-005942 et T-005943 (annulées), session de caisse 40547 du poste
+  `RECETTE-ESSAI` (clôturée, écart 0), médecin n° 111 « ESSAI RECETTE Médecin ». À garder ou à retirer (décision de l'utilisateur).
 - SMS : aucun fournisseur (codes, mots de passe provisoires) ; alertes de refus de connexion en série.
 - Rappel : le script central 038 a été passé sans sauvegarde juste avant (sauvegarde « après 038 » faite ensuite).
 
 **Comptes de développement du central** (`pharmacie_cloud_dev`, jamais livrés) : `editeur.dev`, `titulaire.dev` (e-mail du
 titulaire), `editeur.mesure` (`mesure@exemple.invalid`, codes dans le fichier seulement, pour les mesures), `01540`, `12345`.
+Comptes de la recette du 2026-11-22, **désactivés** : `editeur.recette`, `recette.import1` à `recette.import3`, `titulaire.recette`
+(rattaché à l'officine « Essai (pharmacie_test) », rattachement resté en base). Réglage d'inactivité remis à 15 / 30 minutes.
 
 ## 2 bis. Fait et commité le 2026-11-21 (`f71a011` à `20c1ecf`)
 

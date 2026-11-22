@@ -219,8 +219,7 @@ public static class ErreursSmtp
 public static class AdresseCourriel
 {
     /// <summary>Adresse d'un domaine réservé qui n'existe jamais (« .invalid », RFC 2606) : aucun e-mail n'y est envoyé.</summary>
-    public static bool Reservee(string? adresse) =>
-        adresse is not null && adresse.TrimEnd().EndsWith(".invalid", StringComparison.OrdinalIgnoreCase);
+    public static bool Reservee(string? adresse) => Pharma.Shared.TransmissionComptes.AdresseReservee(adresse);
 
     public static bool EstValide(string? adresse) =>
         adresse is { Length: > 0 and <= 254 } a && a.Count(c => c == '@') == 1 && !a.Any(char.IsWhiteSpace)

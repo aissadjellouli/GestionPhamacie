@@ -129,8 +129,8 @@ public class ImportComptesEcransTests
             Assert.DoesNotContain("Créer les", html);
 
             // Fichier valable (BOM, « , », 3 comptes) : aperçu, rien de créé, aucun code consommé
-            var csv = "﻿role,identifiant,nom,email,telephone\ntitulaire,import.un,Titulaire Un,un@exemple.invalid,\n"
-                      + "éditeur,import.deux,Éditeur Deux,,0555 000 402\ntitulaire,import.trois,\"Trois, Titulaire\",trois@exemple.invalid,+213555000403\n";
+            var csv = "﻿role,identifiant,nom,email,telephone\ntitulaire,import.un,Titulaire Un,un@exemple.test,\n"
+                      + "éditeur,import.deux,Éditeur Deux,,0555 000 402\ntitulaire,import.trois,\"Trois, Titulaire\",trois@exemple.test,+213555000403\n";
             var apercu = (await Deposer(ed, page, csv)).Headers.Location?.OriginalString ?? "";
             var reference = apercu.Split("apercu=")[1];
             html = await Texte(ed, apercu);
@@ -163,8 +163,8 @@ public class ImportComptesEcransTests
             Assert.True(BCrypt.Net.BCrypt.Verify(mdp[0], (string)(await b.ScalaireAsync("SELECT empreinte_mot_de_passe FROM compte_distant WHERE identifiant = 'import.un'"))!));
             Assert.Equal("editeur|0555000402", await b.ScalaireAsync("SELECT role || '|' || telephone FROM compte_distant WHERE identifiant = 'import.deux'"));
             // Identifiant par e-mail (envoi factice) : deux adresses, l'adresse des écrans, JAMAIS le mot de passe
-            Assert.Equal(["trois@exemple.invalid", "un@exemple.invalid"], courriel.Envoyes.Where(e => e.Objet == MessageIdentifiant.Objet).Select(e => e.Adresse).Order());
-            var mailUn = courriel.Envoyes.Single(e => e.Adresse == "un@exemple.invalid");
+            Assert.Equal(["trois@exemple.test", "un@exemple.test"], courriel.Envoyes.Where(e => e.Objet == MessageIdentifiant.Objet).Select(e => e.Adresse).Order());
+            var mailUn = courriel.Envoyes.Single(e => e.Adresse == "un@exemple.test");
             Assert.Contains("Identifiant : import.un", mailUn.Texte);
             Assert.Contains(AdresseEcrans, mailUn.Texte);
             Assert.Contains("Le mot de passe provisoire vous sera transmis séparément", mailUn.Texte);
@@ -187,6 +187,8 @@ public class ImportComptesEcransTests
 
             // Provisoire non utilisé depuis 4 jours (durée 3) : refusé à la connexion avec un message clair ; mot de passe faux : message habituel
             await b.ExecuterAsync("UPDATE compte_distant SET cree_le = now() - interval '4 days' WHERE identifiant = 'import.un'");
+            // Contrôle en place depuis longtemps (script 041 : sinon son délai de grâce couvre ce compte)
+            await b.ExecuterAsync("UPDATE parametre_envoi_codes SET provisoire_controle_depuis = now() - interval '1 year'");
             using (var perime = Client(app, tls))
             {
                 Assert.Equal("/connexion?erreur=identifiants", (await Poster(perime, "/connexion", "/actions/connexion",
@@ -285,6 +287,9 @@ public class ImportComptesEcransTests
         Assert.Contains("Date.now() - dernierSignal < UNE_MINUTE", js);
         Assert.Contains("\"keydown\", \"mousedown\", \"wheel\", \"touchstart\", \"scroll\"", js);
         Assert.Contains("motif.value = \"inactivite\"", js);
+        // Une coupure réseau ne déconnecte pas : seule une session refusée (401 ou renvoi) termine
+        Assert.DoesNotContain(".catch(terminer)", js);
+        Assert.Contains("r.status === 401 || r.type === \"opaqueredirect\"", js);
         var mise = File.ReadAllText(Path.Combine(Depot.Racine(), "src", "Pharma.Cloud.Web", "Composants", "Mise", "MiseEnPage.razor"));
         Assert.DoesNotContain("<script", mise);
         Assert.Contains("Rester connecté", mise);

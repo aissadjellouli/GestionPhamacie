@@ -127,7 +127,7 @@
                     <div class="filtres" role="group" aria-label="Que faire de cette vente ?">
                         @if (!v.DansUnBordereau)
                         {
-                            <button type="button" class="btn" @onclick='() => ChoisirMode("annulation")'>Annuler toute la vente</button>
+                            <button type="button" class="btn" @onclick='() => ChoisirAnnulationAsync()'>Annuler toute la vente</button>
                         }
                         <button type="button" class="btn" @onclick='() => ChoisirModeAsync("retour")'>@(v.DansUnBordereau ? "Retour de produits non remboursés" : "Retour de produits (partiel)")</button>
                     </div>
@@ -722,11 +722,12 @@
         }
     }
 
-    private async void ChoisirMode(string m)
+    // Tâche attendue par Blazor (jamais async void) : une erreur de chargement remonte au lieu d'être perdue
+    private async Task ChoisirAnnulationAsync()
     {
-        mode = m;
+        mode = "annulation";
         (solderDette, patientDette, accordClient) = (null, null, false);
-        if (m == "annulation") await ChargerAutresDettesAsync();
+        await ChargerAutresDettesAsync();
         await ChargerValidateursAsync();
         await InvokeAsync(StateHasChanged);
     }

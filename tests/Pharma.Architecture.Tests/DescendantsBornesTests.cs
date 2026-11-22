@@ -40,5 +40,15 @@ public class DescendantsBornesTests
         };
         var r = Client().Descendants(new ChangementsDescendantsDto(ChangementsDescendantsDto.ContratV1, 5, liste));
         Assert.Equal(["e"], r.Changements.Select(c => c.Cle));
+        Assert.Equal(4, r.Ecartes);   // comptés et signalés dans la note du passage (revue du 2026-11-22), plus passés sous silence
+    }
+
+    [Fact]
+    public void Plafonds_communs_avec_le_serveur_central()
+    {
+        // Le central borne ses réponses avec les mêmes valeurs que celles lues par l'officine
+        Assert.Equal(ChangementsDescendantsDto.MaxReponse, ClientServeurCentralHttp.MaxReponse);
+        Assert.Equal(ChangementsDescendantsDto.MaxElements, ClientServeurCentralHttp.MaxElements);
+        Assert.True(ChangementsDescendantsDto.OctetsDonneesParReponse < ChangementsDescendantsDto.MaxReponse);
     }
 }

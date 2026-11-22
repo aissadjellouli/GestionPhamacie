@@ -125,9 +125,9 @@ public class ImportComptesTests
     {
         var comptes = new[]
         {
-            new CompteATransmettre(Guid.NewGuid(), "a.mail", "titulaire", "a@exemple.invalid", null, "MotDePasseA23456"),
+            new CompteATransmettre(Guid.NewGuid(), "a.mail", "titulaire", "a@exemple.test", null, "MotDePasseA23456"),
             new CompteATransmettre(Guid.NewGuid(), "b.tel", "editeur", null, "0555000001", "MotDePasseB23456"),
-            new CompteATransmettre(Guid.NewGuid(), "c.deux", "titulaire", "c@exemple.invalid", "0555000002", "MotDePasseC23456"),
+            new CompteATransmettre(Guid.NewGuid(), "c.deux", "titulaire", "c@exemple.test", "0555000002", "MotDePasseC23456"),
         };
         var courriel = new CourrielFactice();
         var notes = new List<string>();
@@ -139,7 +139,7 @@ public class ImportComptesTests
         Assert.Equal(["manuel_sans_telephone", "manuel", "manuel"], r.Select(x => x.Sms));
         Assert.Equal(2, courriel.Envoyes.Count);
         Assert.All(courriel.Envoyes, e => Assert.DoesNotContain("MotDePasse", e.Texte));      // jamais le mot de passe par e-mail
-        Assert.Contains(courriel.Envoyes, e => e.Adresse == "a@exemple.invalid" && e.Texte.Contains("a.mail"));
+        Assert.Contains(courriel.Envoyes, e => e.Adresse == "a@exemple.test" && e.Texte.Contains("a.mail"));
         Assert.Equal(2, notes.Count(n => n == "identifiant_envoi|email:ok"));
         Assert.DoesNotContain(notes, n => n.Contains('@') || n.Contains("MotDePasse"));
         Assert.All(r, x => Assert.DoesNotContain(x.MotDePasse, x.ToString()));
@@ -158,6 +158,36 @@ public class ImportComptesTests
         Assert.Equal("echec", r[0].Email);
         Assert.Equal("échec", r[0].EmailTexte);
         Assert.Contains("à transmettre par SMS (manuel)", new CompteTransmis(Guid.Empty, "a", "titulaire", "x", "ok", "manuel").Copie);
+    }
+
+    [Fact]
+    public async Task Adresse_invalid_ni_envoyee_ni_comptee_en_echec_ni_notee()
+    {
+        var comptes = new[] { new CompteATransmettre(Guid.NewGuid(), "m.mesure", "editeur", "mesure@exemple.invalid", null, "MotDePasseM23456") };
+        var courriel = new CourrielFactice();
+        var notes = new List<string>();
+        Task Noter(Guid c, string e, string o, CancellationToken _) { lock (notes) notes.Add(e + "|" + o); return Task.CompletedTask; }
+        var r = await TransmissionComptes.TransmettreAsync(comptes, true, courriel.EnvoyerAsync, new EnvoiSmsMotDePasseIndisponible(), null, false, Noter, CancellationToken.None);
+        Assert.Equal("adresse_reservee", r[0].Email);
+        Assert.Equal("non (adresse .invalid : rien envoyé)", r[0].EmailTexte);
+        Assert.Empty(courriel.Envoyes);
+        Assert.DoesNotContain(notes, n => n.StartsWith("identifiant_envoi", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Serveur_d_e_mail_muet_la_liste_revient_dans_le_delai_total()
+    {
+        // 20 comptes, chaque envoi bloqué jusqu'à son délai (10 s) : sans délai total, 50 s ; avec 300 ms, la liste revient vite
+        var comptes = Enumerable.Range(1, 20).Select(i =>
+            new CompteATransmettre(Guid.NewGuid(), $"c{i}", "titulaire", $"c{i}@exemple.test", null, $"MotDePasse{i:D2}3456")).ToList();
+        static Task Muet(string a, string o, string t, CancellationToken ct) => Task.Delay(Timeout.Infinite, ct);
+        var chrono = System.Diagnostics.Stopwatch.StartNew();
+        var r = await TransmissionComptes.TransmettreAsync(comptes, true, Muet, new EnvoiSmsMotDePasseIndisponible(), null, false, null,
+            CancellationToken.None, delaiParEnvoi: TimeSpan.FromSeconds(10), delaiTotal: TimeSpan.FromMilliseconds(300));
+        Assert.True(chrono.Elapsed < TimeSpan.FromSeconds(5), $"liste rendue en {chrono.Elapsed}");
+        Assert.Equal(20, r.Count);
+        Assert.All(r, x => Assert.Equal("echec", x.Email));                 // à transmettre à la main
+        Assert.Equal(comptes.Select(c => c.MotDePasse), r.Select(x => x.MotDePasse));   // aucun mot de passe perdu
     }
 
     [Fact]
@@ -199,7 +229,7 @@ public class ImportComptesTests
             Assert.Equal(1L, await Scalaire(db, "SELECT count(*) FROM compte_distant"));
 
             // Fichier valable : comptes créés, mots de passe montrés une fois ; identifiant par e-mail (envoi factice), jamais le mot de passe
-            await File.WriteAllTextAsync(fichier, $"{Entete}\ntitulaire;console.un;Un;un@exemple.invalid;\nediteur;console.deux;Deux;;0555000002\n");
+            await File.WriteAllTextAsync(fichier, $"{Entete}\ntitulaire;console.un;Un;un@exemple.test;\nediteur;console.deux;Deux;;0555000002\n");
             var courriel = new CourrielFactice();
             sortie = new StringWriter();
             var cles = new ProtectionSmtpCentral(Path.Combine(dossier, ProtectionSmtpCentral.SousDossier));
@@ -225,7 +255,7 @@ public class ImportComptesTests
             Assert.Equal("titulaire|Installateur|true", await Scalaire(db,
                 "SELECT role || '|' || cree_par || '|' || mot_de_passe_provisoire::text FROM compte_distant WHERE identifiant = 'console.un'"));
             var envoye = Assert.Single(courriel.Envoyes);
-            Assert.Equal("un@exemple.invalid", envoye.Adresse);
+            Assert.Equal("un@exemple.test", envoye.Adresse);
             Assert.Contains("console.un", envoye.Texte);
             Assert.DoesNotContain(un[2], envoye.Texte);
             Assert.Contains(MessageIdentifiant.PhraseMotDePasse, envoye.Texte);

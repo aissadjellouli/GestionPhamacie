@@ -156,11 +156,20 @@
       dernierSignal = Date.now();
       fetch(formActivite.action, { method: "POST", body: new FormData(formActivite), credentials: "same-origin", redirect: "manual",
                                    headers: { "Accept": "application/json" } })
-        .then(function (r) { if (!r.ok) throw new Error("session"); return r.json(); })
+        .then(function (r) {
+          // Session refusée par le serveur (401, ou renvoi vers la connexion) : fin ; autre réponse en erreur (500, 502…) : passagère
+          if (r.status === 401 || r.type === "opaqueredirect") return { fin: true };
+          if (!r.ok) throw new Error("passager");
+          return r.json();
+        })
         .then(function (d) {
           if (d && d.restant > 0) { echeance = Date.now() + d.restant * 1000; bandeau.hidden = true; } else terminer();
         })
-        .catch(terminer)
+        .catch(function () {
+          // Coupure réseau ou erreur passagère : la session n'est pas finie ; échéance gardée (la minuterie déconnecte à son terme),
+          // nouveau signal permis dès la prochaine action
+          dernierSignal = 0;
+        })
         .then(function () { enCours = false; });
     }
     function activite() { signaler(!bandeau.hidden); }

@@ -179,8 +179,10 @@ public class EnvoiSynchronisationTests
         {
             var l = Autres.Where(a => a.Version > apres).ToList();
             if (VersionReglage > apres) l.Add(new("reglage_central", "familles_envoyees", VersionReglage, System.Text.Json.JsonSerializer.Serialize(new { familles = reglage })));
-            return new DescendantsRecus(l, Math.Max(VersionReglage, Autres.Select(a => a.Version).DefaultIfEmpty(0).Max()));
+            return new DescendantsRecus(l, Math.Max(VersionReglage, Autres.Select(a => a.Version).DefaultIfEmpty(0).Max()), Ecartes);
         }
+        /// <summary>Éléments écartés par le client à la réception (mal formés ou trop gros).</summary>
+        public int Ecartes;
 
         public Task<DescendantsRecus> EchangerAsync(string adresse, long versionAppliquee, CancellationToken ct = default)
         {
@@ -211,9 +213,13 @@ public class EnvoiSynchronisationTests
             return Task.FromResult(new AccuseLotSync(1, NumeroAccuseFaux ?? n, StatutsLotSync.Accepte, Dernier, Plus(versionDescendante)));
         }
 
+        /// <summary>Refus du renouvellement par le central (certificat plus récent, quota d'un renouvellement par jour…).</summary>
+        public ServeurCentralException? RefusRenouvellement;
+
         public Task<ReponseActivationSync> RenouvelerAsync(string adresse, string demandePem, CancellationToken ct = default)
         {
             Renouvellements++;
+            if (RefusRenouvellement is not null) throw RefusRenouvellement;
             return Task.FromResult(new ReponseActivationSync(Officine, "principal", "CERT2", "AC", Maintenant.AddYears(3), null));
         }
     }
@@ -366,6 +372,41 @@ public class EnvoiSynchronisationTests
         Assert.Null(c.Epinglage);
         c.Info = c.Info! with { EcheanceUtc = Maintenant.AddDays(-1) };
         Assert.Contains("échu", (await Envoi(b, c, s).ExecuterAsync(Maintenant)).Erreur);
+    }
+
+    [Fact]
+    public async Task Elements_descendants_ecartes_signales_dans_la_note_du_passage()
+    {
+        // Revue du 2026-11-22 : un élément mal formé ou trop gros était sauté sans rien en dire
+        var (b, c, s) = (new Base(), new Certificat(), new Central { Ecartes = 2 });
+        b.Ajouter(1);
+        var r = await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.Null(r.Erreur);
+        Assert.Contains("2 élément(s) descendant(s) écarté(s)", b.Envois[^1]);
+    }
+
+    [Theory]
+    [InlineData(403, false)]   // un certificat plus récent existe
+    [InlineData(429, true)]    // un renouvellement par jour
+    public async Task Renouvellement_refuse_ne_fait_pas_echouer_un_passage_dont_les_lots_sont_accuses(int code, bool quota)
+    {
+        // Revue du 2026-11-22 : le refus du renouvellement mettait en erreur bloquante (attente de 30 min) un passage réussi
+        var (b, c, s) = (new Base(), new Certificat(), new Central());
+        c.Info = c.Info! with { EcheanceUtc = Maintenant.AddDays(30) };
+        s.RefusRenouvellement = new ServeurCentralException("refusé par le serveur central", code, quota);
+        b.Ajouter(5);
+        var r = await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.Null(r.Erreur);
+        Assert.False(r.Bloquant);
+        Assert.Equal(3, r.LotsAccuses);
+        Assert.Equal(1, s.Renouvellements);
+        Assert.Null(c.Installe);
+        Assert.Contains("non renouvelé", b.Envois[^1]);
+        Assert.Contains("nouvel essai au prochain passage", b.Envois[^1]);
+        // Passage suivant : nouvel essai, réussi cette fois
+        s.RefusRenouvellement = null;
+        Assert.Null((await Envoi(b, c, s).ExecuterAsync(Maintenant)).Erreur);
+        Assert.Equal("CERT2", c.Installe);
     }
 
     [Fact]
