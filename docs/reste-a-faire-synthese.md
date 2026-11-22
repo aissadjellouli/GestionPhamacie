@@ -141,7 +141,9 @@ correspondants ci-dessous sont faits.
   `Reglement.RecuVerifie`, refus « Saisissez le montant reçu en espèces. » (champ `montant_recu`) ; tests Domain 720 et
   Application 1 823 au vert.
 - Caractère NUL dans un message aux postes : refusé par l'écran et le poste ; refus par PostgreSQL (038) supposé, non vérifié.
-- **2e serveur en local (2026-11-22, en place ; toutes les actions dans [second-serveur-local.md](second-serveur-local.md))** : copie répliquée en lecture seule sur le port **5433** (dossier
+- [x] **2e serveur en local (2026-11-22) : installé, basculé puis RETIRÉ le même jour** (« go retrait 2e serveur » : API 5082 et
+  instance 5433 arrêtées, rôle `pharma_replication` supprimé, aucun slot, dossiers supprimés ; poste sur l'API 5082 jamais essayé).
+  Toutes les actions dans [second-serveur-local.md](second-serveur-local.md). Historique : copie répliquée en lecture seule sur le port **5433** (dossier
   `C:\MesAtlassian\pg-second-serveur`, démarrée par `pg_ctl`, sans service Windows, écoute sur `localhost` seulement), slot
   `second_serveur` sur le 5432, rôle `pharma_replication` (mot de passe tiré au sort, seulement dans
   `C:\MesAtlassian\pg-second-serveur-secret\pgpass.conf`, réservé au compte Windows). Aucun redémarrage du 5432 (`wal_level`
@@ -161,8 +163,7 @@ correspondants ci-dessous sont faits.
   variables d'environnement : base 5433, racine des données, GED, journaux et Chifa dans `C:\MesAtlassian\pg-second-serveur-api`) :
   `/api/healthcheck` 200, « Serveur ADH déclaré principal », aucun avertissement au journal, journal de l'API principale non touché.
   Non essayé : bascule d'un poste par le bandeau « Serveur injoignable » (`AdresseApiSecours`), `remettre-en-second.ps1`.
-  **Retrait** (« go retrait 2e serveur ») : arrêter l'API 5082 et `pg_ctl stop -D C:\MesAtlassian\pg-second-serveur`, supprimer
-  les dossiers `pg-second-serveur`, `pg-second-serveur-api`, `pg-second-serveur-secret` et le rôle `pharma_replication`.
+  **Retrait fait** le 2026-11-22 (voir [second-serveur-local.md](second-serveur-local.md) § 11).
 - Droits inattendus de `pharma_app` sur le PostgreSQL de développement : CREATEROLE, CREATEDB, REPLICATION (aucun script du dépôt
   ne les donne, origine inconnue) ; à décider (retrait par `postgres`).
 - Bases jetables à supprimer par l'utilisateur (suppression refusée à l'assistant) : `pharmacie_jetable_m4_*` (3),

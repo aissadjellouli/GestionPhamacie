@@ -225,3 +225,15 @@ Constats :
    `C:\MesAtlassian\pg-second-serveur-secret`.
 
 Aucune modification à défaire sur le 5432 en dehors du rôle : ni `postgresql.conf`, ni `pg_hba.conf`, ni redémarrage.
+
+## 11. État au 2026-11-22 (après-midi) : retiré
+
+Retrait fait sur demande du titulaire (« go retrait 2e serveur »), sans essai du poste sur l'API 5082 :
+
+- API 5082 arrêtée, instance 5433 arrêtée (`pg_ctl stop -m fast`) ; ports 5082 et 5433 libres ;
+- aucun slot sur le 5432, aucune connexion de `pharma_replication` ; rôle supprimé (`DROP ROLE` par `pharma_app`) ;
+- dossiers supprimés : `pg-second-serveur` (1,8 Go), `pg-second-serveur-api` (sortie copiée, GED, journaux, et la clé
+  `cle-integrite.dat` créée par l'API 5082 pour son propre dossier, jamais utilisée par le principal), `pg-second-serveur-secret`.
+
+Restent sur le 5432 : les droits CREATEROLE, CREATEDB et REPLICATION de `pharma_app` (antérieurs à cet essai, § 2). Pour
+réinstaller : reprendre les § 3 à 8, avec la sortie de l'API copiée dès le départ (§ 8.4).
