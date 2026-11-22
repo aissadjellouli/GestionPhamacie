@@ -163,6 +163,9 @@ public class BoutEnBoutEcransTests
             var connexion = await client.GetAsync("/connexion");
             Assert.Equal(HttpStatusCode.OK, connexion.StatusCode);
             Assert.Contains("no-store", connexion.Headers.CacheControl?.ToString());
+            // Valeur posée par les écrans = celle de l'anti-falsification : rien remplacé, aucun avertissement à chaque page
+            Assert.True(connexion.Headers.CacheControl is { NoCache: true, NoStore: true });
+            Assert.Contains("no-cache", connexion.Headers.Pragma.ToString());
             Assert.Contains("frame-ancestors 'none'", string.Join(' ', connexion.Headers.GetValues("Content-Security-Policy")));
 
             // Formulaire sans jeton anti-falsification : refusé

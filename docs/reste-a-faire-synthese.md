@@ -1,8 +1,9 @@
 # Reste à faire : synthèse
 
-Point d'avancement du 2026-11-22 (soir) : commité jusqu'à `5790875` ; **48 fichiers modifiés ou ajoutés non commités** dans
-`develop` (revue de code complète, correctifs, recette, documentation : section 1). Rien poussé : **7 commits à pousser** par
-l'utilisateur (`5790875`, `d429b90`, `141f058`, `c617380`, `3a79e77`, `2902442`, `076df06`, puis les suivants s'il y a lieu).
+Point d'avancement du 2026-11-22 (soir) : **commité jusqu'à `dc13fb4`** (revue de code complète, correctifs, recette,
+documentation). Non commités depuis : en-tête de cache des écrans du central (`ServeurEcrans.cs`, test `BoutEnBoutEcransTests`,
+`ecrans-central.md`) et ce RAF. Rien poussé : **8 commits à pousser** par l'utilisateur (`dc13fb4`, `5790875`, `d429b90`,
+`141f058`, `c617380`, `3a79e77`, `2902442`, `076df06`).
 Scripts centraux **037 à 041** passés sur `pharmacie_cloud_dev` (sauvegardes dans `C:\MesAtlassian\sauvegardes-bd`, dont
 `…_avant_041_…` et `…_avant_recette_central_…`) ; script local **160** passé sur `pharmacie_dev` et `pharmacie_test` (aucun script
 local nouveau aujourd'hui). Détail : [a-faire.md](a-faire.md), [fonctionnalites.md](fonctionnalites.md) (inventaire complet),
@@ -13,12 +14,24 @@ local nouveau aujourd'hui). Détail : [a-faire.md](a-faire.md), [fonctionnalites
 
 Rien en cours de développement. Démonstration cloud : étapes 1 et 2 écrites, premier démarrage réel en attente de Docker (section 3).
 
-**À commiter par l'utilisateur** (48 fichiers, tests au vert : Domain 719, Application 1 822, Architecture 391, Cloud 159 + 1 ignoré,
-Cloud.Web 54). Nouveaux fichiers à indexer : `database/cloud/041_delai_provisoire_comptes_anterieurs.sql` et son test SQL,
-`docs/diagrammes-sequence.md`, `tests/Pharma.Architecture.Tests/RoutesProtegeesTests.cs`, `RetraitDiffereTests.cs`,
-`tests/Pharma.Cloud.Tests/AccuseConflitLotTests.cs`, `DescendantsBornesCentralTests.cs`, `DepotLotsCentralTests.cs`.
-Comptes rendus (hors git) : `docs/taches/2026-11-22-recette/recette.md`. Copie de travail de la revue à supprimer quand le commit
-est fait : `C:\MesAtlassian\pharmaofficine-revue` (branche locale `correctifs-revue`, `appsettings.Development.json` copié).
+**Commité en `dc13fb4`** (48 fichiers ; tests au vert : Domain 719, Application 1 822, Architecture 391, Cloud 159 + 1 ignoré,
+Cloud.Web 54). Comptes rendus (hors git) : `docs/taches/2026-11-22-recette/recette.md`. Copie de travail de la revue
+`C:\MesAtlassian\pharmaofficine-revue` et branche locale `correctifs-revue` **supprimées** (contenu vérifié identique à `dc13fb4`).
+
+**Fait après `dc13fb4` (2026-11-22, non commité)** :
+- Journal des écrans du central : `Cache-Control: no-cache, no-store` posé directement (valeur de l'anti-falsification) : plus
+  d'avertissement « Cache-Control / Pragma remplacés » à chaque page (vérifié : 0 après le correctif, un par page avant) ; Cloud.Web 54/54.
+- **Ordres à distance vérifiés de bout en bout** (central 5090 + API de `pharmacie_test` sur 5081 + écrans) : code de rattachement
+  généré par le poste via le central, rattachement, droit « ordres » accordé depuis le poste, « Essai de liaison » envoyé par le
+  titulaire, relevé et appliqué par l'officine 8 s après, résultat remonté (« Appliqué ») ; page sans défilement à 1 366 × 768 ;
+  « Durée d'affichage » mesurée (1 à 7 jours, relative à l'heure de l'envoi, aucune heure fixe). `pharmacie_test` : lots 186 à 194
+  envoyés et accusés.
+- **Poste** : 54 écrans en connexion vendeur (refus clairs, aucun défilement ni erreur) ; 54 écrans en thème sombre (fond sombre
+  partout, aucune erreur, lisible sur accueil, caisse, stock) ; ligne « Durée du traitement (jours, obligatoire) » vue avec un
+  psychotrope au panier : libellé et champ sur une ligne, alignés, champ obligatoire en rouge.
+- Test instable `TicketRouleauTests` : **non reproduit** (6 passages de la suite d'architecture sans échec) ; aucune correction
+  faite sans cause établie. Piste non prouvée : `PolicesPdfForceesTests` réinitialise les polices globales de PDFsharp (collection
+  déjà non parallèle).
 
 **Correctifs de la revue de code du 2026-11-22 (non commités)**, faits dans la copie `C:\MesAtlassian\pharmaofficine-revue`
 (branche locale `correctifs-revue`, partie de `5790875`) puis reportés dans `develop` ; script central 041 passé sur
@@ -82,18 +95,21 @@ refus (e-mail et téléphone gardés, code vidé) ; wilaya enregistrée depuis l
 correspondants ci-dessous sont faits.
 
 **Mesures et essais non faits**
-- Page « Ordres à distance » (titulaire) après la revue (« Durée d'affichage » sans heure) : compte `titulaire.recette` rattaché à
-  l'officine « Essai (pharmacie_test) » le 2026-11-22, mais la page refuse tant que le droit « ordres » n'est pas accordé depuis le
-  poste de l'officine ; il faut l'API de `pharmacie_test` synchronisée vers le central de développement (« go ordres complet »).
-- Caisse : ligne « Durée du traitement » collée à son libellé (psychotrope au panier, ordonnance complète) non vue.
 - Caisse : liste de la wilaya remise à la fiche après un refus (correctif 3 de la revue) : refus non provoqué à l'écran.
 - « Comptes » garde la page de la liste après un refus : essayé en page 1 seulement (moins de 20 comptes).
-- Thème sombre et balayage du poste en connexion vendeur ; parcours complets du 15/11 (réception, retours, factures, inventaire,
-  clôture définitive) : non rejoués le 2026-11-22.
+- Parcours complets du 15/11 (réception, retours, factures, inventaire, clôture définitive) : non rejoués le 2026-11-22.
+
+**Constatés le 2026-11-22 (à corriger, sur « go »)**
+- Déconnexion par inactivité notée **« deconnexion »** au journal des accès du central (session : `motif_fin = deconnexion`) :
+  la page envoie bien `motif=inactivite`, mais `/actions/deconnexion` ne s'en sert que pour le message ; le journal ne distingue
+  pas une sortie volontaire d'une fermeture par inactivité. Correction : passer le motif à la fonction de déconnexion de la base
+  (nouveau script central).
+- « Bordereaux Chifa » en connexion vendeur affiche le code du droit (« Le droit « chifa.bordereaux » est nécessaire ») au lieu de
+  son libellé (« Gérer les bordereaux et rejets »), contrairement aux autres écrans.
 
 **À corriger ou à décider**
-- Test instable `TicketRouleauTests.Hauteur_selon_le_contenu_sans_saut_de_page` : 1 échec en suite complète le 2026-11-22, réussi
-  seul et à la relance (sensible au parallélisme ?) ; à stabiliser.
+- Test instable `TicketRouleauTests.Hauteur_selon_le_contenu_sans_saut_de_page` : 1 échec en suite complète le 2026-11-22 matin,
+  non reproduit ensuite (6 passages) ; à surveiller, relever le message exact au prochain échec.
 - Montant reçu obligatoire : exigé par l'écran de la caisse seulement ; le serveur (`Reglement`) accepte toujours un montant absent
   comme appoint exact. Décider s'il faut l'exiger aussi côté API.
 - Caractère NUL dans un message aux postes : refusé par l'écran et le poste ; refus par PostgreSQL (038) supposé, non vérifié.
@@ -104,17 +120,17 @@ correspondants ci-dessous sont faits.
   `pharmacie_cloud_jetable_s71_*` (5) laissées par des tests ; à décider : `pharmacie_essai_restauration*`, `pharmacie_recette_*`.
 - Hébergement du serveur central **[À CONFIRMER]** : hébergeur, Windows ou Linux, service (aucun service Windows dans le code),
   exposition des ports 5090 (API centrale) et 5094 (écrans) ; marqué ainsi dans mise-en-production.md et diagrammes-sequence.md.
-- Journal des écrans du central : avertissement du cadre « Cache-Control / Pragma remplacés » (anti-falsification) à chaque page
-  (42 en quelques minutes) : bruit à filtrer (niveau du journal `Microsoft.AspNetCore.Antiforgery`).
-- Données de recette du 2026-11-22 dans `pharmacie_test` : ventes T-005942 et T-005943 (annulées), session de caisse 40547 du poste
-  `RECETTE-ESSAI` (clôturée, écart 0), médecin n° 111 « ESSAI RECETTE Médecin ». À garder ou à retirer (décision de l'utilisateur).
+- Données de recette du 2026-11-22 dans `pharmacie_test` : ventes T-005942 et T-005943 (annulées), sessions de caisse 40547 et
+  40548 du poste `RECETTE-ESSAI` (clôturées, écart 0), médecin n° 111 « ESSAI RECETTE Médecin ». À garder ou à retirer (décision
+  de l'utilisateur).
 - SMS : aucun fournisseur (codes, mots de passe provisoires) ; alertes de refus de connexion en série.
 - Rappel : le script central 038 a été passé sans sauvegarde juste avant (sauvegarde « après 038 » faite ensuite).
 
 **Comptes de développement du central** (`pharmacie_cloud_dev`, jamais livrés) : `editeur.dev`, `titulaire.dev` (e-mail du
 titulaire), `editeur.mesure` (`mesure@exemple.invalid`, codes dans le fichier seulement, pour les mesures), `01540`, `12345`.
-Comptes de la recette du 2026-11-22, **désactivés** : `editeur.recette`, `recette.import1` à `recette.import3`, `titulaire.recette`
-(rattaché à l'officine « Essai (pharmacie_test) », rattachement resté en base). Réglage d'inactivité remis à 15 / 30 minutes.
+Comptes de la recette du 2026-11-22, **désactivés** : `editeur.recette`, `recette.import1` à `recette.import3`, `titulaire.recette`,
+`titulaire.ordres` ; leurs rattachements à l'officine « Essai (pharmacie_test) » **retirés** depuis le poste (reste rattaché :
+`titulaire.dev`). Réglage d'inactivité remis à 15 / 30 minutes.
 
 ## 2 bis. Fait et commité le 2026-11-21 (`f71a011` à `20c1ecf`)
 

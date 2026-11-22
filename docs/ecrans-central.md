@@ -392,7 +392,8 @@ Le **code d'activation** est tiré par les écrans (`CodeActivationSync`, comme 
   changement de mot de passe (autres sessions), remise à zéro par l'éditeur (toutes les sessions du compte, script 038) et désactivation
   du compte ferment les sessions.
 - **HTTP** : HTTPS seulement (TLS 1.2 ou 1.3), jeton anti-falsification sur chaque formulaire (cookie `__Host-pharma-ecrans-af`),
-  `Cache-Control: no-store`, CSP stricte (`default-src 'none'; script-src 'self'; style-src 'self'; …; frame-ancestors 'none'`), `X-Frame-Options: DENY`,
+  `Cache-Control: no-cache, no-store` (valeur de l'anti-falsification : rien remplacé, aucun avertissement au journal à chaque page,
+  2026-11-22), CSP stricte (`default-src 'none'; script-src 'self'; style-src 'self'; …; frame-ancestors 'none'`), `X-Frame-Options: DENY`,
   `Referrer-Policy: no-referrer`, HSTS hors développement, hôtes permis `127.0.0.1` et `localhost` (`AllowedHosts`), limites de débit par adresse
   (connexion 10 / 5 min, codes 20 / 5 min, global 300 / min). Page d'erreur fixe, sans détail technique. Aucune route de l'API des officines.
 - **Journal des accès** (`journal_acces_distant`) : ajout seul (déclencheurs `cloud_ajout_seul`), **chaîné SHA-256** (format `acces-v1`,

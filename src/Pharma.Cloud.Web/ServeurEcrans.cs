@@ -143,7 +143,9 @@ public static class ServeurEcrans
         app.Use(async (ctx, suite) =>
         {
             var h = ctx.Response.Headers;
-            h.CacheControl = "no-store";
+            // Valeur exacte que pose l'anti-falsification : rien à remplacer, donc plus d'avertissement « Cache-Control / Pragma
+            // remplacés » à chaque page (42 en quelques minutes, recette du 2026-11-22) ; no-store reste : aucun stockage
+            h.CacheControl = "no-cache, no-store";
             h.Pragma = "no-cache";
             h.XContentTypeOptions = "nosniff";
             h.XFrameOptions = "DENY";
