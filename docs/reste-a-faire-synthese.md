@@ -1,48 +1,53 @@
 # Reste à faire : synthèse
 
-Point d'avancement du 2026-11-21 (soir) : travail commité jusqu'à `f399e6d` (S7.4 `4a0570f`, docs `d57df5c`, S7.5 et écrans
-`f399e6d`) ; scripts centraux 035 et 036 passés sur `pharmacie_cloud_dev` ; **non commités** (prêts pour « commit ») : tuiles
-navigables du poste et du central, fermeture de l'aide au clic extérieur, thème du central appliqué dès le choix (sans bouton), S7.6 (envoi des codes réglé dans l'administration du site, script 037). Détail : [a-faire.md](a-faire.md),
-[fonctionnalites.md](fonctionnalites.md) (inventaire complet) et documents cités. À mettre à jour à chaque point d'avancement.
+Point d'avancement du 2026-11-22 : **tout est commité** jusqu'à `3a79e77` (branche `develop`, rien poussé depuis `f399e6d` ou avant :
+l'utilisateur pousse lui-même). Scripts centraux **037 à 040** passés sur `pharmacie_cloud_dev` (sauvegardes dans
+`C:\MesAtlassian\sauvegardes-bd` avant 037, après 038, avant 039 et avant 040) ; script local **160** passé sur `pharmacie_dev` et
+`pharmacie_test`. Détail : [a-faire.md](a-faire.md), [fonctionnalites.md](fonctionnalites.md) (inventaire complet) et documents cités.
+À mettre à jour à chaque point d'avancement.
 
 ## 1. En cours
 
-Démonstration cloud : étapes 1 et 2 écrites, premier démarrage réel en attente de Docker (section 3). Branche `develop` à jour avec
-`origin/develop` (poussée). Commits du 2026-11-20 : `ce5586a`, `9f62c7c`, `4b9b51b` (lancement API + Poste + Central, démo étape 1,
-guide du nouveau développeur). Commits du 2026-11-21 : `e93dc22` (retour partiel en tiers payant 155, rapprochement 157, ticket,
-tâches laissées et réglage 156, fiche du prêt, mode démo, page d'état 029, S7.1 écrans de l'éditeur 030-031), `1ce78e3` (retour et
-dettes du patient 158, écran de retour et règles de caisse sans défilement), `f71a011` (script 159), `69c53db` (S7.2a et CSP des
-écrans du central), `b5545fd` (barre d'état : liaisons), `fa24fc6` (S7.2b), `d1aaa7b` et `fad75d1` (barre d'état : éléments fixes,
-pastilles, nom du poste), `ea5ad15` (S7.3), `20c1ecf` (Accès à distance sans défilement).
+Rien en cours de développement. Démonstration cloud : étapes 1 et 2 écrites, premier démarrage réel en attente de Docker (section 3).
 
-## 2. Fait, à commiter (2026-11-21, soir)
+## 2. Fait et commité les 2026-11-21 (soir) et 2026-11-22
 
-- **S7.6, envoi des codes réglé dans l'administration du site central** (go « codes gmail », [ecrans-central.md](ecrans-central.md)
-  § 3 octies) : script central **037** (réglage unique, mot de passe SMTP chiffré par l'application, e-mail ET téléphone d'un compte,
-  canal `les_deux`), écrans éditeur « Envoi des codes » et « Comptes », canal relu en base à chaque envoi (SMS indisponible signalé,
-  les deux : l'e-mail part quand même), mode fichier gardé pour le développement, départ d'une officine par le même compte si les
-  variables SMTP manquent ; Gmail documenté ([poste-de-developpement.md](poste-de-developpement.md)). Tests verts (écrans 41/41,
-  central 128 + 1 ignoré, architecture 386, tests SQL 030 à 037 et rejeu 001 → 037 sur base jetable). **À faire** : passer 037 sur
-  `pharmacie_cloud_dev` (après relecture), mesurer `/envoi-codes` et `/comptes` (1 366 × 768, 1 536 × 890, clair et sombre),
-  essai réel avec un compte Gmail (mot de passe d'application).
-- **Tuiles navigables du poste** ([charte-graphique.md](charte-graphique.md), « Tuiles navigables ») : les tuiles (55 balises) qui n'étaient
-  que des chiffres (Alertes, Stock, Inventaire, Dettes, État de la caisse, Financements, fiche d'un prêt, Tableau de bord financier,
-  Rapports, Reprise) mènent à l'écran ou à la rubrique qui les détaille, ou filtrent le tableau de l'écran affiché ; lien seulement
-  avec le droit d'ouvrir la cible (`AccesEcrans`, liste commune avec la garde de la mise en page) ; test `TuilesNavigablesTests`.
-  Mesuré le 2026-11-21 (soir) dans le poste lancé : Alertes, Stock, Inventaire, Dettes, État de la caisse, Financements, Rapports,
-  Tableau de bord financier (4 rubriques) : 0 px aux deux tailles, clair et sombre ; tuiles rendues en liens ou boutons.
-  Vérifiés le 2026-11-21 (soir) : ancre de la Reprise (`#t-verif`) et période gardée d'une rubrique à l'autre.
-- **Tuiles navigables du central** (titulaire : vue d'ensemble, « Mes officines », ordres si droit ; éditeur : rubriques de la fiche),
-  jamais de lien entre rôles ; tableau de bord à 14 tuiles-liens : marge intérieure 8 px, 0 px aux deux tailles ; tests 38/38.
-- **Thème du central** : appliqué dès le choix dans la liste (`ecrans.js`), bouton « Appliquer » retiré ; essayé dans les trois sens.
-- **Aide des écrans fermée par un clic à l'extérieur** (voile transparent sous le panneau, comme les menus) ; test dans
-  `NavigationTests`. Essayé sur le poste : Rapports (clic sur le contenu et sur le menu de gauche) et Caisse (clic sur le panier).
-- **S7.4, S7.5 et écrans de l'après-midi : commités** (`4a0570f`, `d57df5c`, `f399e6d`). Script 036 passé deux fois sur
-  `pharmacie_cloud_dev` après sauvegarde ; ligne absente provoquée (alerte fictive n° 99999901 de `pharmacie_test`, gardée au central),
-  constatée par le chargement n° 67 : rubrique de l'éditeur « 1 · alerte · n° 67 · Non expliquée », 0 px aux deux tailles.
-- **Écrans mesurés à 0 px** (1 366 × 768 et 1 536 × 890, clair et sombre) : Achats › Commander, Catalogues des grossistes,
-  Ruptures chez les grossistes, Substitution, Contrôle interne › Intégrité des journaux, Sérialisation DataMatrix, 2e serveur ;
-  Réglages mutualisés du poste avec une proposition en attente ; ordres à distance avec le droit accordé (1 366 × 768, statut « Appliqué »).
+- `c3b8532`, `98fbae7` : tuiles navigables du poste et du central, aide fermée au clic extérieur, thème du central sans bouton,
+  Reprise étape 5 sans défilement.
+- `076df06` : **codes de second facteur par Gmail** (S7.6, script central 037) : écran « Envoi des codes », « SMS » seul refusé sans
+  fournisseur, e-mail d'essai (mot de passe enregistré envoyé seulement au serveur enregistré, serveur contrôlé, refus 535 reconnu),
+  console `--envoi-codes` (amorçage en production) et `--contact-compte` ; en développement, code dans le fichier ET par e-mail.
+  **Reste S7.2/S7.3** (038, local 160) : remise à zéro d'un mot de passe par l'éditeur, retrait d'un rattachement par le titulaire,
+  message aux postes (un nouveau remplace le précédent). **Création d'un compte à l'écran** (039). Saisie gardée après un refus
+  ([charte-graphique.md](charte-graphique.md) « Erreurs de saisie »). Journal en fichiers partagé (API locale, API et écrans du
+  central ; section `Journaux` de chaque `appsettings.json`). Envoi réel par Gmail essayé avec succès (e-mail d'essai et codes).
+- `2902442` : tableau des comptes élargi et pleine hauteur (`ecrans.js` ne retranche plus les colonnes voisines).
+- `3a79e77` : **script central 040** : import CSV de comptes (écran et console `--creer-comptes`, un seul code, tout ou rien,
+  200 lignes), identifiant envoyé par e-mail et mot de passe jamais par e-mail (SMS si fournisseur, sinon à transmettre à la main),
+  durée de vie des mots de passe provisoires réglable (1 à 30 jours) et « Régénérer le mot de passe », déconnexion après inactivité
+  réglable par rôle (un utilisateur actif n'est jamais déconnecté, bandeau « Rester connecté »), jeton anti-falsification exigé sur
+  toutes les actions, envoi indépendant du navigateur (délai propre de 30 s), navigateur ouvert sur la page de connexion depuis
+  Visual Studio.
+- Tests au dernier passage : Domain 718, Application 1 816, Architecture 386, Cloud 145 (+ 1 ignoré), Cloud.Web 52 ; SQL 030 à 040
+  et 160 réussis.
+
+## 2 ter. À faire en premier (2026-11-22)
+
+- **Mesurer les écrans du lot 040** (1 366 × 768, 1 536 × 890, clair et sombre) : `/comptes` (colonne « Mot de passe », lien
+  « Régénérer »), `/comptes?action=importer` (sans aperçu, aperçu de 200 lignes), `/comptes?action=creer`, remise à zéro avec motif
+  prérempli, `/comptes/mot-de-passe-affiche` (un compte, un import), **`/envoi-codes`** (deux formulaires ajoutés : risque de défilement
+  signalé), bandeau « Rester connecté » et message « Session fermée après inactivité ». Mesurés à 0 px avant le 040 : Comptes, Ajouter
+  un compte, Envoi des codes, Officines, Mes officines, Retirer une officine, Ordres de l'officine (31 px restants seulement avec un
+  message d'erreur affiché à 1 366).
+- **Compte de mesure** `editeur.mesure` (créé, sans e-mail) : inutilisable tant que la règle « jamais d'envoi vers une adresse
+  `.invalid` » n'existe pas (sinon les mesures envoient des codes, ou des avis de non-remise, dans la boîte du titulaire).
+- **Revue de code du 2026-11-21, 7 points moins graves** : déchiffrement SMTP (exception mise en cache), compte au seul téléphone avec
+  « les deux », page perdue dans « Comptes », dossier des clés de la console (`Ecrans:DossierCles`), caractère NUL dans un message,
+  « Affiché jusqu'au » à l'heure du serveur, avertissement à chaque code envoyé par le repli.
+- **2e serveur en local** : aucune procédure pour le simuler sur un seul PC (seconde instance PostgreSQL répliquée, seconde API) ;
+  plan à proposer sur demande avant toute modification de PostgreSQL.
+- **Bases jetables** à supprimer sur accord : `pharmacie_jetable_m4_*`, `_rejeu_*`, `_sugg_*` (6), et à décider :
+  `pharmacie_essai_restauration*`, `pharmacie_recette_*`.
 
 ## 2 bis. Fait et commité le 2026-11-21 (`f71a011` à `20c1ecf`)
 
@@ -267,6 +272,8 @@ pastilles, nom du poste), `ea5ad15` (S7.3), `20c1ecf` (Accès à distance sans d
   (canal, serveur d'e-mail, mot de passe chiffré, contacts des comptes) ; script 037 à passer, écrans à mesurer, essai Gmail réel à faire.
 - [x] **Synchronisation S7.2 (reste)** (2026-11-21, en local) : remise à zéro d'un mot de passe par l'éditeur (montré une fois, jamais par
   e-mail), retrait d'un rattachement par le titulaire depuis les écrans (script central 038 à passer, écrans à mesurer).
+- [x] **Comptes du central** (2026-11-21/22, `076df06`, `3a79e77`) : création à l'écran (039), import CSV (040), durée de vie et
+  régénération des mots de passe provisoires, identifiant par e-mail, déconnexion après inactivité réglable par rôle.
 - [ ] **Synchronisation S7.2 (reste)** : SMS (fournisseur), alertes de refus en série.
 - [ ] **Mise en ligne des écrans du central** (après le choix de l'hébergeur) : domaine et certificat, proxy inverse (adresse réelle pour les limites de débit), connexion de production au rôle `pharma_cloud_ecrans`, SMTP, clé HMAC commune si plusieurs instances, comptes éditeur réels, test d'intrusion.
 - [ ] Découpage par officine des grandes tables du central.
