@@ -48,7 +48,7 @@ public class LotDelaisseTests
     }
 
     private static CommandeVente Commande(string? raison) =>
-        new([new LigneCommande(2, 20, 1, RaisonLot: raison)], false, null, null, null, null, 0, ModePaiement.Especes, null);
+        new([new LigneCommande(2, 20, 1, RaisonLot: raison)], false, null, null, null, null, 0, ModePaiement.Especes, 100_000m);
 
     [Fact]
     public async Task Lot_plus_ancien_en_stock_raison_obligatoire_a_l_encaissement()

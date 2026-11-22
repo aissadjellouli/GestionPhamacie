@@ -96,7 +96,7 @@ public class RegistreWilayaDureeTests
 
     private static CommandeVente Commande(long produit, long lot, int? duree) =>
         new([new LigneCommande(produit, lot, 1)], false, null, null, PatientId: 3,
-            new OrdonnanceSaisie(1, Jour, "ORD-1", DureeTraitementJours: duree), 0, ModePaiement.Especes, null);
+            new OrdonnanceSaisie(1, Jour, "ORD-1", DureeTraitementJours: duree), 0, ModePaiement.Especes, 100_000m);
 
     [Fact]
     public async Task Duree_absente_refusee_pour_un_psychotrope_acceptee_hors_psychotrope()

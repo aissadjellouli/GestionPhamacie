@@ -1,13 +1,12 @@
 # Reste à faire : synthèse
 
-Point d'avancement du 2026-11-22 (soir) : **commité jusqu'à `2866bce`**. Rien poussé : **9 commits à pousser** par l'utilisateur
-(`2866bce`, `dc13fb4`, `5790875`, `d429b90`, `141f058`, `c617380`, `3a79e77`, `2902442`, `076df06`).
-**Non commités depuis `2866bce`** : libellés des droits dans les refus (`Ports.cs`, `PermissionService.cs`, `PermissionsComptoir.cs`,
-`PermissionFilter.cs`, tests `LibellesDroitsTests` et `PermissionsComptoirTests`), **script central 042**
-`042_deconnexion_motif_inactivite.sql` et son test (passé sur `pharmacie_cloud_dev`, sauvegarde `…_avant_042_…`), écrans
-(`DepotEcrans.cs`, `ActionsEcrans.cs`), test SQL 031 (042 exclu du comptage), solutions, README central et documentation.
-Scripts centraux **037 à 041** passés sur `pharmacie_cloud_dev` (sauvegardes dans `C:\MesAtlassian\sauvegardes-bd`, dont
-`…_avant_041_…` et `…_avant_recette_central_…`) ; script local **160** passé sur `pharmacie_dev` et `pharmacie_test` (aucun script
+Point d'avancement du 2026-11-22 (soir) : **tout est commité jusqu'à `a2befd8`** (revue de code, correctifs, script central 042,
+recette complète, diagrammes). Rien poussé : **11 commits à pousser** par l'utilisateur (`a2befd8`, `c8578af`, `2866bce`,
+`dc13fb4`, `5790875`, `d429b90`, `141f058`, `c617380`, `3a79e77`, `2902442`, `076df06`). Scripts centraux 037 à **042** passés
+sur `pharmacie_cloud_dev` ; aucune instance de l'assistant ne tourne ; reste uniquement des décisions de l'utilisateur
+(section 2 ter « À corriger ou à décider »).
+Sauvegardes des bases centrales dans `C:\MesAtlassian\sauvegardes-bd` (dont `…_avant_041_…`, `…_avant_042_…` et
+`…_avant_recette_central_…`) ; script local **160** passé sur `pharmacie_dev` et `pharmacie_test` (aucun script
 local nouveau aujourd'hui). Détail : [a-faire.md](a-faire.md), [fonctionnalites.md](fonctionnalites.md) (inventaire complet),
 [diagrammes-sequence.md](diagrammes-sequence.md) (architecture, déploiement, synchronisation) et documents cités.
 À mettre à jour à chaque point d'avancement.
@@ -20,7 +19,7 @@ Rien en cours de développement. Démonstration cloud : étapes 1 et 2 écrites,
 Cloud.Web 54). Comptes rendus (hors git) : `docs/taches/2026-11-22-recette/recette.md`. Copie de travail de la revue
 `C:\MesAtlassian\pharmaofficine-revue` et branche locale `correctifs-revue` **supprimées** (contenu vérifié identique à `dc13fb4`).
 
-**Fait après `dc13fb4` (2026-11-22, non commité)** :
+**Fait après `dc13fb4` (2026-11-22, commité en `2866bce`)** :
 - Journal des écrans du central : `Cache-Control: no-cache, no-store` posé directement (valeur de l'anti-falsification) : plus
   d'avertissement « Cache-Control / Pragma remplacés » à chaque page (vérifié : 0 après le correctif, un par page avant) ; Cloud.Web 54/54.
 - **Ordres à distance vérifiés de bout en bout** (central 5090 + API de `pharmacie_test` sur 5081 + écrans) : code de rattachement
@@ -35,8 +34,8 @@ Cloud.Web 54). Comptes rendus (hors git) : `docs/taches/2026-11-22-recette/recet
   faite sans cause établie. Piste non prouvée : `PolicesPdfForceesTests` réinitialise les polices globales de PDFsharp (collection
   déjà non parallèle).
 
-**Correctifs de la revue de code du 2026-11-22 (non commités)**, faits dans la copie `C:\MesAtlassian\pharmaofficine-revue`
-(branche locale `correctifs-revue`, partie de `5790875`) puis reportés dans `develop` ; script central 041 passé sur
+**Correctifs de la revue de code du 2026-11-22 (commités en `dc13fb4`)**, faits dans une copie de travail séparée (supprimée
+depuis) puis reportés dans `develop` ; script central 041 passé sur
 `pharmacie_cloud_dev` (sauvegarde avant 041 dans `C:\MesAtlassian\sauvegardes-bd`) :
 - caisse : monnaie au renvoi d'une vente déjà encaissée calculée sans la part payée par l'avoir (corrigé, test) ;
 - import de comptes : transmission bornée à 45 s au total, la liste des mots de passe s'affiche toujours (test) ; adresses `.invalid`
@@ -46,7 +45,7 @@ Cloud.Web 54). Comptes rendus (hors git) : `docs/taches/2026-11-22-recette/recet
   un seul chargement des wilayas ; panneau d'annulation sans `async void` ;
 - script central **041** `041_delai_provisoire_comptes_anterieurs.sql` (délai de grâce des mots de passe provisoires antérieurs au 040) ;
 - tests d'architecture rendus indépendants du poste (`appsettings.Development.json` absent, fins de ligne CRLF).
-**Suite de la revue (2026-11-22, non commités, même report)** :
+**Suite de la revue (2026-11-22, commitée en `dc13fb4`)** :
 - sécurité : `/api/psychotropes/*` et `/api/substitution/*` exigent la connexion (étaient ouvertes sans jeton, 500 au lieu de 401) ;
   test d'architecture `RoutesProtegeesTests` (toute route gardée, liste fermée des routes publiques) ;
 - synchronisation : accusé JSON du central pour « autre contenu » (retour en arrière enfin détecté au dépôt), ordres du central
@@ -88,8 +87,8 @@ Le test SQL du 040 n'est valable que sur une base neuve (il compte toutes les li
 ## 2 ter. À faire en premier (point du 2026-11-22, 03:30)
 
 Commités depuis `3a79e77` : `141f058` (7 points de la revue du central, adresses `.invalid` jamais envoyées, tableau des comptes et
-aperçu d'import, wilaya du médecin à la caisse) et `d429b90` (montant reçu obligatoire en espèces). **À pousser** par l'utilisateur
-(constaté le 2026-11-22 au soir, `origin/develop..develop`) : `5790875`, `d429b90`, `141f058`, `c617380`, `3a79e77`, `2902442`, `076df06`.
+aperçu d'import, wilaya du médecin à la caisse) et `d429b90` (montant reçu obligatoire en espèces). **À pousser** par l'utilisateur :
+les 11 commits listés en tête de ce fichier (constaté le 2026-11-22 au soir, `origin/develop..develop`).
 
 **Vérifiés le 2026-11-22 (recette, détail dans docs/taches/2026-11-22-recette/recette.md)** : bandeau « Rester connecté » et
 déconnexion après inactivité ; liste des mots de passe provisoires après un vrai import CSV ; formulaire contact gardé après un
@@ -101,7 +100,7 @@ correspondants ci-dessous sont faits.
 - « Comptes » garde la page de la liste après un refus : essayé en page 1 seulement (moins de 20 comptes).
 - Parcours du 15/11 : tous rejoués par l'API le 2026-11-22 (voir plus bas) ; à l'écran, seuls le balayage et les points listés.
 
-**Corrigés le 2026-11-22 (non commités)**
+**Corrigés le 2026-11-22 (commités en `c8578af`)**
 - Déconnexion par inactivité notée « deconnexion » au journal des accès du central : **script central 042** ; la base retient
   « inactivite » seulement si elle constate l'inactivité (30 s de tolérance), même notation que la fermeture par la base
   (`session_expiree / inactivite`) ; écrans : repli sur l'ancienne fonction si le 042 manque.
@@ -138,11 +137,23 @@ correspondants ci-dessous sont faits.
 **À corriger ou à décider**
 - Test instable `TicketRouleauTests.Hauteur_selon_le_contenu_sans_saut_de_page` : 1 échec en suite complète le 2026-11-22 matin,
   non reproduit ensuite (6 passages) ; à surveiller, relever le message exact au prochain échec.
-- Montant reçu obligatoire : exigé par l'écran de la caisse seulement ; le serveur (`Reglement`) accepte toujours un montant absent
-  comme appoint exact. Décider s'il faut l'exiger aussi côté API.
+- [x] Montant reçu obligatoire en espèces : **exigé aussi par le serveur** (« go montant API », 2026-11-22, commité) :
+  `Reglement.RecuVerifie`, refus « Saisissez le montant reçu en espèces. » (champ `montant_recu`) ; tests Domain 720 et
+  Application 1 823 au vert.
 - Caractère NUL dans un message aux postes : refusé par l'écran et le poste ; refus par PostgreSQL (038) supposé, non vérifié.
-- 2e serveur en local : plan proposé le 2026-11-22 (seconde instance PostgreSQL 5433 répliquée, seconde API 5082, slot
-  `second_serveur`, redémarrage du PostgreSQL de développement, retour arrière) ; attend « go 2e serveur local ».
+- **2e serveur en local (2026-11-22, en place)** : copie répliquée en lecture seule sur le port **5433** (dossier
+  `C:\MesAtlassian\pg-second-serveur`, démarrée par `pg_ctl`, sans service Windows, écoute sur `localhost` seulement), slot
+  `second_serveur` sur le 5432, rôle `pharma_replication` (mot de passe tiré au sort, seulement dans
+  `C:\MesAtlassian\pg-second-serveur-secret\pgpass.conf`, réservé au compte Windows). Aucun redémarrage du 5432 (`wal_level`
+  déjà `replica`, `pg_hba.conf` déjà ouvert à la réplication locale). Vérifié : copie en lecture seule, mêmes ventes des deux côtés.
+  **Non fait, faute du mot de passe `postgres`** : limite `max_slot_wal_keep_size = 20GB` (reste `-1`) et `GRANT pg_monitor TO
+  pharma_app` (retard illisible à l'écran « 2e serveur ») ; commandes prêtes dans `second-serveur-local-principal.sql` (dossier
+  temporaire de la session). **Si le 5433 est arrêté durablement : supprimer le slot** (`SELECT pg_drop_replication_slot('second_serveur')`),
+  sinon les journaux s'accumulent sans limite sur le 5432. Limites du local : l'API refuse de démarrer sur une copie (seulement
+  après bascule) ; le contrôle « jamais deux principaux » n'est pas essayable sur un seul PC (`SecondServeur:AutreServeur` ne
+  change que l'adresse). Bascule et API 5082 : sur « go bascule ».
+- Droits inattendus de `pharma_app` sur le PostgreSQL de développement : CREATEROLE, CREATEDB, REPLICATION (aucun script du dépôt
+  ne les donne, origine inconnue) ; à décider (retrait par `postgres`).
 - Bases jetables à supprimer par l'utilisateur (suppression refusée à l'assistant) : `pharmacie_jetable_m4_*` (3),
   `pharmacie_jetable_rejeu_*` (3), `pharmacie_jetable_sugg_*` (2), `pharmacie_cloud_jetable_m11_*` (10) et
   `pharmacie_cloud_jetable_s71_*` (5) laissées par des tests ; à décider : `pharmacie_essai_restauration*`, `pharmacie_recette_*`.
@@ -201,7 +212,7 @@ Comptes de la recette du 2026-11-22, **désactivés** : `editeur.recette`, `rece
 
 ## 3. Ensuite
 
-- [x] **Push** des commits locaux par le titulaire : fait (`develop` = `origin/develop`).
+- [ ] **Push** des commits locaux par le titulaire : 11 commits en attente au 2026-11-22 au soir (liste en tête de ce fichier).
 - [ ] **Port 5432 du poste de développement** (par le titulaire, PowerShell administrateur) : `listen_addresses = 'localhost'` dans
       `C:\Program Files\PostgreSQL\18\data\postgresql.conf` (copie `postgresql.conf.avant-localhost` gardée), puis `Restart-Service postgresql-x64-18`,
       Visual Studio arrêté avant. Constat du 2026-11-18 : écoute sur toutes les adresses, `pg_hba.conf` limité à 127.0.0.1 et ::1, aucune règle de pare-feu.

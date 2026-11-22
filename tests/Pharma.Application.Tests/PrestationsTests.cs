@@ -14,7 +14,7 @@ public class PrestationsCaisseTests
             new HorlogeFixe(CatalogueEnMemoire.Aujourdhui), new ScansEnMemoire());
 
     private static CommandeVente Commande(params LigneCommande[] lignes) =>
-        new(lignes, false, null, null, null, null, 0, ModePaiement.Especes, null);
+        new(lignes, false, null, null, null, null, 0, ModePaiement.Especes, 100_000m);
 
     private static LigneCommande Prestation(long id, int qte = 1) => new(null, null, qte, TypePrestationId: id);
 

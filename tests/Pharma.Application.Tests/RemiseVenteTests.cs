@@ -24,12 +24,12 @@ public class RemiseVenteTests
 
     private static CommandeVente AvecOrdonnance(long patientId, PersonneVente? remisA = null, PersonneVente? pour = null,
         ModePaiement mode = ModePaiement.Especes, long produit = 2, long lot = 20, PorteurOrdonnance? porteur = null) =>
-        new([new LigneCommande(produit, lot, 1)], false, null, null, patientId, new OrdonnanceSaisie(1, Jour, "ORD-1", Porteur: porteur, DureeTraitementJours: 30), 0, mode, null,
+        new([new LigneCommande(produit, lot, 1)], false, null, null, patientId, new OrdonnanceSaisie(1, Jour, "ORD-1", Porteur: porteur, DureeTraitementJours: 30), 0, mode, mode == ModePaiement.Especes ? 100_000m : null,
             RemisA: remisA, Pour: pour);
 
     private static CommandeVente SansOrdonnance(long? patientId, PersonneVente? remisA = null, PersonneVente? pour = null,
         ModePaiement mode = ModePaiement.Especes) =>
-        new([new LigneCommande(11, 110, 1)], false, null, null, patientId, null, 0, mode, null, RemisA: remisA, Pour: pour);
+        new([new LigneCommande(11, 110, 1)], false, null, null, patientId, null, 0, mode, mode == ModePaiement.Especes ? 100_000m : null, RemisA: remisA, Pour: pour);
 
     [Fact]
     public async Task Avec_ordonnance_remis_a_un_membre_de_la_famille_enregistre()

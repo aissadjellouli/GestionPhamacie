@@ -261,7 +261,7 @@ public class CaisseApplicationTests
 
     private static CommandeVente Commande(long produitId, long lotId, int qte = 1, ModePaiement mode = ModePaiement.Especes,
         long? patientId = null, OrdonnanceSaisie? ordonnance = null, decimal remise = 0) =>
-        new([new LigneCommande(produitId, lotId, qte)], false, null, null, patientId, ordonnance, remise, mode, null);
+        new([new LigneCommande(produitId, lotId, qte)], false, null, null, patientId, ordonnance, remise, mode, mode == ModePaiement.Especes ? 100_000m : null);
 
     [Fact]
     public async Task Pas_d_encaissement_sans_caisse_ouverte()
@@ -492,7 +492,7 @@ public class CaisseApplicationTests
         var ventes = new VentesEspion();
         var cas = Cas(new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"), ventes);
         CommandeVente Avec(int qte, params long[] boites) =>
-            new([new LigneCommande(2, 20, qte, boites)], false, null, null, null, null, 0, ModePaiement.Especes, null);
+            new([new LigneCommande(2, 20, qte, boites)], false, null, null, null, null, 0, ModePaiement.Especes, 100_000m);
 
         await cas.ExecuterAsync(Avec(2, 100, 101), 5, "Caisse 1");
         Assert.Equal([100L, 101L], ventes.Recu!.BoitesParLot![20]);

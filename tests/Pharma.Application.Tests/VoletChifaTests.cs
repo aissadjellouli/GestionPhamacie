@@ -112,7 +112,7 @@ public class VoletChifaTests
         var ventes = new VentesEspion();
         var cas = new Encaisser(new CatalogueEnMemoire(), new PatientsEnMemoire(), ventes, new SessionsEnMemoire(), new DroitsFactices("caisse.vendre"),
             new HorlogeFixe(CatalogueEnMemoire.Aujourdhui), new ScansEnMemoire());
-        var commande = new CommandeVente([new LigneCommande(2, 20, 1)], false, null, null, null, null, 0, ModePaiement.Especes, null, VoletChifa: Volet);
+        var commande = new CommandeVente([new LigneCommande(2, 20, 1)], false, null, null, null, null, 0, ModePaiement.Especes, 100_000m, VoletChifa: Volet);
         var ex = await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(commande, 5, "Caisse 1"));
         Assert.Equal("volet_chifa", ex.Champ);
         Assert.Null(ventes.Recu);
@@ -179,7 +179,7 @@ public class VoletChifaTests
     }
 
     private static CommandeVente CommandeChifa(decimal prixChifa, params ChoixPrixChifa[] choix) =>
-        new([new LigneCommande(2, 20, 2)], true, 1, 80, 12, null, 0, ModePaiement.Especes, null, VoletChifa: VoletAuPrix(prixChifa),
+        new([new LigneCommande(2, 20, 2)], true, 1, 80, 12, null, 0, ModePaiement.Especes, 100_000m, VoletChifa: VoletAuPrix(prixChifa),
             ChoixChifa: choix.Length == 0 ? null : choix);
 
     [Theory]
@@ -384,7 +384,7 @@ public class VoletChifaTests
     public async Task Liste_I_reprise_d_un_volet_sans_controle_vente_sans_ordonnance()
     {
         var (cas, ventes, journal) = CasChifa();
-        var commande = new CommandeVente([new LigneCommande(9, 90, 1)], true, 1, 80, 12, null, 0, ModePaiement.Especes, null, VoletChifa: Volet);
+        var commande = new CommandeVente([new LigneCommande(9, 90, 1)], true, 1, 80, 12, null, 0, ModePaiement.Especes, 100_000m, VoletChifa: Volet);
         await cas.ExecuterAsync(commande, 5, "Caisse 1");   // ni médecin ni droit « vendre sans ordonnance »
         Assert.NotNull(ventes.Recu);
         Assert.DoesNotContain("vente_sans_ordonnance", journal.Actions);
@@ -392,14 +392,14 @@ public class VoletChifaTests
         // Sans volet, la même liste I demande toujours la validation
         var (sansVolet, _, _) = CasChifa();
         await Assert.ThrowsAsync<DroitRefuseException>(() => sansVolet.ExecuterAsync(
-            new CommandeVente([new LigneCommande(9, 90, 1)], false, null, null, 12, null, 0, ModePaiement.Especes, null), 5, "Caisse 1"));
+            new CommandeVente([new LigneCommande(9, 90, 1)], false, null, null, 12, null, 0, ModePaiement.Especes, 100_000m), 5, "Caisse 1"));
     }
 
     [Fact]
     public async Task Psychotrope_d_un_volet_garde_la_regle_du_registre()
     {
         var (cas, ventes, _) = CasChifa(Pharma.Domain.Securite.Permissions.PsychotropesDelivrer);
-        var commande = new CommandeVente([new LigneCommande(7, 70, 1)], true, 1, 80, 12, null, 0, ModePaiement.Especes, null, VoletChifa: Volet);
+        var commande = new CommandeVente([new LigneCommande(7, 70, 1)], true, 1, 80, 12, null, 0, ModePaiement.Especes, 100_000m, VoletChifa: Volet);
         await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(commande, 5, "Caisse 1"));
         Assert.Null(ventes.Recu);
     }

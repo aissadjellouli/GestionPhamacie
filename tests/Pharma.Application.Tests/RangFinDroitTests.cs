@@ -50,7 +50,7 @@ public class RangFinDroitTests
 
     private static CommandeVente TiersPayantCnas() =>
         new([new LigneCommande(2, 20, 1)], true, 1, 80, 12, new OrdonnanceSaisie(1, CatalogueEnMemoire.Aujourdhui, null), 0,
-            ModePaiement.Especes, null, MotifSansVoletCode: "carte_absente");
+            ModePaiement.Especes, 100_000m, MotifSansVoletCode: "carte_absente");
 
     [Fact]
     public async Task Vente_CNAS_droits_expires_enregistree_et_avertissement_journalise()

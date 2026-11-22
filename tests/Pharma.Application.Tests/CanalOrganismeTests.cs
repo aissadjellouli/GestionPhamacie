@@ -25,7 +25,7 @@ public class CanalOrganismeTests
     private static CommandeVente TiersPayant(long organisme, bool factureeChifa = false, string? numero = null, string? motif = "carte_absente",
         string? texte = null) =>
         new([new LigneCommande(2, 20, 1)], true, organisme, 80, 12, new OrdonnanceSaisie(1, CatalogueEnMemoire.Aujourdhui, null), 0,
-            ModePaiement.Especes, null, FactureeParChifa: factureeChifa, NumeroFactureChifa: numero, MotifSansVoletCode: motif, MotifSansVoletTexte: texte);
+            ModePaiement.Especes, 100_000m, FactureeParChifa: factureeChifa, NumeroFactureChifa: numero, MotifSansVoletCode: motif, MotifSansVoletTexte: texte);
 
     /// <summary>Liste réglable « volet_absent » (script 097) : motifs de départ, un motif désactivé.</summary>
     private static MotifsEnMemoire MotifsVoletAbsent()
@@ -71,7 +71,7 @@ public class CanalOrganismeTests
     public async Task Vente_reprise_d_un_volet_canal_chifa()
     {
         var (cas, ventes) = CasCaisse();
-        await cas.ExecuterAsync(new CommandeVente([new LigneCommande(2, 20, 2)], true, 1, 80, 12, null, 0, ModePaiement.Especes, null, VoletChifa: Volet),
+        await cas.ExecuterAsync(new CommandeVente([new LigneCommande(2, 20, 2)], true, 1, 80, 12, null, 0, ModePaiement.Especes, 100_000m, VoletChifa: Volet),
             5, "Caisse 1");
         Assert.Equal((CanalOrganisme.Chifa, (string?)null), (ventes.Recu!.CanalOrganisme, ventes.Recu.FactureChifa));
     }

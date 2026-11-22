@@ -112,7 +112,7 @@ public class OrdonnanceTests
         new DroitsFactices("caisse.vendre", "psychotropes.delivrer"), new HorlogeFixe(CatalogueEnMemoire.Aujourdhui), scans);
 
     private static CommandeVente Commande(long produit, long lot, OrdonnanceSaisie o) =>
-        new([new LigneCommande(produit, lot, 1)], false, null, null, PatientId: 3, o, 0, ModePaiement.Especes, null);
+        new([new LigneCommande(produit, lot, 1)], false, null, null, PatientId: 3, o, 0, ModePaiement.Especes, 100_000m);
 
     [Fact]
     public async Task Psychotrope_sans_medecin_refuse()

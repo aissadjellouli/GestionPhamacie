@@ -280,9 +280,27 @@ public class CaisseTests
         var v = new Vente();
         v.AjouterProduit(Amoxicilline, LotDe(Amoxicilline), 1, Aujourdhui);
         Assert.Equal(150m, Reglement.Pour(v, ModePaiement.Especes, 500m).Rendu);
-        Assert.Equal(0m, Reglement.Pour(v, ModePaiement.Especes, null).Rendu);   // appoint exact
-        Assert.Throws<RegleMetierException>(() => Reglement.Pour(v, ModePaiement.Especes, 300m));
+        Assert.Equal(0m, Reglement.Pour(v, ModePaiement.Especes, 350m).Rendu);   // appoint exact
+        Assert.Equal("montant_recu", Assert.Throws<RegleMetierException>(() => Reglement.Pour(v, ModePaiement.Especes, 300m)).Champ);
         Assert.Equal(0m, Reglement.Pour(v, ModePaiement.Carte, null).Rendu);
+    }
+
+    [Fact]
+    public void Especes_montant_recu_obligatoire_des_qu_il_reste_a_payer()
+    {
+        var v = new Vente();
+        v.AjouterProduit(Amoxicilline, LotDe(Amoxicilline), 1, Aujourdhui);   // 350 DA à payer
+        var refus = Assert.Throws<RegleMetierException>(() => Reglement.Pour(v, ModePaiement.Especes, null));
+        Assert.Equal("montant_recu", refus.Champ);
+        Assert.Contains("montant reçu", refus.Message);
+        // Avec un avoir partiel : obligatoire aussi sur ce qui reste ; avoir qui couvre tout : rien à recevoir
+        Assert.Throws<RegleMetierException>(() => Reglement.Pour(v, ModePaiement.Especes, null, avoir: 100m));
+        Assert.Equal(50m, Reglement.Pour(v, ModePaiement.Especes, 300m, avoir: 100m).Rendu);
+        var toutParAvoir = Reglement.Pour(v, ModePaiement.Especes, null, avoir: 350m);
+        Assert.Equal(0m, toutParAvoir.Montant);
+        Assert.Equal(0m, toutParAvoir.Rendu);
+        // Carte et chèque : non concernés
+        Assert.Equal(350m, Reglement.Pour(v, ModePaiement.Cheque, null).Montant);
     }
 
     [Fact]
