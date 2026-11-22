@@ -99,7 +99,7 @@ correspondants ci-dessous sont faits.
 **Mesures et essais non faits**
 - Caisse : liste de la wilaya remise à la fiche après un refus (correctif 3 de la revue) : refus non provoqué à l'écran.
 - « Comptes » garde la page de la liste après un refus : essayé en page 1 seulement (moins de 20 comptes).
-- Parcours P4 (factures clients), P7 (inventaire), P8 (trésorerie, financements), P9 (code comptoir) : non rejoués (voir plus bas).
+- Parcours du 15/11 : tous rejoués par l'API le 2026-11-22 (voir plus bas) ; à l'écran, seuls le balayage et les points listés.
 
 **Corrigés le 2026-11-22 (non commités)**
 - Déconnexion par inactivité notée « deconnexion » au journal des accès du central : **script central 042** ; la base retient
@@ -118,8 +118,20 @@ correspondants ci-dessous sont faits.
 - P6 relève et clôture : OK (relève refusée au vendeur, relève du titulaire avec écart, nouvelle session, clôture).
 - P10 masquage (vendeur) : OK par l'API (prix d'achat et dette grossiste : 403) ; l'assistant voit la dette (droit de régler).
 - P11 recherche au comptoir : OK (« amoxiciline » trouve AMOXICILLINE ; recherche par indication « toux »).
-- **Non rejoués** : P4 factures clients, P7 inventaire, P8 trésorerie et financements (modifient des données de démo existantes :
-  accord de l'utilisateur nécessaire), P9 autorisation par code comptoir (code du titulaire non connu).
+- **Rejoués ensuite avec l'accord de l'utilisateur** (« go parcours démo », « go parcours 9 » ; sauvegarde `…_avant_parcours_demo_…`) :
+  - P4 factures clients : OK (facture patient + PDF, rejet et levée avec motif obligatoire, avoir avec motif obligatoire : reste
+    150 → 130 sur une vente à crédit, PDF de l'avoir ; facture organisme = parts organisme, soldée par le versement sur la banque).
+  - P8 trésorerie et financements : OK (transfert vers le même compte refusé, dépôt et retrait au centime, dépense ; prêt : banque
+    suivie OU autre prêteur, pas les deux ; échéancier contrôlé et enregistré ; n°2 avant n°1 refusée ; sans banque refusée ;
+    n°1 payée : banque −4 050, reste dû 8 000).
+  - P7 inventaire d'un rayon : OK (à l'aveugle, compte négatif refusé, fin refusée tant qu'un lot n'est pas compté, −1 corrigé
+    seul, +5 à valider, validation refusée au vendeur, acceptée par le titulaire).
+  - P9 code comptoir : OK, 17/17, avec un employé d'essai (aucun code existant touché) : mot de passe provisoire sans droit,
+    code trop simple refusé, relève autorisée par le code d'un collègue, code faux refusé, connexion par code limitée au comptoir.
+- Données créées (P4 à P9) : factures F-2026-0027 (avoir AV-2026-0009), F-2026-0028 (organisme 1, soldée), F-2026-0029 (avoir
+  AV-2026-0010, reste 130) ; transferts coffre ↔ BNA recette (1 000 et 300), dépense de 150 DA (catégorie « loyer »), versement
+  d'organisme 1 436 DA ; prêt n° 6 PRET-REC3-134638 (12 000 DA, échéance 1 payée) ; inventaire n° 24 (ESSAI-045 11 → 10,
+  REC3-L133956 17 → 22) ; employé `essai.code134919` (id 13, **désactivé**) ; sessions de caisse 40551 et 40552 (écart 0).
 - Données créées : réception 166 (BL-REC3-133956, facture F-REC3-133956, lot REC3-L133956), retour R-000008, règlement 500 DA,
   comptage 6 annulé, sessions 40549 et 40550 (écarts d'essai −60 / +60), vente T-005944 annulée.
 
