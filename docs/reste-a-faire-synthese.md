@@ -1,6 +1,6 @@
 # Reste à faire : synthèse
 
-Point d'avancement du 2026-11-22 : **tout est commité** jusqu'à `3a79e77` (branche `develop`, rien poussé depuis `f399e6d` ou avant :
+Point d'avancement du 2026-11-22 : **tout est commité** jusqu'à `d429b90` (branche `develop`, rien poussé depuis `f399e6d` ou avant :
 l'utilisateur pousse lui-même). Scripts centraux **037 à 040** passés sur `pharmacie_cloud_dev` (sauvegardes dans
 `C:\MesAtlassian\sauvegardes-bd` avant 037, après 038, avant 039 et avant 040) ; script local **160** passé sur `pharmacie_dev` et
 `pharmacie_test`. Détail : [a-faire.md](a-faire.md), [fonctionnalites.md](fonctionnalites.md) (inventaire complet) et documents cités.
@@ -31,24 +31,39 @@ Rien en cours de développement. Démonstration cloud : étapes 1 et 2 écrites,
 - Tests au dernier passage : Domain 718, Application 1 816, Architecture 386, Cloud 145 (+ 1 ignoré), Cloud.Web 52 ; SQL 030 à 040
   et 160 réussis.
 
-## 2 ter. À faire en premier (2026-11-22)
+## 2 ter. À faire en premier (point du 2026-11-22, 03:30)
 
-- **Mesurer les écrans du lot 040** (1 366 × 768, 1 536 × 890, clair et sombre) : `/comptes` (colonne « Mot de passe », lien
-  « Régénérer »), `/comptes?action=importer` (sans aperçu, aperçu de 200 lignes), `/comptes?action=creer`, remise à zéro avec motif
-  prérempli, `/comptes/mot-de-passe-affiche` (un compte, un import), **`/envoi-codes`** (deux formulaires ajoutés : risque de défilement
-  signalé), bandeau « Rester connecté » et message « Session fermée après inactivité ». Mesurés à 0 px avant le 040 : Comptes, Ajouter
-  un compte, Envoi des codes, Officines, Mes officines, Retirer une officine, Ordres de l'officine (31 px restants seulement avec un
-  message d'erreur affiché à 1 366).
-- **Compte de mesure** `editeur.mesure` (créé, sans e-mail) : inutilisable tant que la règle « jamais d'envoi vers une adresse
-  `.invalid` » n'existe pas (sinon les mesures envoient des codes, ou des avis de non-remise, dans la boîte du titulaire).
-- ~~**Revue de code du 2026-11-21, 7 points moins graves**~~ : **corrigés le 2026-11-22** (protection des clés indisponible = mot de
-  passe illisible, message « pas d'adresse e-mail », page gardée dans « Comptes », `--dossier-cles` de la console sans création en
-  lecture, caractère NUL refusé, « Durée d'affichage » sans heure, avertissement une fois par changement d'état) ; voir
-  docs/regles-metier.md (S7.6 et 038). Reste : relecture de la recette à l'écran (captures) non faite.
-- **2e serveur en local** : aucune procédure pour le simuler sur un seul PC (seconde instance PostgreSQL répliquée, seconde API) ;
-  plan à proposer sur demande avant toute modification de PostgreSQL.
-- **Bases jetables** à supprimer sur accord : `pharmacie_jetable_m4_*`, `_rejeu_*`, `_sugg_*` (6), et à décider :
-  `pharmacie_essai_restauration*`, `pharmacie_recette_*`.
+Commités depuis `3a79e77` : `141f058` (7 points de la revue du central, adresses `.invalid` jamais envoyées, tableau des comptes et
+aperçu d'import, wilaya du médecin à la caisse) et `d429b90` (montant reçu obligatoire en espèces). **À pousser** par l'utilisateur :
+`d429b90`, `141f058`, `c617380`, `3a79e77`, `2902442`, `076df06`, `98fbae7`, `c3b8532`.
+
+**Mesures et essais non faits**
+- Page « Ordres de l'officine » (titulaire) après la revue (« Durée d'affichage » sans heure) : non mesurée (connexion titulaire =
+  code envoyé dans la boîte du titulaire ; prévoir un compte titulaire de mesure en `@exemple.invalid`, comme `editeur.mesure`).
+- Bandeau « Rester connecté » et message « Session fermée après inactivité » (lot 040) : jamais vus dans un navigateur (régler
+  l'inactivité sur 5 min pour l'essai).
+- Liste des mots de passe provisoires après un vrai import CSV (`/comptes/mot-de-passe-affiche` à plusieurs comptes) : non vue.
+- Caisse : ligne « Durée du traitement » collée à son libellé (psychotrope au panier) non vue ; enregistrement réel d'une wilaya
+  depuis la caisse non essayé (aucun médecin de `pharmacie_test` n'a de wilaya).
+- Formulaire « contact » de « Comptes » : vérifier que l'e-mail et le téléphone saisis reviennent après un refus (`ecrans.js` les
+  garde dans l'onglet ; l'agent de la revue a dit le contraire sans essai).
+
+**À corriger ou à décider**
+- Test instable `TicketRouleauTests.Hauteur_selon_le_contenu_sans_saut_de_page` : 1 échec en suite complète le 2026-11-22, réussi
+  seul et à la relance (sensible au parallélisme ?) ; à stabiliser.
+- Montant reçu obligatoire : exigé par l'écran de la caisse seulement ; le serveur (`Reglement`) accepte toujours un montant absent
+  comme appoint exact. Décider s'il faut l'exiger aussi côté API.
+- Caractère NUL dans un message aux postes : refusé par l'écran et le poste ; refus par PostgreSQL (038) supposé, non vérifié.
+- 2e serveur en local : plan proposé le 2026-11-22 (seconde instance PostgreSQL 5433 répliquée, seconde API 5082, slot
+  `second_serveur`, redémarrage du PostgreSQL de développement, retour arrière) ; attend « go 2e serveur local ».
+- Bases jetables à supprimer par l'utilisateur (suppression refusée à l'assistant) : `pharmacie_jetable_m4_*` (3),
+  `pharmacie_jetable_rejeu_*` (3), `pharmacie_jetable_sugg_*` (2) ; à décider : `pharmacie_essai_restauration*`,
+  `pharmacie_recette_*`.
+- SMS : aucun fournisseur (codes, mots de passe provisoires) ; alertes de refus de connexion en série.
+- Rappel : le script central 038 a été passé sans sauvegarde juste avant (sauvegarde « après 038 » faite ensuite).
+
+**Comptes de développement du central** (`pharmacie_cloud_dev`, jamais livrés) : `editeur.dev`, `titulaire.dev` (e-mail du
+titulaire), `editeur.mesure` (`mesure@exemple.invalid`, codes dans le fichier seulement, pour les mesures), `01540`, `12345`.
 
 ## 2 bis. Fait et commité le 2026-11-21 (`f71a011` à `20c1ecf`)
 
