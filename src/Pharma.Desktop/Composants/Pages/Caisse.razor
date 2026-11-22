@@ -1224,12 +1224,17 @@
                     <div class="paiement-especes">
                         <div class="champ">
                             <label for="recu">Montant reçu (DA)</label>
-                            <input id="recu" type="number" min="0" step="1" @bind="montantRecu" @bind:event="oninput" placeholder="Appoint exact" data-champ="montant_recu"
+                            <input id="recu" type="number" min="0" step="1" @bind="montantRecu" @bind:event="oninput" placeholder="Obligatoire" data-champ="montant_recu"
                                    class="@Obligatoire.Classe(RecuInsuffisant)" aria-describedby="@(RecuInsuffisant ? "recu-manque" : null)" />
                             @* En rouge sans bulle ni déplacement du curseur pendant la frappe (charte « Erreurs de saisie ») *@
-                            @if (RecuInsuffisant)
+                            @if (RecuCourt)
                             {
                                 <span id="recu-manque" class="detail texte-urgent">Il manque @Libelles.Dinars(APayerEspeces - montantRecu!.Value, 2)</span>
+                            }
+                            else if (RecuManquant)
+                            {
+                                <button type="button" id="recu-manque" class="lien-bouton" style="align-self: flex-start" title="Remplit le montant reçu avec le montant à payer"
+                                        @onclick="AppointExact">Appoint exact (@Libelles.Dinars(APayerEspeces, 2))</button>
                             }
                         </div>
                         <div class="champ">
@@ -1528,13 +1533,18 @@
     /// <summary>Montant à payer en espèces (part du patient moins l'avoir utilisé).</summary>
     private decimal APayerEspeces => apercu is { } a ? Math.Max(0m, a.PartPatient - AvoirUtilise) : 0m;
     /// <summary>
-    /// Espèces (2026-11-22, demande du titulaire) : un montant reçu SAISI qui ne couvre pas le montant à payer désactive « Encaisser »
-    /// (même règle que le serveur, Reglement) ; champ vide = appoint exact, inchangé.
+    /// Espèces (2026-11-22, demande du titulaire) : dès qu'il reste à payer, le montant reçu est OBLIGATOIRE et doit couvrir le montant à
+    /// payer (après remise, don et avoir), sinon « Encaisser » et F12 sont désactivés ; « Appoint exact » le remplit en un clic.
+    /// Crédit, carte, chèque et don total (rien à payer) : non concernés.
     /// </summary>
-    private bool RecuInsuffisant => mode == "especes" && montantRecu is { } r && APayerEspeces > 0 && r < APayerEspeces;
-    private string? RaisonRecuInsuffisant => RecuInsuffisant
-        ? $"Montant reçu insuffisant : il manque {Libelles.Dinars(APayerEspeces - montantRecu!.Value, 2)} (laissez le champ vide pour l’appoint exact)"
+    private bool RecuManquant => mode == "especes" && APayerEspeces > 0 && montantRecu is null;
+    private bool RecuCourt => mode == "especes" && montantRecu is { } r && APayerEspeces > 0 && r < APayerEspeces;
+    private bool RecuInsuffisant => RecuManquant || RecuCourt;
+    private string? RaisonRecuInsuffisant =>
+        RecuManquant ? "Saisissez le montant reçu (ou « Appoint exact »)"
+        : RecuCourt ? $"Montant reçu insuffisant : il manque {Libelles.Dinars(APayerEspeces - montantRecu!.Value, 2)}"
         : null;
+    private void AppointExact() => montantRecu = APayerEspeces;
     /// <summary>Psychotrope ou stupéfiant au panier : ordonnance obligatoire, sans exception par validation.</summary>
     private bool OrdonnanceObligatoire => apercu?.OrdonnanceRequise == true;
     /// <summary>
