@@ -140,7 +140,12 @@ correspondants ci-dessous sont faits.
 - [x] Montant reçu obligatoire en espèces : **exigé aussi par le serveur** (« go montant API », 2026-11-22, commité) :
   `Reglement.RecuVerifie`, refus « Saisissez le montant reçu en espèces. » (champ `montant_recu`) ; tests Domain 720 et
   Application 1 823 au vert.
-- Caractère NUL dans un message aux postes : refusé par l'écran et le poste ; refus par PostgreSQL (038) supposé, non vérifié.
+- [x] Caractère NUL dans un message aux postes : refusé par l'écran et le poste ; **refus par PostgreSQL vérifié le 2026-11-22**
+  (« go NUL », `pharmacie_cloud_dev`, lecture seule, transaction annulée, paramètres Npgsql comme les écrans) : `\u0000` dans
+  le JSON → 22P05 « séquence d'échappement Unicode non supportée » ; NUL brut en paramètre texte ou jsonb → 22021 « séquence
+  d'octets invalide pour l'encodage UTF8 : 0x00 » ; témoin accepté, U+0001 → statut `texte`. Le NUL n'atteint donc jamais
+  `cloud_message_poste_controle` : c'est une **erreur** PostgreSQL (pas un statut de refus) ; sans effet tant que l'écran le
+  refuse avant (aucune ligne écrite).
 - [x] **2e serveur en local (2026-11-22) : installé, basculé puis RETIRÉ le même jour** (« go retrait 2e serveur » : API 5082 et
   instance 5433 arrêtées, rôle `pharma_replication` supprimé, aucun slot, dossiers supprimés ; poste sur l'API 5082 jamais essayé).
   Toutes les actions dans [second-serveur-local.md](second-serveur-local.md). Historique : copie répliquée en lecture seule sur le port **5433** (dossier
