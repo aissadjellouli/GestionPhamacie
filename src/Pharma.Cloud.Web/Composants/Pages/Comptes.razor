@@ -1,35 +1,125 @@
 @page "/comptes"
 @inject DepotEcrans Depot
+@inject ApercusImport Apercus
 
 @* Lot S7.6 (script central 037) : contacts du second facteur des comptes distants, ÉDITEUR seulement. Contact affiché MASQUÉ ;
    e-mail ET téléphone possibles, au moins un ; modifier exige un code de confirmation (noté au journal de sécurité).
    Script central 038 : remise à zéro du mot de passe d'un AUTRE compte (motif, identifiant ressaisi, code de confirmation).
-   Script central 039 : création d'un compte éditeur ou titulaire (code de confirmation, mot de passe provisoire montré une fois). *@
+   Script central 039 : création d'un compte éditeur ou titulaire (code de confirmation, mot de passe provisoire montré une fois).
+   Script central 040 : état du mot de passe (provisoire jusqu'au…, provisoire expiré) et « Régénérer le mot de passe » ; import de
+   comptes par fichier CSV (aperçu sans code gardé en mémoire, puis UN code pour tout le fichier, tout ou rien) ; case « Envoyer
+   l'identifiant par e-mail » (jamais le mot de passe). *@
 <PageTitle>Contacts des comptes · écrans du central</PageTitle>
 
 <div class="page page-serree">
     <div class="titre-page">
         <div>
             <h1>Contacts des comptes</h1>
-            <p class="sous-titre">E-mail et téléphone qui reçoivent les codes de second facteur de chaque compte (affichés masqués) ; création d'un compte ; remise à zéro d'un mot de passe oublié.</p>
+            <p class="sous-titre">E-mail et téléphone qui reçoivent les codes de second facteur de chaque compte (affichés masqués) ; création ou import de comptes ; remise à zéro d'un mot de passe.</p>
         </div>
         <div class="actions">
             <a class="btn btn-principal" href="comptes?action=creer" aria-current="@(Creation ? "page" : null)">Ajouter un compte</a>
+            <a class="btn btn-contour" href="comptes?action=importer" aria-current="@(Import ? "page" : null)">Importer des comptes</a>
             <a class="btn btn-contour" href="envoi-codes">Envoi des codes</a>
         </div>
     </div>
     <Message Erreur="@Erreur" Ok="@Ok" />
     <div class="comptes-contact" data-hauteur-restante>
         <div class="colonne-comptes">
-            <TableauEcran Table="@Table" Vide="Aucun compte distant : « Ajouter un compte » (ou la console du central).">
-                <Action Context="ligne">
-                    <a class="lien" href="@($"comptes?compte={Table.Valeur(ligne, "id")}&page={PageCourante}")">Modifier</a>
-                </Action>
-            </TableauEcran>
-            <PaginationEcran Page="@PageCourante" Taille="@Taille" Total="@Table.Total" Base="comptes" />
+            @if (Import && Apercu is { } lignes)
+            {
+                <h2 class="titre-apercu">Aperçu du fichier · @lignes.Count ligne(s), @lignes.Count(l => !l.Valable) erreur(s)</h2>
+                <div class="tableau-cadre" id="apercu-import">
+                    <table class="tableau tableau-serre tableau-central">
+                        <thead>
+                            <tr>
+                                <th scope="col">Ligne</th>
+                                <th scope="col">Rôle</th>
+                                <th scope="col">Identifiant</th>
+                                <th scope="col">Nom</th>
+                                <th scope="col">E-mail</th>
+                                <th scope="col">Téléphone</th>
+                                <th scope="col">Contrôle</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var l in lignes)
+                            {
+                                <tr class="@(l.Valable ? null : "ligne-refusee")">
+                                    <td class="nombre">@l.Numero</td>
+                                    <td>@Rubriques.Afficher("role", l.Role)</td>
+                                    <td>@l.Identifiant</td>
+                                    <td>@l.Nom</td>
+                                    <td>@(l.Email ?? "—")</td>
+                                    <td>@(l.Telephone ?? "—")</td>
+                                    <td class="@(l.Valable ? null : "texte-urgent")">@(l.Valable ? "prêt" : Messages.LignesImport.GetValueOrDefault(l.Statut!, l.Statut!))</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <TableauEcran Table="@Table" Vide="Aucun compte distant : « Ajouter un compte », « Importer des comptes » (ou la console du central).">
+                    <Action Context="ligne">
+                        <a class="lien" href="@($"comptes?compte={Table.Valeur(ligne, "id")}&page={PageCourante}")">Modifier</a>
+                        @if (EtatMotDePasse.Regenerable(Table, ligne))
+                        {
+                            <a class="lien lien-regenerer" href="@($"comptes?compte={Table.Valeur(ligne, "id")}&page={PageCourante}&action=mot-de-passe&motif={EtatMotDePasse.CleMotifExpire}")">Régénérer le mot de passe</a>
+                        }
+                    </Action>
+                </TableauEcran>
+                <PaginationEcran Page="@PageCourante" Taille="@Taille" Total="@Table.Total" Base="comptes" />
+            }
         </div>
         <section class="panneau colonne-compte" aria-labelledby="t-contact">
-            @if (Creation)
+            @if (Import)
+            {
+                <h2 id="t-contact">Importer des comptes</h2>
+                <p class="detail">Fichier CSV en UTF-8, 200 comptes au plus : une ligne d'en-tête <code>role;identifiant;nom;email;telephone</code>
+                    (« ; » ou « , »), puis une ligne par compte (<code>titulaire</code> ou <code>editeur</code>, au moins un e-mail ou un téléphone).
+                    L'aperçu ne crée rien et ne demande aucun code.</p>
+                <form method="post" action="actions/comptes/importer/apercu" enctype="multipart/form-data" class="formulaire-contact">
+                    <AntiforgeryToken />
+                    <div class="champ champ-large">
+                        <label for="fichier" class="requis">Fichier CSV</label>
+                        <input id="fichier" name="fichier" type="file" accept=".csv,text/csv" required />
+                    </div>
+                    <div class="actions">
+                        <button type="submit" class="btn @(Apercu is null ? "btn-principal" : "btn-contour")">Lire le fichier (aperçu)</button>
+                    </div>
+                </form>
+                @if (Apercu is { } a)
+                {
+                    @if (a.All(l => l.Valable))
+                    {
+                        <p class="detail">Toutes les lignes sont prêtes. Un mot de passe provisoire est tiré pour chaque compte et affiché <strong>une seule fois</strong>
+                            après la création ; tout ou rien : si une ligne devient invalide, aucun compte n'est créé.</p>
+                        <DemandeCode Retour="@($"/comptes?action=importer&apercu={ApercuRef}")" />
+                        <form method="post" action="actions/comptes/importer" class="formulaire-contact">
+                            <AntiforgeryToken />
+                            <input type="hidden" name="apercu" value="@ApercuRef" />
+                            <label class="case champ-large">
+                                <input type="checkbox" name="@ActionsImportComptes.CaseIdentifiant" value="1" checked />
+                                <span>Envoyer l'identifiant par e-mail (jamais le mot de passe)</span>
+                            </label>
+                            <div class="champ">
+                                <label for="code-import" class="requis">Code de confirmation reçu</label>
+                                <input id="code-import" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required />
+                            </div>
+                            <div class="actions">
+                                <button type="submit" class="btn btn-principal">Créer les @a.Count comptes</button>
+                            </div>
+                        </form>
+                    }
+                    else
+                    {
+                        <p class="detail texte-attention">Rien ne peut être créé : corrigez les lignes signalées dans le fichier, puis déposez-le de nouveau.</p>
+                    }
+                }
+            }
+            else if (Creation)
             {
                 @* Script central 039 : mot de passe provisoire tiré au sort par le central, montré UNE fois à l'éditeur ; les codes du compte
                    partiront au contact saisi ici (e-mail et/ou téléphone) *@
@@ -62,6 +152,10 @@
                         <label for="telephone-nouveau">Téléphone</label>
                         <input id="telephone-nouveau" name="telephone" maxlength="20" inputmode="tel" autocomplete="off" />
                     </div>
+                    <label class="case champ-large">
+                        <input type="checkbox" name="@ActionsImportComptes.CaseIdentifiant" value="1" checked />
+                        <span>Envoyer l'identifiant par e-mail (jamais le mot de passe)</span>
+                    </label>
                     <div class="champ">
                         <label for="code-creation" class="requis">Code de confirmation reçu</label>
                         <input id="code-creation" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required />
@@ -92,6 +186,8 @@
                         <dd>@(Table.Valeur(Choisi, "email_masque") ?? "aucun")</dd>
                         <dt>Téléphone actuel</dt>
                         <dd>@(Table.Valeur(Choisi, "telephone_masque") ?? "aucun")</dd>
+                        <dt>Mot de passe</dt>
+                        <dd>@(Table.Valeur(Choisi, EtatMotDePasse.Colonne) is string { Length: > 0 } etat ? etat : "choisi par la personne")</dd>
                     </dl>
                     <DemandeCode Retour="@($"/comptes?compte={Compte}&page={PageCourante}")" />
                     <form method="post" action="@($"actions/comptes/{Compte}/contact")" class="formulaire-contact">
@@ -120,17 +216,18 @@
                 }
                 else
                 {
-                    @* Script central 038 : mot de passe provisoire tiré au sort, montré UNE fois à l'éditeur seul ; à transmettre de vive voix
-                       après avoir vérifié l'identité (le code de connexion part sur le contact du compte : les deux ne voyagent jamais ensemble) *@
+                    @* Script central 038 : mot de passe provisoire tiré au sort, montré UNE fois à l'éditeur seul ; jamais par e-mail (le code de
+                       connexion part sur le contact du compte : les deux ne voyagent jamais ensemble). Script central 040 : régénération d'un
+                       provisoire expiré (motif prérempli, modifiable ; la durée de vie repart à zéro) *@
                     <p class="detail">Un mot de passe provisoire est tiré au sort et affiché <strong>une seule fois</strong> ; le compte devra le changer
-                        à sa prochaine connexion et ses sessions ouvertes sont fermées. Transmettez-le de vive voix après avoir vérifié l'identité de la
-                        personne (jamais par e-mail : le code de connexion part déjà sur son contact).</p>
-                    <DemandeCode Retour="@($"/comptes?compte={Compte}&page={PageCourante}&action=mot-de-passe")" />
+                        à sa prochaine connexion (sa durée de vie repart à zéro) et ses sessions ouvertes sont fermées. Transmettez-le par SMS ou de vive
+                        voix après avoir vérifié l'identité de la personne (jamais par e-mail : le code de connexion part déjà sur son contact).</p>
+                    <DemandeCode Retour="@($"/comptes?compte={Compte}&page={PageCourante}&action=mot-de-passe{(MotifPrerempli is null ? "" : $"&motif={EtatMotDePasse.CleMotifExpire}")}")" />
                     <form method="post" action="@($"actions/comptes/{Compte}/mot-de-passe")" class="formulaire-contact">
                         <AntiforgeryToken />
                         <div class="champ champ-large">
                             <label for="motif" class="requis">Motif (5 à 300 caractères)</label>
-                            <input id="motif" name="motif" minlength="5" maxlength="300" autocomplete="off" required />
+                            <input id="motif" name="motif" minlength="5" maxlength="300" autocomplete="off" value="@MotifPrerempli" required />
                         </div>
                         <div class="champ">
                             <label for="confirmation" class="requis">Identifiant du compte, ressaisi</label>
@@ -140,6 +237,10 @@
                             <label for="code-mdp" class="requis">Code de confirmation reçu</label>
                             <input id="code-mdp" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required />
                         </div>
+                        <label class="case champ-large">
+                            <input type="checkbox" name="@ActionsImportComptes.CaseIdentifiant" value="1" checked />
+                            <span>Renvoyer l'identifiant par e-mail (jamais le mot de passe)</span>
+                        </label>
                         <div class="actions">
                             <button type="submit" class="btn btn-principal">Remettre à zéro le mot de passe</button>
                         </div>
@@ -159,16 +260,28 @@
     [SupplyParameterFromQuery(Name = "erreur")] private string? Erreur { get; set; }
     [SupplyParameterFromQuery(Name = "ok")] private string? Ok { get; set; }
     [SupplyParameterFromQuery(Name = "action")] private string? Action { get; set; }
+    /// <summary>Script central 040 : clé du motif prérempli (« Régénérer le mot de passe »), jamais un texte saisi.</summary>
+    [SupplyParameterFromQuery(Name = "motif")] private string? Motif { get; set; }
+    /// <summary>Script central 040 : référence de l'aperçu d'import gardé en mémoire (jamais les lignes dans l'adresse).</summary>
+    [SupplyParameterFromQuery(Name = "apercu")] private string? ApercuRef { get; set; }
 
     private TableEcran Table { get; set; } = TableEcran.Vide;
+    private IReadOnlyList<Pharma.Shared.LigneCompteImport>? Apercu { get; set; }
     private int PageCourante => Math.Clamp(Numero ?? 1, 1, 100_000);
     private bool RemiseMotDePasse => Action == "mot-de-passe";
     private bool Creation => Action == "creer";
+    private bool Import => Action == "importer";
     private bool SonPropreCompte => Compte is { } c && Contexte?.Session() is { } s && s.Compte == c;
     private object?[]? Choisi => Compte is { } c ? Table.Lignes.FirstOrDefault(l => Table.Valeur(l, "id") is Guid g && g == c) : null;
 
+    /// <summary>Motif prérempli : « Mot de passe provisoire expiré » (ou nouveau provisoire si l'ancien vaut encore), modifiable.</summary>
+    private string? MotifPrerempli => Motif == EtatMotDePasse.CleMotifExpire && Choisi is { } l
+        ? Table.Valeur(l, "mot_de_passe_etat") as string == EtatMotDePasse.Expire ? EtatMotDePasse.MotifExpire : EtatMotDePasse.MotifNouveau
+        : null;
+
     protected override async Task OnInitializedAsync()
     {
-        if (Contexte?.EmpreinteJeton() is { } jeton) Table = await Depot.ComptesAsync(jeton, PageCourante, Taille, Contexte.RequestAborted);
+        if (Contexte?.EmpreinteJeton() is { } jeton) Table = EtatMotDePasse.Presenter(await Depot.ComptesAsync(jeton, PageCourante, Taille, Contexte.RequestAborted));
+        if (Import && Contexte?.Session() is { } s) Apercu = Apercus.Lire(ApercuRef, s.Id);
     }
 }

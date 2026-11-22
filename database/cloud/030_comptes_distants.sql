@@ -190,6 +190,13 @@ $$;
 
 -- Session valable (fin non posée, échéance et inactivité respectées, compte actif) ; une session échue est fermée et journalisée.
 -- Rend la ligne de session et le rôle du compte, ou rien. L'activité est notée (inactivité du titulaire).
+-- Garde de rejeu (2026-11-21, script 040) : définition remplacée par le script 040 ; rejouer ce script après 040 ne la
+-- ramène pas en arrière (marqueur : fonction cloud_inactivite_session, posée par 040).
+DO $rejeu$ BEGIN
+    IF to_regprocedure('public.cloud_inactivite_session(text)') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_ecran_session_valable : définition plus récente (script 040) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_ecran_session_valable(p_empreinte_jeton text, OUT session_id bigint, OUT compte_id uuid, OUT role text, OUT etape text)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE s session_distante; c compte_distant;
@@ -210,6 +217,9 @@ BEGIN
     UPDATE session_distante SET derniere_activite_le = now() WHERE id = s.id;
     session_id := s.id; compte_id := c.id; role := c.role; etape := s.etape;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 -- Session ouverte exigée (étape « ouverte ») ; sinon erreur 28000 (aucune ligne lue, rien d'écrit par l'appelant)
 CREATE OR REPLACE FUNCTION cloud_ecran_session_ouverte(p_empreinte_jeton text, OUT session_id bigint, OUT compte_id uuid, OUT role text)
@@ -240,6 +250,13 @@ $$;
 -- Connexion, 2e partie : résultat de la vérification du mot de passe. Échec : compté ; au 5e, verrouillage (15 min, doublé à
 -- chaque verrouillage, 24 h au plus). Réussite : session à l'étape « code » (10 min) pour le second facteur.
 -- Statuts : code_attendu, refuse, verrouille. p_compte NULL : identifiant inconnu (journalisé sans l'identifiant).
+-- Garde de rejeu (2026-11-21, script 040) : définition remplacée par le script 040 ; rejouer ce script après 040 ne la
+-- ramène pas en arrière (marqueur : fonction cloud_compte_provisoire_echeance, posée par 040).
+DO $rejeu$ BEGIN
+    IF to_regprocedure('public.cloud_compte_provisoire_echeance(timestamptz,timestamptz)') IS NOT NULL THEN
+        RAISE NOTICE 'cloud_ecran_fin_connexion : définition plus récente (script 040) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_ecran_fin_connexion(p_compte uuid, p_reussi boolean, p_empreinte_jeton text)
 RETURNS TABLE (statut text, verrouille_jusqu_au timestamptz)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
@@ -279,6 +296,9 @@ BEGIN
     PERFORM cloud_ecran_journaliser(c.id, v_session, NULL, 'mot_de_passe_verifie', 'ok', NULL);
     RETURN QUERY SELECT 'code_attendu'::text, NULL::timestamptz;
 END $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 -- Session courante (chaque requête des écrans) : compte, rôle, étape et échéance ; aucune ligne si elle n'est plus valable.
 CREATE OR REPLACE FUNCTION cloud_ecran_session(p_empreinte_jeton text)

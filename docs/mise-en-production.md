@@ -1088,6 +1088,16 @@ Les scripts de la base centrale sont dans `database\cloud\` (001 au dernier, 036
     & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --contact-compte <identifiant> --email <nouvelle adresse> --auteur "<nom>"
     ```
     (`--telephone <n°>` aussi ; `-` retire ; au moins un contact reste). Noté au journal des accès et au journal de sécurité, sans l'adresse.
+  - **Plusieurs comptes d'un coup** (script central 040, facultatif) : fichier CSV en UTF-8, en-tête `role;identifiant;nom;email;telephone`,
+    200 comptes au plus (tout ou rien) :
+    ```powershell
+    & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --creer-comptes <fichier.csv> --auteur "<nom>" --envoyer-identifiants --adresse-ecrans https://<adresse des écrans>/
+    ```
+    La liste identifiant + mot de passe provisoire s'affiche **une fois** (jamais par e-mail : SMS ou de vive voix) ; seul l'identifiant
+    part par e-mail. Les mots de passe provisoires non utilisés expirent après 7 jours (réglable dans « Envoi des codes »).
+  - **Après la mise en ligne des écrans** : régler dans « Envoi des codes » la durée de vie des mots de passe provisoires (7 jours par
+    défaut) et la déconnexion après inactivité (éditeur 15 min, titulaire 30 min par défaut) ; facultatif : `Ecrans:AdressePublique`
+    (adresse https des écrans, écrite dans l'e-mail de l'identifiant). Les sessions actives n'ont plus de durée maximale.
   - Le réglage d'envoi se modifie ensuite à l'écran « Envoi des codes », les contacts à l'écran « Comptes ».
 
 ### 4. Autorité et certificat du serveur central

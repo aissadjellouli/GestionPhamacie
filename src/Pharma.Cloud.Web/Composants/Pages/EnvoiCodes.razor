@@ -3,7 +3,9 @@
 @inject Pharma.Cloud.Web.Codes.ChoixEnvoiCodes Choix
 
 @* Lot S7.6 (script central 037) : réglage de l'envoi des codes de second facteur, administration du site, ÉDITEUR seulement.
-   Le mot de passe SMTP n'est jamais réaffiché (champ toujours vide : vide = inchangé) ; enregistrer exige un code de confirmation. *@
+   Le mot de passe SMTP n'est jamais réaffiché (champ toujours vide : vide = inchangé) ; enregistrer exige un code de confirmation.
+   Script central 040 : durée de vie d'un mot de passe provisoire non utilisé (1 à 30 jours, 7 par défaut) et déconnexion après
+   inactivité par rôle (5 à 60 min ; éditeur 15, titulaire 30 par défaut), chacune avec un code de confirmation. *@
 <PageTitle>Envoi des codes · écrans du central</PageTitle>
 
 <div class="page page-serree">
@@ -95,6 +97,42 @@
                 <dd>@Rubriques.Afficher("modifie_le", Valeur("modifie_le"))</dd>
             </dl>
             <DemandeCode Retour="/envoi-codes" />
+            @* Script central 040 : durée de vie d'un mot de passe provisoire non utilisé (création, import, console, remise à zéro) *@
+            <form method="post" action="actions/envoi-codes/duree" class="formulaire-duree" aria-labelledby="t-duree">
+                <AntiforgeryToken />
+                <h3 id="t-duree">Mots de passe provisoires</h3>
+                <div class="champ">
+                    <label for="duree_jours" class="requis">Durée de vie sans connexion (jours, 1 à 30)</label>
+                    <input id="duree_jours" name="duree_jours" type="number" min="1" max="30" step="1" value="@Duree" required />
+                </div>
+                <div class="champ">
+                    <label for="code-duree" class="requis">Code de confirmation reçu</label>
+                    <input id="code-duree" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required />
+                </div>
+                <div class="actions bouton-bas">
+                    <button type="submit" class="btn btn-contour">Enregistrer la durée</button>
+                </div>
+            </form>
+            @* Script central 040 : déconnexion après inactivité par rôle ; un utilisateur actif n'est jamais déconnecté *@
+            <form method="post" action="actions/envoi-codes/inactivite" class="formulaire-duree" aria-labelledby="t-sessions">
+                <AntiforgeryToken />
+                <h3 id="t-sessions">Sécurité des sessions · déconnexion après inactivité</h3>
+                <div class="champ">
+                    <label for="inactivite_editeur" class="requis">Éditeur (minutes, 5 à 60)</label>
+                    <input id="inactivite_editeur" name="inactivite_editeur" type="number" min="5" max="60" step="1" value="@Inactivite.Editeur" required />
+                </div>
+                <div class="champ">
+                    <label for="inactivite_titulaire" class="requis">Titulaire (minutes, 5 à 60)</label>
+                    <input id="inactivite_titulaire" name="inactivite_titulaire" type="number" min="5" max="60" step="1" value="@Inactivite.Titulaire" required />
+                </div>
+                <div class="champ">
+                    <label for="code-inactivite" class="requis">Code de confirmation reçu</label>
+                    <input id="code-inactivite" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required />
+                </div>
+                <div class="actions bouton-bas">
+                    <button type="submit" class="btn btn-contour">Enregistrer l'inactivité</button>
+                </div>
+            </form>
             <ol class="detail liste-aide" aria-label="Compte Gmail">
                 <li>Gmail : activer la validation en deux étapes du compte Google, puis créer un « mot de passe d'application » (16 caractères).</li>
                 <li>Ici : smtp.gmail.com, port 587, STARTTLS, identifiant et expéditeur = l'adresse Gmail, mot de passe = celui de l'application.</li>
@@ -121,9 +159,18 @@
     private string Tls => Texte("smtp_tls") ?? "starttls";
     private bool Renseigne => Valeur("mot_de_passe_renseigne") is true;
     private bool Complet => Valeur("complet") is true;
+    /// <summary>Script central 040 : durée de vie (jours) d'un mot de passe provisoire non utilisé.</summary>
+    private int Duree { get; set; } = 7;
+    /// <summary>Script central 040 : déconnexion après inactivité (minutes) par rôle.</summary>
+    private (int Editeur, int Titulaire) Inactivite { get; set; } = (15, 30);
 
     protected override async Task OnInitializedAsync()
     {
-        if (Contexte?.EmpreinteJeton() is { } jeton) Table = await Depot.ReglageEnvoiCodesAsync(jeton, Contexte.RequestAborted);
+        if (Contexte?.EmpreinteJeton() is { } jeton)
+        {
+            Table = await Depot.ReglageEnvoiCodesAsync(jeton, Contexte.RequestAborted);
+            Duree = await Depot.DureeProvisoireAsync(jeton, Contexte.RequestAborted);
+            Inactivite = await Depot.InactiviteAsync(jeton, Contexte.RequestAborted);
+        }
     }
 }

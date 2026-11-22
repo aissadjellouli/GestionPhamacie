@@ -162,13 +162,21 @@ public partial class CentralVisualStudioTests
         Assert.True(profils.ContainsKey("API + Poste client"));
         Assert.True(profils.ContainsKey("API + Poste + Central"));
         var projets = profils["API + Poste + Central"].EnumerateArray().Select(p => p.GetProperty("Path").GetString()).ToList();
-        Assert.Equal(new[] { @"src\Pharma.Cloud.Api\Pharma.Cloud.Api.csproj", @"src\Pharma.Api\Pharma.Api.csproj", @"src\Pharma.Desktop\Pharma.Desktop.csproj",
-            @"src\Pharma.Cloud.Web\Pharma.Cloud.Web.csproj" }, projets);
+        // Ordre choisi par le titulaire dans Visual Studio (2026-11-22) : API locale, API du central, écrans du central, poste
+        Assert.Equal(new[] { @"src\Pharma.Api\Pharma.Api.csproj", @"src\Pharma.Cloud.Api\Pharma.Cloud.Api.csproj", @"src\Pharma.Cloud.Web\Pharma.Cloud.Web.csproj",
+            @"src\Pharma.Desktop\Pharma.Desktop.csproj" }, projets);
         // Lot S7.1 : écrans du central seuls avec le central (https://127.0.0.1:5094)
         Assert.Equal(new[] { @"src\Pharma.Cloud.Api\Pharma.Cloud.Api.csproj", @"src\Pharma.Cloud.Web\Pharma.Cloud.Web.csproj" },
             profils["Central + Écrans"].EnumerateArray().Select(p => p.GetProperty("Path").GetString()).ToList());
         var ecrans = File.ReadAllText(Path.Combine(racine, "src", "Pharma.Cloud.Web", "Properties", "launchSettings.json"));
         Assert.Contains("https://127.0.0.1:5094", ecrans);
+        // Lancement depuis Visual Studio : le navigateur s'ouvre sur la page de connexion des écrans du central (2026-11-22)
+        using (var docEcrans = JsonDocument.Parse(ecrans))
+        {
+            var profilEcrans = docEcrans.RootElement.GetProperty("profiles").GetProperty("Pharma.Cloud.Web");
+            Assert.True(profilEcrans.GetProperty("launchBrowser").GetBoolean());
+            Assert.Equal("connexion", profilEcrans.GetProperty("launchUrl").GetString());
+        }
         Assert.DoesNotMatch(@"(?i)password|mot_de_passe|PHARMA_CLOUD|ConnectionStrings", ecrans);
         Assert.Equal(new[] { @"src\Pharma.Api\Pharma.Api.csproj", @"src\Pharma.Desktop\Pharma.Desktop.csproj" },
             profils["API + Poste client"].EnumerateArray().Select(p => p.GetProperty("Path").GetString()).ToList());

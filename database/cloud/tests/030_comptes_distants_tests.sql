@@ -121,8 +121,9 @@ BEGIN
     BEGIN PERFORM cloud_ecran_changer_mot_de_passe(j2, 'clair'); RAISE EXCEPTION 'mot de passe en clair accepté';
     EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
     ASSERT (SELECT etape FROM cloud_ecran_changer_mot_de_passe(j2, '$2b$12$' || repeat('z', 53))) = 'ouverte', 'mot de passe changé : session ouverte';
-    ASSERT (SELECT NOT mot_de_passe_provisoire AND role = 'editeur' AND expire_le BETWEEN now() + interval '119 minutes' AND now() + interval '121 minutes'
-            FROM cloud_ecran_session(j2)), 'éditeur : 2 h';
+    -- Éditeur : 2 h (030) ; depuis le script 040, échéance glissante = inactivité réglée (5 à 60 min)
+    ASSERT (SELECT NOT mot_de_passe_provisoire AND role = 'editeur' AND expire_le BETWEEN now() + interval '4 minutes' AND now() + interval '121 minutes'
+            FROM cloud_ecran_session(j2)), 'éditeur : 2 h, ou inactivité réglée (040)';
 END $$;
 
 -- Second facteur : 5 essais au plus, code expiré refusé
@@ -161,8 +162,9 @@ DO $$ BEGIN
     ASSERT NOT EXISTS (SELECT 1 FROM cloud_ecran_session(repeat('2', 64))), 'déconnexion : jeton sans valeur';
 END $$;
 RESET ROLE;
-INSERT INTO session_distante (empreinte_jeton, compte_id, etape, expire_le)
-SELECT repeat('8', 64), id, 'ouverte', now() - interval '1 second' FROM compte_distant WHERE identifiant = 'essai.031';
+-- Session échue ET inactive depuis plus de 60 min (fermée par l'échéance au 030, par l'inactivité depuis le 040)
+INSERT INTO session_distante (empreinte_jeton, compte_id, etape, expire_le, derniere_activite_le)
+SELECT repeat('8', 64), id, 'ouverte', now() - interval '1 second', now() - interval '61 minutes' FROM compte_distant WHERE identifiant = 'essai.031';
 INSERT INTO session_distante (empreinte_jeton, compte_id, etape, expire_le)
 SELECT repeat('9', 64), id, 'ouverte', now() + interval '1 hour' FROM compte_distant WHERE identifiant = 'essai.031';
 SET LOCAL ROLE pharma_cloud_ecrans;
@@ -172,7 +174,7 @@ DO $$ BEGIN
 END $$;
 RESET ROLE;
 DO $$ BEGIN
-    ASSERT (SELECT motif_fin FROM session_distante WHERE empreinte_jeton = repeat('8', 64)) = 'expiree', 'session échue fermée';
+    ASSERT (SELECT motif_fin FROM session_distante WHERE empreinte_jeton = repeat('8', 64)) IN ('expiree', 'inactivite'), 'session échue fermée';
     ASSERT cloud_compte_distant_desactiver('essai.031') >= 1, 'désactivation : sessions fermées';
 END $$;
 SET LOCAL ROLE pharma_cloud_ecrans;

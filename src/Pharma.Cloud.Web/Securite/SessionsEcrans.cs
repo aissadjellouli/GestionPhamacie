@@ -52,12 +52,13 @@ public static class ContexteEcran
 public static class ControleAcces
 {
     private static readonly string[] Statiques = ["/css/", "/js/", "/img/", "/fonts/", "/favicon"];
-    private static readonly string[] Publiques = ["/connexion", "/actions/connexion", "/actions/theme"];
+    private static readonly string[] Publiques = ["/connexion", "/actions/connexion", "/actions/theme", "/actions/deconnexion"];
     private static readonly string[] EtapeCode = ["/code", "/actions/code", "/actions/renvoyer-code", "/actions/deconnexion", "/actions/theme"];
     private static readonly string[] EtapeMotDePasse = ["/mot-de-passe", "/actions/mot-de-passe", "/actions/deconnexion", "/actions/theme"];
 
     /// <summary>Écrans communs aux deux rôles en session ouverte.</summary>
-    private static readonly string[] Communs = ["/mot-de-passe", "/actions/mot-de-passe", "/actions/deconnexion", "/actions/theme", "/mon-journal", "/acces-refuse"];
+    private static readonly string[] Communs = ["/mot-de-passe", "/actions/mot-de-passe", "/actions/deconnexion", "/actions/theme", "/mon-journal", "/acces-refuse",
+        "/actions/activite"];
 
     /// <summary>Écrans du titulaire (liste fermée) : ses officines, la vue d'ensemble (S7.3), le rattachement, le code de confirmation
     /// d'un ordre (S7.3), le tableau de bord, le journal et les ordres d'une officine ; les réglages communs et leur envoi (S7.4).</summary>
@@ -161,5 +162,70 @@ public sealed class CodesAffiches(TimeProvider horloge)
     {
         if (reference is null || !entrees.TryRemove(reference, out var e)) return null;
         return e.Session == session && e.Expire >= horloge.GetUtcNow() ? (e.Officine, e.Serveur, e.Code) : null;
+    }
+}
+
+/// <summary>
+/// Script central 040 : comptes créés, importés ou remis à zéro, avec leur mot de passe provisoire et le résultat des envois, gardés en
+/// MÉMOIRE seulement, 2 minutes, pour la seule session de l'éditeur, et rendus une seule fois (page « mot de passe provisoire ») ;
+/// jamais en base, dans un journal, une adresse ni sur disque.
+/// </summary>
+public sealed class ComptesAffiches(TimeProvider horloge)
+{
+    public sealed record Lot(string Nature, IReadOnlyList<Pharma.Shared.CompteTransmis> Comptes);
+
+    private sealed record Entree(long Session, Lot Lot, DateTimeOffset Expire);
+
+    private readonly ConcurrentDictionary<string, Entree> entrees = new();
+
+    /// <param name="nature">creation, remise ou import.</param>
+    public string Garder(long session, string nature, IReadOnlyList<Pharma.Shared.CompteTransmis> comptes)
+    {
+        foreach (var (cle, e) in entrees) if (e.Expire < horloge.GetUtcNow()) entrees.TryRemove(cle, out _);
+        var reference = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
+        entrees[reference] = new Entree(session, new Lot(nature, comptes), horloge.GetUtcNow().AddMinutes(2));
+        return reference;
+    }
+
+    public Lot? Prendre(string? reference, long session)
+    {
+        if (reference is null || !entrees.TryRemove(reference, out var e)) return null;
+        return e.Session == session && e.Expire >= horloge.GetUtcNow() ? e.Lot : null;
+    }
+}
+
+/// <summary>
+/// Script central 040 : aperçu d'un fichier d'import (lignes lues et statut de chacune), gardé en MÉMOIRE seulement, 15 minutes, pour
+/// la seule session de l'éditeur qui l'a déposé (référence tirée au sort dans l'adresse, jamais les lignes) ; retiré à la création.
+/// </summary>
+public sealed class ApercusImport(TimeProvider horloge)
+{
+    public static readonly TimeSpan Duree = TimeSpan.FromMinutes(15);
+
+    private sealed record Entree(long Session, IReadOnlyList<Pharma.Shared.LigneCompteImport> Lignes, DateTimeOffset Expire);
+
+    private readonly ConcurrentDictionary<string, Entree> entrees = new();
+
+    public string Garder(long session, IReadOnlyList<Pharma.Shared.LigneCompteImport> lignes)
+    {
+        foreach (var (cle, e) in entrees)
+            if (e.Expire < horloge.GetUtcNow() || e.Session == session) entrees.TryRemove(cle, out _);   // un aperçu à la fois par session
+        var reference = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
+        entrees[reference] = new Entree(session, lignes, horloge.GetUtcNow().Add(Duree));
+        return reference;
+    }
+
+    public IReadOnlyList<Pharma.Shared.LigneCompteImport>? Lire(string? reference, long session) =>
+        reference is not null && entrees.TryGetValue(reference, out var e) && e.Session == session && e.Expire >= horloge.GetUtcNow() ? e.Lignes : null;
+
+    /// <summary>Statuts mis à jour (nouvel avis de la base au moment de la confirmation) ; l'échéance ne change pas.</summary>
+    public void Remplacer(string reference, long session, IReadOnlyList<Pharma.Shared.LigneCompteImport> lignes)
+    {
+        if (entrees.TryGetValue(reference, out var e) && e.Session == session) entrees[reference] = e with { Lignes = lignes };
+    }
+
+    public void Retirer(string? reference)
+    {
+        if (reference is not null) entrees.TryRemove(reference, out _);
     }
 }

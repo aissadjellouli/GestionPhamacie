@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Crée la base d'un serveur central de synchronisation NEUF : scripts database\cloud 001 au dernier (039 à ce jour) dans l'ordre, contrôles, tests facultatifs.
+    Crée la base d'un serveur central de synchronisation NEUF : scripts database\cloud 001 au dernier (040 à ce jour) dans l'ordre, contrôles, tests facultatifs.
 
 .DESCRIPTION
     À utiliser pour le parcours E, étape 2 (serveur central). Ne sert jamais sur la base d'une officine.
@@ -13,7 +13,7 @@
 
     Étapes :
       1. création de la base (propriétaire = -Proprietaire, UTF8) par -CompteAdmin si elle n'existe pas ;
-      2. scripts 001 au dernier (039 à ce jour) de database\cloud, un par un, avec le compte propriétaire. Le script 001 crée le rôle
+      2. scripts 001 au dernier (040 à ce jour) de database\cloud, un par un, avec le compte propriétaire. Le script 001 crée le rôle
          applicatif pharma_cloud_api SANS connexion (non propriétaire des tables : la sécurité au niveau des lignes s'applique) ;
          le script 029 crée le rôle de lecture technique pharma_cloud_etat SANS connexion (aucune connexion créée ici) ; le script 030
          crée le rôle des écrans pharma_cloud_ecrans SANS connexion ni droit sur les tables (fonctions cloud_ecran_* seulement) ; le script 037
@@ -57,7 +57,7 @@
 
 .EXAMPLE
     .\scripts\mep\creer_base_centrale.ps1 -Base pharmacie_central -Proprietaire central_proprietaire
-    Crée la base et passe tous les scripts 001 à 039 (la suite numérotée sans trou).
+    Crée la base et passe tous les scripts 001 à 040 (la suite numérotée sans trou).
 
 .EXAMPLE
     .\scripts\mep\creer_base_centrale.ps1 -Base pharmacie_central -Proprietaire central_proprietaire -AvecTests -WhatIf
@@ -182,6 +182,11 @@ Invoke-Principal {
         $creation = Get-Scalaire -Compte $Proprietaire -Base $Base -Sql "SELECT count(*) FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = 'cloud_ecran_compte_creer' AND has_function_privilege('$RoleEcrans', oid, 'EXECUTE')"
         if ($creation -ne "1") { throw "Fonction du script 039 (création d'un compte par l'éditeur) absente ou non accordée à $RoleEcrans." }
         Write-Ok "Création d'un compte par l'éditeur (écran « Comptes ») : fonction présente."
+        # Script 040 : import de comptes, durée de vie du mot de passe provisoire, déconnexion après inactivité par rôle
+        $s040 = Get-Scalaire -Compte $Proprietaire -Base $Base -Sql "SELECT count(*) FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('cloud_ecran_comptes_apercu', 'cloud_ecran_comptes_importer', 'cloud_ecran_comptes_liste', 'cloud_ecran_comptes_noter_envoi', 'cloud_ecran_comptes_destinataire_remise', 'cloud_ecran_provisoire_duree_lire', 'cloud_ecran_provisoire_duree_enregistrer', 'cloud_ecran_inactivite_lire', 'cloud_ecran_inactivite_enregistrer') AND has_function_privilege('$RoleEcrans', oid, 'EXECUTE')"
+        if ($s040 -ne "9") { throw "Fonctions du script 040 (import de comptes, durée du mot de passe provisoire, inactivité) absentes ou non accordées à $RoleEcrans." }
+        $reglage040 = Get-Scalaire -Compte $Proprietaire -Base $Base -Sql "SELECT duree_provisoire_jours || '/' || inactivite_editeur_minutes || '/' || inactivite_titulaire_minutes FROM parametre_envoi_codes WHERE id = 1"
+        Write-Ok "Import de comptes, mot de passe provisoire (jours) et inactivité éditeur / titulaire (minutes) : $reglage040 (réglables dans « Envoi des codes »)."
         $parts = Get-Scalaire -Compte $Proprietaire -Base $Base -Sql "SELECT count(*) FROM pg_inherits WHERE inhparent = 'public.lot_recu'::regclass"
         Write-Ok "Partitions de lot_recu : $parts."
 

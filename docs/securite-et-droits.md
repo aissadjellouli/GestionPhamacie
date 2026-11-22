@@ -93,7 +93,7 @@ Détail : [ecrans-central.md](ecrans-central.md) § 5. En local seulement à ce 
   il ne voit que **ses** officines, rattachées par un **code de rattachement** (un compte, une officine, 30 minutes, usage unique, empreinte
   seule en base ; 5 refus par quart d'heure ; code d'un autre compte : même réponse qu'un code inconnu). Droits par officine : `consulter`
   (tableau de bord : **totaux seulement**, aucun patient, aucune vente détaillée) et `journal_acces` (journal des accès de l'officine, y
-  compris ceux de l'éditeur, sans identifiant ni nom). Sessions : 30 minutes d'inactivité, 8 heures au plus.
+  compris ceux de l'éditeur, sans identifiant ni nom). Sessions : voir « Déconnexion après inactivité » (script central 040).
 - **Réglages communs du titulaire (lot S7.4, script central 035)** : un titulaire à distance **propose** des seuils d'alerte (liste
   fermée de 9 réglages, bornes) à ses officines où il a le droit `ordres` (**chacune**, sinon rien n'est envoyé) ; code de second facteur
   à chaque envoi, 5 envois par heure ; jamais prix, TVA, droits, comptes ni rien de fiscal (refusé par l'écran, la base et le poste).
@@ -137,5 +137,20 @@ Détail : [ecrans-central.md](ecrans-central.md) § 5. En local seulement à ce 
   plus, contrôlé par l'écran, la base centrale (fonction et contrainte) et le poste ; affiché en texte (jamais interprété ni cliquable)
   à **tous les employés connectés** ; seul le **titulaire de l'officine** peut le fermer (journal des actions, sans le texte). Le texte
   n'est jamais écrit au journal de sécurité du central.
+- **Comptes distants : création, import, mot de passe provisoire (scripts centraux 039 et 040)** : un compte se crée par l'**éditeur**
+  (écran « Comptes », code de second facteur ; import CSV de 200 comptes au plus : aperçu sans code, **un seul code** pour tout le
+  fichier, **tout ou rien**) ou par la console du central (propriétaire). Le mot de passe est **provisoire** (tiré par l'application,
+  empreinte BCrypt seule en base), montré **une seule fois** à l'éditeur, jamais en base, au journal ni dans une adresse ; **jamais
+  envoyé par e-mail** (SMS seulement si un fournisseur est en service ; aujourd'hui : à transmettre manuellement). Seul l'**identifiant**
+  peut partir par e-mail (case cochée par défaut). Un mot de passe provisoire **non utilisé** expire après la durée réglée par l'éditeur
+  (1 à 30 jours, 7 par défaut) : connexion refusée (« Mot de passe provisoire expiré »), seulement après un mot de passe juste ;
+  l'éditeur en régénère un (remise à zéro, nouvelle durée complète). Journaux : jamais l'identifiant, le nom, le contact ni le mot de passe.
+- **Déconnexion après inactivité (script central 040)** : chaque session ouverte des écrans du central est fermée après l'**inactivité**
+  réglée par l'éditeur pour son rôle (5 à 60 minutes ; éditeur 15, titulaire 30 par défaut ; code de second facteur ; journal de
+  sécurité). **Plus de durée maximale pour une session active, décision du titulaire du 2026-11-21** (2 h éditeur et 8 h titulaire
+  abandonnées) : un utilisateur actif n'est jamais déconnecté ; chaque requête de l'utilisateur repousse l'échéance. Une minute avant,
+  la page propose « Rester connecté » ; à l'échéance, elle masque ses données et se déconnecte (« Session fermée après inactivité »).
+  Aucune requête automatique ne prolonge une session (signal d'activité seulement après un clic, une touche ou un défilement, une fois
+  par minute au plus). Étapes de connexion (code, mot de passe à changer) : 10 minutes, inchangées.
 - **Rôles étanches** : le titulaire n'ouvre aucun écran ni aucune action de l'éditeur, l'éditeur aucun écran du titulaire ; refus par les
   écrans (« Accès refusé ») **et** par la base (rôle revérifié dans chaque fonction).

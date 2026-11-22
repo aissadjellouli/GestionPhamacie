@@ -256,9 +256,9 @@ public sealed class DepotEcrans(NpgsqlDataSource db)
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    /// <summary>Comptes distants vus par l'éditeur (contact masqué), page par page.</summary>
+    /// <summary>Comptes distants vus par l'éditeur (contact masqué ; script central 040 : état du mot de passe), page par page.</summary>
     public Task<TableEcran> ComptesAsync(string empreinteJeton, int page, int taille, CancellationToken ct) =>
-        LireAsync(null, null, "SELECT * FROM cloud_ecran_facteur_comptes($1, $2, $3)", [Texte(empreinteJeton), Entier(page), Entier(taille)], ct);
+        LireAsync(null, null, "SELECT * FROM cloud_ecran_comptes_liste($1, $2, $3)", [Texte(empreinteJeton), Entier(page), Entier(taille)], ct);
 
     /// <summary>Contact d'un compte (vide = inchangé, « - » = retiré ; code de second facteur) ; rend le statut de la base.</summary>
     public async Task<string> ModifierContactAsync(string empreinteJeton, string? empreinteCode, Guid compte, string? email, string? telephone, CancellationToken ct)
@@ -334,6 +334,95 @@ public sealed class DepotEcrans(NpgsqlDataSource db)
         return (string)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
+    // ------------------------------------------------------------------ import de comptes et durée du provisoire (script central 040)
+    /// <summary>Aperçu d'un import (aucun code) : statut de chaque ligne (n° de ligne du fichier → statut de la base).</summary>
+    public async Task<Dictionary<int, string>> ApercuImportAsync(string empreinteJeton, string lignesJson, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("SELECT numero, statut FROM cloud_ecran_comptes_apercu($1, $2)");
+        cmd.Parameters.Add(Texte(empreinteJeton));
+        cmd.Parameters.Add(Json(lignesJson));
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        var statuts = new Dictionary<int, string>();
+        while (await r.ReadAsync(ct)) statuts.TryAdd(r.GetInt32(0), r.GetString(1));
+        return statuts;
+    }
+
+    /// <summary>
+    /// Import tout ou rien (un seul code) : chaque ligne porte l'empreinte BCrypt de son mot de passe provisoire. Rend les lignes de la
+    /// base : (n°, ok, compte) à la réussite ; (n°, statut, null) si une ligne est refusée ; (null, statut du code) sinon.
+    /// </summary>
+    public async Task<IReadOnlyList<(int? Numero, string Statut, Guid? Compte)>> ImporterComptesAsync(string empreinteJeton, string? empreinteCode,
+        string lignesJson, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("SELECT numero, statut, compte FROM cloud_ecran_comptes_importer($1, $2, $3)");
+        cmd.Parameters.Add(Texte(empreinteJeton));
+        cmd.Parameters.Add(Texte(empreinteCode));
+        cmd.Parameters.Add(Json(lignesJson));
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        var lignes = new List<(int?, string, Guid?)>();
+        while (await r.ReadAsync(ct)) lignes.Add((r.IsDBNull(0) ? null : r.GetInt32(0), r.GetString(1), r.IsDBNull(2) ? null : r.GetGuid(2)));
+        return lignes;
+    }
+
+    /// <summary>Contact d'un compte remis à zéro il y a 2 minutes au plus (envoi de l'identifiant et du mot de passe) ; null sinon.</summary>
+    public async Task<(string Identifiant, string Role, string? Email, string? Telephone)?> DestinataireRemiseAsync(string empreinteJeton, Guid compte,
+        CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("SELECT identifiant, role, email, telephone FROM cloud_ecran_comptes_destinataire_remise($1, $2)");
+        cmd.Parameters.Add(Texte(empreinteJeton));
+        cmd.Parameters.Add(Uuid(compte));
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        if (!await r.ReadAsync(ct)) return null;
+        return (r.GetString(0), r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3));
+    }
+
+    /// <summary>Résultat de l'envoi de l'identifiant (e-mail) ou du mot de passe (SMS) d'un compte au journal des accès (liste fermée).</summary>
+    public async Task NoterEnvoiCompteAsync(string empreinteJeton, Guid compte, string evenement, string objet, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("SELECT cloud_ecran_comptes_noter_envoi($1, $2, $3, $4)");
+        cmd.Parameters.Add(Texte(empreinteJeton));
+        cmd.Parameters.Add(Uuid(compte));
+        cmd.Parameters.Add(Texte(evenement));
+        cmd.Parameters.Add(Texte(objet));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>Durée de vie (jours) d'un mot de passe provisoire non utilisé.</summary>
+    public async Task<int> DureeProvisoireAsync(string empreinteJeton, CancellationToken ct)
+    {
+        await using var cmd = Commande("SELECT cloud_ecran_provisoire_duree_lire($1)", empreinteJeton);
+        return (int)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+
+    /// <summary>Durée enregistrée (1 à 30 jours, code de confirmation) ; rend le statut de la base.</summary>
+    public async Task<string> EnregistrerDureeProvisoireAsync(string empreinteJeton, string? empreinteCode, int? jours, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("SELECT statut FROM cloud_ecran_provisoire_duree_enregistrer($1, $2, $3)");
+        cmd.Parameters.Add(Texte(empreinteJeton));
+        cmd.Parameters.Add(Texte(empreinteCode));
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)jours ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Integer });
+        return (string)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+
+    /// <summary>Déconnexion après inactivité (minutes) : éditeur, titulaire.</summary>
+    public async Task<(int Editeur, int Titulaire)> InactiviteAsync(string empreinteJeton, CancellationToken ct)
+    {
+        await using var cmd = Commande("SELECT inactivite_editeur_minutes, inactivite_titulaire_minutes FROM cloud_ecran_inactivite_lire($1)", empreinteJeton);
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        return await r.ReadAsync(ct) ? (r.GetInt32(0), r.GetInt32(1)) : (15, 30);
+    }
+
+    /// <summary>Inactivité enregistrée (5 à 60 minutes par rôle, code de confirmation) ; rend le statut de la base.</summary>
+    public async Task<string> EnregistrerInactiviteAsync(string empreinteJeton, string? empreinteCode, int? editeur, int? titulaire, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("SELECT statut FROM cloud_ecran_inactivite_enregistrer($1, $2, $3, $4)");
+        cmd.Parameters.Add(Texte(empreinteJeton));
+        cmd.Parameters.Add(Texte(empreinteCode));
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)editeur ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Integer });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)titulaire ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Integer });
+        return (string)(await cmd.ExecuteScalarAsync(ct))!;
+    }
+
     // ------------------------------------------------------------------ outils
     private async Task<string?> ActionOuverteAsync(string jeton, Guid officine, string sql, string?[] valeurs, CancellationToken ct)
     {
@@ -393,6 +482,8 @@ public sealed class DepotEcrans(NpgsqlDataSource db)
     private static NpgsqlParameter Texte(string? v) => new() { Value = (object?)v ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text };
 
     private static NpgsqlParameter Entier(int v) => new() { Value = v, NpgsqlDbType = NpgsqlDbType.Integer };
+
+    private static NpgsqlParameter Json(string v) => new() { Value = v, NpgsqlDbType = NpgsqlDbType.Jsonb };
 
     private static NpgsqlParameter Uuid(Guid v) => new() { Value = v, NpgsqlDbType = NpgsqlDbType.Uuid };
 }

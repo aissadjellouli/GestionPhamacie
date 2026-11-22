@@ -20,11 +20,14 @@ namespace Pharma.Cloud.Api.Comptes;
 ///   --contact-compte &lt;identifiant&gt; [--email &lt;adresse&gt;|-] [--telephone &lt;n°&gt;|-] --auteur &lt;nom&gt;   contact du second facteur
 ///                    changé SUR LE SERVEUR (2026-11-21 : installation, adresse perdue ou erronée, quand l'écran « Comptes », qui exige un
 ///                    code, n'est pas joignable) ; « - » retire ; au moins un contact reste
+///   --creer-comptes &lt;fichier.csv&gt; --auteur &lt;nom&gt; [--envoyer-identifiants]   import de comptes (script central 040, tout ou rien,
+///                    ImportComptesConsole) ; mots de passe provisoires affichés UNE fois, identifiant par e-mail si demandé
 /// </summary>
 public static class ComptesDistantsAdministration
 {
     public static readonly string[] Commandes =
-        ["--creer-compte-editeur", "--creer-compte-titulaire", "--code-rattachement", "--comptes-distants", "--desactiver-compte", "--deverrouiller-compte", "--contact-compte"];
+        ["--creer-compte-editeur", "--creer-compte-titulaire", "--code-rattachement", "--comptes-distants", "--desactiver-compte", "--deverrouiller-compte", "--contact-compte",
+         ImportComptesConsole.Commande];
 
     public static bool Concerne(string commande) => Commandes.Contains(commande);
 
@@ -149,6 +152,8 @@ public static class ComptesDistantsAdministration
                 }
             case "--contact-compte":
                 return await ContactAsync(db, args, sortie, ct);
+            case ImportComptesConsole.Commande:
+                return await ImportComptesConsole.ExecuterAsync(db, args, sortie, ct);
             case "--deverrouiller-compte":
                 {
                     var identifiant = Identifiant(args);

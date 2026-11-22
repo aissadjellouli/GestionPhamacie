@@ -15,7 +15,11 @@ DO $$ BEGIN
         WHERE p.pronamespace = 'public'::regnamespace AND has_function_privilege('pharma_cloud_ecrans', p.oid, 'EXECUTE')
           AND p.proname NOT IN ('cloud_ecran_debut_connexion', 'cloud_ecran_creer_code', 'cloud_ecran_session',
                                 -- Script 037 : nouveau code (contact du compte lui-même, pour l'envoi) ; comptes vus par l'éditeur (contact MASQUÉ)
-                                'cloud_ecran_facteur_demander_code', 'cloud_ecran_facteur_comptes')
+                                'cloud_ecran_facteur_demander_code', 'cloud_ecran_facteur_comptes',
+                                -- Script 040 : comptes vus par l'éditeur avec l'état du mot de passe (contact MASQUÉ)
+                                'cloud_ecran_comptes_liste',
+                                -- Script 040 : contact d'un compte remis à zéro il y a 2 minutes au plus (envoi de l'identifiant)
+                                'cloud_ecran_comptes_destinataire_remise')
           AND p.proargmodes IS NOT NULL AND p.proargmodes[a.n] IN ('o', 't')
           AND a.nom IN ('donnees', 'contenu', 'attendu', 'trouve', 'cle_ligne', 'empreinte_code', 'code', 'empreinte', 'motif_revocation',
                         'motif', 'cible', 'auteur', 'fins_chaine', 'titulaire_id', 'montant_ttc', 'telephone', 'email', 'nom',
@@ -31,7 +35,10 @@ DO $$ BEGIN
             -- Remise à zéro d'un mot de passe par l'éditeur (script 038) : comptée par son propre test
             AND p.proname <> 'cloud_ecran_remise_mot_de_passe'
             -- Création d'un compte par l'éditeur (script 039) : comptée par son propre test
-            AND p.proname <> 'cloud_ecran_compte_creer') = 27, 'fonctions des écrans : 8 (030) + 19 (031)';
+            AND p.proname <> 'cloud_ecran_compte_creer'
+            -- Import de comptes et durée du mot de passe provisoire (script 040) : comptées par leur propre test
+            AND p.proname NOT LIKE 'cloud\_ecran\_comptes\_%' AND p.proname NOT LIKE 'cloud\_ecran\_provisoire\_%'
+            AND p.proname NOT LIKE 'cloud\_ecran\_inactivite\_%') = 27, 'fonctions des écrans : 8 (030) + 19 (031)';
 END $$;
 
 -- Données d'essai : deux officines (A active avec un lot, une anomalie et un ordre ; B en attente), un éditeur et un titulaire

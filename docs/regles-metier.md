@@ -2241,8 +2241,9 @@ Règles appliquées par les scripts centraux `030_comptes_distants.sql` et `031_
   Même message pour un identifiant inconnu, un mot de passe faux ou un compte bloqué. 5 échecs : blocage 15 minutes, puis durée doublée à chaque
   nouveau blocage, 24 heures au plus. Mot de passe provisoire : à changer avant tout autre écran ; nouveau mot de passe de 12 à 128 caractères,
   lettres et chiffres, sans l'identifiant, différent de l'actuel ; les autres sessions du compte sont fermées.
-- **Sessions** : éditeur 2 heures ; titulaire 30 minutes d'inactivité et 8 heures au plus (S7.2). Déconnexion, désactivation du compte et changement
-  du mot de passe ferment les sessions.
+- **Sessions** : éditeur 2 heures ; titulaire 30 minutes d'inactivité et 8 heures au plus (S7.2) — **remplacé par le script central 040**
+  (déconnexion après inactivité réglée par rôle, aucune durée maximale pour une session active : voir « Envoi des codes… S7.6 »).
+  Déconnexion, désactivation du compte et changement du mot de passe ferment les sessions.
 - **Ce que voit l'éditeur** : état technique seulement (état de l'officine, dernier contact, retard au-delà de 24 heures sans contact pour une
   officine active, lots sans contenu, chargements, époques, volumes, intégrité sans détail, restaurations sans montant, ordres sans données,
   journal de sécurité, certificats par leur début d'empreinte, codes d'activation sans le code). **Jamais** de donnée nominative.
@@ -2259,7 +2260,8 @@ Règles appliquées par le script central `032_ecrans_titulaire.sql`, la console
 ([ecrans-central.md](ecrans-central.md) § 3 bis) :
 
 - **Compte titulaire** : créé par la console (`--creer-compte-titulaire`, `--auteur` obligatoire), jamais par un écran ; mêmes règles de
-  connexion, de second facteur et de mot de passe que l'éditeur ; session de 30 minutes d'inactivité, 8 heures au plus.
+  connexion, de second facteur et de mot de passe que l'éditeur ; session de 30 minutes d'inactivité, 8 heures au plus (depuis le
+  script central 040 : inactivité réglée par l'éditeur, 30 minutes par défaut, aucune durée maximale pour une session active).
 - **Rattachement d'une officine** : par un code de 12 caractères (lettres et chiffres sans 0, O, 1 ni I ; tirets, espaces et casse ignorés)
   valable **30 minutes**, **une seule fois**, pour **un** compte titulaire et **une** officine ; un nouveau code pour le même compte et la même
   officine annule le précédent ; seule l'empreinte du code est gardée. Refusés : code inconnu ou destiné à un autre compte (même message),
@@ -2295,6 +2297,9 @@ Règles appliquées par le script central `037_envoi_codes_reglage.sql` et les �
   vers le serveur enregistré** (2026-11-21, revue de code) : si le serveur, le port, la sécurité ou l'identifiant saisis diffèrent,
   « Serveur, port, sécurité ou identifiant modifiés : ressaisissez le mot de passe d'application… » (sinon une session éditeur
   détournée pourrait envoyer ce mot de passe à un serveur de son choix).
+- **Un envoi ne dépend pas du navigateur** (2026-11-22) : une fois le code créé (ou le compte créé, importé, remis à zéro), son
+  e-mail ou son SMS part avec son propre délai de **30 secondes** au plus, même si le navigateur abandonne la requête (deuxième clic,
+  rechargement) ; un délai dépassé est un échec ordinaire (« email:echec » au journal), jamais une erreur de la page.
 - **Envoi d'un code** : canal relu à chaque envoi (10 secondes au plus après un enregistrement). E-mail → adresse du compte ; E-mail
   et SMS → chaque code part sur les deux (refus seulement si aucun ne part). **Tant qu'aucun fournisseur SMS n'existe** (2026-11-21,
   revue de code) : « SMS » seul est grisé à l'écran et refusé à l'enregistrement (« Rien n'est enregistré : « SMS » seul est
@@ -2318,7 +2323,41 @@ Règles appliquées par le script central `037_envoi_codes_reglage.sql` et les �
   perdue ou erronée (l'écran exige un code reçu à cette adresse) ; « - » retire ; au moins un contact reste.
 - **Départ d'une officine** : le mot de passe de l'archive part par les variables `PHARMA_CLOUD_SMTP_*` si elles sont complètes, sinon
   par le compte du réglage « Envoi des codes ».
-- — `database/cloud/037_envoi_codes_reglage.sql`, `src/Pharma.Cloud.Web/Codes/ChoixEnvoiCodes.cs`, `Codes/SecondFacteur.cs`,
+- **Import de comptes** (2026-11-21, décision du titulaire, script central 040) : par l'**éditeur** (écran « Comptes » › « Importer des
+  comptes ») ou par la console (`--creer-comptes <fichier.csv> --auteur <nom> [--envoyer-identifiants]`, propriétaire, aucun code).
+  Fichier CSV en UTF-8 (BOM permis), ligne d'en-tête `role ; identifiant ; nom ; email ; telephone` (ordre libre), séparateur « ; » ou
+  « , », 200 comptes et 128 Ko au plus. **Aperçu** ligne par ligne sans code (colonnes, guillemet non fermé, identifiant, identifiant en
+  double dans le fichier, identifiant déjà pris, nom, rôle, aucun contact, e-mail, téléphone) ; puis **un seul code** pour tout le fichier
+  et **tout ou rien** : une ligne invalide au moment de la confirmation, aucun compte n'est créé. L'aperçu reste en mémoire 15 minutes
+  (jamais dans l'adresse).
+- **Liste des comptes créés** (création, import, remise à zéro) : montrée **une seule fois** à l'éditeur (2 minutes, même session) avec,
+  pour chaque compte, son mot de passe provisoire, « identifiant envoyé par e-mail : oui / non / échec » et « mot de passe : envoyé par
+  SMS / à transmettre par SMS (manuel) » ; « Copier » copie tout le tableau en texte. Jamais en base (empreintes seulement) ni au journal.
+- **Identifiant par e-mail** : case « Envoyer l'identifiant par e-mail » **cochée par défaut** (import, « Ajouter un compte », remise à
+  zéro). L'e-mail part par le compte du réglage « Envoi des codes » et contient l'identifiant, le rôle, l'adresse des écrans
+  (`Ecrans:AdressePublique`, sinon « l'adresse vous sera communiquée par l'éditeur ») et « Le mot de passe provisoire vous sera transmis
+  séparément ». **Le mot de passe ne part jamais par e-mail.** Un échec d'envoi n'annule pas la création (« échec » dans la liste).
+- **Mot de passe provisoire par SMS** : automatique si le compte a un téléphone **et** qu'un fournisseur SMS est en service ; sinon (cas
+  actuel : aucun fournisseur) « à transmettre par SMS (manuel) » (« à transmettre (manuel, aucun téléphone) » sans téléphone).
+- **Durée de vie d'un mot de passe provisoire non utilisé** : réglée par l'éditeur dans « Envoi des codes » (**1 à 30 jours, 7 par
+  défaut**, code de confirmation). Passé `dernière remise à zéro (sinon création) + durée`, la connexion est refusée : « Mot de passe
+  provisoire expiré : demandez à l'éditeur une remise à zéro. » (seulement si le mot de passe saisi est juste ; noté au journal des
+  accès). S'applique à la création à l'écran, à l'import, à la console et à la remise à zéro.
+- **Régénérer un mot de passe provisoire** : le tableau « Comptes » montre l'état du mot de passe (« provisoire (expire le …) »,
+  « provisoire expiré », rien s'il est choisi) ; un compte provisoire a le lien « Régénérer le mot de passe » vers la remise à zéro
+  (motif prérempli « Mot de passe provisoire expiré », modifiable). La remise à zéro reste permise sur un provisoire expiré et repart
+  pour une **durée complète** ; nouveau mot de passe montré une fois, identifiant renvoyé par e-mail si la case est cochée.
+- **Déconnexion après inactivité** (2026-11-21, décision du titulaire, script central 040) : durée réglée par l'éditeur dans « Envoi des
+  codes » › « Sécurité des sessions », **par rôle**, **5 à 60 minutes** (éditeur **15**, titulaire **30** par défaut), code de
+  confirmation, journal de sécurité. **Un utilisateur actif n'est jamais déconnecté** : plus de durée maximale pour une session ouverte
+  (2 h éditeur, 8 h titulaire abandonnées) ; chaque requête de l'utilisateur repousse l'échéance. Une minute avant, bandeau « Vous allez
+  être déconnecté dans 60 s » avec « Rester connecté » ; clic, touche, molette ou défilement dans la page comptent (signal au serveur une
+  fois par minute au plus) ; aucune requête automatique ne prolonge la session. À l'échéance, la page masque ses données et se
+  déconnecte : « Session fermée après inactivité : reconnectez-vous. ». Étapes de connexion (code, mot de passe à changer) : 10 minutes.
+- **Limites inchangées** : 5 codes par compte et par quart d'heure.
+- — `database/cloud/037_envoi_codes_reglage.sql`, `database/cloud/040_import_comptes_duree_provisoire.sql`,
+  `src/Pharma.Shared/ImportComptes.cs`, `src/Pharma.Cloud.Web/Points/ActionsImportComptes.cs`, `Donnees/EtatMotDePasse.cs`,
+  `Composants/Pages/MotDePasseAffiche.razor`, `wwwroot/js/ecrans.js`, `src/Pharma.Cloud.Api/Comptes/ImportComptesConsole.cs`, `src/Pharma.Cloud.Web/Codes/ChoixEnvoiCodes.cs`, `Codes/SecondFacteur.cs`,
   `Points/ActionsEnvoiCodes.cs`, `Composants/Pages/EnvoiCodes.razor`, `Comptes.razor`, `src/Pharma.Cloud.Api/Depart/CourrielSmtp.cs`,
   `Depart/ReglageSmtpBase.cs`
 

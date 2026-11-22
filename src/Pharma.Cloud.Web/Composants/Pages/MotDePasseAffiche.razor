@@ -1,31 +1,80 @@
 @page "/comptes/mot-de-passe-affiche"
-@inject CodesAffiches Codes
+@inject ComptesAffiches Comptes
 
 <PageTitle>Mot de passe provisoire · écrans du central</PageTitle>
 
-@* Script central 038 : mot de passe provisoire d'un compte remis à zéro par l'éditeur. Gardé en MÉMOIRE seulement (2 minutes, même
-   session) et montré UNE seule fois ; jamais en base (empreinte BCrypt seulement), dans un journal, une adresse ni un e-mail. *@
+@* Scripts centraux 038 à 040 : mot de passe provisoire d'un compte créé, importé ou remis à zéro par l'éditeur, avec le résultat des
+   envois (identifiant par e-mail, mot de passe par SMS). Gardé en MÉMOIRE seulement (2 minutes, même session) et montré UNE seule fois ;
+   jamais en base (empreinte BCrypt seulement), dans un journal, une adresse ni un e-mail. *@
 <div class="page page-serree">
     <div class="titre-page">
         <div>
-            <h1>Mot de passe provisoire</h1>
-            <p class="sous-titre">Affiché UNE seule fois : transmettez-le de vive voix, après avoir vérifié l'identité de la personne.</p>
+            <h1>@(Lot is { Comptes.Count: > 1 } ? "Mots de passe provisoires" : "Mot de passe provisoire")</h1>
+            <p class="sous-titre">Affiché UNE seule fois : transmettez-le par SMS ou de vive voix, après avoir vérifié l'identité de la personne ; jamais par e-mail.</p>
         </div>
         <div class="actions">
-            <a class="btn btn-contour" href="@(Compte is { } c ? $"comptes?compte={c}&action=mot-de-passe" : "comptes")">Comptes</a>
+            <a class="btn btn-contour" href="@(Compte is { } choisi ? $"comptes?compte={choisi}&action=mot-de-passe" : "comptes")">Comptes</a>
         </div>
     </div>
-    @if (Affiche is { } a)
+    @if (Lot is { Comptes.Count: 1 } un)
     {
+        var a = un.Comptes[0];
         <section class="panneau" aria-labelledby="t-mdp">
-            <h2 id="t-mdp">@(Cree ? "Compte créé · mot de passe à changer à la première connexion" : "Mot de passe remis à zéro · à changer à la prochaine connexion")</h2>
-            <p class="mot-de-passe-provisoire" id="mot-de-passe-provisoire">@a</p>
+            <h2 id="t-mdp">@(un.Nature == "remise" ? "Mot de passe remis à zéro · à changer à la prochaine connexion" : "Compte créé · mot de passe à changer à la première connexion")</h2>
+            <p class="mot-de-passe-provisoire" id="mot-de-passe-provisoire">@a.MotDePasse</p>
             <div class="actions">
                 <button type="button" class="btn btn-principal" data-copier="mot-de-passe-provisoire">Copier</button>
                 <span class="detail" data-copie-faite="mot-de-passe-provisoire" hidden>Copié.</span>
             </div>
-            <p class="detail">@(Cree ? "" : "Les sessions ouvertes du compte sont fermées. ")À la connexion, le code de confirmation part sur le contact du compte ;
-                le nouveau mot de passe est ensuite exigé. Le central n'en garde que l'empreinte : ce mot de passe ne pourra plus être réaffiché.</p>
+            <dl class="fiche-infos">
+                <dt>Compte</dt>
+                <dd>@a.Identifiant (@a.RoleTexte)</dd>
+                <dt>Identifiant envoyé par e-mail</dt>
+                <dd class="@(a.Email == "echec" ? "texte-attention" : null)">@a.EmailTexte</dd>
+                <dt>Mot de passe</dt>
+                <dd class="@(a.Sms == "envoye" ? null : "texte-attention")">@a.SmsTexte</dd>
+            </dl>
+            <p class="detail">@(un.Nature == "remise" ? "Les sessions ouvertes du compte sont fermées. " : "")À la connexion, le code de confirmation part sur le contact du compte ;
+                le nouveau mot de passe est ensuite exigé. Non utilisé dans le délai réglé (« Envoi des codes »), il expire : régénérez-le depuis « Comptes ».
+                Le central n'en garde que l'empreinte : ce mot de passe ne pourra plus être réaffiché.</p>
+        </section>
+    }
+    else if (Lot is { } lot)
+    {
+        <section class="panneau comptes-transmis" aria-labelledby="t-mdp" data-hauteur-restante>
+            <h2 id="t-mdp">@lot.Comptes.Count comptes créés · mots de passe à changer à la première connexion</h2>
+            <div class="actions">
+                <button type="button" class="btn btn-principal" data-copier="comptes-transmis-texte">Copier</button>
+                <span class="detail" data-copie-faite="comptes-transmis-texte" hidden>Copié (tout le tableau, en texte).</span>
+            </div>
+            <div class="tableau-cadre" id="comptes-transmis">
+                <table class="tableau tableau-serre tableau-central">
+                    <thead>
+                        <tr>
+                            <th scope="col">Identifiant</th>
+                            <th scope="col">Rôle</th>
+                            <th scope="col">Mot de passe provisoire</th>
+                            <th scope="col">Identifiant envoyé par e-mail</th>
+                            <th scope="col">Mot de passe</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var c in lot.Comptes)
+                        {
+                            <tr>
+                                <td>@c.Identifiant</td>
+                                <td>@c.RoleTexte</td>
+                                <td class="mdp">@c.MotDePasse</td>
+                                <td class="@(c.Email == "echec" ? "texte-attention" : null)">@c.EmailTexte</td>
+                                <td class="@(c.Sms == "envoye" ? null : "texte-attention")">@c.SmsTexte</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <pre class="texte-copie" id="comptes-transmis-texte">@string.Join("\n", lot.Comptes.Select(c => c.Copie))</pre>
+            <p class="detail">Le central n'en garde que les empreintes : ces mots de passe ne pourront plus être réaffichés. Non utilisés dans le délai réglé
+                (« Envoi des codes »), ils expirent : régénérez-les depuis « Comptes ».</p>
         </section>
     }
     else
@@ -38,16 +87,13 @@
     [CascadingParameter] private HttpContext? Contexte { get; set; }
     [SupplyParameterFromQuery(Name = "ref")] private string? Reference { get; set; }
     [SupplyParameterFromQuery(Name = "compte")] private Guid? Compte { get; set; }
-    /// <summary>Script central 039 : compte qui vient d'être créé (et non remis à zéro).</summary>
-    [SupplyParameterFromQuery(Name = "cree")] private string? CreeTexte { get; set; }
-    private bool Cree => CreeTexte == "1";
 
-    private string? Affiche { get; set; }
+    private ComptesAffiches.Lot? Lot { get; set; }
 
     protected override void OnInitialized()
     {
-        if (Contexte?.Session() is { Editeur: true } s && Codes.Prendre(Reference, s.Id) is { } a && a.Serveur == CodesAffiches.MotDePasse
-            && (Compte is null || a.Officine == Compte))
-            Affiche = a.Code;
+        if (Contexte?.Session() is { Editeur: true } s && Comptes.Prendre(Reference, s.Id) is { Comptes.Count: > 0 } lot
+            && (Compte is null || lot.Comptes.All(c => c.Compte == Compte)))
+            Lot = lot;
     }
 }

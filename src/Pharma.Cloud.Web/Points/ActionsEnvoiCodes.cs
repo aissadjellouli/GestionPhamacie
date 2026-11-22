@@ -91,6 +91,7 @@ public static class ActionsEnvoiCodes
             }
             try
             {
+                using var delai = new CancellationTokenSource(EnvoisCodes.DelaiMaximum);   // indépendant de la requête du navigateur
                 await choix.Courriel(smtp).EnvoyerAsync(adresse, "Essai d'envoi des codes · écrans du central",
                     """
                     Bonjour,
@@ -99,9 +100,9 @@ public static class ActionsEnvoiCodes
                     Le réglage du serveur d'e-mail fonctionne : les codes de second facteur pourront partir par ce compte.
 
                     Aucun code n'est contenu dans ce message.
-                    """, ct);
+                    """, delai.Token);
             }
-            catch (Exception e) when (e is not OperationCanceledException)
+            catch (Exception e)   // délai dépassé compris (jeton propre de l'essai) : « pas parti », comme les autres échecs
             {
                 var refusIdentifiants = ErreursSmtp.RefusIdentifiants(e);
                 journaux.CreateLogger("Pharma.Cloud.Web.Codes").LogWarning("E-mail d'essai de l'envoi des codes en échec ({Type}{Statut})", e.GetType().Name,
@@ -128,14 +129,17 @@ public static class ActionsEnvoiCodes
     }
 
     /// <summary>
-    /// Script central 038 : remise à zéro du mot de passe d'un AUTRE compte par l'éditeur. Le mot de passe provisoire est tiré ici
-    /// (16 caractères, comme la console), seule son empreinte BCrypt part vers la base ; il est gardé en mémoire 2 minutes pour la seule
-    /// session de l'éditeur et montré UNE fois (page « mot de passe provisoire »), jamais envoyé par e-mail (même canal que le code :
-    /// les deux facteurs arriveraient ensemble), jamais écrit dans un journal, une adresse ou la console.
+    /// Script central 038 : remise à zéro du mot de passe d'un AUTRE compte par l'éditeur (script central 040 : aussi pour régénérer un
+    /// mot de passe provisoire expiré ; la durée de vie repart à zéro). Le mot de passe provisoire est tiré ici (16 caractères, comme la
+    /// console), seule son empreinte BCrypt part vers la base ; il est gardé en mémoire 2 minutes pour la seule session de l'éditeur et
+    /// montré UNE fois (page « mot de passe provisoire »), JAMAIS envoyé par e-mail (même canal que le code : les deux facteurs
+    /// arriveraient ensemble) ; SMS seulement si un fournisseur est en service ; l'identifiant peut partir par e-mail (case) ; jamais
+    /// écrit dans un journal, une adresse ou la console.
     /// </summary>
     public static void MapperRemise(RouteGroupBuilder g)
     {
-        g.MapPost("/comptes/{compte:guid}/mot-de-passe", async (Guid compte, HttpContext ctx, DepotEcrans depot, CodesSecondFacteur codes, CodesAffiches affiches) =>
+        g.MapPost("/comptes/{compte:guid}/mot-de-passe", async (Guid compte, HttpContext ctx, DepotEcrans depot, CodesSecondFacteur codes, ComptesAffiches affiches,
+            ChoixEnvoiCodes choix, Pharma.Shared.IEnvoiSmsMotDePasse sms, ReglagesEcrans reglages) =>
         {
             if (ctx.Session() is not { Editeur: true } session) return Results.Redirect("/acces-refuse");
             var retour = $"{PageComptes}?compte={compte}&action=mot-de-passe";
@@ -146,13 +150,20 @@ public static class ActionsEnvoiCodes
             var statut = await depot.RemettreMotDePasseAsync(ctx.EmpreinteJeton()!, codes.Empreinte("action", f["code"].ToString()), compte, f["motif"].ToString(),
                 f["confirmation"].ToString(), BCrypt.Net.BCrypt.HashPassword(provisoire, Pharma.Shared.ComptesDistants.CoutBcrypt), ctx.RequestAborted);
             if (statut != "ok") return Results.Redirect($"{retour}&erreur={Cle("remise_", statut)}");
-            var reference = affiches.Garder(session.Id, compte, CodesAffiches.MotDePasse, provisoire);
-            return Results.Redirect($"{PageComptes}/mot-de-passe-affiche?compte={compte}&ref={reference}");
+            // Contact du compte tout juste remis à zéro (la base ne le rend que dans les 2 minutes qui suivent la remise)
+            var d = await depot.DestinataireRemiseAsync(ctx.EmpreinteJeton()!, compte, ctx.RequestAborted);
+            var transmis = await ActionsImportComptes.TransmettreAsync(ctx, depot, choix, sms, reglages,
+                [new Pharma.Shared.CompteATransmettre(compte, d?.Identifiant ?? f["confirmation"].ToString().Trim().ToLowerInvariant(), d?.Role ?? "titulaire",
+                    d?.Email, d?.Telephone, provisoire)],
+                f[ActionsImportComptes.CaseIdentifiant].ToString() == "1", remise: true);
+            return Results.Redirect($"{PageComptes}/mot-de-passe-affiche?compte={compte}&ref={affiches.Garder(session.Id, "remise", transmis)}");
         }).RequireRateLimiting("code");
 
         // Script central 039 : compte éditeur ou titulaire créé par l'éditeur (code de confirmation) ; mot de passe provisoire tiré ici,
-        // empreinte BCrypt seule en base, montré UNE fois à l'éditeur (même page que la remise à zéro)
-        g.MapPost("/comptes/creer", async (HttpContext ctx, DepotEcrans depot, CodesSecondFacteur codes, CodesAffiches affiches) =>
+        // empreinte BCrypt seule en base, montré UNE fois à l'éditeur (même page que la remise à zéro) ; script central 040 : identifiant
+        // par e-mail si la case est cochée, mot de passe par SMS si possible, sinon « manuel »
+        g.MapPost("/comptes/creer", async (HttpContext ctx, DepotEcrans depot, CodesSecondFacteur codes, ComptesAffiches affiches, ChoixEnvoiCodes choix,
+            Pharma.Shared.IEnvoiSmsMotDePasse sms, ReglagesEcrans reglages) =>
         {
             if (ctx.Session() is not { Editeur: true } session) return Results.Redirect("/acces-refuse");
             var f = await ctx.Request.ReadFormAsync(ctx.RequestAborted);
@@ -161,9 +172,19 @@ public static class ActionsEnvoiCodes
                 f["nom"].ToString(), f["role"].ToString(), f["telephone"].ToString(), f["email"].ToString(),
                 BCrypt.Net.BCrypt.HashPassword(provisoire, Pharma.Shared.ComptesDistants.CoutBcrypt), ctx.RequestAborted);
             if (statut != "ok" || cree is not { } compte) return Results.Redirect($"{PageComptes}?action=creer&erreur={Cle("creation_", statut)}");
-            var reference = affiches.Garder(session.Id, compte, CodesAffiches.MotDePasse, provisoire);
-            return Results.Redirect($"{PageComptes}/mot-de-passe-affiche?compte={compte}&ref={reference}&cree=1");
+            // Mêmes normalisations que la base (identifiant en minuscules, téléphone sans espace, champs rognés)
+            var l = Pharma.Shared.ImportComptesCsv.Normaliser(0, f["role"].ToString(), f["identifiant"].ToString(), f["nom"].ToString(), f["email"].ToString(),
+                f["telephone"].ToString());
+            var transmis = await ActionsImportComptes.TransmettreAsync(ctx, depot, choix, sms, reglages,
+                [new Pharma.Shared.CompteATransmettre(compte, l.Identifiant, l.Role, l.Email, l.Telephone, provisoire)],
+                f[ActionsImportComptes.CaseIdentifiant].ToString() == "1", remise: false);
+            return Results.Redirect($"{PageComptes}/mot-de-passe-affiche?compte={compte}&ref={affiches.Garder(session.Id, "creation", transmis)}&cree=1");
         }).RequireRateLimiting("code");
+
+        // Script central 040 : import de comptes (aperçu, un seul code, tout ou rien) et durée de vie d'un mot de passe provisoire
+        ActionsImportComptes.Mapper(g);
+        // Script central 040 : déconnexion après inactivité (réglage par rôle, signal d'activité de la page)
+        ActionsImportComptes.MapperInactivite(g);
     }
 
     /// <summary>Nom d'hôte du serveur d'e-mail (règle du script central 037) : lettres, chiffres, points et tirets, 253 caractères au plus.</summary>

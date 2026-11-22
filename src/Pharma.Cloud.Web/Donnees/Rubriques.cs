@@ -56,6 +56,8 @@ public static class Rubriques
         // Contacts des comptes (script central 037) : contact masqué seulement
         ["identifiant"] = "Identifiant", ["role"] = "Rôle", ["actif"] = "Actif", ["email_masque"] = "E-mail", ["telephone_masque"] = "Téléphone",
         ["derniere_connexion_le"] = "Dernière connexion", ["modifie_le"] = "Modifié le",
+        // Script central 040 : état du mot de passe (colonne calculée par EtatMotDePasse)
+        [EtatMotDePasse.Colonne] = "Mot de passe",
     };
 
     /// <summary>Lot S7.3 : ordres que le titulaire peut envoyer (liste fermée, même liste que cloud_ordre_titulaire_permis, script 034).</summary>
@@ -81,7 +83,7 @@ public static class Rubriques
     };
 
     /// <summary>Colonnes jamais affichées (techniques internes : clés, total).</summary>
-    public static readonly HashSet<string> Masquees = ["total", "id", "officine_id"];
+    public static readonly HashSet<string> Masquees = ["total", "id", "officine_id", "mot_de_passe_etat", "provisoire_expire_le"];
 
     public static string Libelle(string colonne) => Libelles.TryGetValue(colonne, out var l) ? l : colonne;
 

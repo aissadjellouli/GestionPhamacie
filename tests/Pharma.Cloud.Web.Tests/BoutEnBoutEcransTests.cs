@@ -110,10 +110,13 @@ public class BoutEnBoutEcransTests
         Assert.Null(await depot.SessionAsync(e2, ct));
         await Assert.ThrowsAsync<PostgresException>(() => depot.OfficinesAsync(e2, null, "toutes", 1, 20, ct));
         var j4 = Jetons.Nouveau();
-        await b.ExecuterAsync("INSERT INTO session_distante (empreinte_jeton, compte_id, etape, expire_le) VALUES ($1, $2, 'ouverte', now() - interval '1 second')",
-            Jetons.Empreinte(j4), compte!.Value);
+        // Script central 040 : une session ouverte n'a plus de durée maximale ; seule l'inactivité réglée (60 min au plus) la ferme
+        await b.ExecuterAsync("""
+            INSERT INTO session_distante (empreinte_jeton, compte_id, etape, expire_le, derniere_activite_le)
+            VALUES ($1, $2, 'ouverte', now() - interval '1 second', now() - interval '61 minutes')
+            """, Jetons.Empreinte(j4), compte!.Value);
         Assert.Null(await depot.SessionAsync(Jetons.Empreinte(j4), ct));
-        Assert.Equal("expiree", await b.ScalaireAsync("SELECT motif_fin FROM session_distante WHERE empreinte_jeton = $1", Jetons.Empreinte(j4)));
+        Assert.Equal("inactivite", await b.ScalaireAsync("SELECT motif_fin FROM session_distante WHERE empreinte_jeton = $1", Jetons.Empreinte(j4)));
         Assert.Equal(DBNull.Value, await b.ScalaireAsync("SELECT premiere_rupture FROM cloud_ecran_verifier_journal_acces()"));
     }
 

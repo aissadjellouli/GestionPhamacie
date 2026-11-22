@@ -146,6 +146,12 @@ public sealed class EnvoiCodeAvecCopieFichier(IEnvoiCodeDistant envoi, IEnvoiCod
 /// <summary>Envoi d'un code sur le canal retenu, résultat par canal (jamais le code ni le contact dans le résultat).</summary>
 public static class EnvoisCodes
 {
+    /// <summary>
+    /// Délai propre d'un envoi (2026-11-22) : une fois le code créé, son envoi ne dépend plus de la requête du navigateur (deuxième
+    /// clic, rechargement, pause du débogueur annulaient l'envoi en plein échange avec le serveur d'e-mail) ; au-delà, « echec ».
+    /// </summary>
+    public static readonly TimeSpan DelaiMaximum = TimeSpan.FromSeconds(30);
+
     public static async Task<IReadOnlyList<ResultatEnvoiCode>> EnvoyerAsync(IEnvoiCodeDistant envoi, DestinataireCode destinataire, string code, CancellationToken ct) =>
         envoi is EnvoiCodeLesDeux deux ? await deux.EnvoyerChacunAsync(destinataire, code, ct) : [await UnAsync(envoi, destinataire, code, ct)];
 
@@ -160,7 +166,12 @@ public static class EnvoisCodes
         {
             return new ResultatEnvoiCode(envoi.Canal, "indisponible", e.GetType().Name);
         }
-        catch (Exception e) when (e is not OperationCanceledException)
+        catch (OperationCanceledException e)
+        {
+            // Délai dépassé (jeton propre de l'envoi) : échec ordinaire, noté au journal comme les autres
+            return new ResultatEnvoiCode(envoi.Canal, "echec", e.GetType().Name);
+        }
+        catch (Exception e)
         {
             return new ResultatEnvoiCode(envoi.Canal, "echec", e.GetType().Name);
         }

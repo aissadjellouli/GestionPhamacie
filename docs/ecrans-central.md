@@ -10,6 +10,8 @@
 > Lot **S7.5 réalisé en local** (lignes absentes : rubrique de la fiche d'une officine pour l'éditeur, compteur du titulaire, nombres
 > seulement) : § 3 sexies. **Reste de S7.2 et S7.3 réalisé en local** (remise à zéro d'un mot de passe par l'éditeur, retrait d'un
 > rattachement par le titulaire, message à afficher sur les postes ; hors SMS, aucun fournisseur) : § 3 nonies.
+> **Import de comptes, durée du mot de passe provisoire, identifiant par e-mail et déconnexion après inactivité réalisés en local**
+> (script central 040 ; un utilisateur actif n'est jamais déconnecté) : § 3 decies.
 
 Documents liés : [conception-synchronisation.md](conception-synchronisation.md) § 1, § 6, § 6.1, § 6.2 et § 32 ;
 [securite-et-droits.md](securite-et-droits.md) ; [charte-graphique.md](charte-graphique.md) ; [database/cloud/README.md](../database/cloud/README.md) ;
@@ -305,6 +307,37 @@ message) ; `002_tables_miroir.sql` **inchangé** (`sync_ordre_recu` n'est jamais
 6. Libellé court « **Message** » (texte complet dans l'infobulle et la fenêtre) ; **au-delà de 6 pastilles grises** (6 + le message), toutes
    passent dans « À traiter » : la barre garde le cas le plus chargé mesuré le 2026-11-21.
 
+## 3 decies. Import de comptes, durée du mot de passe provisoire, identifiant par e-mail, déconnexion après inactivité (réalisé en local le 2026-11-21)
+
+Go du titulaire. Script central **040** (`040_import_comptes_duree_provisoire.sql`, après 039). Aucun écran n'est en ligne.
+
+| Route / maillon | Où | Règle |
+|---|---|---|
+| `/comptes?action=importer` (« Importer des comptes ») et `POST /actions/comptes/importer/apercu` | écrans du central, **éditeur** | Fichier CSV (UTF-8 avec ou sans BOM, 128 Ko et **200 comptes** au plus), ligne d'en-tête `role ; identifiant ; nom ; email ; telephone` (ordre libre, « rôle », « téléphone », « e-mail » acceptés ; séparateur « ; » ou « , », celui de l'en-tête ; champs entre guillemets permis). **Aperçu** ligne par ligne dans la colonne de gauche (seul son cadre défile) : forme (colonnes, guillemet), identifiant, **doublon dans le fichier**, **identifiant déjà pris** (base), nom, rôle, aucun contact, e-mail, téléphone. **Aucun code** demandé ni consommé. L'aperçu reste **en mémoire du processus** (15 minutes, même session ; un seul à la fois) : l'adresse ne porte qu'une référence tirée au sort, jamais les lignes. Seul ce dépôt peut dépasser 16 Ko (limite relevée avant la lecture du formulaire) |
+| `POST /actions/comptes/importer` | écrans du central, éditeur | Case « Envoyer l'identifiant par e-mail » (**cochée** par défaut), **un seul code** de confirmation pour tout le fichier. Nouvel avis de la base, puis mots de passe provisoires tirés (16 caractères), empreintes BCrypt seules vers `cloud_ecran_comptes_importer` : **tout ou rien** (une ligne devenue invalide : rien n'est créé, l'aperçu montre la ligne). Résultat sur `/comptes/mot-de-passe-affiche?ref=…&import=1` |
+| `/comptes/mot-de-passe-affiche` | écrans du central, éditeur | Liste montrée **une fois** (mémoire, 2 minutes, même session) : identifiant, rôle, mot de passe provisoire, « identifiant envoyé par e-mail : oui / non (case décochée) / non (aucune adresse) / échec », « mot de passe : envoyé par SMS / à transmettre par SMS (manuel) / à transmettre (manuel, aucun téléphone) » ; bouton « Copier » (tout le tableau en texte, tabulations). Même page pour la création unitaire (`&cree=1`) et la remise à zéro (un compte : mot de passe en grand). Jamais en base (empreintes seulement), jamais au journal |
+| E-mail de l'identifiant | écrans (et console) | Par le compte SMTP du réglage « Envoi des codes ». Contient l'identifiant, le rôle, l'adresse des écrans (`Ecrans:AdressePublique`, https seulement ; sinon « l'adresse vous sera communiquée par l'éditeur ») et la phrase « Le mot de passe provisoire vous sera transmis séparément ». **Le mot de passe ne part jamais par e-mail.** Un échec d'envoi n'annule rien (« échec » dans la liste). Résultat noté au journal des accès du compte (`identifiant_envoi`, `email:ok` / `email:echec`) |
+| Mot de passe par SMS | écrans (et console) | Si le compte a un téléphone **et** qu'un fournisseur SMS est en service (`IEnvoiSmsMotDePasse`) : envoi automatique (`provisoire_envoi`, `sms:…`). Aujourd'hui aucun fournisseur (`EnvoiSmsMotDePasseIndisponible`) : « à transmettre par SMS (manuel) » |
+| Tableau « Comptes » | écrans du central, éditeur | Colonne « Mot de passe » : « provisoire (expire le …) », « provisoire expiré », rien s'il est choisi (`cloud_ecran_comptes_liste`). Compte provisoire (expiré ou non) : lien « **Régénérer le mot de passe** » vers la remise à zéro (038) avec le motif prérempli « Mot de passe provisoire expiré » (ou « Nouveau mot de passe provisoire »), modifiable, et la case « Renvoyer l'identifiant par e-mail » (cochée) |
+| « Ajouter un compte » (039) | écrans du central, éditeur | Case « Envoyer l'identifiant par e-mail » (cochée) ; même transmission que l'import |
+| Connexion | écrans du central | Mot de passe **juste** mais provisoire non utilisé depuis plus que la durée réglée (`coalesce(mot_de_passe_change_le, cree_le) + durée`) : refusé avec « Mot de passe provisoire expiré : demandez à l'éditeur une remise à zéro. » (journal des accès : `connexion` / `provisoire_expire`) ; mot de passe faux : message habituel (rien n'est dit sur l'état du compte) |
+| « Envoi des codes » › « Mots de passe provisoires » et `POST /actions/envoi-codes/duree` | écrans du central, éditeur | Durée de vie d'un mot de passe provisoire non utilisé : **1 à 30 jours, 7 par défaut** ; code de confirmation ; journal de sécurité (ancienne et nouvelle durée). S'applique aux comptes créés à l'écran, importés, créés par la console et remis à zéro (la remise repart pour une durée complète) |
+| « Envoi des codes » › « Sécurité des sessions » et `POST /actions/envoi-codes/inactivite` | écrans du central, éditeur | Déconnexion après inactivité **par rôle** : **5 à 60 minutes**, éditeur **15**, titulaire **30** par défaut ; code de confirmation ; journal de sécurité. Effet dès la requête suivante de chaque session |
+| Sessions ouvertes | base (`cloud_ecran_session_valable`, remplacée par 040) | **Un utilisateur actif n'est jamais déconnecté** (décision du titulaire du 2026-11-21) : plus de durée maximale (2 h / 8 h abandonnées) ; chaque requête de l'utilisateur repousse l'échéance (`expire_le` glissante = maintenant + inactivité du rôle) ; seule l'inactivité ferme la session (motif `inactivite`, journal `session_expiree` / `inactivite`). Étapes « code » et « mot de passe à changer » : 10 minutes, inchangées |
+| Bandeau « Rester connecté » | page (`ecrans.js`, en-tête `data-session-restant`) | Une minute avant l'échéance : bandeau « Vous allez être déconnecté dans 60 s » (au-dessus de la page, sans changer sa hauteur) et bouton « **Rester connecté** » (`POST /actions/activite`, jeton anti-falsification, rend les secondes restantes). Clic, touche, molette, défilement dans la page : signal d'activité **une fois par minute au plus** ; aucune requête sans action de l'utilisateur. À l'échéance : la page masque ses données et se déconnecte d'elle-même (`POST /actions/deconnexion`, motif `inactivite`, permis sans session) → « Session fermée après inactivité : reconnectez-vous. » |
+| Console | `Pharma.Cloud.Api.exe --creer-comptes <fichier.csv> --auteur <nom> [--envoyer-identifiants] [--adresse-ecrans https://…] [--dossier <dossier du central>]` | Connexion du propriétaire, **aucun code** ; mêmes contrôles, tout ou rien (`cloud_compte_distant_creer_lot`) ; liste identifiant + mot de passe provisoire affichée **une fois** ; identifiant par e-mail si demandé (variables `PHARMA_CLOUD_SMTP_*`, sinon réglage « Envoi des codes ») |
+
+**Décisions prises sans question (les plus sûres)** :
+
+1. **Refus d'expiration seulement après un mot de passe juste** : un mot de passe faux garde le message habituel, rien n'est appris sur
+   l'état d'un compte ; aucun échec n'est compté pour un provisoire expiré.
+2. **Contact pour l'e-mail d'une remise à zéro** : la base ne le rend que pour un compte remis à zéro il y a **2 minutes au plus**
+   (`cloud_ecran_comptes_destinataire_remise`) ; jamais le contact complet d'un compte quelconque.
+3. **Signal d'activité** = simple passage par le contrôle d'accès (lecture de la session) ; il n'existe aucune requête automatique.
+4. **Adresse des écrans** dans l'e-mail : réglage facultatif `Ecrans:AdressePublique` (https seulement), sinon texte générique.
+5. **Gardes de rejeu** dans `030` : rejouer `030` après `040` ne ramène pas les anciennes définitions.
+6. Limites de codes inchangées (5 codes par compte et par quart d'heure ; 20 actions « code » par adresse et par 5 minutes).
+
 ## 4. Actions de l'éditeur
 
 Chaque action : **nouveau code de second facteur** (« Recevoir un code de confirmation », objet `action`, usage unique), **motif obligatoire**
@@ -343,7 +376,7 @@ Le **code d'activation** est tiré par les écrans (`CodeActivationSync`, comme 
   les codes en cours), 5 minutes, 5 essais, usage unique ; 5 codes au plus par compte et par quart d'heure. Après le bon code, **nouveau jeton**
   (pas de fixation de session).
 - **Sessions** : jeton de 32 octets dans un cookie `__Host-pharma-ecrans` (Secure, HttpOnly, SameSite=Strict, Path=/, sans domaine ni date) ; la
-  base n'en garde que l'**empreinte SHA-256**. Éditeur : 2 heures ; titulaire (S7.2) : 30 minutes d'inactivité, 8 heures au plus. Déconnexion,
+  base n'en garde que l'**empreinte SHA-256**. Depuis le script 040 : fermée après l'**inactivité** réglée par rôle (éditeur 15 min, titulaire 30 min par défaut, 5 à 60), **aucune durée maximale** pour une session active (§ 3 decies). Déconnexion,
   changement de mot de passe (autres sessions), remise à zéro par l'éditeur (toutes les sessions du compte, script 038) et désactivation
   du compte ferment les sessions.
 - **HTTP** : HTTPS seulement (TLS 1.2 ou 1.3), jeton anti-falsification sur chaque formulaire (cookie `__Host-pharma-ecrans-af`),

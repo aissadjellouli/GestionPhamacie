@@ -111,7 +111,26 @@ public static class Messages
         ["message_partie"] = "Cette officine est partie : aucun message.",
         ["message_deja_en_cours"] = "Un message attend déjà d'être relevé par l'officine : attendez son résultat (ou son expiration, 24 heures).",
         ["message_trop_d_ordres"] = "Trop d'ordres envoyés : 10 par heure au plus (messages compris).",
+        // Script central 040 : durée de vie du mot de passe provisoire, import de comptes
+        ["session_inactivite"] = "Session fermée après inactivité : reconnectez-vous.",
+        ["inactivite_editeur"] = "Durée d'inactivité de l'éditeur invalide : un nombre entier de minutes, de 5 à 60.",
+        ["inactivite_titulaire"] = "Durée d'inactivité du titulaire invalide : un nombre entier de minutes, de 5 à 60.",
+        ["provisoire_expire"] = "Mot de passe provisoire expiré : demandez à l'éditeur une remise à zéro.",
+        ["duree_duree"] = "Durée invalide : un nombre entier de jours, de 1 à 30.",
+        ["import_vide"] = "Fichier vide ou absent : choisissez un fichier CSV (ligne d'en-tête, puis une ligne par compte).",
+        ["import_taille"] = "Fichier trop gros : 128 Ko au plus (200 comptes).",
+        ["import_encodage"] = "Fichier illisible : enregistrez-le en UTF-8 (« CSV UTF-8 » dans le tableur).",
+        ["import_entete"] = "En-tête invalide : la première ligne doit nommer les colonnes role ; identifiant ; nom ; email ; telephone (séparateur « ; » ou « , »).",
+        ["import_trop_de_lignes"] = "Trop de lignes : 200 comptes au plus par fichier. Rien n'est créé.",
+        ["import_lignes"] = "Rien n'est créé : corrigez les lignes signalées dans le fichier, puis déposez-le de nouveau.",
+        ["import_apercu"] = "Aperçu expiré ou introuvable (15 minutes) : déposez le fichier de nouveau. Rien n'est créé.",
+        ["import_existe"] = "Rien n'est créé : un identifiant a été pris entre-temps. Déposez le fichier de nouveau pour voir lequel.",
+        ["import_erreur"] = "L'import n'a pas abouti : rien n'est créé.",
     };
+
+    /// <summary>Script central 040 : statut d'une ligne d'un fichier d'import, affiché dans l'aperçu (et par la console).</summary>
+    public static readonly IReadOnlyDictionary<string, string> LignesImport = Pharma.Shared.ImportComptesCsv.LibellesStatuts;
+
 
     public static readonly Dictionary<string, string> Succes = new()
     {
@@ -128,6 +147,9 @@ public static class Messages
         ["contact_modifie"] = "Contact du compte modifié (noté au journal de sécurité).",
         // Script central 038
         ["rattachement_retire"] = "Rattachement retiré : l'officine n'est plus accessible depuis votre compte ; ses ordres encore ouverts sont annulés.",
+        // Script central 040
+        ["inactivite_enregistree"] = "Déconnexion après inactivité enregistrée : appliquée dès la prochaine requête de chaque session.",
+        ["duree_enregistree"] = "Durée de vie des mots de passe provisoires enregistrée : appliquée dès la prochaine connexion.",
         ["message_envoye"] = "Message envoyé : l'officine le relève à son prochain passage et l'affiche sur ses postes jusqu'à la date choisie (statut « Appliqué » = affiché).",
     };
 
@@ -218,7 +240,9 @@ public static class ActionsEcrans
 
     public static void Mapper(WebApplication app)
     {
-        var g = app.MapGroup("/actions");
+        // Jeton anti-falsification exigé pour TOUTES les actions (2026-11-21, script central 040 : constaté qu'une action qui lit le
+        // formulaire elle-même, sans paramètre [FromForm], n'était pas vérifiée ; le cookie SameSite=Strict limitait déjà le risque)
+        var g = app.MapGroup("/actions").WithMetadata(new Microsoft.AspNetCore.Antiforgery.RequireAntiforgeryTokenAttribute());
 
         g.MapPost("/connexion", async ([FromForm] string? identifiant, [FromForm(Name = "mot_de_passe")] string? motDePasse, HttpContext ctx,
             DepotEcrans depot, CodesSecondFacteur codes, ChoixEnvoiCodes envoi, ILoggerFactory journaux) =>
@@ -230,6 +254,8 @@ public static class ActionsEcrans
             var reussi = BCrypt.Net.BCrypt.Verify(motDePasse ?? "", compte.Empreinte ?? BcryptFactice) && compte.Empreinte is not null;
             var jeton = Jetons.Nouveau();
             var statut = await depot.FinConnexionAsync(compte.Compte, reussi, reussi ? Jetons.Empreinte(jeton) : null, ct);
+            // Script central 040 : mot de passe juste mais provisoire non utilisé dans sa durée de vie (jamais dit pour un mot de passe faux)
+            if (statut == "provisoire_expire") return Results.Redirect("/connexion?erreur=provisoire_expire");
             if (statut != "code_attendu") return Results.Redirect("/connexion?erreur=identifiants");
             Jetons.Poser(ctx.Response, jeton);
             var envoye = await EnvoyerCodeAsync(depot, codes, envoi, Jetons.Empreinte(jeton), "connexion", journaux, ct);
@@ -273,11 +299,13 @@ public static class ActionsEcrans
             return Results.Redirect(statut == "ok" ? ControleAcces.Accueil(session) + "?ok=mdp" : "/connexion?erreur=session");
         }).RequireRateLimiting("code");
 
-        g.MapPost("/deconnexion", async (HttpContext ctx, DepotEcrans depot) =>
+        // Script central 040 : motif « inactivite » quand la page se ferme d'elle-même (échéance d'inactivité atteinte) : message à la
+        // connexion ; permise sans session (la base a pu fermer la session juste avant)
+        g.MapPost("/deconnexion", async ([FromForm] string? motif, HttpContext ctx, DepotEcrans depot) =>
         {
             if (ctx.EmpreinteJeton() is { } e) await depot.DeconnexionAsync(e, ctx.RequestAborted);
             Jetons.Retirer(ctx.Response);
-            return Results.Redirect("/connexion");
+            return Results.Redirect(motif == "inactivite" ? "/connexion?erreur=session_inactivite" : "/connexion");
         });
 
         g.MapPost("/theme", ([FromForm] string? theme, [FromForm] string? retour, HttpContext ctx) =>
@@ -460,10 +488,12 @@ public static class ActionsEcrans
         var (statut, destinataire) = await depot.CreerCodeAsync(empreinteJeton, objet, codes.Empreinte(objet, code)!, envoi.Canal, ct);
         if (statut is "trop_de_codes" or "sans_contact" or "session") return statut;
         if (statut != "envoye" || destinataire is null) return "envoi";
-        var resultats = await EnvoisCodes.EnvoyerAsync(envoi, destinataire, code, ct);
+        // Code créé : l'envoi et sa trace ne dépendent plus de la requête du navigateur (délai propre de 30 s au plus)
+        using var delai = new CancellationTokenSource(EnvoisCodes.DelaiMaximum);
+        var resultats = await EnvoisCodes.EnvoyerAsync(envoi, destinataire, code, delai.Token);
         foreach (var r in resultats)
         {
-            await depot.NoterEnvoiAsync(empreinteJeton, "code_envoi", r.Objet, ct);
+            await depot.NoterEnvoiAsync(empreinteJeton, "code_envoi", r.Objet, CancellationToken.None);
             if (!r.Parti) journal.LogWarning("Envoi d'un code de second facteur : {Canal} {Resultat} ({Type})", r.Canal, r.Resultat, r.TypeErreur ?? "-");
         }
         if (resultats.Any(r => r.Parti)) return null;

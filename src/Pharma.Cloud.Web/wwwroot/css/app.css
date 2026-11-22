@@ -1090,6 +1090,11 @@ fieldset.panneau:disabled { opacity: 0.85; }
 .envoi-codes .bouton-bas { align-self: end; }
 .envoi-codes .essai { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px 16px; align-items: end;
   padding-top: 12px; border-top: 1px solid var(--bordure); }
+.envoi-codes .formulaire-duree { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 12px; align-items: end; margin: 4px 0 0;
+  padding-top: 10px; border-top: 1px solid var(--bordure); }
+.envoi-codes .formulaire-duree h3 { grid-column: 1 / -1; margin: 0; font-size: 14px; }
+.envoi-codes .formulaire-duree .champ input { width: 100%; }
+.envoi-codes .formulaire-duree .actions { grid-column: 1 / -1; }
 .envoi-codes .liste-aide { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 /* Contacts des comptes (lot S7.6) : tableau paginé à gauche (seul le cadre défile), formulaire du compte choisi à droite */
 .comptes-contact { display: grid; grid-template-columns: minmax(0, 2fr) minmax(360px, 1fr); gap: 20px; align-items: start; }
@@ -1105,6 +1110,24 @@ fieldset.panneau:disabled { opacity: 0.85; }
 /* Mot de passe provisoire montré une fois (même présentation que le code d'activation) */
 .mot-de-passe-provisoire { margin: 0; padding: 14px 16px; border-radius: 10px; border: 1px dashed var(--accent-trait); background: var(--accent-clair); color: var(--accent-fonce);
   font-family: Consolas, "Cascadia Mono", monospace; font-size: 22px; font-weight: 600; letter-spacing: 0.06em; overflow-wrap: anywhere; user-select: all; }
+/* Script central 040 : import de comptes (aperçu dans la colonne de gauche, seul le cadre défile), régénération d'un provisoire,
+   comptes transmis montrés une fois (seul le cadre du tableau défile) */
+.comptes-contact .colonne-comptes { max-height: 100%; min-height: 0; }
+.comptes-contact .titre-apercu { margin: 0; font-size: 15px; }
+.comptes-contact .colonne-comptes > .tableau-cadre { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.comptes-contact .ligne-refusee td { background: var(--urgent-fond); }
+.comptes-contact .lien-regenerer { margin-left: 10px; white-space: nowrap; }
+.comptes-contact .formulaire-contact .case.champ-large { grid-column: 1 / -1; }
+.comptes-contact .formulaire-contact input[type="file"] { width: 100%; }
+.comptes-transmis { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.comptes-transmis > .tableau-cadre { min-height: 0; overflow: auto; }
+.comptes-transmis .mdp { font-family: Consolas, "Cascadia Mono", monospace; font-weight: 600; letter-spacing: 0.04em; user-select: all; }
+.texte-copie { display: none; }
+/* Script central 040 : bandeau « Rester connecté » (au-dessus de la page, ne change pas sa hauteur : aucun défilement) */
+.bandeau-inactivite { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 14px;
+  padding: 10px 16px; border-radius: 10px; border: 1px solid var(--avert-bord); background: var(--avert-fond); color: var(--attention);
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.18); font-weight: 600; }
+.bandeau-inactivite[hidden] { display: none; }
 /* Ordres à distance (S7.3) : nouvel ordre et message aux postes côte à côte, puis le tableau (seul le cadre défile) */
 .ordres-titulaire { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 20px; align-items: start; }
 .ordres-titulaire .formulaire-action { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }

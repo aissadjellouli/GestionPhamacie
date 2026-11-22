@@ -23,6 +23,8 @@ public sealed class OptionsServeurEcrans
     /// <summary>Envoi SMTP pour des réglages (tests : envoi factice, rien ne part).</summary>
     public Func<ReglagesSmtpCentral, IEnvoiCourriel>? FabriqueCourriel { get; init; }
     public TimeProvider? Horloge { get; init; }
+    /// <summary>Script central 040 : envoi du mot de passe provisoire par SMS (aucun fournisseur aujourd'hui ; tests : envoi factice).</summary>
+    public Pharma.Shared.IEnvoiSmsMotDePasse? SmsMotDePasse { get; init; }
 }
 
 /// <summary>
@@ -103,6 +105,11 @@ public static class ServeurEcrans
             copieFichier: fichierEtMail ? new EnvoiCodeFichier(reglages.DossierCodes, horloge) : null));
         builder.Services.AddSingleton(new EpinglageAutorite(reglages.CertificatAutorite));
         builder.Services.AddSingleton<CodesAffiches>();
+        // Script central 040 : import de comptes (aperçu gardé en mémoire), comptes transmis montrés une fois, SMS du mot de passe
+        builder.Services.AddSingleton<ApercusImport>();
+        builder.Services.AddSingleton<ComptesAffiches>();
+        builder.Services.AddSingleton(options.SmsMotDePasse ?? new Pharma.Shared.EnvoiSmsMotDePasseIndisponible());
+        builder.Services.AddSingleton(reglages);
         builder.Services.AddRazorComponents();
         builder.Services.AddAntiforgery(o =>
         {
@@ -150,7 +157,27 @@ public static class ServeurEcrans
         app.UseStaticFiles();
         app.UseRateLimiter();
         app.Use((ctx, suite) => ControleAcces.Appliquer(ctx, suite));
+        // Script central 040 : seul le dépôt du fichier d'import (éditeur, contrôle d'accès passé) peut dépasser 16 Ko, AVANT la lecture
+        // du formulaire par l'anti-falsification
+        app.Use((ctx, suite) =>
+        {
+            if (HttpMethods.IsPost(ctx.Request.Method) && ctx.Request.Path.Equals(ActionsImportComptes.RouteApercu, StringComparison.OrdinalIgnoreCase)
+                && ctx.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } taille)
+                taille.MaxRequestBodySize = ActionsImportComptes.TailleRequeteMax;
+            return suite(ctx);
+        });
         app.UseAntiforgery();
+        // Jeton anti-falsification absent ou faux (toutes les actions l'exigent) : 400 et page d'erreur fixe, avant toute action ; une
+        // action qui lit le formulaire elle-même lèverait sinon une erreur 500
+        app.Use((ctx, suite) =>
+        {
+            if (ctx.Features.Get<Microsoft.AspNetCore.Antiforgery.IAntiforgeryValidationFeature>() is { IsValid: false })
+            {
+                ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+                return Task.CompletedTask;
+            }
+            return suite(ctx);
+        });
         ActionsEcrans.Mapper(app);
         app.MapRazorComponents<App>();
         return app;

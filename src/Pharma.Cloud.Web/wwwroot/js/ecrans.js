@@ -4,6 +4,9 @@
 // 2. Bouton « Copier » du code d'activation (data-copier = id de l'élément à copier).
 // 3. Choix de l'affichage (clair, sombre, automatique) appliqué dès qu'il change.
 // 4. Après une saisie refusée, les champs remplis sont remis (jamais un mot de passe ni un code).
+// 5. Déconnexion après inactivité (script central 040) : bandeau « Rester connecté » une minute avant l'échéance, puis déconnexion
+//    d'elle-même (les données quittent l'écran). Un utilisateur actif n'est jamais déconnecté : clic, touche, défilement dans la page
+//    retardent le bandeau et préviennent le serveur une fois par minute au plus ; aucune requête sans action de l'utilisateur.
 (function () {
   "use strict";
   var MARGE = 16, MINIMUM = 140;
@@ -124,6 +127,58 @@
     });
   }
 
+  // 5. Déconnexion après inactivité
+  var UNE_MINUTE = 60000;
+  function inactivite() {
+    var entete = document.querySelector("[data-session-restant]");
+    var bandeau = document.getElementById("bandeau-inactivite");
+    var texte = document.getElementById("bandeau-inactivite-texte");
+    var formActivite = document.getElementById("form-activite");
+    var formFin = document.getElementById("form-deconnexion");
+    if (!entete || !bandeau || !texte || !formActivite || !formFin || !window.fetch || !window.FormData) return;
+    var restant = parseInt(entete.getAttribute("data-session-restant"), 10);
+    if (!(restant > 0)) return;
+    var echeance = Date.now() + restant * 1000, dernierSignal = Date.now(), enCours = false, fini = false;
+
+    function terminer() {
+      if (fini) return;
+      fini = true;
+      var page = document.querySelector("main");
+      if (page) page.hidden = true;            // les données ne restent pas affichées
+      bandeau.hidden = true;
+      if (formFin.elements.motif) formFin.elements.motif.value = "inactivite";
+      formFin.submit();
+    }
+    // Signal d'activité : seulement après une action de l'utilisateur ; une fois par minute au plus, sauf « Rester connecté »
+    function signaler(force) {
+      if (enCours || fini || (!force && Date.now() - dernierSignal < UNE_MINUTE)) return;
+      enCours = true;
+      dernierSignal = Date.now();
+      fetch(formActivite.action, { method: "POST", body: new FormData(formActivite), credentials: "same-origin", redirect: "manual",
+                                   headers: { "Accept": "application/json" } })
+        .then(function (r) { if (!r.ok) throw new Error("session"); return r.json(); })
+        .then(function (d) {
+          if (d && d.restant > 0) { echeance = Date.now() + d.restant * 1000; bandeau.hidden = true; } else terminer();
+        })
+        .catch(terminer)
+        .then(function () { enCours = false; });
+    }
+    function activite() { signaler(!bandeau.hidden); }
+    ["keydown", "mousedown", "wheel", "touchstart", "scroll"].forEach(function (t) {
+      document.addEventListener(t, activite, { capture: true, passive: true });
+    });
+    var bouton = bandeau.querySelector("[data-rester-connecte]");
+    if (bouton) bouton.addEventListener("click", function (e) { e.stopPropagation(); signaler(true); });
+    setInterval(function () {
+      var reste = Math.ceil((echeance - Date.now()) / 1000);
+      if (reste <= 0) { terminer(); return; }
+      if (reste <= 60) {
+        texte.textContent = "Vous allez être déconnecté dans " + reste + " s";
+        bandeau.hidden = false;
+      }
+    }, 1000);
+  }
+
   function demarrer() {
     remettreSaisie();
     document.addEventListener("submit", garderSaisie, true);
@@ -131,6 +186,7 @@
     window.addEventListener("resize", ajuster);
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(ajuster);
     document.addEventListener("click", copier);
+    inactivite();
     // 3. Affichage clair / sombre / automatique : appliqué dès le choix dans la liste (le bouton « Appliquer » reste pour un navigateur sans script)
     document.addEventListener("change", function (e) {
       var choix = e.target.closest ? e.target.closest("select.choix-theme") : null;

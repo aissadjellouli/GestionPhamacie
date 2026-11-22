@@ -11,8 +11,10 @@ public enum ModeCodes { Fichier, Reglage }
 /// <summary>Réglages retenus au démarrage des écrans (jamais de secret ici : la connexion vient d'une variable d'environnement).</summary>
 /// <param name="DossierCles">Lot S7.6 : clés de la protection des données qui chiffrent le mot de passe SMTP (Ecrans:DossierCles, sinon
 /// &lt;PHARMA_CLOUD_DOSSIER&gt;\cles-protection) ; null : aucun mot de passe SMTP ne peut être enregistré ni relu.</param>
+/// <param name="AdressePublique">Script central 040 : adresse https des écrans vue des utilisateurs (Ecrans:AdressePublique, facultative),
+/// écrite dans l'e-mail de l'identifiant d'un compte ; absente : texte générique « communiquée par l'éditeur ».</param>
 public sealed record ReglagesEcrans(IPAddress Adresse, int Port, ModeCodes Mode, string Connexion, string CertificatAutorite, string DossierCodes,
-    string? DossierCles = null)
+    string? DossierCles = null, string? AdressePublique = null)
 {
     public const string VariableConnexion = "PHARMA_CLOUD_ECRANS_CONNEXION";
     public const string VariableDossier = "PHARMA_CLOUD_DOSSIER";
@@ -66,6 +68,7 @@ public sealed record ReglagesEcrans(IPAddress Adresse, int Port, ModeCodes Mode,
         var dossierCodes = configuration["Ecrans:DossierCodes"] is { Length: > 0 } dc ? dc : DossierCodesDeveloppement();
         var dossierCles = configuration["Ecrans:DossierCles"] is { Length: > 0 } dk ? dk
             : Pharma.Cloud.Api.Depart.ProtectionSmtpCentral.DossierDuCentral(variable(VariableDossier));
-        return (new ReglagesEcrans(adresse, port, mode, connexion, certificat, dossierCodes, dossierCles), null);
+        return (new ReglagesEcrans(adresse, port, mode, connexion, certificat, dossierCodes, dossierCles,
+            Pharma.Shared.MessageIdentifiant.Adresse(configuration["Ecrans:AdressePublique"])), null);
     }
 }

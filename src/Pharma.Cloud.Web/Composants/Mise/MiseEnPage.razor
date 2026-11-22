@@ -1,7 +1,9 @@
 @inherits LayoutComponentBase
 
 @* En-tête de la charte (docs/charte-graphique.md) : logo et nom à gauche, écrans au centre, compte et déconnexion à droite *@
-<header class="entete">
+@* Script central 040 : session ouverte : secondes avant la déconnexion après inactivité (échéance glissante lue en base), lues par
+   ecrans.js (bandeau « Rester connecté » une minute avant, puis déconnexion d'elle-même) *@
+<header class="entete" data-session-restant="@(Ouverte ? ActionsImportComptes.SecondesRestantes(Session!, DateTime.UtcNow).ToString(System.Globalization.CultureInfo.InvariantCulture) : null)">
     <div class="entete-interieur">
         <a class="marque" href="@(Ouverte ? Accueil : "connexion")" title="Tracodex Réseau · écrans du central">
             <img class="logo" src="img/logo.svg" alt="" aria-hidden="true" />
@@ -46,14 +48,29 @@
                     </select>
                     @* Pas de bouton « Appliquer » : ecrans.js envoie le formulaire dès que le choix change *@
                 </form>
-                <form method="post" action="actions/deconnexion" class="formulaire-ligne">
+                <form method="post" action="actions/deconnexion" class="formulaire-ligne" id="form-deconnexion">
                     <AntiforgeryToken />
+                    <input type="hidden" name="motif" value="" />
                     <button type="submit" class="lien-bouton">Se déconnecter</button>
                 </form>
+                @if (Ouverte)
+                {
+                    @* Signal d'activité (script central 040) : envoyé par ecrans.js seulement après une action de l'utilisateur *@
+                    <form method="post" action="actions/activite" id="form-activite" hidden>
+                        <AntiforgeryToken />
+                    </form>
+                }
             </div>
         }
     </div>
 </header>
+@if (Ouverte)
+{
+    <div class="bandeau-inactivite" id="bandeau-inactivite" role="alertdialog" aria-labelledby="bandeau-inactivite-texte" hidden>
+        <span id="bandeau-inactivite-texte">Vous allez être déconnecté dans 60 s</span>
+        <button type="button" class="btn btn-principal" data-rester-connecte>Rester connecté</button>
+    </div>
+}
 <main>
     @Body
 </main>
