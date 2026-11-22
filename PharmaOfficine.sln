@@ -369,6 +369,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "scripts", "scripts", "{5C0D
 		docs\reste-a-faire-synthese.md = docs\reste-a-faire-synthese.md
 		docs\ged-protection-a-decider.md = docs\ged-protection-a-decider.md
 		docs\scripts-base-de-donnees.md = docs\scripts-base-de-donnees.md
+		docs\second-serveur-local.md = docs\second-serveur-local.md
 		scripts\restaurer_pharmacie.ps1 = scripts\restaurer_pharmacie.ps1
 		scripts\sauvegarde_pharmacie.ps1 = scripts\sauvegarde_pharmacie.ps1
 		scripts\second-serveur\commun.ps1 = scripts\second-serveur\commun.ps1

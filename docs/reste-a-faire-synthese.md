@@ -141,7 +141,7 @@ correspondants ci-dessous sont faits.
   `Reglement.RecuVerifie`, refus « Saisissez le montant reçu en espèces. » (champ `montant_recu`) ; tests Domain 720 et
   Application 1 823 au vert.
 - Caractère NUL dans un message aux postes : refusé par l'écran et le poste ; refus par PostgreSQL (038) supposé, non vérifié.
-- **2e serveur en local (2026-11-22, en place)** : copie répliquée en lecture seule sur le port **5433** (dossier
+- **2e serveur en local (2026-11-22, en place ; toutes les actions dans [second-serveur-local.md](second-serveur-local.md))** : copie répliquée en lecture seule sur le port **5433** (dossier
   `C:\MesAtlassian\pg-second-serveur`, démarrée par `pg_ctl`, sans service Windows, écoute sur `localhost` seulement), slot
   `second_serveur` sur le 5432, rôle `pharma_replication` (mot de passe tiré au sort, seulement dans
   `C:\MesAtlassian\pg-second-serveur-secret\pgpass.conf`, réservé au compte Windows). Aucun redémarrage du 5432 (`wal_level`
@@ -151,7 +151,17 @@ correspondants ci-dessous sont faits.
   temporaire de la session). **Si le 5433 est arrêté durablement : supprimer le slot** (`SELECT pg_drop_replication_slot('second_serveur')`),
   sinon les journaux s'accumulent sans limite sur le 5432. Limites du local : l'API refuse de démarrer sur une copie (seulement
   après bascule) ; le contrôle « jamais deux principaux » n'est pas essayable sur un seul PC (`SecondServeur:AutreServeur` ne
-  change que l'adresse). Bascule et API 5082 : sur « go bascule ».
+  change que l'adresse).
+  **Bascule faite le 2026-11-22 (« go bascule »)** : copie promue (`pg_ctl promote`, timeline 2, dernière transaction reçue
+  14:24:33), slot `second_serveur` supprimé sur le 5432 (plus aucun journal retenu). L'ancien principal (5432) n'a **pas** été
+  arrêté (il porte toutes les bases de développement) : les deux bases divergent, sans risque (dossiers séparés, aucun poste
+  relié au 5082). Dans la **copie seulement** : envoi au central coupé (`sync_parametre.active = false`), SMTP et modem vidés
+  (`parametre_notification`) pour ne rien envoyer en double. **API 5082** lancée hors Visual Studio (`dotnet Pharma.Api.dll`,
+  variables d'environnement : base 5433, racine des données, GED, journaux et Chifa dans `C:\MesAtlassian\pg-second-serveur-api`) :
+  `/api/healthcheck` 200, « Serveur ADH déclaré principal », aucun avertissement au journal, journal de l'API principale non touché.
+  Non essayé : bascule d'un poste par le bandeau « Serveur injoignable » (`AdresseApiSecours`), `remettre-en-second.ps1`.
+  **Retrait** (« go retrait 2e serveur ») : arrêter l'API 5082 et `pg_ctl stop -D C:\MesAtlassian\pg-second-serveur`, supprimer
+  les dossiers `pg-second-serveur`, `pg-second-serveur-api`, `pg-second-serveur-secret` et le rôle `pharma_replication`.
 - Droits inattendus de `pharma_app` sur le PostgreSQL de développement : CREATEROLE, CREATEDB, REPLICATION (aucun script du dépôt
   ne les donne, origine inconnue) ; à décider (retrait par `postgres`).
 - Bases jetables à supprimer par l'utilisateur (suppression refusée à l'assistant) : `pharmacie_jetable_m4_*` (3),
