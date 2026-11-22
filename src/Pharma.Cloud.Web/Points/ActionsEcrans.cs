@@ -305,7 +305,8 @@ public static class ActionsEcrans
         // connexion ; permise sans session (la base a pu fermer la session juste avant)
         g.MapPost("/deconnexion", async ([FromForm] string? motif, HttpContext ctx, DepotEcrans depot) =>
         {
-            if (ctx.EmpreinteJeton() is { } e) await depot.DeconnexionAsync(e, ctx.RequestAborted);
+            // Script central 042 : le motif part à la base, qui ne retient « inactivite » que si elle la constate (journal des accès)
+            if (ctx.EmpreinteJeton() is { } e) await depot.DeconnexionAsync(e, motif == "inactivite" ? "inactivite" : null, ctx.RequestAborted);
             Jetons.Retirer(ctx.Response);
             return Results.Redirect(motif == "inactivite" ? "/connexion?erreur=session_inactivite" : "/connexion");
         });

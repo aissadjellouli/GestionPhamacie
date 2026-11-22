@@ -322,6 +322,8 @@ message) ; `002_tables_miroir.sql` **inchangé** (`sync_ordre_recu` n'est jamais
 ## 3 decies. Import de comptes, durée du mot de passe provisoire, identifiant par e-mail, déconnexion après inactivité (réalisé en local le 2026-11-21)
 
 Go du titulaire. Script central **040** (`040_import_comptes_duree_provisoire.sql`, après 039). Aucun écran n'est en ligne. Script central **041** (`041_delai_provisoire_comptes_anterieurs.sql`, après 040, revue de code du 2026-11-22) : la durée de vie d'un mot de passe provisoire part au plus tôt de son passage (délai de grâce des comptes créés avant le contrôle).
+Script central **042** (`042_deconnexion_motif_inactivite.sql`, après 041, recette du 2026-11-22) : la page fermée à l'échéance
+d'inactivité est notée au journal des accès comme une expiration par inactivité (motif vérifié par la base, à 30 s près).
 
 | Route / maillon | Où | Règle |
 |---|---|---|

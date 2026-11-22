@@ -38,7 +38,9 @@ DO $$ BEGIN
             AND p.proname <> 'cloud_ecran_compte_creer'
             -- Import de comptes et durée du mot de passe provisoire (script 040) : comptées par leur propre test
             AND p.proname NOT LIKE 'cloud\_ecran\_comptes\_%' AND p.proname NOT LIKE 'cloud\_ecran\_provisoire\_%'
-            AND p.proname NOT LIKE 'cloud\_ecran\_inactivite\_%') = 27, 'fonctions des écrans : 8 (030) + 19 (031)';
+            AND p.proname NOT LIKE 'cloud\_ecran\_inactivite\_%'
+            -- Déconnexion avec motif (script 042, seconde signature) : comptée par son propre test
+            AND p.oid IS DISTINCT FROM to_regprocedure('public.cloud_ecran_deconnexion(text,text)')) = 27, 'fonctions des écrans : 8 (030) + 19 (031)';
 END $$;
 
 -- Données d'essai : deux officines (A active avec un lot, une anomalie et un ordre ; B en attente), un éditeur et un titulaire

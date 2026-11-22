@@ -95,10 +95,15 @@ public static class PermissionExtensions
             foreach (var p in permissionsAcceptees)
                 if (autorise = await permissions.APermissionAsync(utilisateurId, p, http.RequestAborted)) break;
             if (!autorise)
+            {
+                // Libellés des droits (comme les écrans du poste), jamais leurs codes techniques
+                var libelles = new List<string>();
+                foreach (var p in permissionsAcceptees) libelles.Add(await permissions.LibelleAsync(p, http.RequestAborted));
                 return await RefusAsync(http, permissionsAcceptees[0],
                     http.User.ParCodeComptoir() && !permissionsAcceptees.Any(Pharma.Domain.Securite.CodeComptoir.Autorise)
                         ? CodeComptoirSeulement
-                        : $"Le droit « {string.Join(" » ou « ", permissionsAcceptees)} » est nécessaire.");
+                        : $"Le droit « {string.Join(" » ou « ", libelles)} » est nécessaire.");
+            }
 
             return await next(ctx);
         });

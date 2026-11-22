@@ -107,6 +107,23 @@ public sealed class DepotEcrans(NpgsqlDataSource db)
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    /// <summary>
+    /// Script central 042 : déconnexion avec le motif demandé par la page (« inactivite » retenu seulement si la base constate
+    /// l'inactivité) ; base sans le 042 (fonction absente) : déconnexion ordinaire, jamais d'erreur pour l'utilisateur.
+    /// </summary>
+    public async Task DeconnexionAsync(string empreinteJeton, string? motif, CancellationToken ct)
+    {
+        try
+        {
+            await using var cmd = Commande("SELECT cloud_ecran_deconnexion($1, $2)", empreinteJeton, motif);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UndefinedFunction)
+        {
+            await DeconnexionAsync(empreinteJeton, ct);
+        }
+    }
+
     // ------------------------------------------------------------------ lecture
     public Task<TableEcran> OfficinesAsync(string empreinteJeton, string? texte, string etat, int page, int taille, CancellationToken ct) =>
         LireAsync(null, null, "SELECT * FROM cloud_ecran_officines($1, $2, $3, $4, $5)", [Texte(empreinteJeton), Texte(texte), Texte(etat), Entier(page), Entier(taille)], ct);

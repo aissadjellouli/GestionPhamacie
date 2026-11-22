@@ -1,9 +1,11 @@
 # Reste à faire : synthèse
 
-Point d'avancement du 2026-11-22 (soir) : **commité jusqu'à `dc13fb4`** (revue de code complète, correctifs, recette,
-documentation). Non commités depuis : en-tête de cache des écrans du central (`ServeurEcrans.cs`, test `BoutEnBoutEcransTests`,
-`ecrans-central.md`) et ce RAF. Rien poussé : **8 commits à pousser** par l'utilisateur (`dc13fb4`, `5790875`, `d429b90`,
-`141f058`, `c617380`, `3a79e77`, `2902442`, `076df06`).
+Point d'avancement du 2026-11-22 (soir) : **commité jusqu'à `2866bce`**. Rien poussé : **9 commits à pousser** par l'utilisateur
+(`2866bce`, `dc13fb4`, `5790875`, `d429b90`, `141f058`, `c617380`, `3a79e77`, `2902442`, `076df06`).
+**Non commités depuis `2866bce`** : libellés des droits dans les refus (`Ports.cs`, `PermissionService.cs`, `PermissionsComptoir.cs`,
+`PermissionFilter.cs`, tests `LibellesDroitsTests` et `PermissionsComptoirTests`), **script central 042**
+`042_deconnexion_motif_inactivite.sql` et son test (passé sur `pharmacie_cloud_dev`, sauvegarde `…_avant_042_…`), écrans
+(`DepotEcrans.cs`, `ActionsEcrans.cs`), test SQL 031 (042 exclu du comptage), solutions, README central et documentation.
 Scripts centraux **037 à 041** passés sur `pharmacie_cloud_dev` (sauvegardes dans `C:\MesAtlassian\sauvegardes-bd`, dont
 `…_avant_041_…` et `…_avant_recette_central_…`) ; script local **160** passé sur `pharmacie_dev` et `pharmacie_test` (aucun script
 local nouveau aujourd'hui). Détail : [a-faire.md](a-faire.md), [fonctionnalites.md](fonctionnalites.md) (inventaire complet),
@@ -97,15 +99,29 @@ correspondants ci-dessous sont faits.
 **Mesures et essais non faits**
 - Caisse : liste de la wilaya remise à la fiche après un refus (correctif 3 de la revue) : refus non provoqué à l'écran.
 - « Comptes » garde la page de la liste après un refus : essayé en page 1 seulement (moins de 20 comptes).
-- Parcours complets du 15/11 (réception, retours, factures, inventaire, clôture définitive) : non rejoués le 2026-11-22.
+- Parcours P4 (factures clients), P7 (inventaire), P8 (trésorerie, financements), P9 (code comptoir) : non rejoués (voir plus bas).
 
-**Constatés le 2026-11-22 (à corriger, sur « go »)**
-- Déconnexion par inactivité notée **« deconnexion »** au journal des accès du central (session : `motif_fin = deconnexion`) :
-  la page envoie bien `motif=inactivite`, mais `/actions/deconnexion` ne s'en sert que pour le message ; le journal ne distingue
-  pas une sortie volontaire d'une fermeture par inactivité. Correction : passer le motif à la fonction de déconnexion de la base
-  (nouveau script central).
-- « Bordereaux Chifa » en connexion vendeur affiche le code du droit (« Le droit « chifa.bordereaux » est nécessaire ») au lieu de
-  son libellé (« Gérer les bordereaux et rejets »), contrairement aux autres écrans.
+**Corrigés le 2026-11-22 (non commités)**
+- Déconnexion par inactivité notée « deconnexion » au journal des accès du central : **script central 042** ; la base retient
+  « inactivite » seulement si elle constate l'inactivité (30 s de tolérance), même notation que la fermeture par la base
+  (`session_expiree / inactivite`) ; écrans : repli sur l'ancienne fonction si le 042 manque.
+- Refus de droit avec le code (« chifa.bordereaux », « prix.modifier ») au lieu du libellé : libellé lu dans la table `permission`
+  (`LibelleAsync`) ; cause trouvée en recette : l'enveloppe `PermissionsComptoir` ne transmettait pas la méthode et retombait sur la
+  valeur par défaut de l'interface ; test d'architecture : l'enveloppe implémente chaque méthode du service de droits.
+
+**Parcours du 15/11 rejoués par l'API le 2026-11-22** (`pharmacie_test`, sauvegarde `…_avant_parcours_…`) :
+- P1 réception à l'aveugle avec écart : OK (comptage assistant, facture refusée à l'assistant sans le droit « Modifier un prix de
+  vente » — règle du 15/11, `f27061d` — saisie par le titulaire, écart signalé sans entrée en stock, décision refusée à
+  l'assistant, validée par le titulaire, dette +5 390, stock = 20 comptés).
+- P2 retour fournisseur : OK (3 boîtes identifiées, stock 20 → 17, envoi, avoir 735 déduit de la dette).
+- P3 règlements grossistes : OK (imputation > montant refusée, 500 imputés, chèque sans banque refusé, montant négatif refusé).
+- P6 relève et clôture : OK (relève refusée au vendeur, relève du titulaire avec écart, nouvelle session, clôture).
+- P10 masquage (vendeur) : OK par l'API (prix d'achat et dette grossiste : 403) ; l'assistant voit la dette (droit de régler).
+- P11 recherche au comptoir : OK (« amoxiciline » trouve AMOXICILLINE ; recherche par indication « toux »).
+- **Non rejoués** : P4 factures clients, P7 inventaire, P8 trésorerie et financements (modifient des données de démo existantes :
+  accord de l'utilisateur nécessaire), P9 autorisation par code comptoir (code du titulaire non connu).
+- Données créées : réception 166 (BL-REC3-133956, facture F-REC3-133956, lot REC3-L133956), retour R-000008, règlement 500 DA,
+  comptage 6 annulé, sessions 40549 et 40550 (écarts d'essai −60 / +60), vente T-005944 annulée.
 
 **À corriger ou à décider**
 - Test instable `TicketRouleauTests.Hauteur_selon_le_contenu_sans_saut_de_page` : 1 échec en suite complète le 2026-11-22 matin,

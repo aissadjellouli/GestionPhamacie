@@ -42,6 +42,13 @@ public sealed class PermissionService(NpgsqlDataSource db) : IPermissionService
         return await cmd.ExecuteScalarAsync(ct) is decimal d ? d : 0m;
     }
 
+    public async Task<string> LibelleAsync(string permission, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT libelle FROM permission WHERE code = $1");
+        cmd.Parameters.AddWithValue(permission);
+        return await cmd.ExecuteScalarAsync(ct) is string { Length: > 0 } libelle ? libelle : permission;
+    }
+
     public async Task<bool> EstTitulaireAsync(long utilisateurId, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand(

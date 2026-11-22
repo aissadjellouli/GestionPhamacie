@@ -55,6 +55,9 @@ public sealed class PermissionsComptoir(PermissionService droits, IHttpContextAc
     public async Task<bool> EstTitulaireAsync(long utilisateurId, CancellationToken ct = default) =>
         (!ParCode && !MotDePasseAChanger && await droits.EstTitulaireAsync(utilisateurId, ct))
         || await AutoriseSurPlaceAsync(utilisateurId, PermissionServiceExtensions.MarqueTitulaire, ct);
+
+    // Libellé lu en base : sans cette transmission, la méthode par défaut de l'interface rendait le code (« prix.modifier »)
+    public Task<string> LibelleAsync(string permission, CancellationToken ct = default) => droits.LibelleAsync(permission, ct);
 }
 
 public static class PorteeConnexion

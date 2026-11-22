@@ -19,6 +19,26 @@ internal sealed class DroitsFactices(params string[] droits) : IPermissionServic
     public Task<decimal> RemiseMaxAsync(long u, CancellationToken ct = default) => Task.FromResult(RemiseMax);
     public bool Titulaire { get; init; }
     public Task<bool> EstTitulaireAsync(long u, CancellationToken ct = default) => Task.FromResult(Titulaire);
+    /// <summary>Libellés des droits connus (table permission) ; absent : le code, comme le service réel.</summary>
+    public Dictionary<string, string> Libelles { get; init; } = [];
+    public Task<string> LibelleAsync(string p, CancellationToken ct = default) => Task.FromResult(Libelles.GetValueOrDefault(p) ?? p);
+}
+
+public class LibellesDroitsTests
+{
+    [Fact]
+    public async Task Un_refus_de_droit_nomme_le_libelle_et_non_le_code()
+    {
+        // 2026-11-22 : « Bordereaux Chifa » affichait « Le droit « chifa.bordereaux » est nécessaire »
+        var droits = new DroitsFactices { Libelles = { ["chifa.bordereaux"] = "Gérer les bordereaux et rejets" } };
+        var e = await Assert.ThrowsAsync<Pharma.Application.Commun.DroitRefuseException>(() =>
+            droits.ExigerAsync(5, "chifa.bordereaux", "déposer un bordereau"));
+        Assert.Equal("Le droit « Gérer les bordereaux et rejets » est nécessaire pour déposer un bordereau.", e.Message);
+        Assert.Equal("chifa.bordereaux", e.Permission);   // le code reste transmis au poste (« Faire autoriser »)
+        // Droit inconnu de la table : le code, faute de mieux
+        var inconnu = await Assert.ThrowsAsync<Pharma.Application.Commun.DroitRefuseException>(() => droits.ExigerAsync(5, "x.y", "faire"));
+        Assert.Contains("« x.y »", inconnu.Message);
+    }
 }
 
 internal sealed class CatalogueEnMemoire : IPreparationVente

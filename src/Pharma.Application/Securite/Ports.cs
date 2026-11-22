@@ -22,6 +22,12 @@ public interface IPermissionService
 
     /// <summary>Vrai pour le pharmacien titulaire (rôle système, que la matrice des droits ne peut pas attribuer).</summary>
     Task<bool> EstTitulaireAsync(long utilisateurId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Libellé du droit pour les messages (« Gérer les bordereaux et rejets » et non « chifa.bordereaux », 2026-11-22) ;
+    /// droit inconnu : le code lui-même.
+    /// </summary>
+    Task<string> LibelleAsync(string permission, CancellationToken ct = default) => Task.FromResult(permission);
 }
 
 public static class PermissionServiceExtensions
@@ -30,7 +36,8 @@ public static class PermissionServiceExtensions
         string action, CancellationToken ct = default)
     {
         if (!await droits.APermissionAsync(utilisateurId, permission, ct))
-            throw new Commun.DroitRefuseException(permission, action);
+            throw new Commun.DroitRefuseException(permission, action,
+                $"Le droit « {await droits.LibelleAsync(permission, ct)} » est nécessaire pour {action}.");
     }
 
     /// <summary>Réservé au pharmacien titulaire, quel que soit le réglage des droits.</summary>

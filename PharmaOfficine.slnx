@@ -380,8 +380,10 @@
     <File Path="database/cloud/tests/039_creation_compte_ecran_tests.sql" />
     <File Path="database/cloud/040_import_comptes_duree_provisoire.sql" />
     <File Path="database/cloud/041_delai_provisoire_comptes_anterieurs.sql" />
+    <File Path="database/cloud/042_deconnexion_motif_inactivite.sql" />
     <File Path="database/cloud/tests/040_import_comptes_duree_provisoire_tests.sql" />
     <File Path="database/cloud/tests/041_delai_provisoire_comptes_anterieurs_tests.sql" />
+    <File Path="database/cloud/tests/042_deconnexion_motif_inactivite_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />

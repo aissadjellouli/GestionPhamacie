@@ -1388,6 +1388,10 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
   routes des psychotropes (contrôle, forçage, réglages, zone, classes suivies) et le réglage de substitution exigent désormais une
   connexion (jeton de mot de passe provisoire refusé, appel sans jeton : 401 au lieu d'une erreur 500). — `RegistreEndpoints.cs`,
   `RupturesEndpoints.cs`, `tests/Pharma.Architecture.Tests/RoutesProtegeesTests.cs`
+- **(2026-11-22) Un refus de droit nomme le libellé du droit**, jamais son code technique : « Le droit « Gérer les bordereaux et
+  rejets » est nécessaire » (et non « chifa.bordereaux »), pour le filtre de l'API comme pour les cas d'usage ; libellé lu dans la
+  table `permission`, le code seulement pour un droit inconnu ; le code reste transmis au poste pour « Faire autoriser ».
+  — `src/Pharma.Api/Securite/PermissionFilter.cs`, `src/Pharma.Application/Securite/Ports.cs`, `PermissionService.cs`
 - **Pour changer son mot de passe, l'employé doit saisir l'actuel, puis le nouveau deux fois.** — `src/Pharma.Application/Securite/ChangerMonMotDePasse.cs`
 - **Le nouveau mot de passe compte au moins 8 caractères, doit être confirmé à l'identique et différer de l'actuel.** — `src/Pharma.Domain/Securite/RegleMotDePasse.cs`
 - **Un compte désactivé ne peut pas changer son mot de passe.** — `src/Pharma.Application/Securite/ChangerMonMotDePasse.cs`
@@ -2392,6 +2396,9 @@ Règles appliquées par le script central `037_envoi_codes_reglage.sql` et les �
   **Coupure réseau** (revue de code du 2026-11-22) : un signal d'activité qui échoue (réseau, erreur passagère du serveur) **ne
   déconnecte pas** ; l'échéance connue est gardée et un nouveau signal part à la prochaine action. Seule une session refusée par le
   serveur (401 ou renvoi vers la connexion) termine aussitôt.
+  **Journal des accès** (script central 042, 2026-11-22) : une fermeture de la page à l'échéance d'inactivité est notée comme une
+  expiration par inactivité (`session_expiree / inactivite`, comme la fermeture par la base), et non comme une déconnexion
+  volontaire ; la base ne retient ce motif que si elle constate elle-même l'inactivité (à 30 s près), sinon « deconnexion ».
 - **(2026-11-22, revue de code) Protection des clés indisponible** (dossier des clés non créable ou illisible, droits, DPAPI) : le mot de
   passe SMTP est traité comme **illisible** (repli, sinon « Envoi des codes non réglé »), jamais une erreur serveur à chaque connexion ;
   l'erreur n'est pas gardée (l'envoi suivant réessaie) ; enregistrement d'un mot de passe à l'écran refusé (« dossier des clés … introuvable
