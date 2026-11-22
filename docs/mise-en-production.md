@@ -1074,6 +1074,11 @@ Les scripts de la base centrale sont dans `database\cloud\` (001 au dernier, 036
       --identifiant <adresse du compte d'envoi> --operateur "<nom>" --essai <votre adresse>
   ```
   - Le mot de passe d'application est **demandé au clavier** (rien ne s'affiche) ; jamais en argument ni en variable.
+  - **Dossier des clés** (2026-11-22) : par défaut `<PHARMA_CLOUD_DOSSIER>\cles-protection`. Si les écrans du central utilisent un autre
+    dossier (`Ecrans:DossierCles`), ajoutez `--dossier-cles "<ce même dossier>"` à `--envoi-codes`, et aussi à `--depart-officine … --email`
+    et `--creer-comptes … --envoyer-identifiants` (sinon la console ne relit pas le mot de passe). En lecture, la console ne crée jamais de
+    dossier ni de clé : « aucune clé dans … (rien n'a été créé…) » = mauvais dossier. « Attention : aucune clé dans … » pendant
+    `--envoi-codes` : de nouvelles clés vont être créées ; vérifiez que c'est bien le dossier des écrans.
   - **Attendu** : « E-mail d'essai envoyé à x***@… » puis « Envoi des codes enregistré… ». L'e-mail d'essai ne contient **pas** de code.
   - « identifiant ou mot de passe refusé » : mot de passe d'application d'un **autre** compte, mot de passe habituel du compte, ou
     validation en deux étapes absente. Rien n'est enregistré.
@@ -1094,7 +1099,8 @@ Les scripts de la base centrale sont dans `database\cloud\` (001 au dernier, 036
     & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --creer-comptes <fichier.csv> --auteur "<nom>" --envoyer-identifiants --adresse-ecrans https://<adresse des écrans>/
     ```
     La liste identifiant + mot de passe provisoire s'affiche **une fois** (jamais par e-mail : SMS ou de vive voix) ; seul l'identifiant
-    part par e-mail. Les mots de passe provisoires non utilisés expirent après 7 jours (réglable dans « Envoi des codes »).
+    part par e-mail (ajouter `--dossier-cles "<dossier des clés des écrans>"` si les écrans utilisent `Ecrans:DossierCles`). Les mots de
+    passe provisoires non utilisés expirent après 7 jours (réglable dans « Envoi des codes »).
   - **Après la mise en ligne des écrans** : régler dans « Envoi des codes » la durée de vie des mots de passe provisoires (7 jours par
     défaut) et la déconnexion après inactivité (éditeur 15 min, titulaire 30 min par défaut) ; facultatif : `Ecrans:AdressePublique`
     (adresse https des écrans, écrite dans l'e-mail de l'identifiant). Les sessions actives n'ont plus de durée maximale.
@@ -1489,7 +1495,7 @@ La première version du script créait une autorité « `PharmaOfficine Autorite
   ```powershell
   & "<dossier>\Cloud\Pharma.Cloud.Api.exe" --depart-officine <code officine> --sortie "<dossier>\officine-<code>.zip" --operateur "<nom de l'opérateur>" --email "<adresse e-mail du titulaire>"
   ```
-  - `--email` est **facultatif** : avec lui, le mot de passe de l'archive est envoyé par e-mail au titulaire (compte SMTP de l'éditeur, variables `PHARMA_CLOUD_SMTP_*` de l'étape 3.2) ; sans lui, il est seulement affiché. Une adresse de forme invalide est **refusée avant tout départ ou export** (rien n'est fait). L'adresse n'est **pas enregistrée** au central : seule sa forme masquée (ex. `t***@exemple.fr`) est notée au journal des départs avec le résultat de l'envoi.
+  - `--email` est **facultatif** : avec lui, le mot de passe de l'archive est envoyé par e-mail au titulaire (compte SMTP de l'éditeur, variables `PHARMA_CLOUD_SMTP_*` de l'étape 3.2, sinon le compte du réglage « Envoi des codes », relu avec les clés du dossier du central ou celles de `--dossier-cles "<dossier des clés des écrans>"` si les écrans utilisent `Ecrans:DossierCles` ; aucun dossier ni clé créé en lecture) ; sans lui, il est seulement affiché. Une adresse de forme invalide est **refusée avant tout départ ou export** (rien n'est fait). L'adresse n'est **pas enregistrée** au central : seule sa forme masquée (ex. `t***@exemple.fr`) est notée au journal des départs avec le résultat de l'envoi.
   - Tous les certificats de l'officine sont révoqués, la date de départ est posée (gardée si la commande est rejouée) : la synchronisation de l'officine est refusée dès son appel suivant. Rien d'autre à faire dans l'officine.
   - L'archive est un **zip chiffré AES-256 (format WinZip AE-2)**, écrit directement chiffré (aucune copie en clair sur le disque ; le fichier provisoire `<fichier>.zip.partiel`, déjà chiffré, est renommé à la fin ou supprimé en cas d'erreur). Elle contient un fichier CSV par table copiée au central et `ligne_remplacee.csv` (UTF-8, séparateur « ; », en-tête), et `empreintes.txt` (SHA-256 de chaque CSV, une fois extrait : `Get-FileHash -Algorithm SHA256 <fichier>`). Les **noms** des fichiers de l'archive restent visibles sans mot de passe (format zip), pas leur contenu. Un fichier existant n'est jamais écrasé. Patients sous code, comme au central.
   - **Mot de passe** : tiré au sort par la commande (24 caractères, sans caractères ambigus), **affiché une seule fois** à la fin de la commande (dans tous les cas, pour le noter), et, avec `--email`, **envoyé par e-mail au titulaire** après la création réussie de l'archive (message : nom de l'officine, nom du fichier, début de l'empreinte SHA-256, mot de passe ; **jamais l'archive ni un lien**). Il n'est écrit dans aucun journal, ni la base, ni un fichier. **Ne pas rediriger la sortie de la commande vers un fichier.**

@@ -10,7 +10,20 @@ namespace Pharma.Cloud.Api.Depart;
 /// </summary>
 public static class ReglageSmtpBase
 {
-    public static async Task<(ReglagesSmtpCentral? Reglages, string? Manque)> LireAsync(NpgsqlDataSource db, string? dossierCentral, CancellationToken ct)
+    /// <summary>Option de la console pour un dossier des clés hors du dossier du central (comme Ecrans:DossierCles des écrans).</summary>
+    public const string OptionDossierCles = "--dossier-cles";
+
+    /// <summary>
+    /// Dossier des clés retenu par la console (2026-11-22) : --dossier-cles &lt;chemin&gt; (le même que Ecrans:DossierCles des écrans),
+    /// sinon &lt;dossier du central&gt;\cles-protection (--dossier, sinon PHARMA_CLOUD_DOSSIER), sinon null.
+    /// </summary>
+    public static string? DossierCles(string? dossierCles, string? dossierCentral) =>
+        dossierCles is { Length: > 0 } ? dossierCles : ProtectionSmtpCentral.DossierDuCentral(dossierCentral);
+
+    /// <param name="dossierCentral">Dossier du central (--dossier ou PHARMA_CLOUD_DOSSIER) : clés dans son sous-dossier cles-protection.</param>
+    /// <param name="dossierCles">Dossier des clés donné à part (--dossier-cles) : prioritaire sur le dossier du central.</param>
+    public static async Task<(ReglagesSmtpCentral? Reglages, string? Manque)> LireAsync(NpgsqlDataSource db, string? dossierCentral, CancellationToken ct,
+        string? dossierCles = null)
     {
         await using (var existe = db.CreateCommand("SELECT to_regclass('public.parametre_envoi_codes') IS NOT NULL"))
             if (await existe.ExecuteScalarAsync(ct) is not true) return (null, "réglage « Envoi des codes » absent (script central 037 non passé)");
@@ -20,10 +33,19 @@ public static class ReglageSmtpBase
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct) || r.IsDBNull(5)) return (null, "réglage « Envoi des codes » sans mot de passe SMTP");
         string? T(int i) => r.IsDBNull(i) ? null : r.GetString(i);
-        var protection = ProtectionSmtpCentral.Depuis(ProtectionSmtpCentral.DossierDuCentral(dossierCentral));
-        if (protection is null) return (null, "dossier du central absent (PHARMA_CLOUD_DOSSIER) : mot de passe du réglage « Envoi des codes » illisible");
-        var motDePasse = protection.Deproteger(r.GetString(5));
-        if (motDePasse is null) return (null, "mot de passe du réglage « Envoi des codes » illisible (clés du dossier du central différentes)");
+        var dossier = DossierCles(dossierCles, dossierCentral);
+        var protection = ProtectionSmtpCentral.Depuis(dossier);
+        if (protection is null)
+            return (null, dossier is null
+                ? "dossier du central absent (PHARMA_CLOUD_DOSSIER, --dossier ou --dossier-cles) : mot de passe du réglage « Envoi des codes » illisible"
+                : "dossier des clés refusé (dans un dépôt de sources) : mot de passe du réglage « Envoi des codes » illisible");
+        // Lecture : aucun dossier ni anneau de clés créé ; dossier absent ou vide = message clair
+        var (motDePasse, cause) = protection.Lire(r.GetString(5));
+        if (motDePasse is null)
+            return (null, cause == ProtectionSmtpCentral.CauseSansCles
+                ? $"mot de passe du réglage « Envoi des codes » illisible : aucune clé dans {protection.DossierCles} (rien n'a été créé ; "
+                  + "donnez le dossier des clés des écrans avec --dossier-cles <chemin> ou --dossier <dossier du central>)"
+                : $"mot de passe du réglage « Envoi des codes » illisible ({cause ?? ProtectionSmtpCentral.CauseAutresCles})");
         var (reglages, manque) = ReglagesSmtpCentral.Creer(T(0), r.IsDBNull(1) ? null : r.GetInt32(1), T(2), T(3), motDePasse, T(4));
         return (reglages, manque is null ? null : manque + " (réglage « Envoi des codes »)");
     }

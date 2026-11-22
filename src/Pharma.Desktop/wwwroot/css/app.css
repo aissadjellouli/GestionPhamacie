@@ -915,6 +915,9 @@ fieldset.groupe-champs .champ input { max-width: 120px; }
 .reglement > .btn, .reglement > button { flex-shrink: 0; }
 .champ.champ-ligne label { flex: 1 1 auto; }
 .champ.champ-ligne .case { flex: 0 0 auto; margin: 0; }
+/* Champ collé à son libellé (durée du traitement à la caisse, 2026-11-22) : pas de vide entre le texte et la saisie */
+.champ.champ-ligne.champ-ligne-colle { justify-content: flex-start; flex-wrap: wrap; row-gap: 4px; }
+.champ.champ-ligne.champ-ligne-colle label:first-child { flex: 0 1 auto; }
 .reglement { gap: 10px; }
 .champ.champ-ligne label:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .champ.champ-ligne .case { gap: 6px; white-space: nowrap; }
@@ -974,6 +977,9 @@ fieldset.panneau:disabled { opacity: 0.85; }
 .reglement .medecin-choisi { flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: nowrap; min-width: 0; }
 .reglement .medecin-choisi strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .reglement .medecin-choisi .lien-bouton { flex-shrink: 0; }
+/* Wilaya du médecin choisi (2026-11-22) : liste courte sur la ligne du médecin ; en orange tant que la fiche n'en a pas */
+.medecin-choisi .wilaya-medecin { flex: 0 1 170px; min-width: 110px; margin-left: auto; padding-block: 2px; }
+.medecin-choisi .wilaya-medecin.manquant { border-color: var(--attention); background: var(--attention-fond); }
 .reglement .a-payer { padding: 6px 14px; }
 .reglement .a-payer span:last-child { font-size: 30px; }
 /* Caisse en trois parties (2026-11-15) : 1 panier, 2 client et ordonnance sous le panier, 3 paiement à droite ; seul le panier défile */

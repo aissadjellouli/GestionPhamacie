@@ -41,9 +41,10 @@ Rien en cours de développement. Démonstration cloud : étapes 1 et 2 écrites,
   message d'erreur affiché à 1 366).
 - **Compte de mesure** `editeur.mesure` (créé, sans e-mail) : inutilisable tant que la règle « jamais d'envoi vers une adresse
   `.invalid` » n'existe pas (sinon les mesures envoient des codes, ou des avis de non-remise, dans la boîte du titulaire).
-- **Revue de code du 2026-11-21, 7 points moins graves** : déchiffrement SMTP (exception mise en cache), compte au seul téléphone avec
-  « les deux », page perdue dans « Comptes », dossier des clés de la console (`Ecrans:DossierCles`), caractère NUL dans un message,
-  « Affiché jusqu'au » à l'heure du serveur, avertissement à chaque code envoyé par le repli.
+- ~~**Revue de code du 2026-11-21, 7 points moins graves**~~ : **corrigés le 2026-11-22** (protection des clés indisponible = mot de
+  passe illisible, message « pas d'adresse e-mail », page gardée dans « Comptes », `--dossier-cles` de la console sans création en
+  lecture, caractère NUL refusé, « Durée d'affichage » sans heure, avertissement une fois par changement d'état) ; voir
+  docs/regles-metier.md (S7.6 et 038). Reste : relecture de la recette à l'écran (captures) non faite.
 - **2e serveur en local** : aucune procédure pour le simuler sur un seul PC (seconde instance PostgreSQL répliquée, seconde API) ;
   plan à proposer sur demande avant toute modification de PostgreSQL.
 - **Bases jetables** à supprimer sur accord : `pharmacie_jetable_m4_*`, `_rejeu_*`, `_sugg_*` (6), et à décider :

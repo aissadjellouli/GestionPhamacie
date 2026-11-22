@@ -134,6 +134,88 @@ public class EnvoiCodesEcransTests
         }
     }
 
+    private sealed class JournalFactice : Microsoft.Extensions.Logging.ILogger
+    {
+        public List<string> Lignes { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            lock (Lignes) Lignes.Add(formatter(state, exception));
+        }
+    }
+
+    [Fact]
+    public void Avertissement_du_reglage_illisible_une_fois_par_changement_d_etat()
+    {
+        var dossier = Path.Combine(Path.GetTempPath(), "pharma_cles_" + Guid.NewGuid().ToString("N")[..8]);
+        try
+        {
+            var protection = new ProtectionSmtpCentral(dossier);
+            var chiffre = protection.Proteger(MotDePasseSmtp);
+            var journal = new JournalFactice();
+            var repli = new EnvoiCodeFichier(Path.Combine(dossier, "codes"), TimeProvider.System);
+            var choix = new ChoixEnvoiCodes(null, repli, (_, _) => Task.FromResult<ReglageEnvoiCodes?>(null), protection, _ => new CourrielFactice(),
+                TimeProvider.System, journal);
+            int Avertissements(string texte) => journal.Lignes.Count(l => l.Contains(texte, StringComparison.Ordinal));
+
+            // Réglage incomplet : un seul avertissement pour trois codes envoyés par le repli
+            var incomplet = Reglage("courriel", null) with { Complet = false };
+            for (var i = 0; i < 3; i++) Assert.Same(repli, choix.Construire(incomplet).Envoi);
+            Assert.Equal(1, Avertissements("incomplet ou illisible"));
+            // Même réglage relu de la base (nouvel objet, mêmes valeurs) : rien de plus
+            Assert.Same(repli, choix.Construire(Reglage("courriel", null) with { Complet = false }).Envoi);
+            Assert.Equal(1, Avertissements("incomplet ou illisible"));
+
+            // Réglage relu différent (mot de passe d'autres clés) : avertissement du réglage ET du mot de passe non déchiffrable, une fois
+            var autresCles = Reglage("courriel", new ProtectionSmtpCentral(dossier + "-autre").Proteger(MotDePasseSmtp));
+            for (var i = 0; i < 3; i++) Assert.Same(repli, choix.Construire(autresCles).Envoi);
+            Assert.Equal(2, Avertissements("incomplet ou illisible"));
+            Assert.Equal(1, Avertissements("non déchiffrable"));
+
+            // Réglage de nouveau utilisable, puis illisible : signalé de nouveau
+            Assert.Equal("email", choix.Construire(Reglage("courriel", chiffre)).Envoi!.Canal);
+            choix.Construire(autresCles);
+            Assert.Equal(3, Avertissements("incomplet ou illisible"));
+            Assert.Equal(2, Avertissements("non déchiffrable"));
+            // Jamais le mot de passe ni le texte chiffré au journal
+            Assert.DoesNotContain(journal.Lignes, l => l.Contains(MotDePasseSmtp, StringComparison.Ordinal) || l.Contains(chiffre, StringComparison.Ordinal));
+        }
+        finally
+        {
+            foreach (var x in new[] { dossier, dossier + "-autre" }) if (Directory.Exists(x)) Directory.Delete(x, true);
+        }
+    }
+
+    [Fact]
+    public void Page_des_comptes_gardee_message_sans_email_et_duree_du_message_sans_heure()
+    {
+        // Page de la liste « Comptes » gardée après « contact » et « mot de passe » (bornée, chiffres seuls)
+        Assert.Equal("", Pharma.Cloud.Web.Points.ActionsEnvoiCodes.PageRetour((string?)null));
+        Assert.Equal("", Pharma.Cloud.Web.Points.ActionsEnvoiCodes.PageRetour("1"));
+        Assert.Equal("&page=3", Pharma.Cloud.Web.Points.ActionsEnvoiCodes.PageRetour("3"));
+        Assert.Equal("&page=100000", Pharma.Cloud.Web.Points.ActionsEnvoiCodes.PageRetour("2000000"));
+        foreach (var faux in new[] { "-2", "0", " 3", "3&ok=x", "abc", "99999999999" })
+            Assert.Equal("", Pharma.Cloud.Web.Points.ActionsEnvoiCodes.PageRetour(faux));
+        Assert.Equal("&page=5", Pharma.Cloud.Web.Points.ActionsEnvoiCodes.PageRetour(5));
+        var comptes = File.ReadAllText(Path.Combine(Depot.Racine(), "src", "Pharma.Cloud.Web", "Composants", "Pages", "Comptes.razor"));
+        Assert.Equal(2, Regex.Matches(comptes, "<input type=\"hidden\" name=\"page\" value=\"@PageCourante\" />").Count);
+
+        // « E-mail » (ou « les deux » ramené à l'e-mail sans fournisseur SMS) et compte sans adresse : message précis
+        Assert.Equal("sans_email", Pharma.Cloud.Web.Points.ActionsEcrans.CleRefusCode("sans_contact", "email"));
+        Assert.Equal("sans_contact", Pharma.Cloud.Web.Points.ActionsEcrans.CleRefusCode("sans_contact", "les_deux"));
+        Assert.Equal("trop_de_codes", Pharma.Cloud.Web.Points.ActionsEcrans.CleRefusCode("trop_de_codes", "email"));
+        Assert.Contains("pas d'adresse e-mail", Pharma.Cloud.Web.Points.Messages.Erreur("sans_email"));
+
+        // « Durée d'affichage » d'un message : aucune heure calculée par le serveur des écrans (fuseau de l'officine inconnu)
+        Assert.Equal("1 jour (jusqu'au lendemain, à l'heure de l'envoi)", Rubriques.DureeMessage(1));
+        Assert.Equal("7 jours (jusqu'à la même heure que l'envoi)", Rubriques.DureeMessage(7));
+        var ordres = File.ReadAllText(Path.Combine(Depot.Racine(), "src", "Pharma.Cloud.Web", "Composants", "Pages", "OrdresOfficine.razor"));
+        Assert.DoesNotContain("DateTime.Now", ordres);
+        Assert.Contains("Rubriques.DureeMessage(n)", ordres);
+    }
+
     [Fact]
     public void Ecrans_et_actions_de_l_envoi_des_codes_reserves_a_l_editeur()
     {
@@ -240,8 +322,9 @@ public class EnvoiCodesEcransTests
                 Assert.Contains("***76", await Texte(client, $"/comptes?compte={titulaire}"));
                 await Poster(client, $"/comptes?compte={titulaire}", "/actions/code-action", new() { ["retour"] = $"/comptes?compte={titulaire}" });
                 var vide = await Poster(client, $"/comptes?compte={titulaire}", $"/actions/comptes/{titulaire}/contact",
-                    new() { ["email"] = "", ["telephone"] = "-", ["code"] = Code(codes, "editeur.s76") });
-                Assert.Equal($"/comptes?compte={titulaire}&erreur=contact_sans_contact", vide.Headers.Location?.OriginalString);
+                    new() { ["email"] = "", ["telephone"] = "-", ["code"] = Code(codes, "editeur.s76"), ["page"] = "3" });
+                // Page de la liste gardée (2026-11-22) : le panneau retrouve le compte et l'erreur au-delà de 20 comptes
+                Assert.Equal($"/comptes?compte={titulaire}&page=3&erreur=contact_sans_contact", vide.Headers.Location?.OriginalString);
                 var contact = await Poster(client, $"/comptes?compte={titulaire}", $"/actions/comptes/{titulaire}/contact",
                     new() { ["email"] = "t76@exemple.invalid", ["telephone"] = "", ["code"] = Code(codes, "editeur.s76") });
                 Assert.Equal($"/comptes?compte={titulaire}&ok=contact_modifie", contact.Headers.Location?.OriginalString);

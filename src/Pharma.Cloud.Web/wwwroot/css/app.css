@@ -1099,6 +1099,12 @@ fieldset.panneau:disabled { opacity: 0.85; }
 /* Contacts des comptes (lot S7.6) : tableau paginé à gauche (seul le cadre défile), formulaire du compte choisi à droite */
 .comptes-contact { display: grid; grid-template-columns: minmax(0, 2fr) minmax(360px, 1fr); gap: 20px; align-items: start; }
 .comptes-contact .colonne-comptes { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+/* Comptes : état du mot de passe et liens d'action passent à la ligne (colonne « Mot de passe », 040) plutôt que de faire défiler le tableau en largeur */
+.comptes-contact .tableau { min-width: 0; }
+.comptes-contact .tableau-central td { white-space: normal; }
+/* Liste des comptes seulement (pas l'aperçu d'un import) : identifiant et e-mail masqué coupés si la colonne est trop étroite */
+.comptes-contact .tableau-cadre:not(#apercu-import) .tableau-central td:first-child,
+.comptes-contact .tableau-cadre:not(#apercu-import) .tableau-central td:nth-child(4) { overflow-wrap: anywhere; }
 .comptes-contact .formulaire-contact { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; align-items: end; margin: 0; }
 .comptes-contact .formulaire-contact .champ input { width: 100%; }
 /* Script central 038 : contact OU remise à zéro du mot de passe du compte choisi ; écran fixe (hauteur posée par ecrans.js,
@@ -1116,7 +1122,7 @@ fieldset.panneau:disabled { opacity: 0.85; }
 .comptes-contact .titre-apercu { margin: 0; font-size: 15px; }
 .comptes-contact .colonne-comptes > .tableau-cadre { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .comptes-contact .ligne-refusee td { background: var(--urgent-fond); }
-.comptes-contact .lien-regenerer { margin-left: 10px; white-space: nowrap; }
+.comptes-contact .lien-regenerer { display: block; margin-top: 4px; white-space: normal; }   /* sous « Modifier » : colonne étroite, aucun défilement en largeur */
 .comptes-contact .formulaire-contact .case.champ-large { grid-column: 1 / -1; }
 .comptes-contact .formulaire-contact input[type="file"] { width: 100%; }
 .comptes-transmis { display: flex; flex-direction: column; gap: 10px; min-height: 0; }

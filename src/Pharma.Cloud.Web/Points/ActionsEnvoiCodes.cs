@@ -48,8 +48,9 @@ public static class ActionsEnvoiCodes
             string? chiffre = null;
             if (s.MotDePasse is not null)
             {
-                if (choix.Protection is null) return Results.Redirect($"{Page}?erreur=envoi_codes_cles");
-                chiffre = choix.Protection.Proteger(s.MotDePasse);
+                // Protection indisponible (dossier des clés illisible, DPAPI) : refus clair au lieu d'une erreur serveur (2026-11-22)
+                chiffre = choix.Protection?.ProtegerOuNull(s.MotDePasse);
+                if (chiffre is null) return Results.Redirect($"{Page}?erreur=envoi_codes_cles");
             }
             var statut = await depot.EnregistrerReglageEnvoiCodesAsync(ctx.EmpreinteJeton()!, codes.Empreinte("action", f["code"].ToString()), s.Canal, s.Serveur,
                 s.Port, s.Tls, s.Identifiant, s.Expediteur, chiffre, ctx.RequestAborted);
@@ -122,9 +123,11 @@ public static class ActionsEnvoiCodes
             var f = await ctx.Request.ReadFormAsync(ctx.RequestAborted);
             var statut = await depot.ModifierContactAsync(ctx.EmpreinteJeton()!, codes.Empreinte("action", f["code"].ToString()), compte,
                 f["email"].ToString().Trim(), f["telephone"].ToString().Replace(" ", "", StringComparison.Ordinal).Trim(), ctx.RequestAborted);
+            // Page de la liste gardée : « Comptes » ne cherche le compte choisi que dans la page affichée (20 comptes par page)
+            var page = PageRetour(f["page"].ToString());
             return Results.Redirect(statut == "ok"
-                ? $"{PageComptes}?compte={compte}&ok=contact_modifie"
-                : $"{PageComptes}?compte={compte}&erreur={Cle("contact_", statut)}");
+                ? $"{PageComptes}?compte={compte}{page}&ok=contact_modifie"
+                : $"{PageComptes}?compte={compte}{page}&erreur={Cle("contact_", statut)}");
         }).RequireRateLimiting("code");
     }
 
@@ -142,10 +145,12 @@ public static class ActionsEnvoiCodes
             ChoixEnvoiCodes choix, Pharma.Shared.IEnvoiSmsMotDePasse sms, ReglagesEcrans reglages) =>
         {
             if (ctx.Session() is not { Editeur: true } session) return Results.Redirect("/acces-refuse");
-            var retour = $"{PageComptes}?compte={compte}&action=mot-de-passe";
+            var f = await ctx.Request.ReadFormAsync(ctx.RequestAborted);
+            // Page de la liste gardée (sinon le panneau perd le compte et l'erreur au-delà de 20 comptes)
+            var page = PageRetour(f["page"].ToString());
+            var retour = $"{PageComptes}?compte={compte}{page}&action=mot-de-passe";
             // Son propre compte : refusé avant tout (la base le refuse aussi)
             if (compte == session.Compte) return Results.Redirect($"{retour}&erreur=remise_soi_meme");
-            var f = await ctx.Request.ReadFormAsync(ctx.RequestAborted);
             var provisoire = Pharma.Shared.ComptesDistants.MotDePasseProvisoire();
             var statut = await depot.RemettreMotDePasseAsync(ctx.EmpreinteJeton()!, codes.Empreinte("action", f["code"].ToString()), compte, f["motif"].ToString(),
                 f["confirmation"].ToString(), BCrypt.Net.BCrypt.HashPassword(provisoire, Pharma.Shared.ComptesDistants.CoutBcrypt), ctx.RequestAborted);
@@ -156,7 +161,7 @@ public static class ActionsEnvoiCodes
                 [new Pharma.Shared.CompteATransmettre(compte, d?.Identifiant ?? f["confirmation"].ToString().Trim().ToLowerInvariant(), d?.Role ?? "titulaire",
                     d?.Email, d?.Telephone, provisoire)],
                 f[ActionsImportComptes.CaseIdentifiant].ToString() == "1", remise: true);
-            return Results.Redirect($"{PageComptes}/mot-de-passe-affiche?compte={compte}&ref={affiches.Garder(session.Id, "remise", transmis)}");
+            return Results.Redirect($"{PageComptes}/mot-de-passe-affiche?compte={compte}&ref={affiches.Garder(session.Id, "remise", transmis)}{page}");
         }).RequireRateLimiting("code");
 
         // Script central 039 : compte éditeur ou titulaire créé par l'éditeur (code de confirmation) ; mot de passe provisoire tiré ici,
@@ -186,6 +191,17 @@ public static class ActionsEnvoiCodes
         // Script central 040 : déconnexion après inactivité (réglage par rôle, signal d'activité de la page)
         ActionsImportComptes.MapperInactivite(g);
     }
+
+    /// <summary>
+    /// Page de la liste « Comptes » d'où vient le formulaire (champ caché « page », 2026-11-22) : « &amp;page=N » (N de 2 à 100 000,
+    /// borné), sinon rien (première page). Chiffres seuls : jamais un texte saisi recopié dans l'adresse.
+    /// </summary>
+    public static string PageRetour(string? page) =>
+        PageRetour(int.TryParse(page, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : null);
+
+    /// <inheritdoc cref="PageRetour(string?)"/>
+    public static string PageRetour(int? page) =>
+        page is int n && n > 1 ? $"&page={Math.Min(n, 100_000).ToString(CultureInfo.InvariantCulture)}" : "";
 
     /// <summary>Nom d'hôte du serveur d'e-mail (règle du script central 037) : lettres, chiffres, points et tirets, 253 caractères au plus.</summary>
     public static bool ServeurValide(string serveur) =>

@@ -258,7 +258,7 @@ d'une officine (prioritaires ; sinon le compte du réglage « Envoi des codes »
   `editeur.dev` lui-même : « votre propre compte », aucun formulaire. Le titulaire se reconnecte avec le provisoire et doit le changer.
   Penser à noter le nouveau mot de passe de `titulaire.dev`.
 - **Message sur les postes** (titulaire `titulaire.dev`, droit « ordres » accordé depuis le poste) : « Mes officines » → « Ordres »
-  (`/mes-officines/<officine>/ordres`), panneau **« Message sur les postes »** : texte (200 caractères au plus), « Affiché jusqu'au »,
+  (`/mes-officines/<officine>/ordres`), panneau **« Message sur les postes »** : texte (200 caractères au plus), « Durée d'affichage » (1 à 7 jours),
   code, « Envoyer le message ». **Provoquer l'affichage** : au poste branché sur `pharmacie_test`, attendre le passage de synchronisation
   suivant (une minute environ) : la pastille grise **« Message »** apparaît dans la barre d'état de tous les employés connectés ; un clic
   ouvre la fenêtre ; « Ne plus afficher » (titulaire seulement) la retire de tous les postes. Au central, l'ordre passe « Appliqué ».

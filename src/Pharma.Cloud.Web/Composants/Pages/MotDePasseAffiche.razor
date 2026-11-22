@@ -13,7 +13,7 @@
             <p class="sous-titre">Affiché UNE seule fois : transmettez-le par SMS ou de vive voix, après avoir vérifié l'identité de la personne ; jamais par e-mail.</p>
         </div>
         <div class="actions">
-            <a class="btn btn-contour" href="@(Compte is { } choisi ? $"comptes?compte={choisi}&action=mot-de-passe" : "comptes")">Comptes</a>
+            <a class="btn btn-contour" href="@(Compte is { } choisi ? $"comptes?compte={choisi}{ActionsEnvoiCodes.PageRetour(Numero)}&action=mot-de-passe" : "comptes")">Comptes</a>
         </div>
     </div>
     @if (Lot is { Comptes.Count: 1 } un)
@@ -87,6 +87,8 @@
     [CascadingParameter] private HttpContext? Contexte { get; set; }
     [SupplyParameterFromQuery(Name = "ref")] private string? Reference { get; set; }
     [SupplyParameterFromQuery(Name = "compte")] private Guid? Compte { get; set; }
+    /// <summary>Page de la liste des comptes d'où vient la remise à zéro (retour « Comptes » sur la même page, 2026-11-22).</summary>
+    [SupplyParameterFromQuery(Name = "page")] private int? Numero { get; set; }
 
     private ComptesAffiches.Lot? Lot { get; set; }
 

@@ -55,6 +55,57 @@ public class EnvoiCodesReglageTests
     }
 
     [Fact]
+    public void Protection_indisponible_mot_de_passe_illisible_sans_exception_ni_erreur_gardee()
+    {
+        var dossier = Path.Combine(Path.GetTempPath(), "pharma_central_" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dossier);
+        try
+        {
+            var chiffre = new ProtectionSmtpCentral(Path.Combine(dossier, "bonnes")).Proteger("abcdabcdabcdabcd");
+
+            // Lecture d'un dossier absent : null, cause claire, RIEN n'est créé
+            var absent = new ProtectionSmtpCentral(Path.Combine(dossier, "absent"));
+            Assert.Equal((null, ProtectionSmtpCentral.CauseSansCles), absent.Lire(chiffre));
+            Assert.False(Directory.Exists(absent.DossierCles));
+
+            // Le « dossier » des clés est un fichier : la création échoue (IOException) ; jamais d'exception à la lecture, refus
+            // à l'écriture (ProtegerOuNull) ; l'erreur n'est PAS gardée : une fois le fichier retiré, la protection fonctionne
+            var chemin = Path.Combine(dossier, "fichier");
+            File.WriteAllText(chemin, "pas un dossier");
+            var protection = new ProtectionSmtpCentral(chemin);
+            Assert.Null(protection.Deproteger(chiffre));
+            Assert.Null(protection.ProtegerOuNull("abcdabcdabcdabcd"));
+            Assert.ThrowsAny<IOException>(() => protection.Proteger("abcdabcdabcdabcd"));
+            File.Delete(chemin);
+            var nouveau = protection.ProtegerOuNull("abcdabcdabcdabcd");
+            Assert.NotNull(nouveau);
+            Assert.Equal("abcdabcdabcdabcd", protection.Deproteger(nouveau));
+
+            // Clé illisible dans le dossier (fichier abîmé) : mot de passe illisible avec une cause, jamais d'exception
+            var abime = Path.Combine(dossier, "abime");
+            Directory.CreateDirectory(abime);
+            File.WriteAllText(Path.Combine(abime, "key-00000000-0000-0000-0000-000000000000.xml"), "<pas du xml");
+            var (motDePasse, cause) = new ProtectionSmtpCentral(abime).Lire(chiffre);
+            Assert.Null(motDePasse);
+            Assert.NotNull(cause);
+        }
+        finally
+        {
+            if (Directory.Exists(dossier)) Directory.Delete(dossier, true);
+        }
+    }
+
+    [Fact]
+    public void Dossier_des_cles_de_la_console_option_prioritaire_sur_le_dossier_du_central()
+    {
+        Assert.Equal(@"D:\cles", ReglageSmtpBase.DossierCles(@"D:\cles", @"C:\central"));
+        Assert.Equal(Path.Combine(@"C:\central", ProtectionSmtpCentral.SousDossier), ReglageSmtpBase.DossierCles(null, @"C:\central"));
+        Assert.Equal(Path.Combine(@"C:\central", ProtectionSmtpCentral.SousDossier), ReglageSmtpBase.DossierCles("", @"C:\central"));
+        Assert.Null(ReglageSmtpBase.DossierCles(null, null));
+        Assert.Equal("--dossier-cles", ReglageSmtpBase.OptionDossierCles);
+    }
+
+    [Fact]
     public async Task Migration_sans_perte_des_comptes_et_des_codes_puis_reglage_relu_par_la_console()
     {
         using var base_ = BaseCentraleJetable.Creer();
@@ -103,8 +154,17 @@ public class EnvoiCodesReglageTests
             var (smtp, manque) = await ReglageSmtpBase.LireAsync(db, dossier, CancellationToken.None);
             Assert.Null(manque);
             Assert.Equal(("smtp.gmail.com", 587, "abcdabcdabcdabcd"), (smtp!.Hote, smtp.Port, smtp.MotDePasse));
-            Assert.Contains("illisible", (await ReglageSmtpBase.LireAsync(db, dossier + "-autre", CancellationToken.None)).Manque);
+            // Dossier absent en LECTURE : message clair, rien n'est créé (ni dossier ni anneau de clés vide)
+            var absent = (await ReglageSmtpBase.LireAsync(db, dossier + "-autre", CancellationToken.None)).Manque;
+            Assert.Contains("illisible", absent);
+            Assert.Contains("--dossier-cles", absent);
+            Assert.False(Directory.Exists(dossier + "-autre"));
             Assert.Contains("PHARMA_CLOUD_DOSSIER", (await ReglageSmtpBase.LireAsync(db, null, CancellationToken.None)).Manque);
+            // --dossier-cles : dossier des clés des écrans hors du dossier du central (Ecrans:DossierCles), prioritaire
+            var cles = Path.Combine(dossier, ProtectionSmtpCentral.SousDossier);
+            Assert.Equal("abcdabcdabcdabcd", (await ReglageSmtpBase.LireAsync(db, dossier + "-autre", CancellationToken.None, cles)).Reglages!.MotDePasse);
+            Assert.Equal("abcdabcdabcdabcd", (await ReglageSmtpBase.LireAsync(db, null, CancellationToken.None, cles)).Reglages!.MotDePasse);
+            Assert.False(Directory.Exists(dossier + "-autre"));
         }
         finally
         {

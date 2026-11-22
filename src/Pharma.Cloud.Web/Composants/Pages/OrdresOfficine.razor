@@ -73,11 +73,13 @@
                         <input id="texte" name="texte" type="text" maxlength="@MessagePostes.LongueurMax" autocomplete="off" required />
                     </div>
                     <div class="champ">
-                        <label for="jours" class="requis">Affiché jusqu'au</label>
+                        <label for="jours" class="requis">Durée d'affichage</label>
+                        @* 2026-11-22 : plus d'heure calculée ici (horloge du serveur des écrans, qui n'a pas le fuseau de l'officine) : la base
+                           fixe la fin à l'envoi, même heure N jours plus tard ; le poste l'affiche à l'heure de l'officine *@
                         <select id="jours" name="jours" required>
                             @for (var n = MessagePostes.JoursMin; n <= MessagePostes.JoursMax; n++)
                             {
-                                <option value="@n">@FinAffichage(n)</option>
+                                <option value="@n">@Rubriques.DureeMessage(n)</option>
                             }
                         </select>
                     </div>
@@ -91,7 +93,8 @@
                 </form>
                 <details class="detail explication-repliee">
                     <summary>Où et combien de temps il s'affiche</summary>
-                    Montré dans la barre d'état de tous les postes de l'officine jusqu'à la date choisie (7 jours au plus) ; le titulaire de
+                    Montré dans la barre d'état de tous les postes de l'officine pendant la durée choisie (7 jours au plus), jusqu'à la même
+                    heure que l'envoi : l'heure exacte de fin est fixée à l'envoi et affichée sur les postes à l'heure de l'officine ; le titulaire de
                     l'officine peut le fermer. Un nouveau message remplace le précédent. « Appliqué » = affiché.
                 </details>
             </section>
@@ -112,11 +115,6 @@
     [SupplyParameterFromQuery(Name = "page")] private int? Numero { get; set; }
     [SupplyParameterFromQuery(Name = "erreur")] private string? Erreur { get; set; }
     [SupplyParameterFromQuery(Name = "ok")] private string? Ok { get; set; }
-
-    private static readonly System.Globalization.CultureInfo Fr = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
-
-    /// <summary>Fin d'affichage proposée (heure du serveur des écrans ; la base fixe l'heure exacte à l'envoi).</summary>
-    private static string FinAffichage(int jours) => $"{DateTime.Now.AddDays(jours).ToString("ddd dd/MM à HH:mm", Fr)} ({jours} jour{(jours > 1 ? "s" : "")})";
 
     private TableEcran Table { get; set; } = TableEcran.Vide;
     private int PageCourante => Math.Clamp(Numero ?? 1, 1, 100_000);

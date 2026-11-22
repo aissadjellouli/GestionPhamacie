@@ -51,7 +51,10 @@ public class ResteS7EcransTests
     public void Regles_du_message_identiques_a_la_base_et_messages_de_chaque_refus()
     {
         var sql = File.ReadAllText(Path.Combine(Depot.Racine(), "database", "cloud", "038_remise_mot_de_passe_retrait_message.sql"));
-        Assert.Contains($"t ~ '{MessagePostes.MotifInterdits}'", sql);
+        // Seule différence voulue : le C# refuse aussi U+0000 (2026-11-22) ; la base ne peut pas le recevoir (PostgreSQL rejette le
+        // caractère nul dans un texte ou un jsonb, par une erreur) : le script 038 n'est pas modifié
+        Assert.StartsWith(@"[\u0000-", MessagePostes.MotifInterdits, StringComparison.Ordinal);
+        Assert.Contains($"t ~ '{MessagePostes.MotifInterdits.Replace(@"[\u0000-", @"[\u0001-", StringComparison.Ordinal)}'", sql);
         Assert.Contains($"t ~* '{MessagePostes.MotifLien}'", sql);
         Assert.Contains($"!~ '{MessagePostes.MotifDate}'", sql);
         Assert.Contains($"length(t) > {MessagePostes.LongueurMax}", sql);
@@ -119,13 +122,16 @@ public class ResteS7EcransTests
             var page = $"/comptes?compte={titulaire}&action=mot-de-passe";
             Assert.Contains("Remettre à zéro le mot de passe", await Texte(ed, page));
             await Poster(ed, page, "/actions/code-action", new() { ["retour"] = page });
-            Assert.EndsWith("&erreur=remise_confirmation", (await Poster(ed, page, $"/actions/comptes/{titulaire}/mot-de-passe",
-                new() { ["motif"] = "Oubli du mot de passe", ["confirmation"] = "titulaire.b7r", ["code"] = Code(codes, "editeur.s7r") })).Headers.Location?.OriginalString);
+            // Page de la liste gardée (2026-11-22) au refus comme au retour de la page du mot de passe affiché
+            Assert.Equal($"/comptes?compte={titulaire}&page=2&action=mot-de-passe&erreur=remise_confirmation", (await Poster(ed, page, $"/actions/comptes/{titulaire}/mot-de-passe",
+                new() { ["motif"] = "Oubli du mot de passe", ["confirmation"] = "titulaire.b7r", ["code"] = Code(codes, "editeur.s7r"), ["page"] = "2" })).Headers.Location?.OriginalString);
             var r = await Poster(ed, page, $"/actions/comptes/{titulaire}/mot-de-passe",
-                new() { ["motif"] = "Oubli du mot de passe (appel)", ["confirmation"] = "titulaire.s7r", ["code"] = Code(codes, "editeur.s7r") });
+                new() { ["motif"] = "Oubli du mot de passe (appel)", ["confirmation"] = "titulaire.s7r", ["code"] = Code(codes, "editeur.s7r"), ["page"] = "2" });
             var affiche = r.Headers.Location?.OriginalString ?? "";
             Assert.StartsWith($"/comptes/mot-de-passe-affiche?compte={titulaire}&ref=", affiche);
+            Assert.EndsWith("&page=2", affiche);
             var html = await Texte(ed, affiche);
+            Assert.Matches($"href=\"comptes\\?compte={titulaire}&(amp;)?page=2&(amp;)?action=mot-de-passe\"", html);
             var provisoire = Regex.Match(html, "id=\"mot-de-passe-provisoire\">([^<]+)<").Groups[1].Value;
             Assert.Equal(16, provisoire.Length);
             Assert.DoesNotContain("style=\"", html);

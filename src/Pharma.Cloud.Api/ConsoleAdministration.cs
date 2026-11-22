@@ -8,7 +8,9 @@ namespace Pharma.Cloud.Api;
 
 /// <summary>
 /// Commandes d'administration du serveur central (le serveur ne démarre pas). Secrets jamais en argument ni dans appsettings :
-///   PHARMA_CLOUD_DOSSIER          dossier HORS dépôt de l'autorité, du certificat HTTPS et de la clé des jetons (ou --dossier)
+///   PHARMA_CLOUD_DOSSIER          dossier HORS dépôt de l'autorité, du certificat HTTPS et de la clé des jetons (ou --dossier) ;
+///                                 clés du mot de passe SMTP dans son sous-dossier cles-protection, ou --dossier-cles &lt;chemin&gt;
+///                                 (--envoi-codes, --depart-officine, --creer-comptes ; le même dossier que Ecrans:DossierCles)
 ///   PHARMA_CLOUD_MOT_DE_PASSE     mot de passe des clés de ce dossier (16 caractères au moins)
 ///   PHARMA_CLOUD_ADMIN_CONNEXION  connexion PostgreSQL du propriétaire de la base centrale (officines, codes, révocations)
 /// </summary>
@@ -252,7 +254,8 @@ public static class ConsoleAdministration
                                 // Lot S7.6 : variables absentes → compte SMTP du réglage « Envoi des codes » (écrans du central), s'il est complet
                                 await using var dbReglage = Admin();
                                 var (smtpBase, manqueBase) = await Depart.ReglageSmtpBase.LireAsync(dbReglage,
-                                    Option(args, "--dossier") ?? Environment.GetEnvironmentVariable("PHARMA_CLOUD_DOSSIER"), CancellationToken.None);
+                                    Option(args, "--dossier") ?? Environment.GetEnvironmentVariable("PHARMA_CLOUD_DOSSIER"), CancellationToken.None,
+                                    Option(args, Depart.ReglageSmtpBase.OptionDossierCles));
                                 if (smtpBase is not null)
                                 {
                                     smtp = smtpBase;
@@ -285,7 +288,7 @@ public static class ConsoleAdministration
                     {
                         // 2026-11-21 : compte e-mail des codes de second facteur réglé sur le serveur (amorçage sans variable ni fichier)
                         // --envoi-codes --serveur <smtp> --port <587|465> --tls <starttls|ssl> --identifiant <adresse> [--expediteur <adresse>]
-                        //   --operateur <nom> [--essai <adresse>] ; mot de passe d'application demandé au clavier (masqué)
+                        //   --operateur <nom> [--essai <adresse>] [--dossier-cles <chemin>] ; mot de passe d'application demandé au clavier (masqué)
                         var tls = Option(args, "--tls") ?? "starttls";
                         var port = int.TryParse(Option(args, "--port") ?? "587", out var p) ? p : throw new ArgumentException("Port attendu : --port 587 (ou 465).");
                         var identifiant = Option(args, "--identifiant") ?? throw new ArgumentException("Identifiant attendu : --identifiant <adresse du compte d'envoi>.");
@@ -296,9 +299,12 @@ public static class ConsoleAdministration
                         var motDePasse = LireSecret("Mot de passe d'application du compte d'envoi (non affiché) : ");
                         var (smtp, manque) = Depart.ReglagesSmtpCentral.Creer(serveur, port, tls, identifiant, motDePasse, Option(args, "--expediteur") ?? identifiant);
                         if (smtp is null) throw new ArgumentException($"Rien n'est enregistré : {manque}.");
-                        var protection = Depart.ProtectionSmtpCentral.Depuis(Depart.ProtectionSmtpCentral.DossierDuCentral(
+                        // 2026-11-22 : --dossier-cles <chemin> = le dossier des clés des écrans (Ecrans:DossierCles) s'il n'est pas sous le dossier du central
+                        var protection = Depart.ProtectionSmtpCentral.Depuis(Depart.ReglageSmtpBase.DossierCles(Option(args, Depart.ReglageSmtpBase.OptionDossierCles),
                             Option(args, "--dossier") ?? Environment.GetEnvironmentVariable("PHARMA_CLOUD_DOSSIER")))
-                            ?? throw new InvalidOperationException("Dossier du central absent (--dossier ou PHARMA_CLOUD_DOSSIER) : le mot de passe ne peut pas être chiffré.");
+                            ?? throw new InvalidOperationException("Dossier des clés absent ou refusé (--dossier-cles, --dossier ou PHARMA_CLOUD_DOSSIER ; jamais dans un dépôt de sources) : le mot de passe ne peut pas être chiffré.");
+                        if (!protection.ClesPresentes())
+                            Console.WriteLine($"Attention : aucune clé dans {protection.DossierCles} : de nouvelles clés y seront créées ; les écrans du central doivent utiliser ce même dossier (Ecrans:DossierCles ou PHARMA_CLOUD_DOSSIER).");
                         using var arret = AnnulationConsole();
                         if (Option(args, "--essai") is { } essai)
                         {

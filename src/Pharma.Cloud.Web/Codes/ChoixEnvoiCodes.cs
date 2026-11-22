@@ -88,32 +88,84 @@ public sealed class ChoixEnvoiCodes
         return Construire(reglage);
     }
 
-    /// <summary>Envoi pour un réglage (règle pure, testée) : canal respecté ; réglage incomplet ou illisible : repli, sinon refus.</summary>
+    /// <summary>
+    /// Envoi pour un réglage (règle pure, testée) : canal respecté ; réglage incomplet ou illisible : repli, sinon refus.
+    /// Avertissements (réglage incomplet, mot de passe non déchiffrable) écrits UNE fois par changement d'état (2026-11-22) : au
+    /// premier envoi qui tombe sur ce réglage, puis seulement quand le réglage relu change ou redevient utilisable puis illisible
+    /// (auparavant : à chaque code envoyé par le repli).
+    /// </summary>
     public (IEnvoiCodeDistant? Envoi, string? Refus) Construire(ReglageEnvoiCodes? reglage)
     {
+        string? causeDechiffrement = null;
         if (reglage is { Complet: true })
         {
             // Sans fournisseur SMS, « SMS » (réglage enregistré avant ce contrôle) et « les deux » passent par l'e-mail : un canal
             // indisponible ne doit jamais empêcher toute connexion, éditeur compris
             var canal = SmsDisponible ? reglage.Canal : reglage.Canal is "sms" or "les_deux" ? "courriel" : reglage.Canal;
-            if (canal == "sms") return (sms, null);
-            if (canal is "courriel" or "les_deux" && Smtp(reglage) is { } smtp)
+            if (canal == "sms")
             {
-                var courriel = new EnvoiCodeCourriel(fabrique(smtp));
-                return (canal == "courriel" ? courriel : new EnvoiCodeLesDeux(courriel, sms), null);
+                Retabli();
+                return (sms, null);
+            }
+            if (canal is "courriel" or "les_deux")
+            {
+                (var smtp, causeDechiffrement) = SmtpEtCause(reglage, null);
+                if (smtp is not null)
+                {
+                    Retabli();
+                    var courriel = new EnvoiCodeCourriel(fabrique(smtp));
+                    return (canal == "courriel" ? courriel : new EnvoiCodeLesDeux(courriel, sms), null);
+                }
             }
         }
-        journal?.LogWarning("Envoi des codes : réglage en base incomplet ou illisible ({Repli})", repli is null ? "aucun repli : refus" : "repli " + repli.Canal);
+        if (NouvelEtatIllisible(reglage))
+        {
+            if (causeDechiffrement is not null) journal?.LogWarning("Envoi des codes : mot de passe SMTP non déchiffrable ({Cause})", causeDechiffrement);
+            journal?.LogWarning("Envoi des codes : réglage en base incomplet ou illisible ({Repli})", repli is null ? "aucun repli : refus" : "repli " + repli.Canal);
+        }
         return repli is not null ? (repli, null) : (null, RefusIncomplet);
+    }
+
+    // Dernier réglage illisible déjà signalé au journal (égalité du record : canal, serveur, port, TLS, identifiant, expéditeur,
+    // texte chiffré) ; Note = false : aucun avertissement en cours
+    private (bool Note, ReglageEnvoiCodes? Reglage) signale;
+
+    /// <summary>Vrai si ce réglage illisible n'a pas encore été signalé (premier envoi, ou réglage relu différent).</summary>
+    private bool NouvelEtatIllisible(ReglageEnvoiCodes? reglage)
+    {
+        lock (verrou)
+        {
+            if (signale.Note && Equals(signale.Reglage, reglage)) return false;
+            signale = (true, reglage);
+            return true;
+        }
+    }
+
+    /// <summary>Réglage de nouveau utilisable : un prochain réglage illisible sera signalé.</summary>
+    private void Retabli()
+    {
+        lock (verrou) signale = default;
     }
 
     /// <summary>Réglages SMTP d'un réglage en base (mot de passe déchiffré), ou null s'il est incomplet ou ne se déchiffre pas.</summary>
     public ReglagesSmtpCentral? Smtp(ReglageEnvoiCodes reglage, string? motDePasseSaisi = null)
     {
-        var motDePasse = motDePasseSaisi is { Length: > 0 } ? motDePasseSaisi : Protection?.Deproteger(reglage.MotDePasseChiffre);
-        if (motDePasse is null && reglage.MotDePasseChiffre is not null)
-            journal?.LogWarning("Envoi des codes : mot de passe SMTP non déchiffrable ({Cause})",
-                Protection is null ? "dossier des clés du central absent" : "clés du dossier différentes ou texte abîmé");
-        return ReglagesSmtpCentral.Creer(reglage.Serveur, reglage.Port, reglage.Tls, reglage.Identifiant, motDePasse, reglage.Expediteur).Reglages;
+        var (smtp, cause) = SmtpEtCause(reglage, motDePasseSaisi);
+        if (cause is not null) journal?.LogWarning("Envoi des codes : mot de passe SMTP non déchiffrable ({Cause})", cause);
+        return smtp;
+    }
+
+    /// <summary>Réglages SMTP et, si le mot de passe enregistré ne se déchiffre pas, la cause (jamais le texte ni le mot de passe).</summary>
+    private (ReglagesSmtpCentral? Smtp, string? CauseDechiffrement) SmtpEtCause(ReglageEnvoiCodes reglage, string? motDePasseSaisi)
+    {
+        string? motDePasse = motDePasseSaisi is { Length: > 0 } ? motDePasseSaisi : null;
+        string? cause = null;
+        if (motDePasse is null && reglage.MotDePasseChiffre is { Length: > 0 } chiffre)
+        {
+            // Protection indisponible (dossier illisible, DPAPI) : mot de passe illisible, jamais d'exception (ProtectionSmtpCentral.Lire)
+            (motDePasse, cause) = Protection is null ? (null, "dossier des clés du central absent") : Protection.Lire(chiffre);
+            if (motDePasse is null) cause ??= ProtectionSmtpCentral.CauseAutresCles;
+        }
+        return (ReglagesSmtpCentral.Creer(reglage.Serveur, reglage.Port, reglage.Tls, reglage.Identifiant, motDePasse, reglage.Expediteur).Reglages, cause);
     }
 }

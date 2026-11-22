@@ -32,6 +32,19 @@ public class EnvoiCodesConsoleTests
     }
 
     [Fact]
+    public async Task Domaine_reserve_invalid_jamais_envoye()
+    {
+        Assert.True(AdresseCourriel.Reservee("mesure@exemple.invalid"));
+        Assert.True(AdresseCourriel.Reservee("A@B.INVALID "));
+        Assert.False(AdresseCourriel.Reservee("titulaire@gmail.com"));
+        Assert.False(AdresseCourriel.Reservee("x@invalid.fr"));
+        // Serveur injoignable volontairement : l'exception doit venir AVANT toute connexion
+        var (smtp, _) = ReglagesSmtpCentral.Creer("serveur.injoignable.invalid", 587, "starttls", "a@exemple.org", MotDePasse, "a@exemple.org");
+        await Assert.ThrowsAsync<AdresseReserveeException>(() => new EnvoiCourrielSmtp(smtp!).EnvoyerAsync("mesure@exemple.invalid", "objet", "texte", CancellationToken.None));
+        Assert.IsAssignableFrom<NotSupportedException>(new AdresseReserveeException());
+    }
+
+    [Fact]
     public async Task Enregistre_chiffre_relu_a_l_identique_et_journal_sans_identifiant()
     {
         using var base_ = BaseCentraleJetable.Creer();

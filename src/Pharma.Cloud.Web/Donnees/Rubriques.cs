@@ -29,6 +29,15 @@ public static class Rubriques
 
     public static Rubrique Trouver(string? cle) => Toutes.FirstOrDefault(r => r.Cle == cle) ?? Toutes[0];
 
+    /// <summary>
+    /// Durée d'affichage d'un message sur les postes (liste de 1 à 7 jours), SANS heure calculée ici (2026-11-22) : le serveur des
+    /// écrans n'a pas le fuseau de l'officine ; la base fixe la fin à l'envoi (même heure, N jours plus tard) et le poste l'affiche à
+    /// l'heure de l'officine.
+    /// </summary>
+    public static string DureeMessage(int jours) => jours == 1
+        ? "1 jour (jusqu'au lendemain, à l'heure de l'envoi)"
+        : $"{jours} jours (jusqu'à la même heure que l'envoi)";
+
     private static readonly Dictionary<string, string> Libelles = new()
     {
         ["libelle"] = "Officine", ["etat"] = "État", ["cree_le"] = "Créée le", ["resiliee_le"] = "Partie le", ["dernier_contact"] = "Dernier contact",

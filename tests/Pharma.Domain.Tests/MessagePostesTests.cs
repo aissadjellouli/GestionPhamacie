@@ -31,6 +31,15 @@ public class MessagePostesTests
     public void Texte_simple_sans_lien(string texte, string? code) => Assert.Equal(code, MessagePostes.ControlerTexte(texte));
 
     [Fact]
+    public void Caractere_nul_refuse_comme_texte_au_central_et_au_poste()
+    {
+        // 2026-11-22 : U+0000 passait le contrôle (classe commençant à U+0001) et PostgreSQL le rejetait par une erreur serveur
+        Assert.Equal("texte", MessagePostes.ControlerTexte("Fermeture\u0000samedi"));
+        Assert.Equal("texte", MessagePostes.ControlerTexte("\u0000"));
+        Assert.Equal("texte", MessagePostes.Lire(Json("Fermeture\u0000samedi", "2026-11-24T10:00:00Z"), Cree).Code);
+    }
+
+    [Fact]
     public void Deux_cents_caracteres_au_plus_comptes_comme_la_base()
     {
         Assert.Null(MessagePostes.ControlerTexte(new string('é', 200)));

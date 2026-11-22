@@ -65,6 +65,8 @@ public static class Messages
         ["reglage_incomplet"] = "Envoi des codes non réglé : aucun code n'est parti. L'éditeur doit compléter « Envoi des codes » (serveur d'e-mail et mot de passe).",
         ["sms_indisponible"] = "Envoi des codes par SMS non disponible (aucun fournisseur retenu) : aucun code n'est parti. Prévenez l'éditeur.",
         ["sans_contact"] = "Votre compte n'a pas de contact pour le canal choisi (e-mail ou téléphone) : aucun code n'est parti. Prévenez l'éditeur.",
+        // 2026-11-22 : les codes partent par e-mail (canal « E-mail », ou « E-mail et SMS » sans fournisseur SMS) et le compte n'a pas d'adresse
+        ["sans_email"] = "Votre compte n'a pas d'adresse e-mail : aucun code n'est parti (les codes partent par e-mail, l'envoi par SMS n'est pas en service). Demandez à l'éditeur d'ajouter votre adresse e-mail (« Comptes »).",
         ["envoi_codes_canal"] = "Canal inconnu : e-mail, SMS ou les deux.",
         ["envoi_codes_serveur"] = "Serveur d'e-mail invalide : le nom seul, ex. smtp.gmail.com (sans « https:// », sans « :587 », sans espace).",
         ["envoi_codes_port"] = "Port invalide : un nombre de 1 à 65 535 (587 pour Gmail).",
@@ -72,7 +74,7 @@ public static class Messages
         ["envoi_codes_identifiant"] = "Identifiant invalide (254 caractères au plus, sans espace).",
         ["envoi_codes_expediteur"] = "Adresse d'expéditeur invalide.",
         ["envoi_codes_incomplet"] = "Rien n'est enregistré : l'e-mail exige le serveur, le port, l'identifiant, l'expéditeur et le mot de passe.",
-        ["envoi_codes_cles"] = "Rien n'est enregistré : dossier des clés du central introuvable (PHARMA_CLOUD_DOSSIER ou Ecrans:DossierCles), le mot de passe ne peut pas être chiffré.",
+        ["envoi_codes_cles"] = "Rien n'est enregistré : dossier des clés du central introuvable ou illisible (PHARMA_CLOUD_DOSSIER ou Ecrans:DossierCles, droits du dossier), le mot de passe ne peut pas être chiffré.",
         ["envoi_codes_sms"] = "Rien n'est enregistré : « SMS » seul est impossible tant qu'aucun fournisseur SMS n'est retenu (plus aucun code ne partirait). Choisissez « E-mail ».",
         ["essai_mot_de_passe"] = "Serveur, port, sécurité ou identifiant modifiés : ressaisissez le mot de passe d'application pour l'e-mail d'essai (le mot de passe enregistré ne part que vers le serveur enregistré).",
         ["essai_adresse"] ="Adresse de l'e-mail d'essai invalide.",
@@ -486,7 +488,7 @@ public static class ActionsEcrans
         }
         var code = CodesSecondFacteur.Tirer();
         var (statut, destinataire) = await depot.CreerCodeAsync(empreinteJeton, objet, codes.Empreinte(objet, code)!, envoi.Canal, ct);
-        if (statut is "trop_de_codes" or "sans_contact" or "session") return statut;
+        if (statut is "trop_de_codes" or "sans_contact" or "session") return CleRefusCode(statut, envoi.Canal);
         if (statut != "envoye" || destinataire is null) return "envoi";
         // Code créé : l'envoi et sa trace ne dépendent plus de la requête du navigateur (délai propre de 30 s au plus)
         using var delai = new CancellationTokenSource(EnvoisCodes.DelaiMaximum);
@@ -498,6 +500,13 @@ public static class ActionsEcrans
         }
         if (resultats.Any(r => r.Parti)) return null;
         return resultats.All(r => r.Canal == "sms" && r.Resultat == "indisponible") ? "sms_indisponible"
-            : resultats.All(r => r.Resultat == "sans_contact") ? "sans_contact" : "envoi";
+            : resultats.All(r => r.Resultat == "sans_contact") ? CleRefusCode("sans_contact", envoi.Canal) : "envoi";
     }
+
+    /// <summary>
+    /// Clé du message d'un refus de code (règle pure, testée ; 2026-11-22) : compte sans contact alors que le code part par e-mail
+    /// (canal « E-mail », ou « E-mail et SMS » ramené à l'e-mail sans fournisseur SMS) → « sans_email » (votre compte n'a pas d'adresse
+    /// e-mail…) au lieu du message général ; autres statuts inchangés.
+    /// </summary>
+    public static string CleRefusCode(string statut, string canal) => statut == "sans_contact" && canal == "email" ? "sans_email" : statut;
 }

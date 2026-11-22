@@ -87,24 +87,46 @@ public sealed class ProtectionSmtpCentral
     private const string NomApplication = "PharmaOfficine.Central";
     private const string Usage = "PharmaOfficine.Central.EnvoiCodes.MotDePasseSmtp.v1";
 
-    private readonly Lazy<IDataProtector> protecteur;
+    /// <summary>Cause d'un mot de passe illisible quand le dossier des clés est absent ou vide (rien n'est créé en lecture).</summary>
+    public const string CauseSansCles = "dossier des clés introuvable ou sans clé";
+    /// <summary>Cause d'un mot de passe illisible quand le texte ne se déchiffre pas avec les clés du dossier.</summary>
+    public const string CauseAutresCles = "clés du dossier différentes ou texte abîmé";
 
-    public ProtectionSmtpCentral(string dossierCles)
+    // 2026-11-22 : plus de Lazy (ExecutionAndPublication mettait en cache, pour toujours, une exception de création du dossier ou
+    // de DPAPI : erreur serveur à chaque envoi de code) ; le protecteur n'est gardé qu'une fois construit sans erreur
+    private readonly Lock verrou = new();
+    private IDataProtector? protecteur;
+
+    public ProtectionSmtpCentral(string dossierCles) => DossierCles = Path.GetFullPath(dossierCles);
+
+    public string DossierCles { get; }
+
+    /// <summary>Le dossier des clés existe et contient au moins une clé (lecture possible sans rien créer).</summary>
+    public bool ClesPresentes()
     {
-        DossierCles = Path.GetFullPath(dossierCles);
-        protecteur = new Lazy<IDataProtector>(() =>
+        try { return Directory.Exists(DossierCles) && Directory.EnumerateFiles(DossierCles, "key-*.xml").Any(); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.Security.SecurityException) { return false; }
+    }
+
+    /// <summary>
+    /// Protecteur des données ; en LECTURE (ecriture = false), jamais de dossier ni d'anneau de clés créé : null si le dossier est
+    /// absent ou vide. Une exception n'est jamais gardée : l'appel suivant réessaie.
+    /// </summary>
+    private IDataProtector? Protecteur(bool ecriture)
+    {
+        lock (verrou)
         {
-            Directory.CreateDirectory(DossierCles);
+            if (protecteur is not null) return protecteur;
+            if (!ecriture && !ClesPresentes()) return null;
+            if (ecriture) Directory.CreateDirectory(DossierCles);
             var fournisseur = DataProtectionProvider.Create(new DirectoryInfo(DossierCles), b =>
             {
                 b.SetApplicationName(NomApplication);
                 if (OperatingSystem.IsWindows()) b.ProtectKeysWithDpapi(protectToLocalMachine: true);
             });
-            return fournisseur.CreateProtector(Usage);
-        }, LazyThreadSafetyMode.ExecutionAndPublication);
+            return protecteur = fournisseur.CreateProtector(Usage);
+        }
     }
-
-    public string DossierCles { get; }
 
     /// <summary>Protection du dossier du central, ou null si le dossier n'est pas donné ou se trouve dans un dépôt de sources.</summary>
     public static ProtectionSmtpCentral? Depuis(string? dossierCles)
@@ -119,15 +141,38 @@ public sealed class ProtectionSmtpCentral
     public static string? DossierDuCentral(string? dossierCentral) =>
         string.IsNullOrWhiteSpace(dossierCentral) ? null : Path.Combine(dossierCentral, SousDossier);
 
-    public string Proteger(string motDePasse) => protecteur.Value.Protect(motDePasse);
+    /// <summary>Texte chiffré (dossier des clés créé au besoin) ; exception si la protection est indisponible (droits, DPAPI).</summary>
+    public string Proteger(string motDePasse) => Protecteur(ecriture: true)!.Protect(motDePasse);
 
-    /// <summary>Mot de passe en clair, ou null si le texte ne se déchiffre pas (autre dossier de clés, texte abîmé).</summary>
-    public string? Deproteger(string? chiffre)
+    /// <summary>Texte chiffré, ou null si la protection est indisponible (dossier non créable ou illisible, DPAPI) : jamais d'exception.</summary>
+    public string? ProtegerOuNull(string motDePasse)
     {
-        if (string.IsNullOrEmpty(chiffre)) return null;
-        try { return protecteur.Value.Unprotect(chiffre); }
-        catch (System.Security.Cryptography.CryptographicException) { return null; }
-        catch (FormatException) { return null; }
+        try { return Proteger(motDePasse); }
+        catch (Exception e) when (e is not OperationCanceledException and not OutOfMemoryException) { return null; }
+    }
+
+    /// <summary>Mot de passe en clair, ou null si le texte ne se déchiffre pas (autre dossier de clés, texte abîmé, protection indisponible).</summary>
+    public string? Deproteger(string? chiffre) => Lire(chiffre).MotDePasse;
+
+    /// <summary>
+    /// Mot de passe en clair, ou null et la cause (jamais le texte ni le mot de passe) : dossier sans clé (rien n'est créé), clés
+    /// différentes ou texte abîmé, protection indisponible (droits du dossier, DPAPI : type de l'exception seulement). Jamais d'exception.
+    /// </summary>
+    public (string? MotDePasse, string? Cause) Lire(string? chiffre)
+    {
+        if (string.IsNullOrEmpty(chiffre)) return (null, null);
+        try
+        {
+            return Protecteur(ecriture: false) is { } p ? (p.Unprotect(chiffre), null) : (null, CauseSansCles);
+        }
+        catch (Exception e) when (e is System.Security.Cryptography.CryptographicException or FormatException)
+        {
+            return (null, CauseAutresCles);
+        }
+        catch (Exception e) when (e is not OperationCanceledException and not OutOfMemoryException)
+        {
+            return (null, $"protection des données indisponible ({e.GetType().Name})");
+        }
     }
 }
 
@@ -142,6 +187,8 @@ public sealed class EnvoiCourrielSmtp(ReglagesSmtpCentral reglages) : IEnvoiCour
 {
     public async Task EnvoyerAsync(string adresse, string objet, string texte, CancellationToken ct)
     {
+        // Domaine réservé « .invalid » (RFC 2606, n'existe jamais) : rien ne part (comptes de test et de mesure, 2026-11-22)
+        if (AdresseCourriel.Reservee(adresse)) throw new AdresseReserveeException();
         var message = new MimeMessage();
         message.From.Add(MailboxAddress.Parse(reglages.Expediteur));
         message.To.Add(MailboxAddress.Parse(adresse));
@@ -171,6 +218,10 @@ public static class ErreursSmtp
 /// <summary>Adresse e-mail saisie à la commande (--email) : contrôle de forme et forme masquée pour le journal des départs.</summary>
 public static class AdresseCourriel
 {
+    /// <summary>Adresse d'un domaine réservé qui n'existe jamais (« .invalid », RFC 2606) : aucun e-mail n'y est envoyé.</summary>
+    public static bool Reservee(string? adresse) =>
+        adresse is not null && adresse.TrimEnd().EndsWith(".invalid", StringComparison.OrdinalIgnoreCase);
+
     public static bool EstValide(string? adresse) =>
         adresse is { Length: > 0 and <= 254 } a && a.Count(c => c == '@') == 1 && !a.Any(char.IsWhiteSpace)
         && a.IndexOf('@') is var i && i > 0 && a[(i + 1)..] is var domaine && domaine.Contains('.') && !domaine.StartsWith('.') && !domaine.EndsWith('.')
@@ -186,3 +237,9 @@ public static class AdresseCourriel
     /// <summary>« alice@exemple.fr » → « a***@exemple.fr » (seule forme notée au journal des départs).</summary>
     public static string Masquer(string adresse) => adresse.IndexOf('@') is > 0 and var i ? adresse[0] + "***" + adresse[i..] : "***";
 }
+
+/// <summary>
+/// Envoi refusé avant tout contact avec le serveur d'e-mail : adresse d'un domaine réservé (« .invalid »). Dérive de
+/// NotSupportedException : un code est noté « email:indisponible », comme un canal sans fournisseur.
+/// </summary>
+public sealed class AdresseReserveeException() : NotSupportedException("Adresse d'un domaine réservé (.invalid) : aucun e-mail envoyé.");

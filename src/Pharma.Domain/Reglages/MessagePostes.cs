@@ -21,10 +21,11 @@ public static partial class MessagePostes
     public const int JoursMax = 7;
 
     /// <summary>
-    /// Caractères interdits : contrôles (dont retour à la ligne), invisibles et de sens d'écriture (U+200B à U+200F, U+2028 à U+202E,
+    /// Caractères interdits : contrôles (dont retour à la ligne et le caractère nul U+0000, refusé par PostgreSQL : sans ce contrôle,
+    /// erreur serveur au lieu d'un refus clair ; 2026-11-22), invisibles et de sens d'écriture (U+200B à U+200F, U+2028 à U+202E,
     /// U+2060 à U+2069, U+FEFF), chevrons (aucune balise). Même classe que la base centrale (script 038).
     /// </summary>
-    public const string MotifInterdits = @"[\u0001-\u001F\u007F-\u009F​-‏ -‮⁠-⁩﻿<>]";
+    public const string MotifInterdits = @"[\u0000-\u001F\u007F-\u009F​-‏ -‮⁠-⁩﻿<>]";
 
     /// <summary>Lien (sans tenir compte de la casse) : « :// », « www. », protocole connu, nom de domaine courant. Même motif que la base.</summary>
     public const string MotifLien =

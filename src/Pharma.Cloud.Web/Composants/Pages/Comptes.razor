@@ -43,7 +43,8 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var l in lignes)
+                            @* Lignes refusées en premier : visibles sans faire défiler un fichier de 200 lignes *@
+                            @foreach (var l in lignes.OrderBy(l => l.Valable).ThenBy(l => l.Numero))
                             {
                                 <tr class="@(l.Valable ? null : "ligne-refusee")">
                                     <td class="nombre">@l.Numero</td>
@@ -192,6 +193,8 @@
                     <DemandeCode Retour="@($"/comptes?compte={Compte}&page={PageCourante}")" />
                     <form method="post" action="@($"actions/comptes/{Compte}/contact")" class="formulaire-contact">
                         <AntiforgeryToken />
+                        @* Page de la liste gardée au retour (le compte choisi n'est cherché que dans la page affichée) *@
+                        <input type="hidden" name="page" value="@PageCourante" />
                         <div class="champ">
                             <label for="email">Nouvel e-mail (vide = inchangé, « - » = retirer)</label>
                             <input id="email" name="email" maxlength="254" autocomplete="off" />
@@ -225,6 +228,7 @@
                     <DemandeCode Retour="@($"/comptes?compte={Compte}&page={PageCourante}&action=mot-de-passe{(MotifPrerempli is null ? "" : $"&motif={EtatMotDePasse.CleMotifExpire}")}")" />
                     <form method="post" action="@($"actions/comptes/{Compte}/mot-de-passe")" class="formulaire-contact">
                         <AntiforgeryToken />
+                        <input type="hidden" name="page" value="@PageCourante" />
                         <div class="champ champ-large">
                             <label for="motif" class="requis">Motif (5 à 300 caractères)</label>
                             <input id="motif" name="motif" minlength="5" maxlength="300" autocomplete="off" value="@MotifPrerempli" required />

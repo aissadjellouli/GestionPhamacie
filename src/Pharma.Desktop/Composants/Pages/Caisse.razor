@@ -902,8 +902,20 @@
                                         @* Médecin choisi sur une ligne : nom et « Changer » ; la spécialité au survol *@
                                         <div class="choix medecin-choisi" title="@(string.IsNullOrWhiteSpace(medecin.Specialite) ? medecin.Nom : $"{medecin.Nom} · {medecin.Specialite}")">
                                             <strong>@medecin.Nom</strong>
+                                            @* Wilaya du médecin (2026-11-22) : proposée d'après sa fiche, à choisir si la fiche n'en a pas, rectifiable ; enregistrée dans
+                                               la fiche dès le choix (contrôle « hors zone » des psychotropes). Invisible tant qu'aucun médecin n'est choisi. *@
+                                            <select class="wilaya-medecin @(string.IsNullOrEmpty(medecin.Wilaya) ? "manquant" : null)" aria-label="Wilaya d’exercice du médecin" data-champ="wilaya_medecin"
+                                                    title="@(string.IsNullOrEmpty(medecin.Wilaya) ? "Wilaya du médecin à choisir : enregistrée dans sa fiche (contrôle « hors zone »)" : "Wilaya de la fiche du médecin : rectifiable, la fiche est mise à jour")"
+                                                    value="@(medecin.Wilaya ?? "")" @onchange="ChangerWilayaMedecinAsync" disabled="@enregistrementWilaya">
+                                                <option value="">Wilaya ?</option>
+                                                @foreach (var w in wilayas) { <option value="@w.Code">@w.Code - @w.Nom</option> }
+                                            </select>
                                             <button type="button" class="lien-bouton" @onclick="() => medecin = null">Changer</button>
                                         </div>
+                                        @if (messageWilaya is not null)
+                                        {
+                                            <span class="detail" role="status">@messageWilaya</span>
+                                        }
                                     }
                                     else
                                     {
@@ -911,7 +923,7 @@
                                         <ChoixMedecin @key="cleSaisieClient" Id="caisse-medecin" Cadre="false" data-raccourci="medecin" aria-label="Rechercher le médecin prescripteur"
                                                       data-champ="nom_medecin" class="@Obligatoire.Classe(MedecinManquant)" Invalide="MedecinManquant && alerterMedecin"
                                                       OnFocus="() => alerterMedecin = false" TexteInitial="@medecinTexte" OnTexte="t => medecinTexte = t"
-                                                      OnChoisi="m => (medecin, medecinTexte, clientEdition) = (m, m.Nom, true)" />
+                                                      OnChoisi="ChoisirMedecinAsync" />
                                         @if (nouveauMedecin is not null)
                                         {
                                             <span class="detail">Nouveau médecin : complétez sa fiche ci-dessous.</span>
@@ -1017,15 +1029,11 @@
                             }
                             @* Durée du traitement (2026-11-16) : psychotrope ou stupéfiant seulement, OBLIGATOIRE depuis le 2026-11-19 (script 153) ;
                                inscrite au registre, comparée à la quantité délivrée (« quantité anormale ») et base de « patient encore sous traitement » *@
-                            <div class="champ champ-ligne" title="@(DureeManquante ? "Durée du traitement prescrite, obligatoire : inscrite au registre, comparée à la quantité délivrée et aux traitements en cours du patient" : "Durée du traitement, inscrite au registre")">
+                            <div class="champ champ-ligne champ-ligne-colle" title="@(DureeManquante ? "Durée du traitement prescrite, obligatoire : inscrite au registre, comparée à la quantité délivrée et aux traitements en cours du patient" : "Durée du traitement, inscrite au registre")">
                                 <label for="duree-traitement" class="etiquette-champ requis">Durée du traitement (jours, obligatoire)</label>
                                 <input id="duree-traitement" type="number" min="1" max="3650" step="1" style="width: 80px" data-champ="duree_traitement"
                                        class="@Obligatoire.Classe(DureeManquante)" aria-invalid="@Obligatoire.Aria(DureeManquante && alerterDuree)"
                                        @onfocus="() => alerterDuree = false" @bind="dureeTraitement" @bind:event="oninput" />
-                                @if (medecin is { Wilaya: null })
-                                {
-                                    <span class="detail" title="Wilaya du médecin à renseigner (Factures › Médecins) : sans elle, pas de contrôle « hors zone »">· wilaya du médecin à renseigner</span>
-                                }
                             </div>
                         }
                         @* « Remis à » (avec ordonnance) / « Pour » (sans ordonnance), 2026-11-15 : une ligne, la vente reste au nom du patient *@
@@ -1216,7 +1224,13 @@
                     <div class="paiement-especes">
                         <div class="champ">
                             <label for="recu">Montant reçu (DA)</label>
-                            <input id="recu" type="number" min="0" step="1" @bind="montantRecu" @bind:event="oninput" placeholder="Appoint exact" />
+                            <input id="recu" type="number" min="0" step="1" @bind="montantRecu" @bind:event="oninput" placeholder="Appoint exact" data-champ="montant_recu"
+                                   class="@Obligatoire.Classe(RecuInsuffisant)" aria-describedby="@(RecuInsuffisant ? "recu-manque" : null)" />
+                            @* En rouge sans bulle ni déplacement du curseur pendant la frappe (charte « Erreurs de saisie ») *@
+                            @if (RecuInsuffisant)
+                            {
+                                <span id="recu-manque" class="detail texte-urgent">Il manque @Libelles.Dinars(APayerEspeces - montantRecu!.Value, 2)</span>
+                            }
                         </div>
                         <div class="champ">
                             <span class="etiquette-champ">Rendu</span>
@@ -1508,8 +1522,19 @@
 
     // ---- Disposition en trois parties (2026-11-15) ----
     /// <summary>Le bouton principal suit le mode choisi : « Crédit » demande en plus le patient.</summary>
-    private bool PeutEncaisserMode => mode == "credit" ? RaisonBlocageCredit is null : PeutEncaisser;
-    private string? RaisonBlocageMode => mode == "credit" ? RaisonBlocageCredit : RaisonBlocage;
+    private bool PeutEncaisserMode => mode == "credit" ? RaisonBlocageCredit is null : PeutEncaisser && !RecuInsuffisant;   // bouton ET F12
+    private string? RaisonBlocageMode => mode == "credit" ? RaisonBlocageCredit : RaisonBlocage ?? RaisonRecuInsuffisant;
+
+    /// <summary>Montant à payer en espèces (part du patient moins l'avoir utilisé).</summary>
+    private decimal APayerEspeces => apercu is { } a ? Math.Max(0m, a.PartPatient - AvoirUtilise) : 0m;
+    /// <summary>
+    /// Espèces (2026-11-22, demande du titulaire) : un montant reçu SAISI qui ne couvre pas le montant à payer désactive « Encaisser »
+    /// (même règle que le serveur, Reglement) ; champ vide = appoint exact, inchangé.
+    /// </summary>
+    private bool RecuInsuffisant => mode == "especes" && montantRecu is { } r && APayerEspeces > 0 && r < APayerEspeces;
+    private string? RaisonRecuInsuffisant => RecuInsuffisant
+        ? $"Montant reçu insuffisant : il manque {Libelles.Dinars(APayerEspeces - montantRecu!.Value, 2)} (laissez le champ vide pour l’appoint exact)"
+        : null;
     /// <summary>Psychotrope ou stupéfiant au panier : ordonnance obligatoire, sans exception par validation.</summary>
     private bool OrdonnanceObligatoire => apercu?.OrdonnanceRequise == true;
     /// <summary>
@@ -1647,6 +1672,8 @@
     protected override async Task OnInitializedAsync()
     {
         Session.AvantFermeture += PanierAbandonne;
+        // Wilayas (liste bornée) pour la wilaya du médecin choisi, quel que soit le chemin du choix (recherche, reprise, scan)
+        _ = ChargerWilayasAsync();
         // « Changer d'utilisateur » panier rempli : la vente part en attente avant la fermeture de la session, réponse attendue
         Session.AvantChangementUtilisateur(LaisserAuSuivantAsync);
         // Quitter la Caisse panier rempli (menu, lien, « Retour ») : la vente part en attente, « Retour » la reprend
@@ -2770,6 +2797,54 @@
     private FicheMedecin? nouveauMedecin;
     private string? erreurMedecin;
     private bool creationMedecin;
+
+    // Wilaya du médecin choisi (2026-11-22) : liste chargée au choix du médecin ; un changement met à jour sa fiche aussitôt
+    private bool enregistrementWilaya;
+    private string? messageWilaya;
+
+    private async Task ChoisirMedecinAsync(MedecinDto m)
+    {
+        (medecin, medecinTexte, clientEdition, messageWilaya) = (m, m.Nom, true, null);
+        if (wilayas.Count == 0) await ChargerWilayasAsync();
+    }
+
+    /// <summary>Liste des wilayas chargée une fois ; un échec laisse seulement « Wilaya ? » (rien d'autre n'est bloqué).</summary>
+    private async Task ChargerWilayasAsync()
+    {
+        try
+        {
+            var (liste, _) = await Api.WilayasAsync();
+            if (liste.Count > 0) { wilayas = liste; await InvokeAsync(StateHasChanged); }
+        }
+        catch (Exception e) when (e is HttpRequestException or TaskCanceledException) { }
+    }
+
+    private async Task ChangerWilayaMedecinAsync(ChangeEventArgs e)
+    {
+        if (medecin is not { } m || enregistrementWilaya) return;
+        var choisie = e.Value?.ToString() is { Length: > 0 } w ? w : null;
+        if (choisie == m.Wilaya) return;
+        enregistrementWilaya = true;
+        try
+        {
+            var refus = await Api.ModifierMedecinAsync(m.Id, new NouveauMedecinDto(m.Nom, m.Specialite, m.Telephone, m.Adresse, m.Email, m.NumeroOrdre, m.CodeCnas, choisie));
+            if (refus is null)
+            {
+                medecin = m with { Wilaya = choisie };
+                messageWilaya = choisie is null ? "Wilaya retirée de la fiche du médecin." : $"Wilaya enregistrée dans la fiche du médecin ({wilayas.FirstOrDefault(x => x.Code == choisie)?.Nom ?? choisie}).";
+            }
+            else
+            {
+                medecin = m;   // la liste revient à la wilaya de la fiche
+                messageWilaya = null;
+                erreur = refus;
+            }
+        }
+        finally
+        {
+            enregistrementWilaya = false;
+        }
+    }
 
     private async Task OuvrirNouveauMedecin()
     {

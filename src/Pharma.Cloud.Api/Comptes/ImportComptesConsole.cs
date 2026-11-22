@@ -7,7 +7,7 @@ namespace Pharma.Cloud.Api.Comptes;
 
 /// <summary>
 /// Script central 040 : --creer-comptes &lt;fichier.csv&gt; --auteur &lt;nom&gt; [--envoyer-identifiants] [--adresse-ecrans &lt;https://…&gt;]
-/// [--dossier &lt;dossier du central&gt;] : import de comptes distants par la console (connexion du propriétaire, aucun code). Mêmes
+/// [--dossier &lt;dossier du central&gt;] [--dossier-cles &lt;dossier des clés des écrans&gt;] : import de comptes distants par la console (connexion du propriétaire, aucun code). Mêmes
 /// contrôles que l'écran « Comptes » (ImportComptesCsv, puis la base : cloud_compte_distant_creer_lot), TOUT OU RIEN. Liste
 /// identifiant + mot de passe provisoire affichée UNE fois ; identifiant par e-mail si demandé (SMTP des variables PHARMA_CLOUD_SMTP_*,
 /// sinon réglage « Envoi des codes » en base) ; mot de passe JAMAIS par e-mail (SMS si un fournisseur est en service, sinon manuel).
@@ -67,7 +67,8 @@ public static class ImportComptesConsole
         {
             var (smtp, manque) = ReglagesSmtpCentral.Lire(Environment.GetEnvironmentVariable);
             if (smtp is null)
-                (smtp, manque) = await ReglageSmtpBase.LireAsync(db, Option(args, "--dossier") ?? Environment.GetEnvironmentVariable("PHARMA_CLOUD_DOSSIER"), ct);
+                (smtp, manque) = await ReglageSmtpBase.LireAsync(db, Option(args, "--dossier") ?? Environment.GetEnvironmentVariable("PHARMA_CLOUD_DOSSIER"), ct,
+                    Option(args, ReglageSmtpBase.OptionDossierCles));
             if (smtp is not null) courriel = (fabrique ?? (s => new EnvoiCourrielSmtp(s)))(smtp).EnvoyerAsync;
             else await sortie.WriteLineAsync($"Identifiants non envoyés par e-mail : {manque}.");
         }
