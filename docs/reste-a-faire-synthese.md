@@ -156,7 +156,8 @@ correspondants ci-dessous sont faits.
   14:24:33), slot `second_serveur` supprimé sur le 5432 (plus aucun journal retenu). L'ancien principal (5432) n'a **pas** été
   arrêté (il porte toutes les bases de développement) : les deux bases divergent, sans risque (dossiers séparés, aucun poste
   relié au 5082). Dans la **copie seulement** : envoi au central coupé (`sync_parametre.active = false`), SMTP et modem vidés
-  (`parametre_notification`) pour ne rien envoyer en double. **API 5082** lancée hors Visual Studio (`dotnet Pharma.Api.dll`,
+  (`parametre_notification`) pour ne rien envoyer en double. **API 5082** lancée hors Visual Studio depuis une copie de la sortie de compilation
+  (`C:\MesAtlassian\pg-second-serveur-api\bin`, pour ne plus bloquer la compilation ; à recopier pour une nouvelle version) (`dotnet Pharma.Api.dll`,
   variables d'environnement : base 5433, racine des données, GED, journaux et Chifa dans `C:\MesAtlassian\pg-second-serveur-api`) :
   `/api/healthcheck` 200, « Serveur ADH déclaré principal », aucun avertissement au journal, journal de l'API principale non touché.
   Non essayé : bascule d'un poste par le bandeau « Serveur injoignable » (`AdresseApiSecours`), `remettre-en-second.ps1`.

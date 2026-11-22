@@ -171,11 +171,14 @@ Vérifié sur le 5432 après coup : envoi au central actif, SMTP et modem toujou
 
 ### 8.4 API sur le port 5082
 
-Lancée hors Visual Studio, depuis la sortie de compilation, avec des variables d'environnement propres au processus :
+Lancée hors Visual Studio, depuis **une copie** de la sortie de compilation (`C:\MesAtlassian\pg-second-serveur-api\bin`),
+avec des variables d'environnement propres au processus :
 
 ```powershell
-$out = 'src\Pharma.Api\bin\Debug\net10.0'
 $r = 'C:\MesAtlassian\pg-second-serveur-api'   # sous-dossiers GED, Journaux, Chifa créés avant
+dotnet build src\Pharma.Api\Pharma.Api.csproj -v q -nologo
+robocopy 'src\Pharma.Api\bin\Debug\net10.0' "$r\bin" /MIR /NFL /NDL /NJH /NJS /NP   # code 1 = fichiers copiés
+$out = "$r\bin"
 $cs = (Get-Content src\Pharma.Api\appsettings.Development.json -Raw | ConvertFrom-Json).ConnectionStrings.Pharmacie
 $env:ConnectionStrings__Pharmacie = $cs -replace 'Port=5432', 'Port=5433'
 $env:ASPNETCORE_ENVIRONMENT = 'Development'; $env:Urls = 'http://localhost:5082'
@@ -184,10 +187,11 @@ Start-Process dotnet -ArgumentList 'Pharma.Api.dll' -WorkingDirectory (Resolve-P
     -RedirectStandardOutput "$r\console.log" -RedirectStandardError "$r\console-erreurs.log"
 ```
 
-**Défaut constaté** : lancée depuis `src\Pharma.Api\bin\Debug\net10.0`, l'API 5082 verrouille les DLL de la sortie de
-compilation ; toute compilation de l'API (Visual Studio, `dotnet build`, `dotnet test` qui recompile) échoue alors avec
-« Le fichier est verrouillé par .NET Host ». À la prochaine installation : copier la sortie dans un dossier à part
-(ex. `C:\MesAtlassian\pg-second-serveur-api\bin`) et lancer l'API depuis cette copie. D'ici là, arrêter l'API 5082 avant de compiler.
+**Pourquoi une copie** : au premier lancement (depuis `src\Pharma.Api\bin\Debug\net10.0`), l'API 5082 verrouillait les DLL
+de la sortie de compilation ; toute compilation de l'API (Visual Studio, `dotnet build`, `dotnet test` qui recompile) échouait
+avec « Le fichier est verrouillé par .NET Host ». Corrigé le 2026-11-22 : API arrêtée, sortie copiée, API relancée depuis la
+copie ; compilation complète de l'API vérifiée pendant qu'elle tourne. Conséquence : la copie ne suit pas le code ; pour que
+l'API 5082 prenne une nouvelle version, l'arrêter, recompiler, refaire le `robocopy`, la relancer.
 
 Pourquoi des dossiers séparés : avec le dossier GED partagé, la purge des sauvegardes (7 jours) de la seconde API toucherait
 celles de l'API principale ; le journal en fichiers serait mélangé.
@@ -213,7 +217,7 @@ Constats :
 
 ## 10. Retrait complet
 
-1. Arrêter l'API 5082 (processus `dotnet Pharma.Api.dll` lancé depuis `src\Pharma.Api\bin\Debug\net10.0`).
+1. Arrêter l'API 5082 (processus `dotnet Pharma.Api.dll` lancé depuis `C:\MesAtlassian\pg-second-serveur-api\bin`).
 2. `pg_ctl stop -D C:\MesAtlassian\pg-second-serveur -m fast`.
 3. Vérifier qu'aucun slot ne reste sur le 5432 : `SELECT slot_name FROM pg_replication_slots;` (sinon `pg_drop_replication_slot`).
 4. Supprimer le rôle : `DROP ROLE pharma_replication;` (par `pharma_app` CREATEROLE ou `postgres`).
