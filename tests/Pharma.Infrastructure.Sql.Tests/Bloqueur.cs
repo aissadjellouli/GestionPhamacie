@@ -3,7 +3,7 @@ using Npgsql;
 namespace Pharma.Infrastructure.Sql.Tests;
 
 /// <summary>
-/// Seconde connexion qui tient un verrou réel dans une transaction ouverte, pour forcer l'ordre d'un scénario concurrent.
+/// Seconde connexion qui tient un verrou réel dans une transaction ouverte, pour forcer l'ordre d'un scénario à deux connexions simultanées.
 /// On constate l'attente de la méthode testée dans pg_locks (jamais par un délai fixe) avant de modifier la donnée puis de valider.
 /// </summary>
 public sealed class Bloqueur : IAsyncDisposable

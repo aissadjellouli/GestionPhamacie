@@ -460,9 +460,16 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
     {
         if (source.PretId is { } pretId)
         {
+            // Verrou du prêt dans une requête à part : en lecture validée, une requête garde l'instantané pris avant d'attendre le
+            // verrou ; le disponible doit être relu par une requête suivante pour voir un emploi validé pendant l'attente
+            await using (var verrou = new NpgsqlCommand("SELECT 1 FROM pret_bancaire WHERE id = $1 FOR UPDATE", cx, tx))
+            {
+                verrou.Parameters.AddWithValue(pretId);
+                if (await verrou.ExecuteScalarAsync(ct) is null) throw new RegleMetierException("Ce prêt est introuvable.", "source");
+            }
             await using var cmd = new NpgsqlCommand("""
                 SELECT p.montant - COALESCE((SELECT sum(u.montant) FROM utilisation_financement u WHERE u.pret_id = p.id), 0), p.reference, p.date_pret
-                FROM pret_bancaire p WHERE p.id = $1 FOR UPDATE
+                FROM pret_bancaire p WHERE p.id = $1
                 """, cx, tx);
             cmd.Parameters.AddWithValue(pretId);
             await using var r = await cmd.ExecuteReaderAsync(ct);

@@ -17,13 +17,17 @@
 --     vente Chifa sans n° de facture ; 097) ;
 --   * synchronisation (126 à 131, 141) : réglage par défaut (désactivée), classement
 --     sync_table, familles nominatives (sync_famille_colonne) ;
+--   * données techniques des scripts 111, 112, 116, 117, 120, 122, 123 et 143 (section 8) : paramètres de l'intégrité, inscription des
+--     trois journaux chaînés dans chaine_integrite (integrite_activer), lignes d'ouverture du journal des ventes et du registre des
+--     psychotropes, compteur des tickets, paramètres fiscaux, de substitution, de sérialisation, du formulaire SMS, de la réplication,
+--     identifiants GS1, classe « antibiotiques » ;
 --   * compte « titulaire » avec le mot de passe provisoire « Provisoire-2026 » :
 --     changement obligatoire à la première connexion (rien d'autre n'est
 --     possible avant).
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 162 (162 : déconnexion après inactivité : défaut de colonne 15 minutes, posé par INSERT … DEFAULT VALUES ; 161 : aucune valeur de référentiel, index des clés étrangères ; 160 : aucune valeur de référentiel, message du titulaire à distance affiché sur les postes ; 159 : aucune valeur de référentiel, retour d'une vente régularisée « rendu au patient » ; 158 : aucune valeur de référentiel, retour d'une vente régularisée à la charge du patient et dettes du patient ; 157 : aucune valeur de référentiel, rapprochement d'un volet après un retour ; 156 : aucune valeur de référentiel, réglage des tâches laissées au poste : défaut de colonne « chiffre », posé par INSERT … DEFAULT VALUES ; 155 : aucune valeur de référentiel, retour partiel en tiers payant ; 154 : catégorie « parapharmacie » « Parapharmacie (à préciser) » ; 153 : règle d'alerte « traitement_en_cours » ; valeurs de départ
+-- Valeurs identiques à celles posées par les scripts 001 à 163 (163 : classement sync_table de serveur_ecarte (jamais) ; 162 : déconnexion après inactivité : défaut de colonne 15 minutes, posé par INSERT … DEFAULT VALUES ; 161 : aucune valeur de référentiel, index des clés étrangères ; 160 : aucune valeur de référentiel, message du titulaire à distance affiché sur les postes ; 159 : aucune valeur de référentiel, retour d'une vente régularisée « rendu au patient » ; 158 : aucune valeur de référentiel, retour d'une vente régularisée à la charge du patient et dettes du patient ; 157 : aucune valeur de référentiel, rapprochement d'un volet après un retour ; 156 : aucune valeur de référentiel, réglage des tâches laissées au poste : défaut de colonne « chiffre », posé par INSERT … DEFAULT VALUES ; 155 : aucune valeur de référentiel, retour partiel en tiers payant ; 154 : catégorie « parapharmacie » « Parapharmacie (à préciser) » ; 153 : règle d'alerte « traitement_en_cours » ; valeurs de départ
 -- des autres règles changées seulement sur une base où elles existent et n'ont jamais été modifiées, l'init n'en sème pas ;
 -- 152 n'ajoute aucune donnée de référence ; 151 : classement sync_table de integrite_prise_acte (montante), compteur_ticket_saut et sync_declaration_epoque (jamais) ; 095, 098, 099, 132, 134, 137, 138, 139, 142, 143, 148, 149 et 150 n'ajoutent aucune donnée de référence ; 141 : les 11 lignes de reglage_mutualise (mode local, aucun modèle) et le classement sync_table de reglage_mutualise ; 144 : classement sync_table de compteur_ticket (montante) ; 145 : classement de sync_ordre_recu (jamais) et sync_ordre_resultat (montante) ; 146 : classement de commande_ordre_central (jamais) ; 147 : chifa_code_produit et produit_indication passées montantes ; 140 : droit « sync.suivre » (titulaire) ; 096 : motifs du tiroir avec effet
 -- et détail, « Dépôt ou retrait d'espèces » désactivé ; 097 : motifs de la liste
@@ -504,6 +508,7 @@ INSERT INTO sync_table (nom_table, sens, cle_colonnes, colonnes_exclues, colonne
     ('scan_reception', 'jamais', '{id}', '{}', '{}', '{}', false, 'Transitoire'),
     ('sceau_integrite', 'montante', '{id}', '{}', '{}', '{}', false, 'Sceaux recopiés tels quels ; la clé ne part jamais'),
     ('serialisation_reponse_factice', 'jamais', '{id}', '{}', '{}', '{}', false, 'Essai'),
+    ('serveur_ecarte', 'jamais', '{id}', '{}', '{}', '{}', false, 'État local « serveur écarté » (lecture seule après bascule), script 163'),
     ('serveur_officine', 'jamais', '{nom}', '{}', '{}', '{}', false, 'Réglages propres à chaque serveur'),
     ('session_caisse', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
     ('substance_surveillee', 'descendante', '{motif}', '{}', '{}', '{}', false, NULL),
@@ -554,6 +559,83 @@ INSERT INTO sync_famille_colonne (famille, nom_table, colonne) VALUES
     ('banque', 'compte_tresorerie', 'banque'), ('banque', 'reglement_fournisseur', 'banque'), ('banque', 'reglement_fournisseur', 'reference'),
     ('banque', 'paiement_effet', 'reference'), ('banque', 'remise_cheques', 'reference'), ('banque', 'pret_bancaire', 'reference')
 ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------
+-- 8. Données techniques écrites par les scripts 111, 112, 116, 117, 120, 122, 123 et 143 sur une base vide
+--    (sans elles, schema.sql seul donne une base dont le registre des psychotropes et le journal des ventes refusent toute écriture :
+--    « Table ... chaînée mais absente de chaine_integrite »). Même ordre que les scripts ; chaque ligne n'est posée que si elle manque
+--    (réexécutable, y compris après 111b : integrite_activer, qui modifie les tables, n'est rappelée que pour un journal non encore inscrit).
+-- ---------------------------------------------------------------------
+-- 111 : paramètres de l'intégrité (algorithme par défaut lu par integrite_activer) puis les trois journaux chaînés, colonnes identiques à
+-- celles des scripts 111, 112 et 117 (elles ne changent plus ensuite)
+INSERT INTO parametre_integrite (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM chaine_integrite WHERE journal = 'integrite_essai') THEN
+        PERFORM integrite_activer('integrite_essai', 'Table d''essai de la brique (interne)', ARRAY['id', 'libelle', 'montant', 'cree_le']);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM chaine_integrite WHERE journal = 'journal_vente') THEN
+        PERFORM integrite_activer('journal_vente', 'Journal des ventes (fiscal)', ARRAY[
+            'id', 'evenement', 'numero_ticket', 'vente_id', 'annulation_id', 'retour_client_id', 'avoir_mouvement_id', 'regularisation_id',
+            'survenu_le', 'enregistre_le', 'session_caisse_id', 'poste', 'utilisateur_id', 'type_vente',
+            'montant_ttc', 'montant_ht', 'montant_tva', 'detail_tva', 'part_patient', 'part_organisme', 'paiements', 'montant_mouvement', 'motif']);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM chaine_integrite WHERE journal = 'journal_registre_psychotrope') THEN
+        PERFORM integrite_activer('journal_registre_psychotrope', 'Registre des psychotropes',
+            ARRAY['id', 'nature', 'registre_id', 'numero_ordre', 'lot_id', 'ligne_vente_id', 'mouvement_id', 'type_mouvement', 'quantite',
+                  'solde_apres', 'patient_id', 'medecin_id', 'ordonnance_id', 'utilisateur_id', 'reference', 'porteur_nom', 'porteur_adresse',
+                  'porteur_piece', 'inscrit_le', 'lignes_anterieures', 'empreinte_anterieure', 'dernier_registre_id', 'annulation_id', 'motif',
+                  'cree_le']);
+    END IF;
+END $$;
+
+-- 112 : paramètres fiscaux, compteur des tickets (base vide : dernier n° 0), puis ligne d'ouverture du journal des ventes
+INSERT INTO parametre_fiscal (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO compteur_ticket (id, dernier_numero, premier_numero_continu)
+SELECT 1, m, m + 1
+FROM (SELECT COALESCE(max(substring(numero FROM '^T-([0-9]+)$')::bigint), 0) AS m FROM vente) x
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO journal_vente (evenement, survenu_le, motif)
+SELECT 'ouverture', c.mis_en_service_le,
+       format('Mise en service du journal fiscal : premier ticket continu %s%s ; ventes antérieures non reprises (%s vente(s) en base)',
+              c.prefixe, lpad(c.premier_numero_continu::text, GREATEST(6, char_length(c.premier_numero_continu::text)), '0'),
+              (SELECT count(*) FROM vente))
+FROM compteur_ticket c
+WHERE c.id = 1 AND NOT EXISTS (SELECT 1 FROM journal_vente);
+
+-- 116 : substitution (équivalent exact seulement) ; 123 : texte du formulaire d'accord SMS (vide) ; 122 et 143 : seuils de la réplication
+INSERT INTO parametre_substitution (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+INSERT INTO parametre_formulaire_sms (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+INSERT INTO surveillance_replication (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+-- 120 : sérialisation (connecteur factice) et identifiants d'application GS1 reconnus
+INSERT INTO parametre_serialisation DEFAULT VALUES ON CONFLICT (id) DO NOTHING;
+INSERT INTO parametre_gs1_ai (code, champ, longueur_fixe, longueur_max, libelle) VALUES
+    ('01', 'gtin',       14,   NULL, 'GTIN'),
+    ('17', 'peremption', 6,    NULL, 'Date de péremption (AAMMJJ)'),
+    ('10', 'lot',        NULL, NULL, 'Numéro de lot (variable)'),
+    ('21', 'serie',      NULL, NULL, 'Numéro de série (variable)')
+ON CONFLICT (code) DO NOTHING;
+
+-- 117 : classe suivie « antibiotiques » (la liste des DCI se remplit à l'import de la nomenclature, pas ici) puis ligne d'ouverture du
+-- registre des psychotropes (registre vide : 0 ligne antérieure ; écrite avant toute inscription)
+INSERT INTO classe_suivie (code, libelle) VALUES ('antibiotiques', 'Antibiotiques') ON CONFLICT (code) DO NOTHING;
+
+DO $$
+DECLARE
+    v record;
+BEGIN
+    LOCK TABLE registre_psychotrope IN SHARE ROW EXCLUSIVE MODE;
+    IF NOT EXISTS (SELECT 1 FROM journal_registre_psychotrope WHERE nature = 'ouverture') THEN
+        SELECT * INTO v FROM registre_empreinte_anterieure();
+        INSERT INTO journal_registre_psychotrope (nature, lignes_anterieures, dernier_registre_id, empreinte_anterieure, inscrit_le, motif)
+        VALUES ('ouverture', v.lignes, v.dernier_id, v.empreinte, now(),
+                'Ouverture du chaînage : ' || v.lignes || ' ligne(s) antérieure(s) scellée(s) par leur empreinte globale');
+    END IF;
+END $$;
 
 COMMIT;
 

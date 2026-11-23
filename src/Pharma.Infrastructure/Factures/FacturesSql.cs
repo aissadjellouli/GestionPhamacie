@@ -555,11 +555,18 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
         await using var tx = await cx.BeginTransactionAsync(ct);
         await VerrouillerEtControler(cx, tx, f, id, ct);
 
-        // Avoirs et règlements déjà imputés, relus sous le verrou de la facture (même verrou que l'encaissement et l'avoir)
+        // Verrou de la facture (même verrou que l'encaissement et l'avoir) dans une requête à part : en lecture validée, une requête
+        // garde l'instantané pris avant d'attendre le verrou ; la relecture des montants doit donc être une requête suivante
+        await using (var verrou = new NpgsqlCommand("SELECT 1 FROM facture_client WHERE id = $1 FOR UPDATE", cx, tx))
+        {
+            verrou.Parameters.AddWithValue(id);
+            if (await verrou.ExecuteScalarAsync(ct) is null) throw new RegleMetierException("Facture introuvable.");
+        }
+        // Avoirs et règlements déjà imputés, relus après le verrou : un règlement validé pendant l'attente est bien vu
         await using (var cmd = new NpgsqlCommand("""
             SELECT (SELECT COALESCE(sum(a.montant_ttc), 0) FROM facture_client a WHERE a.facture_origine_id = f.id AND a.type = 'avoir'),
                    (SELECT COALESCE(sum(r.montant), 0) FROM reglement_facture_client r WHERE r.facture_id = f.id), f.numero
-            FROM facture_client f WHERE f.id = $1 FOR UPDATE OF f
+            FROM facture_client f WHERE f.id = $1
             """, cx, tx))
         {
             cmd.Parameters.AddWithValue(id);

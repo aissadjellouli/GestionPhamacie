@@ -11,6 +11,12 @@ local nouveau aujourd'hui). Détail : [a-faire.md](a-faire.md), [fonctionnalites
 [diagrammes-sequence.md](diagrammes-sequence.md) (architecture, déploiement, synchronisation) et documents cités.
 À mettre à jour à chaque point d'avancement.
 
+**Point du 2026-11-23 (nuit), après le commit `0648ae1` (revue complète), NON COMMITÉ :**
+- **Tests d'intégration SQL** : projet `tests/Pharma.Infrastructure.Sql.Tests` (lot 0 commité en `0648ae1`) + lots 1 à 5 : 49 tests sur PostgreSQL (caisse, attente et retours, stock, factures, registre). Plan : `docs/taches/2026-11-23-tests-integration-sql/plan.md`.
+- **Bugs trouvés par ces tests et corrigés** : (1) l'init ne recréait pas les données techniques (chaînage des journaux, compteur des tickets, paramètres…) : une installation neuve ne pouvait ni encaisser ni inscrire au registre ; seed corrigé, test de comparaison des données ajouté ; (2) correction de facture et emploi d'un prêt : montants relus avant d'avoir le verrou (règlement simultané ignoré) ; corrigé. Mot interdit dans `Bloqueur.cs` corrigé.
+- **Bascule du 2e serveur, version ALLÉGÉE** (décision du titulaire) : lot 1 (détection, 30 s, 2 relevés) et lot 2 (script **163** `serveur_ecarte`, avec retour) faits ; 163 passé sur `pharmacie_dev` et `pharmacie_test` (sauvegardes avant dans `sauvegardes-bd`). Reste : lots 3 à 5 (lecture seule dans l'API, écrans, alertes), saut du compteur des tickets et des factures à la promotion, script administrateur du droit `pg_control_system` (décision « droit ciblé »), procédure manuelle ou rapport automatique (en attente du titulaire). Plan : `docs/taches/2026-11-23-bascule-2e-serveur/plan.md`.
+- **Mineurs notés** : messages bruts sur double paiement de traite ou d'échéance (index unique, pas de perte) ; garde du retour client qui ne peut jamais refuser ; les tests du central laissent des bases `pharmacie_cloud_jetable_m11_*` (15 aujourd'hui) ; `pgcrypto` créé par `schema.sql` et par aucun script ; lot corrigé vers un n° rappelé (bloqué) ; commentaire d'un don visible ; type GED « JournalFiscal » refusé.
+
 **Point du 2026-11-23 (soir) : revue complète de `develop` et correctifs, NON COMMITÉS.** Rien commité ni poussé depuis
 `7c218ba`. Revue en 6 domaines (caisse, stock, factures, sécurité, central et synchronisation, base), puis correctifs
 fusionnés dans la copie de travail : build 0 erreur 0 avertissement ; tests Domain 736, Application 1 876, Architecture 398,

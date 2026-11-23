@@ -84,13 +84,87 @@ public class InitEquivalentSuiteMigrationsTests
                 ecarts.AddRange(depuisInit.Except(suite).Take(10).Select(l => $"[{rubrique}] seulement dans database/init/schema.sql : {Court(l)}"));
             }
             Assert.True(ecarts.Count == 0,
-                $"database/init/schema.sql n'équivaut pas à la suite des migrations ({ecarts.Count} écart(s), 10 par rubrique au plus) :\n" + string.Join("\n", ecarts.Take(40)));
+                $"database/init/schema.sql n'équivaut pas à la suite des migrations ({ecarts.Count} écart(s), 10 par rubrique au plus) :\n" + string.Join("\n", ecarts.Take(3)));
         }
         finally
         {
             foreach (var t in temporaires) { try { File.Delete(t); } catch (IOException) { } }
         }
     }
+
+    /// <summary>
+    /// Équivalence des DONNÉES : même construction que ci-dessus, mais l'init est complété par seed_referentiel.sql (comme
+    /// creer_base_officine.ps1). Toutes les tables de public sont comparées ligne à ligne ; les colonnes de date et d'heure et les empreintes
+    /// (calculées à partir d'une date) sont retirées, ainsi que les écarts voulus listés dans <see cref="TablesHorsComparaison"/>. Un écart
+    /// signale une donnée que la suite des migrations écrit sur une base vide (ligne de chaine_integrite, ligne d'ouverture d'un journal chaîné,
+    /// compteur, paramètre...) et que seed_referentiel.sql ne recrée pas : une base neuve refuserait alors les écritures du registre ou des ventes.
+    /// </summary>
+    [FactPostgres]
+    public void Les_donnees_de_l_init_equivalent_a_la_suite_des_migrations()
+    {
+        var racine = ScriptsRejouablesTests.RacineDepot();
+        var init = Path.Combine(racine, "database", "init");
+        var fuseau = Directory.GetFiles(Path.Combine(racine, "database", "migration"), "083_*.sql").Single();
+        var temporaires = new List<string>();
+        using var parSuite = new BaseJetableM4("pharmacie_jetable_donnees_suite_", initialiser: false);
+        using var parInit = new BaseJetableM4("pharmacie_jetable_donnees_init_", initialiser: false);
+        try
+        {
+            Assert.True(parSuite.Disponible && parInit.Disponible, "Bases jetables non créées (PostgreSQL injoignable ou sans droit CREATEDB).");
+            foreach (var (fichiers, transaction) in ScriptsRejouablesTests.Lots())
+            {
+                var lignes = fichiers.Select(f => $"\\i '{ScriptsRejouablesTests.Chemin(f).Replace("'", "''")}'").ToList();
+                if (transaction) { lignes.Insert(0, "BEGIN;"); lignes.Add("COMMIT;"); }
+                var temporaire = Path.Combine(Path.GetTempPath(), $"pharma_equiv_{Guid.NewGuid():N}.sql");
+                temporaires.Add(temporaire);
+                File.WriteAllLines(temporaire, lignes);
+                parSuite.Executer(["-f", temporaire]);
+            }
+            parInit.Executer(["-f", ScriptsRejouablesTests.Chemin(Path.Combine(init, "schema.sql"))]);
+            parInit.Executer(["-f", ScriptsRejouablesTests.Chemin(fuseau)]);
+            parInit.Executer(["-f", ScriptsRejouablesTests.Chemin(Path.Combine(init, "seed_referentiel.sql"))]);
+
+            var ecarts = new List<string>();
+            foreach (var table in Lire(parSuite, "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY 1").Order())
+            {
+                if (TablesHorsComparaison.Contains(table)) continue;
+                var requete = $"""
+                    SELECT (to_jsonb(t) - ARRAY(SELECT column_name::text FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '{table}'
+                                                AND (data_type LIKE 'timestamp%' OR data_type = 'date' OR data_type LIKE 'time %'))
+                                        - ARRAY['hash', 'hash_precedent', 'officine_id']
+                                        - {ColonnesVolontairementDifferentes(table)})::text
+                    FROM "{table}" t
+                    """;
+                var suite = Lire(parSuite, requete);
+                var depuisInit = Lire(parInit, requete);
+                ecarts.AddRange(suite.Except(depuisInit).Take(3).Select(l => $"[{table}] seulement dans la suite des migrations : {Court(l)}"));
+                ecarts.AddRange(depuisInit.Except(suite).Take(3).Select(l => $"[{table}] seulement dans l'init + seed_referentiel.sql : {Court(l)}"));
+            }
+            Assert.True(ecarts.Count == 0,
+                $"Les données de l'init (schema.sql + seed_referentiel.sql) ne sont pas celles de la suite des migrations ({ecarts.Count} écart(s), 3 par table au plus) :\n" + string.Join("\n", ecarts.Take(300)));
+        }
+        finally
+        {
+            foreach (var t in temporaires) { try { File.Delete(t); } catch (IOException) { } }
+        }
+    }
+
+    /// <summary>
+    /// Écarts VOULUS (aucun manque) : type_prestation (prestations de départ posées par l'init seulement, prix à fixer par le titulaire) et
+    /// utilisateur (compte « titulaire » provisoire de l'init ; une base montée par les scripts n'a pas d'utilisateur).
+    /// </summary>
+    private static readonly HashSet<string> TablesHorsComparaison = new(StringComparer.Ordinal) { "type_prestation", "utilisateur" };
+
+    /// <summary>
+    /// Colonnes ignorées, table par table : motif_reglable.id (ordre d'insertion différent, les motifs se retrouvent par liste et code) ;
+    /// parametre_caisse.deconnexion_minutes (le script 162 ne change que le défaut de la colonne : une ligne antérieure garde 0, l'init 15).
+    /// </summary>
+    private static string ColonnesVolontairementDifferentes(string table) => table switch
+    {
+        "motif_reglable" => "ARRAY['id']",
+        "parametre_caisse" => "ARRAY['deconnexion_minutes']",
+        _ => "ARRAY[]::text[]"
+    };
 
     /// <summary>
     /// ÉCART CONNU (revue de la base, 2026-11-23, en attente de décision) : schema.sql crée l'extension pgcrypto (utilisée par le script 126 :

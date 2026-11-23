@@ -55,6 +55,9 @@ var ceServeur = new Pharma.Application.SecondServeur.CeServeur(Pharma.Infrastruc
     Pharma.Application.SecondServeur.DossiersServeur.Choisir(demarrage.DossierMdn, builder.Configuration["Mdn:Dossier"]),
     typeof(Program).Assembly.GetName().Version is { } va ? (va.Build > 0 ? $"{va.Major}.{va.Minor:00}.{va.Build}" : $"{va.Major}.{va.Minor:00}") : null);
 builder.Services.AddSingleton(ceServeur);
+// Détection d'un serveur écarté en cours de marche (bascule du 2e serveur, lot 1) : relevés en lecture seule des deux bases
+builder.Services.AddSingleton<Pharma.Application.SecondServeur.IReleveServeurs>(new Pharma.Infrastructure.SecondServeur.ReleveServeursSql(
+    builder.Configuration.GetConnectionString("Pharmacie") ?? "", builder.Configuration["SecondServeur:AutreServeur"]));
 // Chaque dossier à part : un dossier réglé ailleurs et introuvable (ex. Chifa sur un disque absent) n'empêche pas les autres
 foreach (var d in new[] { dossierOrdonnances, ged.Dossier(Pharma.Application.Ged.TypesGed.Chifa), ged.Dossier(Pharma.Application.Ged.TypesGed.Sauvegardes) })
     try { Directory.CreateDirectory(d); }

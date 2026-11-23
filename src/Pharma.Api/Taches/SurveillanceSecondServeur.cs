@@ -12,6 +12,49 @@ public sealed class SurveillanceSecondServeur(IServiceProvider services, CeServe
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await DeclarerAsync(stoppingToken);
+        await Task.WhenAll(SurveillerReplicationAsync(stoppingToken), SurveillerEcartAsync(stoppingToken));
+    }
+
+    /// <summary>Bascule du 2e serveur, lot 1 : toutes les 30 s, cet autre serveur a-t-il été promu plus récemment que ce serveur ?</summary>
+    private async Task SurveillerEcartAsync(CancellationToken stoppingToken)
+    {
+        var dernier = VerdictEcart.Normal;
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                using var scope = services.CreateScope();
+                if (await scope.ServiceProvider.GetRequiredService<SurveillerServeurEcarte>().ExecuterAsync(stoppingToken) is { } d && d.Verdict != dernier)
+                {
+                    dernier = d.Verdict;
+                    switch (d.Verdict)
+                    {
+                        case VerdictEcart.Ecarte when d.Confirme:
+                            logger.LogCritical("Ce serveur est écarté : l'autre serveur a une timeline plus récente ({TimelineAutre} contre {TimelineLocale})", d.TimelineAutre, d.TimelineLocale);
+                            break;
+                        case VerdictEcart.Retenu when d.Confirme:
+                            logger.LogCritical("L'ancien serveur principal écrit encore (timeline {TimelineAutre} contre {TimelineLocale}) : titulaire prévenu", d.TimelineAutre, d.TimelineLocale);
+                            break;
+                        case VerdictEcart.TimelinesEgales:
+                            logger.LogWarning("Deux bases en écriture avec la même timeline ({Timeline}) : conduite à décider, aucune action", d.TimelineLocale);
+                            break;
+                        case VerdictEcart.LigneeDifferente when d.Confirme:
+                            logger.LogWarning("L'autre serveur a une base en écriture d'une autre lignée : titulaire prévenu, aucun serveur écarté");
+                            break;
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Détection d'un serveur écarté impossible");
+            }
+            try { await Task.Delay(SurveillerServeurEcarte.Intervalle, stoppingToken); }
+            catch (OperationCanceledException) { return; }
+        }
+    }
+
+    private async Task SurveillerReplicationAsync(CancellationToken stoppingToken)
+    {
         while (!stoppingToken.IsCancellationRequested)
         {
             try

@@ -398,6 +398,10 @@ public static class DependencyInjection
         // 2e serveur (2026-11-16, script 122) : écran, alerte de réplication, réglages par serveur, export / import de la clé
         services.AddScoped<SecondServeur.ObtenirSecondServeur>();
         services.AddScoped<SecondServeur.SurveillerReplication>();
+        // Bascule du 2e serveur, lot 1 (2026-11-23) : détection d'un serveur écarté (état en mémoire, lu par le lot 3 via IServeurEcarteDetecte)
+        services.AddSingleton<SecondServeur.SuiviServeurEcarte>();
+        services.AddSingleton<SecondServeur.IServeurEcarteDetecte>(sp => sp.GetRequiredService<SecondServeur.SuiviServeurEcarte>());
+        services.AddScoped<SecondServeur.SurveillerServeurEcarte>();
         services.AddScoped<SecondServeur.ModifierServeurOfficine>();
         services.AddScoped<SecondServeur.ModifierSeuilsReplication>();
         services.AddScoped<SecondServeur.ModifierCopieGed>();

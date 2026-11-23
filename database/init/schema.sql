@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 162 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 163 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, rejouer TOUTE la suite
 -- database/migration depuis le script 001 (mettre_a_jour_base_officine.ps1), jamais ce fichier ni un script isolé.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 162 ; à régénérer à chaque nouveau script.
+-- par les scripts 001 à 163 ; à régénérer à chaque nouveau script.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -3036,6 +3036,22 @@ CREATE FUNCTION public.sans_accent(t text) RETURNS text
     LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
     RETURN translate(t, 'àâäáãçéèêëíìîïñóòôöõúùûüÿœÀÂÄÁÃÇÉÈÊËÍÌÎÏÑÓÒÔÖÕÚÙÛÜŸŒ'::text, 'aaaaaceeeeiiiinooooouuuuyoAAAAACEEEEIIIINOOOOOUUUUYO'::text);
 
+
+--
+-- Name: serveur_ecarte_proteger(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.serveur_ecarte_proteger() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    -- Seule la levée d'une ligne encore active est permise : les colonnes de l'écart restent inchangées.
+    IF TG_OP = 'UPDATE' AND OLD.leve_le IS NULL AND NEW.leve_le IS NOT NULL
+       AND (to_jsonb(NEW) - 'leve_le' - 'leve_par' - 'leve_motif') = (to_jsonb(OLD) - 'leve_le' - 'leve_par' - 'leve_motif') THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'serveur_ecarte : ajout seul (seule la levée d''un écart actif est permise)';
+END $$;
 
 --
 -- Name: situation_lot(bigint); Type: FUNCTION; Schema: public; Owner: -
@@ -11019,6 +11035,46 @@ ALTER TABLE public.serialisation_reponse_factice ALTER COLUMN id ADD GENERATED A
 
 
 --
+-- Name: serveur_ecarte; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.serveur_ecarte (
+    id bigint NOT NULL,
+    ecarte_le timestamp with time zone DEFAULT now() NOT NULL,
+    serveur_retenu character varying(200) NOT NULL,
+    timeline_locale integer NOT NULL,
+    timeline_retenue integer NOT NULL,
+    identifiant_systeme character varying(40) NOT NULL,
+    motif character varying(500) NOT NULL,
+    leve_le timestamp with time zone,
+    leve_par character varying(200),
+    leve_motif character varying(500),
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_serveur_ecarte_levee CHECK ((((leve_le IS NULL) AND (leve_par IS NULL) AND (leve_motif IS NULL)) OR ((leve_le IS NOT NULL) AND (leve_par IS NOT NULL) AND (leve_motif IS NOT NULL)))),
+    CONSTRAINT ck_serveur_ecarte_timelines CHECK ((timeline_retenue > timeline_locale)),
+    CONSTRAINT serveur_ecarte_timeline_locale_check CHECK ((timeline_locale >= 1))
+);
+
+--
+-- Name: TABLE serveur_ecarte; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.serveur_ecarte IS 'État « serveur écarté » (lecture seule) après une bascule vers un autre serveur principal ; ajout seul, seule la levée modifie une ligne ; jamais envoyée au central (script 163).';
+
+--
+-- Name: serveur_ecarte_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.serveur_ecarte ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.serveur_ecarte_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+--
 -- Name: serveur_officine; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -14834,6 +14890,13 @@ ALTER TABLE ONLY public.serialisation_reponse_factice
 
 
 --
+-- Name: serveur_ecarte serveur_ecarte_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.serveur_ecarte
+    ADD CONSTRAINT serveur_ecarte_pkey PRIMARY KEY (id);
+
+--
 -- Name: serveur_officine serveur_officine_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -16075,6 +16138,12 @@ CREATE INDEX ix_remise_auto_produit ON public.remise_automatique USING btree (pr
 
 
 --
+-- Name: ix_serveur_ecarte_ecarte_le; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_serveur_ecarte_ecarte_le ON public.serveur_ecarte USING btree (ecarte_le);
+
+--
 -- Name: ix_sync_famille_colonne_table; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -16402,6 +16471,12 @@ CREATE UNIQUE INDEX ux_reglement_fournisseur_numero ON public.reglement_fourniss
 
 CREATE UNIQUE INDEX ux_scan_reception_serie ON public.scan_reception USING btree (gtin, numero_serie) WHERE ((importe_le IS NULL) AND (numero_serie IS NOT NULL));
 
+
+--
+-- Name: ux_serveur_ecarte_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_serveur_ecarte_active ON public.serveur_ecarte USING btree ((true)) WHERE (leve_le IS NULL);
 
 --
 -- Name: ux_session_poste_ouverte; Type: INDEX; Schema: public; Owner: -
@@ -17160,6 +17235,18 @@ CREATE TRIGGER trg_sceau_integrite_immuable BEFORE DELETE OR UPDATE ON public.sc
 
 CREATE TRIGGER trg_sceau_integrite_non_vidable BEFORE TRUNCATE ON public.sceau_integrite FOR EACH STATEMENT EXECUTE FUNCTION public.integrite_interdire_modification_trace();
 
+
+--
+-- Name: serveur_ecarte trg_serveur_ecarte_ajout_seul; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_serveur_ecarte_ajout_seul BEFORE DELETE OR UPDATE ON public.serveur_ecarte FOR EACH ROW EXECUTE FUNCTION public.serveur_ecarte_proteger();
+
+--
+-- Name: serveur_ecarte trg_serveur_ecarte_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_serveur_ecarte_non_vidable BEFORE TRUNCATE ON public.serveur_ecarte FOR EACH STATEMENT EXECUTE FUNCTION public.serveur_ecarte_proteger();
 
 --
 -- Name: session_caisse trg_session_fermee; Type: TRIGGER; Schema: public; Owner: -

@@ -263,6 +263,8 @@
     <File Path="database/migration/161_index_cles_etrangeres_manquantes.sql" />
     <File Path="database/migration/162_deconnexion_inactivite_defaut_15_minutes.sql" />
     <File Path="database/migration/retour/162_deconnexion_inactivite_defaut_15_minutes_retour.sql" />
+    <File Path="database/migration/163_serveur_ecarte_lecture_seule.sql" />
+    <File Path="database/migration/retour/163_serveur_ecarte_lecture_seule_retour.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
@@ -303,6 +305,7 @@
     <File Path="database/tests/160_message_central_postes_tests.sql" />
     <File Path="database/tests/161_index_cles_etrangeres_manquantes_tests.sql" />
     <File Path="database/tests/162_deconnexion_inactivite_defaut_15_minutes_tests.sql" />
+    <File Path="database/tests/163_serveur_ecarte_lecture_seule_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
     <File Path="database/tests/101b_suppression_num_facture_chifa_tests.sql" />
     <File Path="database/tests/rejeu_complet.ps1" />
