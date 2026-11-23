@@ -3,6 +3,7 @@
 @inject NavigationManager Nav
 @inject SessionPoste Session
 @inject ReglagesPoste Reglages
+@inject PanierBascule Panier
 
 <div class="page connexion">
     <div class="entete-connexion">
@@ -148,6 +149,9 @@
         if (erreur is null) Nav.NavigateTo("caisse");
     }
 
+    /// <summary>Vente gardée en mémoire par un repli de bascule (Q26) : l'employé qui se reconnecte retrouve la Caisse, qui la lui rend.</summary>
+    private bool PanierARendre => Panier.EnAttente && Session.A("caisse.vendre");
+
     private async Task SeConnecterAsync()
     {
         controle = true;
@@ -163,6 +167,6 @@
         // Une vente a été laissée en attente au changement d'utilisateur : on arrive directement à la Caisse pour la reprendre ;
         // sinon, accueil selon les droits (tableau de bord, ou Caisse pour le vendeur)
         if (erreur is null) Nav.NavigateTo(Session.DoitChangerMotDePasse ? "mot-de-passe"
-            : Session.AVenteAReprendre && Session.A("caisse.vendre") ? "caisse" : Domaines.Accueil(Session));
+            : (Session.AVenteAReprendre || PanierARendre) && Session.A("caisse.vendre") ? "caisse" : Domaines.Accueil(Session));
     }
 }

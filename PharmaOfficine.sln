@@ -315,6 +315,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\retour\163b_droit_identifiant_base_retour.sql = database\migration\retour\163b_droit_identifiant_base_retour.sql
 		database\migration\164_bascule_saut_compteurs_promotion.sql = database\migration\164_bascule_saut_compteurs_promotion.sql
 		database\migration\retour\164_bascule_saut_compteurs_promotion_retour.sql = database\migration\retour\164_bascule_saut_compteurs_promotion_retour.sql
+		database\migration\165_presence_postes.sql = database\migration\165_presence_postes.sql
+		database\migration\retour\165_presence_postes_retour.sql = database\migration\retour\165_presence_postes_retour.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52-9A41-4B8E-A5F2-3C6D11B0E111}"
@@ -360,6 +362,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52
 		database\tests\163_serveur_ecarte_lecture_seule_tests.sql = database\tests\163_serveur_ecarte_lecture_seule_tests.sql
 		database\tests\163b_droit_identifiant_base_tests.sql = database\tests\163b_droit_identifiant_base_tests.sql
 		database\tests\164_bascule_saut_compteurs_promotion_tests.sql = database\tests\164_bascule_saut_compteurs_promotion_tests.sql
+		database\tests\165_presence_postes_tests.sql = database\tests\165_presence_postes_tests.sql
 		database\tests\117_registre_renforce_tests.sql = database\tests\117_registre_renforce_tests.sql
 		database\tests\101b_suppression_num_facture_chifa_tests.sql = database\tests\101b_suppression_num_facture_chifa_tests.sql
 		database\tests\rejeu_complet.ps1 = database\tests\rejeu_complet.ps1

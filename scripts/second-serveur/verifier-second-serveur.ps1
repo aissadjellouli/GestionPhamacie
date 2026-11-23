@@ -6,7 +6,7 @@
     Lit, sans rien modifier sur ce PC :
       - le rôle de la base (principal, ou 2e serveur en lecture seule) ;
       - la réplication : pg_stat_replication (principal) ou pg_stat_wal_receiver et retard de rejeu (2e serveur) ;
-      - l'API : version de Pharma.Api.exe, service (sur le 2e serveur : arrêté et en démarrage manuel tant qu'il est secondaire) ;
+      - l'API : version de Pharma.Api.exe, service (sur le 2e serveur : en démarrage automatique, l'API tourne en veille : role = veille) ;
       - la clé de scellement : empreinte (Pharma.Api.exe --empreinte-cle), jamais la clé ;
       - les imprimantes Windows déclarées, les dossiers CHIFA-Officine et MDN (-DossierChifa, -DossierMdn) joignables.
     Sans -Essai et avec -Principal : le relevé est inscrit dans la table serveur_officine du PRINCIPAL (compte de l'API, mot de passe
@@ -27,6 +27,7 @@ param(
     [string]$ServiceApi     = "PharmaOfficine API",
     [string]$DossierChifa   = "",
     [string]$DossierMdn     = "",
+    [string]$EmpreinteJetonPrincipal = "",           # facultatif : empreinte du principal (Pharma.Api.exe --empreinte-jeton), pour contrôler la clé des jetons
     [switch]$Essai
 )
 . (Join-Path $PSScriptRoot "commun.ps1")
@@ -64,10 +65,23 @@ if (Test-Path $exeApi) {
 $service = Get-Service $ServiceApi -ErrorAction SilentlyContinue
 $demarrage = if ($service) { (Get-CimInstance Win32_Service -Filter "Name='$ServiceApi'").StartMode } else { "absent" }
 Write-Host ("API : version {0} · service {1}, démarrage {2}" -f $(if ($version) { $version } else { "introuvable" }), $(if ($service) { $service.Status } else { "absent" }), $demarrage)
-if ($second -and $service -and ($service.Status -ne "Stopped" -or $demarrage -ne "Manual")) {
-    Write-Warning "2e serveur : le service de l'API doit être arrêté et en démarrage manuel tant que le serveur est secondaire."
+if ($second -and $service) {
+    # Vague 2 : le 2e serveur fait tourner l'API en veille (démarrage automatique) ; son rôle publié doit être « veille »
+    $roleApi = $null
+    foreach ($url in "https://localhost:5443/api/healthcheck", "http://localhost:5080/api/healthcheck") { $roleApi = Get-RoleApi $url; if ($roleApi) { break } }
+    Write-Host ("API en veille : rôle publié {0}" -f $(if ($roleApi) { $roleApi } else { "aucune réponse (service arrêté, ou SecondServeur:AutreServeur non réglé)" }))
+    if ($demarrage -ne "Auto") { Write-Warning "2e serveur : le service de l'API devrait être en démarrage automatique (initialiser-second-serveur.ps1 le règle)." }
+    if ($roleApi -and $roleApi -ne "veille") { Write-Warning "2e serveur : le rôle publié devrait être « veille »." }
 }
 Write-Host ("Clé de scellement : {0}" -f $(if ($empreinte) { "présente, empreinte $empreinte (à comparer à celle du principal, écran « 2e serveur »)" } else { "ABSENTE ou illisible" }))
+$cleJetons = [Environment]::GetEnvironmentVariable("Jwt__Cle", "Machine")
+if (-not $cleJetons) { Write-Warning "Clé des jetons (Jwt__Cle) absente sur ce PC." }
+else {
+    $empJetons = Get-EmpreinteJeton $cleJetons
+    Write-Host "Clé des jetons : empreinte $empJetons (doit être identique sur les deux serveurs)."
+    if ($EmpreinteJetonPrincipal -and $EmpreinteJetonPrincipal -ne $empJetons) { Write-Warning "Clé des jetons DIFFÉRENTE de celle du principal ($EmpreinteJetonPrincipal) : bascule sans reconnexion, retrait et relais impossibles." }
+}
+$cleJetons = $null
 $imprimantes = (Get-Printer -ErrorAction SilentlyContinue | Where-Object { $_.Name -notmatch 'PDF|XPS|OneNote|Fax' } | Select-Object -ExpandProperty Name) -join ", "
 Write-Host ("Imprimantes : {0}" -f $(if ($imprimantes) { $imprimantes } else { "aucune" }))
 function Joignable([string]$d) { if (-not $d) { return "" } if (Test-Path $d -PathType Container) { return "true" } return "false" }

@@ -6,7 +6,8 @@
     À lancer sur l'ancien principal, en administrateur Windows, AVANT de redémarrer son API (docs/mise-en-production.md,
     « 2e serveur », « Retour »). Au préalable, sur le NOUVEAU principal : preparer-principal.ps1 -AdresseSecond <ce PC>.
     Étapes :
-      1. API de ce PC arrêtée et mise en démarrage manuel (elle refuserait de toute façon de démarrer face à un principal plus récent) ;
+      1. API de ce PC arrêtée (elle est écartée ou refusée face à un principal plus récent) ; démarrage automatique avec relance sur erreur
+         conservé pour la veille : elle ne sera redémarrée qu'à la fin, base en lecture seule (vague 2) ;
       2. contrôle : le nouveau principal répond et sa base est en écriture ;
       3. PostgreSQL de ce PC arrêté ; son dossier de données GARDÉ (renommé « <dossier>_ancien_principal_<date> ») : il peut contenir
          les dernières saisies d'avant la panne, non reçues par l'autre serveur (à examiner avant de le supprimer, jamais automatiquement) ;
@@ -46,7 +47,7 @@ if (-not $DossierDonnees) { throw "Dossier de données introuvable (préciser -D
 $ancien = "{0}_ancien_principal_{1:yyyyMMdd_HHmmss}" -f $DossierDonnees.TrimEnd('\'), (Get-Date)
 
 if ($Essai) {
-    Write-Etape $mode "Service « $ServiceApi » arrêté, démarrage manuel."
+    Write-Etape $mode "Service « $ServiceApi » arrêté, démarrage automatique avec relance sur erreur ; à démarrer ensuite (veille) une fois SecondServeur:AutreServeur réglé sur le nouveau principal."
     Write-Etape $mode "Service $ServicePg arrêté ; $DossierDonnees gardé sous $ancien (dernières saisies d'avant la panne à examiner)."
     Write-Etape $mode "pg_basebackup -h $NouveauPrincipal -U $RoleReplication -S $Slot -X stream -R -D $DossierDonnees ; démarrage ; contrôle « lecture seule »."
     Write-Host "$mode Simulation terminée : rien n'a été modifié."
@@ -56,7 +57,7 @@ if ((Read-Host "Ce PC redevient 2e serveur : sa base actuelle est mise de côté
     Write-Host "Abandon : rien n'a été modifié."; return
 }
 
-if (Get-Service $ServiceApi -ErrorAction SilentlyContinue) { Stop-Service $ServiceApi -ErrorAction SilentlyContinue; Set-Service $ServiceApi -StartupType Manual }
+if (Get-Service $ServiceApi -ErrorAction SilentlyContinue) { Stop-Service $ServiceApi -ErrorAction SilentlyContinue; Set-ServiceApiRelance $ServiceApi }
 Stop-Service $ServicePg
 if (Test-Path $DossierDonnees) { Rename-Item $DossierDonnees $ancien; Write-Host "Ancienne base gardée : $ancien" }
 
@@ -69,4 +70,5 @@ $compte = (Get-CimInstance Win32_Service -Filter "Name='$ServicePg'").StartName
 if ($compte -and $compte -ne "LocalSystem") { & icacls $DossierDonnees /grant "${compte}:(OI)(CI)F" /T /Q | Out-Null }
 Start-Service $ServicePg
 Write-Host "Ce PC est de nouveau 2e serveur (copie en continu de $NouveauPrincipal). Contrôle : verifier-second-serveur.ps1 -Principal $NouveauPrincipal."
+Write-Host "Réglez SecondServeur:AutreServeur = $NouveauPrincipal dans l'appsettings de l'API de CE PC, puis démarrez le service « $ServiceApi » : elle démarre en veille (role = veille)."
 Write-Host "Ancienne base ($ancien) : à examiner avec le support avant toute suppression."

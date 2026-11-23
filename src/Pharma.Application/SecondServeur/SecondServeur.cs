@@ -88,8 +88,11 @@ public static class ReplicationOfficine
     /// Bascule du 2e serveur, lot 3 (Q8, Q10) : l'API n'appelle ce refus que si le serveur ne démarre pas déjà EN LECTURE SEULE
     /// (<see cref="DemarrageEcarte"/> : autre principal plus récent de même lignée, ou même timeline) ; il ne reste que les cas indécidables.
     /// </summary>
-    public static string? RefusDemarrage(bool? baseEnRecovery, bool? autreServeurPrincipal, string? autreServeur, long? timeline = null, long? timelineAutre = null)
+    /// <param name="veillePermise">Vague 2 (V2-1) : un 2e serveur est déclaré, l'API démarre en veille (<see cref="ModeVeille.AuDemarrage"/>) au lieu d'être refusée sur une base en recovery.</param>
+    public static string? RefusDemarrage(bool? baseEnRecovery, bool? autreServeurPrincipal, string? autreServeur, long? timeline = null, long? timelineAutre = null,
+        bool veillePermise = false)
     {
+        if (baseEnRecovery == true && veillePermise) return null;
         if (autreServeurPrincipal == true && baseEnRecovery == false && timeline is { } moi && timelineAutre is { } autre && moi > autre)
             autreServeurPrincipal = false;   // ce serveur est le plus récemment promu : c'est l'autre qui doit s'arrêter
         if (baseEnRecovery == true)

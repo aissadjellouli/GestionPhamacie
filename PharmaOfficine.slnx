@@ -269,6 +269,8 @@
     <File Path="database/migration/retour/163b_droit_identifiant_base_retour.sql" />
     <File Path="database/migration/164_bascule_saut_compteurs_promotion.sql" />
     <File Path="database/migration/retour/164_bascule_saut_compteurs_promotion_retour.sql" />
+    <File Path="database/migration/165_presence_postes.sql" />
+    <File Path="database/migration/retour/165_presence_postes_retour.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
@@ -312,6 +314,7 @@
     <File Path="database/tests/163_serveur_ecarte_lecture_seule_tests.sql" />
     <File Path="database/tests/163b_droit_identifiant_base_tests.sql" />
     <File Path="database/tests/164_bascule_saut_compteurs_promotion_tests.sql" />
+    <File Path="database/tests/165_presence_postes_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
     <File Path="database/tests/101b_suppression_num_facture_chifa_tests.sql" />
     <File Path="database/tests/rejeu_complet.ps1" />

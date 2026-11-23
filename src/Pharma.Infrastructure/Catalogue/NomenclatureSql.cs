@@ -146,6 +146,7 @@ public sealed class NomenclatureSql(NpgsqlDataSource db) : INomenclature
     {
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
+        var synchrone = await Pharma.Infrastructure.SecondServeur.ReplicationSynchrone.ActiverAsync(cx, tx, ct);
         string? ancienne;
         // Confirmation du titulaire (classe moins stricte que la substance ou la nomenclature) mémorisée (080) ; sinon effacée
         await using (var cmd = new NpgsqlCommand("""
@@ -166,7 +167,7 @@ public sealed class NomenclatureSql(NpgsqlDataSource db) : INomenclature
         // Le produit entre sous registre (psychotrope, stupéfiant) avec du stock : solde d'ouverture par lot, comme au
         // démarrage du registre (024), sinon la première délivrance donnerait un solde négatif. Une seule fois par produit.
         if (classe is "psychotrope" or "stupefiant") await InscrireOuvertureAsync(cx, tx, produitId, utilisateurId, ct);
-        await tx.CommitAsync(ct);
+        await Pharma.Infrastructure.SecondServeur.ReplicationSynchrone.ValiderAsync(db, cx, tx, synchrone, ct);
         return ancienne;
     }
 

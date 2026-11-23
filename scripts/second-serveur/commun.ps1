@@ -47,3 +47,47 @@ function Test-Port([string]$Hote, [int]$Port, [int]$DelaiMs = 3000) {
 }
 
 function Write-Etape([string]$Mode, [string]$Texte) { Write-Host "$Mode$Texte" }
+
+# Service de l'API d'un serveur de l'officine (vague 2, lot V2-1) : démarrage automatique et relance en cas d'arrêt avec erreur.
+# L'API en veille s'arrête avec le code 10 une fois la base promue : « failureflag 1 » fait compter ce code comme un échec,
+# donc le service est relancé (après 5 s) et démarre en principal. Sans effet destructeur : réglages du service seulement.
+function Set-ServiceApiRelance([string]$Nom) {
+    & sc.exe config $Nom start= auto | Out-Null
+    & sc.exe failure $Nom reset= 86400 actions= restart/5000/restart/5000/restart/30000 | Out-Null
+    & sc.exe failureflag $Nom 1 | Out-Null
+}
+
+# Rôle publié par /api/healthcheck (principal | veille | ecarte) ou $null si l'API ne répond pas (ancienne version : « inconnu »).
+function Get-RoleApi([string]$Url, [int]$DelaiSecondes = 3) {
+    try {
+        $r = Invoke-RestMethod $Url -TimeoutSec $DelaiSecondes
+        if ($r.role) { return [string]$r.role } else { return "inconnu" }
+    } catch { return $null }
+}
+
+# Empreinte de la clé des jetons (Jwt__Cle) : 16 caractères hexadécimaux, identique à celle de l'API (Pharma.Api.exe --empreinte-jeton et
+# écran « 2e serveur »). HKDF-SHA256 écrit à la main (Windows PowerShell 5.1 n'a pas la classe HKDF) : jamais un hachage brut de la clé.
+# Un seul bloc d'expansion (32 octets). Ne jamais afficher ni journaliser la clé.
+function Get-EmpreinteJeton([string]$Cle) {
+    $hmac = { param([byte[]]$k, [byte[]]$m) $h = New-Object Security.Cryptography.HMACSHA256 -ArgumentList (,$k); try { ,$h.ComputeHash($m) } finally { $h.Dispose() } }
+    $utf8 = [Text.Encoding]::UTF8
+    $prk = & $hmac (New-Object byte[] 32) ($utf8.GetBytes($Cle))
+    $okm = & $hmac $prk ([byte[]]($utf8.GetBytes("pharmaofficine/empreinte-jeton/v1") + [byte]1))
+    $mac = & $hmac $okm ($utf8.GetBytes("empreinte-jeton"))
+    return (($mac[0..7] | ForEach-Object { $_.ToString("x2") }) -join "")
+}
+
+# Contrôle d'installation du 2e serveur (docs/second-serveur-local.md) : la clé des jetons est saisie MASQUÉE (jamais affichée, jamais écrite
+# dans un fichier ni dans un journal), son empreinte est comparée à celle du principal ; si elle diffère, l'installation s'arrête (throw).
+# $EmpreintePrincipal : affichée sur le principal par « Pharma.Api.exe --empreinte-jeton ». Retourne la clé (en mémoire seulement).
+function Read-CleJetonsControlee([string]$EmpreintePrincipal) {
+    if ($EmpreintePrincipal -notmatch '^[0-9a-f]{16}$') { throw "Empreinte du principal invalide : 16 caractères hexadécimaux en minuscules (Pharma.Api.exe --empreinte-jeton sur le principal)." }
+    $cle = Read-MotDePasse "Clé des jetons du principal (Jwt__Cle, 64 caractères au moins ; la saisie n'est pas affichée)"
+    if ($cle.Length -lt 64) { throw "Clé des jetons trop courte (64 caractères au moins) : installation arrêtée." }
+    $locale = Get-EmpreinteJeton $cle
+    if ($locale -ne $EmpreintePrincipal) {
+        throw "Clé des jetons DIFFÉRENTE de celle du principal (empreinte saisie $locale, principal $EmpreintePrincipal) : ressaisir la clé exacte du coffre. Installation arrêtée."
+    }
+    Write-Host "Clé des jetons identique à celle du principal (empreinte $locale)."
+    return $cle
+}

@@ -237,3 +237,56 @@ Retrait fait sur demande du titulaire (« go retrait 2e serveur »), sans essai 
 
 Restent sur le 5432 : les droits CREATEROLE, CREATEDB et REPLICATION de `pharma_app` (antérieurs à cet essai, § 2). Pour
 réinstaller : reprendre les § 3 à 8, avec la sortie de l'API copiée dès le départ (§ 8.4).
+
+## 12. Réplication synchrone par transaction (lot V2-7) : réglage et procédure d'essai
+
+### 12.1 Ce que fait l'API
+- Seules les transactions de **vente** (`VentesEcritureSql.EnregistrerAsync`), de **facture** (`FacturesSql.EmettreAsync`, `CorrigerAsync`) et de
+  **registre des psychotropes** (`NomenclatureSql.ChangerClasseAsync`, solde d'ouverture ; les délivrances sont dans la transaction de la vente)
+  passent par `ReplicationSynchrone` (`src/Pharma.Infrastructure/SecondServeur/ReplicationSynchrone.cs`).
+- Au début de la transaction : une lecture (`pg_stat_replication` non vide **et** `synchronous_standby_names` non vide). Si oui seulement :
+  `SET LOCAL synchronous_commit = remote_write` (valable pour cette transaction, retombe à la validation). Sinon : **aucun SET**, rien ne change
+  (officine à un seul serveur, ou 2e serveur arrêté : jamais de blocage des ventes).
+- Chien de garde : si la validation dure plus de **2 s** (2e serveur décroché pendant l'attente), l'API annule l'attente
+  (`pg_cancel_backend` sur son propre processus, seulement s'il est en attente `SyncRep`) : la transaction **reste validée sur ce serveur**,
+  la réplication continue en asynchrone. Le compteur `ReplicationSynchrone.Abandons` augmente et l'événement `AttenteAbandonnee` est levé
+  (à brancher sur l'alerte au titulaire, lot suivant). Le compte `pharma_app` annule ses propres processus : aucun droit supplémentaire.
+
+### 12.2 Réglage serveur proposé (non appliqué ; à lancer par le titulaire avec `psql -U postgres`)
+Sur le principal (5432) :
+```sql
+ALTER SYSTEM SET synchronous_standby_names = 'second_serveur';
+ALTER SYSTEM SET synchronous_commit = 'local';   -- défaut : aucune attente, sauf transaction qui demande remote_write
+SELECT pg_reload_conf();
+```
+Sur le 2e serveur, `primary_conninfo` doit contenir `application_name=second_serveur` (sinon le principal ne reconnaît pas la copie
+comme serveur synchrone : aucune attente, donc aucun effet, mais aucune garantie non plus). `pg_monitor` reste utile pour l'écran « 2e serveur ».
+Attention : sur l'instance de développement, le réglage est **global** (toutes les bases du 5432) ; seules les transactions ci-dessus
+demandent `remote_write`, les autres restent en `local`. Retour arrière : `ALTER SYSTEM RESET synchronous_standby_names;` puis `pg_reload_conf()`.
+
+### 12.3 Procédure d'essai réel (jouée au lot V2-8, après réinstallation du 2e serveur, § 3 à 8)
+Mesures sur une base d'essai (pas `pharmacie_dev`), 100 encaissements espèces d'une ligne par scénario, API en 5080 ; relever la durée
+médiane et le 95e centile (journal des requêtes de l'API ou chronomètre du script d'essai).
+
+| # | Scénario | Réglage | Attendu |
+|---|---|---|---|
+| 1 | Référence | `synchronous_standby_names` vide, 2e serveur arrêté | durée de base D0 |
+| 2 | 2e serveur connecté, `local` partout | réglage 12.2 sans remote_write (API d'avant le lot) | proche de D0 |
+| 3 | 2e serveur connecté, API du lot (`remote_write`) | réglage 12.2 | D0 + quelques ms ; relever le surcoût |
+| 4 | Comparaison | `ALTER SYSTEM SET synchronous_commit = 'on'` temporaire | plus lent que 3 (attente du rejeu) ; remettre `local` |
+| 5 | **2e serveur arrêté** (`pg_ctl stop`) | réglage 12.2 | **aucun blocage** : durée ≈ D0, aucun SET (vérifier `pg_stat_replication` vide) |
+| 6 | **Coupure pendant l'attente** : lancer des encaissements en boucle, arrêter le 2e serveur (`-m immediate`) ou couper le réseau en cours | réglage 12.2 | au plus une vente retardée d'environ 2 s, vente **validée**, `Abandons` +1, encaissements suivants sans attente |
+| 7 | Perte en cas de panne du principal | réglage 12.2, 2e serveur connecté | arrêter brutalement le principal juste après une vente confirmée : la vente est présente sur le 2e serveur promu (zéro vente perdue attendue) |
+| 8 | Retour du 2e serveur | réglage 12.2 | rattrapage, puis les transactions repassent en `remote_write` (vérifier `pg_stat_replication.sync_state = 'sync'`) |
+
+Contrôles pendant l'essai : `SELECT application_name, state, sync_state FROM pg_stat_replication;` ;
+`SELECT pid, wait_event FROM pg_stat_activity WHERE wait_event = 'SyncRep';` (doit être vide hors scénario 6) ;
+`SHOW synchronous_commit;` (reste `local` en dehors des transactions).
+Consigner les durées et les constats dans cette section après l'essai. Critères d'arrêt : un blocage de plus de 3 s au scénario 5 ou 6,
+ou une vente perdue au scénario 7.
+
+## 13. Clé des jetons commune et signature entre serveurs (vague 2, lot V2-2)
+- Les deux API doivent avoir la **même** `Jwt__Cle`. Sur un seul PC (deux instances) la variable est naturellement commune ; sur deux PC, `scripts/second-serveur/initialiser-second-serveur.ps1` exige `-EmpreinteJetonPrincipal` (affichée par `Pharma.Api.exe --empreinte-jeton` sur le principal), saisit la clé masquée et refuse de continuer si l'empreinte diffère.
+- Les routes `/api/inter-serveurs/*` n'existent que si `SecondServeur:AutreServeur` est réglé (sinon 404). L'appel doit venir de l'adresse déclarée de l'autre serveur (réseau privé) et être signé (HMAC dérivé de `Jwt__Cle`). L'API de l'autre serveur est jointe en `https://<AutreServeur>:5443` ; réglage `SecondServeur:AutreServeurApi` (URL https) pour une autre adresse ou un autre port.
+- Fenêtre d'horloge : `SecondServeur:Bascule:FenetreSignatureSecondes` (60 par défaut, 30 à 300). Deux PC dont les horloges diffèrent de plus d'une minute ne se reconnaissent pas : synchroniser l'heure Windows.
+- Sur un seul PC, l'essai de la signature se fait en réglant `SecondServeur:AutreServeur` sur `127.0.0.1` (adresse de boucle locale admise) : attention, l'API verrait alors sa propre base comme « l'autre principal » (voir plus haut) ; l'essai complet reste réservé à la vague 2 (lot V2-8).

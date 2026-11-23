@@ -3,6 +3,7 @@
 @inject SessionPoste Session
 @inject NavigationManager Nav
 @inject ReglagesPoste Reglages
+@inject VigiePoste Bascule
 @inject ConfigurationPoste Configuration
 @inject ImprimanteTickets Tickets
 @inject IJSRuntime JS
@@ -11,7 +12,16 @@
    au serveur, poste et vendeur connecté, date et heure (version dans l'infobulle). Ponctuelles, au centre, seulement s'il y a une
    information : pastilles (PastillesBarre) ; un clic ouvre l'écran correspondant pour qui y a droit. Avant la connexion : fixes seulement
    (et l'imprimante de tickets en échec). *@
-@if (InjoignableTropLongtemps)
+@if (Bascule.Situation != SituationBascule.Normale && Bascule.Message is { } messageBascule)
+{
+    @* Vigie du poste (lot V2-6) : attente, relais, indécis, isolé (ventes suspendues), bascule faite. Classe de la charte « bandeau-attention » ;
+       isolé et indécis : alerte (lue tout de suite), les autres : état. Un seul bandeau à la fois (prioritaire sur « Serveur injoignable »). *@
+    <div class="bandeau-attention" role="@(Bascule.Situation is SituationBascule.Isole or SituationBascule.Indecis ? "alert" : "status")" data-zone="bascule-@Bascule.Situation.ToString().ToLowerInvariant()"
+         style="position: fixed; left: 0; right: 0; bottom: 32px; z-index: 50; margin: 0">
+        @messageBascule
+    </div>
+}
+else if (InjoignableTropLongtemps)
 {
     @* Serveur injoignable plus de N secondes (poste.json, DelaiServeurInjoignableSecondes) : consigne claire (2026-11-16) *@
     <div class="bandeau-attention" role="alert" style="position: fixed; left: 0; right: 0; bottom: 32px; z-index: 50; margin: 0">
@@ -27,7 +37,7 @@
         {
             <button type="button" class="btn" style="margin-left: 8px" disabled="@verificationSecours" @onclick="BasculerPosteAsync">Basculer sur le 2e serveur (@secours) sur ce poste</button>
         }
-        @if (basculeFaite) { <strong> Poste réglé sur le 2e serveur : fermez puis rouvrez Tracodex Officine.</strong> }
+        @if (refusSecours is not null) { <strong data-champ="refus_secours" role="alert" style="display: block; margin-top: 6px">@refusSecours</strong> }
         @if (LiaisonServeur.MessageSecours(etatSecours) is { } messageSecours) { <strong data-champ="message_secours" style="display: block; margin-top: 6px">@messageSecours</strong> }
     </div>
 }
@@ -45,7 +55,7 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
     <button type="button" class="element-etat @(serveurJoignable == false ? "anormal" : null)" data-zone="serveur" title="Vérifier la liaison avec le serveur maintenant"
             @onclick="VerifierServeurAsync">
         <span class="voyant @(serveurJoignable switch { true => "ok", false => "ko", _ => null })" aria-hidden="true"></span>
-        @(serveurJoignable switch { true => "Connecté", false => "Serveur injoignable", _ => "Serveur…" })
+        @(serveurJoignable switch { true => Bascule.EnRelais ? "Connecté · par le 2e serveur (relais)" : Bascule.SurSecours ? "Connecté · 2e serveur" : "Connecté", false => "Serveur injoignable", _ => "Serveur…" })
     </button>
     @if (Identite is { Length: > 0 } identite)
     {
@@ -130,24 +140,28 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
 
     private bool verificationSecours;
     private EtatLiaison etatSecours = EtatLiaison.Joignable;
+    private string? refusSecours;
 
     /// <summary>
-    /// Bascule de ce poste : seulement si l'API du 2e serveur répond (elle ne démarre qu'une fois sa base promue par le script de
-    /// bascule : jamais un poste dirigé vers une copie en lecture seule). L'adresse de secours devient alors l'adresse de l'API
-    /// (poste.json), prise au prochain démarrage.
+    /// Bascule manuelle de ce poste, sans redémarrage : seulement si le 2e serveur répond ET annonce « principal » (healthcheck, champ role) :
+    /// jamais un poste dirigé vers une copie en veille. L'adresse courante change, poste.json échange les deux adresses (VigiePoste).
     /// </summary>
     private async Task BasculerPosteAsync()
     {
         var a = Reglages.Actuelles;
         if (a.AdresseApiSecours is not { Length: > 0 } secours) return;
-        (verificationSecours, etatSecours) = (true, EtatLiaison.Joignable);
+        (verificationSecours, etatSecours, refusSecours, basculeFaite) = (true, EtatLiaison.Joignable, null, false);
         StateHasChanged();
-        try { etatSecours = await ApiClient.VerifierApiAsync(secours); }
+        try
+        {
+            etatSecours = await ApiClient.VerifierApiAsync(secours);
+            if (etatSecours == EtatLiaison.Joignable)
+            {
+                refusSecours = await Bascule.BasculerManuellementAsync();
+                basculeFaite = refusSecours is null;
+            }
+        }
         finally { verificationSecours = false; }
-        if (etatSecours != EtatLiaison.Joignable) return;
-        var v = System.Text.Json.JsonSerializer.Deserialize<ReglagesPoste.Valeurs>(System.Text.Json.JsonSerializer.Serialize(a))!;
-        v.AdresseApi = a.AdresseApiSecours;
-        basculeFaite = Reglages.Enregistrer(v) is null;
     }
     private EtatPosteDto? etat;
     private AttenteSynchronisationDto? attenteSync;
@@ -259,6 +273,7 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
         Session.Changee += SurSession;
         Session.CaisseChangee += SurSession;
         Tickets.EtatChange += SurImprimante;
+        Bascule.Change += SurBascule;
         await ActualiserAsync(complet: true);
         _ = BouclerAsync();
     }
@@ -269,6 +284,7 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
         Session.Changee -= SurSession;
         Session.CaisseChangee -= SurSession;
         Tickets.EtatChange -= SurImprimante;
+        Bascule.Change -= SurBascule;
         minuterie?.Dispose();
     }
 
@@ -329,6 +345,9 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
     }
 
     private void SurImprimante() => _ = InvokeAsync(StateHasChanged);
+
+    // La vigie change depuis un autre fil : le rendu se refait sur le fil de l'écran
+    private void SurBascule() => _ = InvokeAsync(StateHasChanged);
 
     private async Task VerifierServeurAsync()
     {

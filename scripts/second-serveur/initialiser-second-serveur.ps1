@@ -7,17 +7,20 @@
     « 2e serveur »). PostgreSQL (même version majeure que le principal) et l'API Tracodex Officine (même version, même installateur)
     sont déjà installés sur ce PC. Étapes :
       1. contrôles : principal joignable (port PostgreSQL), version de PostgreSQL ;
-      2. API de secours : service arrêté et mis en démarrage MANUEL (elle refuse de toute façon de démarrer tant que la base est en
-         lecture seule) ;
+      2. API de secours : service arrêté, mis en démarrage AUTOMATIQUE avec relance sur erreur (vague 2 : l'API démarre en « veille »
+         sur la base en lecture seule dès que « SecondServeur:AutreServeur » est réglé ; sans ce réglage elle refuse de démarrer) ;
       3. PostgreSQL de ce PC arrêté ; son dossier de données gardé à côté (renommé « <dossier>_avant_second_<date> », jamais supprimé) ;
       4. pg_basebackup depuis le principal avec le slot « second_serveur » et -R (standby.signal et primary_conninfo écrits) :
          la base arrive complète, puis se met à jour en continu ; au démarrage de l'un ou l'autre PC, le retard se rattrape seul ;
       5. droits du compte du service PostgreSQL sur le nouveau dossier, démarrage, contrôle « en lecture seule » et « réception » ;
       6. clé de scellement : import du fichier exporté par le titulaire (-FichierCle ; le titulaire tape son mot de passe).
+    Clé des jetons (Jwt__Cle, même valeur que le principal : sans elle, bascule sans reconnexion, retrait et relais impossibles) : saisie
+    MASQUÉE avant toute modification, contrôlée par son empreinte (-EmpreinteJetonPrincipal) ; différente : l'installation s'arrête sans rien
+    toucher. Identique : enregistrée comme variable machine Jwt__Cle (jamais écrite dans un fichier).
     -Essai : n'arrête rien, n'écrit rien ; contrôle et affiche ce qui serait fait.
 
 .EXAMPLE
-    .\initialiser-second-serveur.ps1 -Principal 192.168.1.20 -FichierCle E:\cle-scellement-20261116-0123456789abcdef.pocle -Essai
+    .\initialiser-second-serveur.ps1 -Principal 192.168.1.20 -EmpreinteJetonPrincipal 0123456789abcdef -FichierCle E:\cle-scellement-20261116-0123456789abcdef.pocle -Essai
 #>
 param(
     [Parameter(Mandatory)] [string]$Principal,          # IPv4 du serveur principal
@@ -30,6 +33,7 @@ param(
     [string]$DossierApi      = "C:\Program Files\PharmaOfficine\Api",
     [string]$ServiceApi      = "PharmaOfficine API",
     [string]$FichierCle      = "",                     # export .pocle de la clé de scellement (clé USB du coffre)
+    [Parameter(Mandatory)] [string]$EmpreinteJetonPrincipal,   # 16 caractères, affichés sur le principal par « Pharma.Api.exe --empreinte-jeton »
     [switch]$Essai
 )
 . (Join-Path $PSScriptRoot "commun.ps1")
@@ -56,10 +60,14 @@ if (-not (Test-Path $exeApi)) { Write-Warning "API introuvable ($exeApi) : insta
 else { Write-Host ("API de secours : version {0}" -f (Get-Item $exeApi).VersionInfo.FileVersion) }
 if ($FichierCle -and -not (Test-Path $FichierCle)) { throw "Fichier de clé introuvable : $FichierCle" }
 
+# Clé des jetons : contrôle bloquant AVANT toute modification (aussi en -Essai : lecture seule, la clé reste en mémoire)
+$cleJetons = Read-CleJetonsControlee $EmpreinteJetonPrincipal
+
 $horodatage = "{0:yyyyMMdd_HHmmss}" -f (Get-Date)
 $ancien = "{0}_avant_second_{1}" -f $DossierDonnees.TrimEnd('\'), $horodatage
 if ($Essai) {
-    Write-Etape $mode "Service « $ServiceApi » arrêté et mis en démarrage manuel."
+    Write-Etape $mode "Clé des jetons contrôlée (empreinte identique) puis enregistrée en variable machine Jwt__Cle."
+    Write-Etape $mode "Service « $ServiceApi » arrêté, démarrage automatique et relance sur erreur (démarré à la fin si SecondServeur:AutreServeur est déjà réglé : voir le message final)."
     Write-Etape $mode "Service $ServicePg arrêté ; $DossierDonnees renommé en $ancien (gardé)."
     Write-Etape $mode "pg_basebackup -h $Principal -U $RoleReplication -S $Slot -X stream -R -D $DossierDonnees (mot de passe de $RoleReplication demandé)."
     Write-Etape $mode "Droits du service PostgreSQL sur $DossierDonnees, démarrage de $ServicePg, contrôle pg_is_in_recovery() = vrai."
@@ -71,11 +79,16 @@ if ($Essai) {
 $confirmation = Read-Host "La base PostgreSQL de CE PC va être remplacée par la copie du principal (l'ancienne est gardée sous $ancien). Taper OUI pour continuer"
 if ($confirmation -ne "OUI") { Write-Host "Abandon : rien n'a été modifié."; return }
 
+# Clé des jetons : variable machine (comme sur le principal), lue par le service au prochain démarrage de l'API
+[Environment]::SetEnvironmentVariable("Jwt__Cle", $cleJetons, "Machine")
+$cleJetons = $null
+Write-Host "Variable machine Jwt__Cle enregistrée (empreinte contrôlée)."
+
 # 2. API de secours en veille
 if (Get-Service $ServiceApi -ErrorAction SilentlyContinue) {
     Stop-Service $ServiceApi -ErrorAction SilentlyContinue
-    Set-Service $ServiceApi -StartupType Manual
-    Write-Host "Service « $ServiceApi » arrêté, démarrage manuel."
+    Set-ServiceApiRelance $ServiceApi
+    Write-Host "Service « $ServiceApi » arrêté, démarrage automatique avec relance sur erreur (il sera démarré après le réglage de SecondServeur:AutreServeur)."
 }
 
 # 3. Ancien dossier de données gardé
@@ -108,4 +121,5 @@ if ($FichierCle -and (Test-Path $exeApi)) {
     if ($LASTEXITCODE -ne 0) { Write-Warning "Clé non importée : relancer « `"$exeApi`" --importer-cle `"$FichierCle`" »." }
 }
 Write-Host "2e serveur prêt. Contrôle : verifier-second-serveur.ps1 -Principal $Principal (relève aussi la version et la clé pour l'écran « 2e serveur »)."
-Write-Host "Dans l'appsettings de l'API de CE serveur : « SecondServeur:AutreServeur » = $Principal."
+Write-Host "Dans l'appsettings de l'API de CE serveur : « SecondServeur:AutreServeur » = $Principal, puis démarrer le service « $ServiceApi » : l'API démarre en veille (healthcheck : role = veille)."
+Write-Host "Sans ce réglage l'API refuse de démarrer sur une base en lecture seule (le service relancé en boucle : ne pas le démarrer avant)."

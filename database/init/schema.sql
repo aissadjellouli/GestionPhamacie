@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 164 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 165 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, rejouer TOUTE la suite
 -- database/migration depuis le script 001 (mettre_a_jour_base_officine.ps1), jamais ce fichier ni un script isolé.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 164 ; à régénérer à chaque nouveau script.
+-- par les scripts 001 à 165 ; à régénérer à chaque nouveau script.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -9897,6 +9897,22 @@ CREATE TABLE public.pharmacie (
 
 
 --
+-- Name: presence_poste; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.presence_poste (
+    poste character varying(100) NOT NULL,
+    vu_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_presence_poste_nom CHECK ((length(btrim((poste)::text)) > 0))
+);
+
+--
+-- Name: TABLE presence_poste; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.presence_poste IS 'Présence des postes : dernier instant où le serveur principal a vu chaque poste (en-tête X-Pharma-Poste), recopiée sur le 2e serveur pour la règle de majorité ; jamais envoyée au central (script 165).';
+
+--
 -- Name: pret_bancaire; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -14822,6 +14838,14 @@ ALTER TABLE ONLY public.pharmacie
 
 
 --
+-- Name: presence_poste presence_poste_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.presence_poste
+    ADD CONSTRAINT presence_poste_pkey PRIMARY KEY (poste);
+
+
+--
 -- Name: pret_bancaire pret_bancaire_compte_id_reference_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -16356,6 +16380,13 @@ CREATE INDEX ix_patient_num_assure_base ON public.patient USING btree ("left"(re
 --
 
 CREATE INDEX ix_patient_prenom_minuscule ON public.patient USING btree (lower(prenom));
+
+
+--
+-- Name: ix_presence_poste_vu_le; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_presence_poste_vu_le ON public.presence_poste USING btree (vu_le);
 
 
 --

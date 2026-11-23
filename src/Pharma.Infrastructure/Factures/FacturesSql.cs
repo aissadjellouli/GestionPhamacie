@@ -117,6 +117,7 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
     {
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
+        var synchrone = await Pharma.Infrastructure.SecondServeur.ReplicationSynchrone.ActiverAsync(cx, tx, ct);
         await VerrouillerEtControler(cx, tx, f, remplaceId, ct);
         if (f.Type == "avoir" && f.FactureOrigineId is { } factureAvoir)
             await ControlerAvoirSousVerrouAsync(cx, tx, factureAvoir, f.Totaux.Ttc, f.Motif, ct);
@@ -177,7 +178,7 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
                 cmd.Parameters.AddWithValue(id);
                 if (await cmd.ExecuteNonQueryAsync(ct) == 0) throw new RegleMetierException("La facture à remplacer n’est plus « rejetée » : rechargez-la.");
             }
-        await tx.CommitAsync(ct);
+        await Pharma.Infrastructure.SecondServeur.ReplicationSynchrone.ValiderAsync(db, cx, tx, synchrone, ct);
         return (id, numero);
     }
 
@@ -553,6 +554,7 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
     {
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
+        var synchrone = await Pharma.Infrastructure.SecondServeur.ReplicationSynchrone.ActiverAsync(cx, tx, ct);
         await VerrouillerEtControler(cx, tx, f, id, ct);
 
         // Verrou de la facture (même verrou que l'encaissement et l'avoir) dans une requête à part : en lecture validée, une requête
@@ -616,7 +618,7 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
             cmd.Parameters.Add(Date(f.Echeance));
             await cmd.ExecuteNonQueryAsync(ct);
         }
-        await tx.CommitAsync(ct);
+        await Pharma.Infrastructure.SecondServeur.ReplicationSynchrone.ValiderAsync(db, cx, tx, synchrone, ct);
     }
 
     public async Task HorsSuiviAsync(long id, bool horsSuivi, string? motif, CancellationToken ct = default)

@@ -55,6 +55,18 @@ var ceServeur = new Pharma.Application.SecondServeur.CeServeur(Pharma.Infrastruc
     Pharma.Application.SecondServeur.DossiersServeur.Choisir(demarrage.DossierMdn, builder.Configuration["Mdn:Dossier"]),
     typeof(Program).Assembly.GetName().Version is { } va ? (va.Build > 0 ? $"{va.Major}.{va.Minor:00}.{va.Build}" : $"{va.Major}.{va.Minor:00}") : null);
 builder.Services.AddSingleton(ceServeur);
+// Bascule vague 2, lot V2-2 : signature entre serveurs (clé dérivée de Jwt:Cle), contrôle de l'appelant, client signé, suivi de la clé des jetons.
+// Sans 2e serveur déclaré (SecondServeur:AutreServeur) ou sans clé : mécanisme inactif (routes /api/inter-serveurs en 404, aucune sonde)
+builder.Services.AddSingleton(new Pharma.Application.SecondServeur.ControleAppelantInterServeurs(builder.Configuration["SecondServeur:AutreServeur"]));
+builder.Services.AddSingleton(new Pharma.Application.SecondServeur.SuiviCleJetons());
+if (!string.IsNullOrWhiteSpace(builder.Configuration["Jwt:Cle"])
+    && Pharma.Application.SecondServeur.SignatureInterServeurs.NomValide(ceServeur.Nom))
+    builder.Services.AddSingleton(new Pharma.Application.SecondServeur.SignatureInterServeurs(
+        builder.Configuration["Jwt:Cle"]!, ceServeur.Nom, Pharma.Api.Securite.ReglagesInterServeurs.Fenetre(builder.Configuration)));
+builder.Services.AddHttpClient(Pharma.Api.Securite.ClientInterServeurs.NomClient);
+builder.Services.AddSingleton<Pharma.Api.Securite.IClientInterServeurs>(sp => new Pharma.Api.Securite.ClientInterServeurs(
+    sp.GetRequiredService<IHttpClientFactory>(), sp.GetService<Pharma.Application.SecondServeur.SignatureInterServeurs>(),
+    sp.GetRequiredService<IConfiguration>(), sp.GetRequiredService<ILogger<Pharma.Api.Securite.ClientInterServeurs>>()));
 // Détection d'un serveur écarté en cours de marche (bascule du 2e serveur, lot 1) : relevés en lecture seule des deux bases
 builder.Services.AddSingleton<Pharma.Application.SecondServeur.IReleveServeurs>(new Pharma.Infrastructure.SecondServeur.ReleveServeursSql(
     builder.Configuration.GetConnectionString("Pharmacie") ?? "", builder.Configuration["SecondServeur:AutreServeur"]));
@@ -78,6 +90,13 @@ builder.Services.AddSingleton(ged);
 var demo = builder.Configuration.GetSection(Pharma.Api.Demo.ReglagesDemo.Section).Get<Pharma.Api.Demo.ReglagesDemo>() ?? new Pharma.Api.Demo.ReglagesDemo();
 builder.Services.Configure<Pharma.Api.Demo.ReglagesDemo>(builder.Configuration.GetSection(Pharma.Api.Demo.ReglagesDemo.Section));
 var marqueurDemo = await Pharma.Infrastructure.Demo.MarqueurDemo.LireAsync(builder.Configuration.GetConnectionString("Pharmacie") ?? "");
+
+// Vague 2, lot V2-1 : 2e serveur déclaré + base en lecture seule => l'API démarre en VEILLE (aucune écriture, aucune tâche de fond, tout en 503
+// « serveur_en_veille » sauf healthcheck / vigie / inter-serveurs). Sans 2e serveur déclaré : comportement inchangé (refus de démarrer).
+var veille = Pharma.Application.SecondServeur.ModeVeille.AuDemarrage(
+    Pharma.Application.SecondServeur.DeuxServeursDeclares.Est(builder.Configuration["SecondServeur:AutreServeur"]), demarrage.BaseEnRecovery, demo.Actif);
+var etatVeille = new Pharma.Application.SecondServeur.VeilleServeur(veille);
+builder.Services.AddSingleton<Pharma.Application.SecondServeur.IVeilleServeur>(etatVeille);
 
 // Composition : cas d'usage, adaptateurs, services propres à l'hôte
 builder.Services.AddApplication();
@@ -114,7 +133,12 @@ builder.Services.AddSingleton<Pharma.Api.Synchronisation.ClientServeurCentralHtt
 builder.Services.AddSingleton<Pharma.Application.Synchronisation.IClientServeurCentral>(sp => sp.GetRequiredService<Pharma.Api.Synchronisation.ClientServeurCentralHttp>());
 builder.Services.AddSingleton<Pharma.Application.Synchronisation.IClientChargementCentral>(sp => sp.GetRequiredService<Pharma.Api.Synchronisation.ClientServeurCentralHttp>());
 builder.Services.AddScoped<Pharma.Application.Synchronisation.ITelechargementReferentiel, Pharma.Api.Synchronisation.TelechargementReferentielHttp>();
-if (!demo.Actif)
+if (veille)
+{
+    // Veille : la base est une copie en lecture seule ; seule tâche de fond = surveillance de la promotion (arrêt pour redémarrer en principal)
+    builder.Services.AddHostedService<Pharma.Api.Taches.SurveillancePromotionVeille>();
+}
+else if (!demo.Actif)
 {
     // Tâches qui sortent de l'officine ou touchent ses sauvegardes : jamais lancées en démonstration (docs/regles-metier.md)
     builder.Services.AddHostedService<Pharma.Api.Taches.EnvoiSynchronisation>();
@@ -124,23 +148,34 @@ if (!demo.Actif)
     builder.Services.AddHostedService<EnvoiNotifications>();
     builder.Services.AddHostedService<SauvegardesAutomatiques>();
     builder.Services.AddHostedService<SurveillanceSecondServeur>();
+    builder.Services.AddHostedService<Pharma.Api.Securite.SurveillanceInterServeurs>();
+    // Vague 2, V2-1b : règle de majorité Q32 côté serveur 1 (isolement et levée automatique) ; jamais suspendue par l'écart (elle lève l'isolement)
+    builder.Services.AddHostedService<Pharma.Api.Taches.SurveillanceIsolementTache>();
+    // Vague 2, V2-7 : alerte au titulaire quand l'attente de la réplication synchrone est abandonnée (au plus une par heure)
+    builder.Services.AddHostedService<Pharma.Api.Taches.AlerteReplicationSynchrone>();
 }
 else
 {
     // Démonstration : nomenclature nationale importée si la base n'en a pas (premier démarrage, remise à zéro)
     builder.Services.AddHostedService<Pharma.Api.Demo.ImportNomenclatureDemo>();
 }
-builder.Services.AddHostedService<AlertesQuotidiennes>();
-builder.Services.AddHostedService<SurveillancePeriodique>();
-builder.Services.AddHostedService<VerificationIntegriteNocturne>();
-builder.Services.AddHostedService<ScellementMensuelRegistre>();
-builder.Services.AddHostedService<ClotureFiscaleMensuelle>();
-builder.Services.AddHostedService<SerialisationHorsLigne>();
+if (!veille)
+{
+    builder.Services.AddHostedService<AlertesQuotidiennes>();
+    builder.Services.AddHostedService<SurveillancePeriodique>();
+    builder.Services.AddHostedService<VerificationIntegriteNocturne>();
+    builder.Services.AddHostedService<ScellementMensuelRegistre>();
+    builder.Services.AddHostedService<ClotureFiscaleMensuelle>();
+    builder.Services.AddHostedService<SerialisationHorsLigne>();
+}
 // Serveur écarté (lecture seule) : les tâches de fond qui écrivent sont arrêtées, relancées à la levée ; sauvegardes et surveillance du 2e serveur restent en marche
 TacheSuspendueSiEcarte.Envelopper(builder.Services, typeof(Pharma.Api.Taches.EnvoiSynchronisation), typeof(Pharma.Api.Taches.SurveillanceSynchronisation),
     typeof(Pharma.Api.Taches.PurgeSynchronisation), typeof(EnvoiNotifications), typeof(AlertesQuotidiennes), typeof(SurveillancePeriodique),
     typeof(VerificationIntegriteNocturne), typeof(ScellementMensuelRegistre), typeof(ClotureFiscaleMensuelle), typeof(SerialisationHorsLigne));
 builder.Services.AddProblemDetails();
+// Vigie du 2e serveur (V2-3) : rapports des postes, décision de promotion (verdict seulement). Mode veille = IVeilleServeur (lot V2-1)
+builder.Services.AjouterVigieSecondServeur(builder.Configuration, optionsJournal.Dossier);
+builder.Services.AddHostedService<Pharma.Api.Taches.VigieSecondServeurTache>();
 // Limite de débit par adresse IP sur les routes de connexion (mots de passe, codes comptoir, super admin)
 builder.Services.AjouterLimiteConnexions(builder.Configuration);
 
@@ -194,9 +229,16 @@ if (args.Contains(ConsoleSuperAdmin.Argument))
 if (ConsoleCleScellement.Concerne(args))
     return ConsoleCleScellement.Executer(app.Services, args);
 
+// Empreinte de la clé des jetons de ce PC (comparée à celle de l'autre serveur) : Pharma.Api.exe --empreinte-jeton (le serveur ne démarre pas)
+if (ConsoleEmpreinteJeton.Concerne(args))
+    return ConsoleEmpreinteJeton.Executer(app.Configuration);
+
 // Levée d'un faux positif « serveur écarté » : Pharma.Api.exe --lever-ecart [--identifiant X] [--motif "texte"] (compte titulaire ; le serveur ne démarre pas)
 if (ConsoleLeverEcart.Concerne(args))
     return await ConsoleLeverEcart.ExecuterAsync(app.Services, args);
+
+// Routes signées entre serveurs (vague 2, lot V2-2) : avant le barrage (permises serveur écarté), sans jeton d'utilisateur
+app.UseMiddleware<Pharma.Api.Securite.InterServeursMiddleware>();
 
 // Serveur écarté (bascule du 2e serveur, lot 3) : l'écart gardé en base est relu (état collant, même si l'autre serveur ne répond plus) ;
 // face à un autre serveur principal plus récent (Q8), ou à la même timeline (Q10), ce serveur démarre EN LECTURE SEULE au lieu d'être refusé.
@@ -204,7 +246,7 @@ if (ConsoleLeverEcart.Concerne(args))
 var gardienEcart = app.Services.GetRequiredService<Pharma.Application.SecondServeur.GardienServeurEcarte>();
 gardienEcart.Demarrer();
 var suiviEcart = app.Services.GetRequiredService<Pharma.Application.SecondServeur.SuiviServeurEcarte>();
-if (!demo.Actif)
+if (!demo.Actif && !veille)   // veille : aucune lecture ni écriture de l'écart (relu au redémarrage en principal)
 {
     await gardienEcart.ChargerAsync();
     if (gardienEcart.EcartIgnore is { } ignore)
@@ -224,7 +266,7 @@ if (!demo.Actif)
 
 // Jamais deux API qui écrivent : base en lecture seule (2e serveur en veille) ou autre serveur principal => refus, message clair
 if (suiviEcart.Ecart is null && Pharma.Application.SecondServeur.ReplicationOfficine.RefusDemarrage(demarrage.BaseEnRecovery, demarrage.AutreServeurPrincipal,
-        builder.Configuration["SecondServeur:AutreServeur"], demarrage.Timeline, demarrage.TimelineAutre) is { } refusServeur)
+        builder.Configuration["SecondServeur:AutreServeur"], demarrage.Timeline, demarrage.TimelineAutre, veillePermise: veille) is { } refusServeur)
 {
     app.Logger.LogCritical("{Refus}", refusServeur);
     Console.Error.WriteLine(refusServeur);
@@ -352,7 +394,11 @@ app.Use(async (ctx, suite) =>
 });
 
 // Serveur écarté (bascule du 2e serveur, lot 3) : toute requête refusée (503 « serveur_ecarte », adresse du serveur retenu), sauf /api/healthcheck
+// Présence des postes (V2-1b) : en-tête X-Pharma-Poste noté avant les barrages, healthcheck compris
+app.UseMiddleware<Pharma.Api.Securite.PresencePostesMiddleware>();
 app.Use(BarrageServeurEcarte.Filtrer);
+// API en veille (vague 2, V2-1) : 503 « serveur_en_veille » sauf healthcheck, vigie, inter-serveurs (et relais du lot V2-5 si branché)
+app.Use(BarrageServeurVeille.Filtrer);
 
 // Démonstration : fonctions coupées refusées (422 « Indisponible en démonstration : … »), avant toute authentification
 if (demo.Actif) app.Use(Pharma.Api.Demo.FonctionsCoupeesDemo.FiltrerAsync);
@@ -373,6 +419,7 @@ app.UseAuthorization();
 app.MapPharmaEndpoints();
 
 app.Run();
-return 0;
+// Veille arrêtée après une promotion : code dédié, le service Windows (redémarrage sur échec) relance l'API en principal
+return etatVeille.RedemarrageDemande ? Pharma.Application.SecondServeur.ModeVeille.CodeSortieRedemarrage : 0;
 
 public partial class Program;

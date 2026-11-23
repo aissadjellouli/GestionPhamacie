@@ -13,7 +13,7 @@ public class RoutesProtegeesTests
     private static readonly HashSet<string> Publiques =
     [
         "POST /api/auth/connexion", "POST /api/auth/connexion-code",
-        "GET /api/healthcheck", "GET /api/demo", "POST /api/super-admin/connexion",
+        "GET /api/healthcheck", "POST /api/vigie/rapport", "GET /api/demo", "POST /api/super-admin/connexion",
     ];
 
     private static readonly Regex Registration = new(@"^\s*(?:var\s+(?<var>\w+)\s*=\s*)?(?<cible>\w+)\.Map(?<verbe>Get|Post|Put|Delete|Patch|Group|Methods)\(""(?<route>[^""]*)""",
@@ -73,6 +73,22 @@ public class RoutesProtegeesTests
         var sansGarde = RoutesSansGarde();
         Assert.True(sansGarde.Count == 0, "Routes sans Exiger* (ni sur la route ni sur son groupe) : "
             + string.Join(" ; ", sansGarde.Select(r => $"{r.Route} ({r.Ou})")));
+    }
+
+    [Fact]
+    public void Les_routes_hors_dossier_Endpoints_sont_toutes_sous_le_prefixe_inter_serveurs_signe()
+    {
+        // Vague 2 : /api/inter-serveurs/** est mappé dans Securite/InterServeurs.cs, sans jeton d'utilisateur mais protégé par la signature
+        // (InterServeursMiddleware). Toute autre route mappée hors du dossier Endpoints échapperait à l'analyse ci-dessus : refusée ici.
+        var api = Path.Combine(RacineDepot(), "src", "Pharma.Api");
+        var horsEndpoints = Directory.GetFiles(api, "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}Endpoints{Path.DirectorySeparatorChar}")
+                && !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
+            .SelectMany(f => File.ReadAllLines(f).Select(l => (f, l)))
+            .Where(x => Regex.IsMatch(x.l, @"\.Map(Get|Post|Put|Delete|Patch|Methods)\("))
+            .ToList();
+        Assert.All(horsEndpoints, x => Assert.Contains("InterServeursMiddleware.Prefixe", x.l));
+        Assert.NotEmpty(horsEndpoints);
     }
 
     [Fact]

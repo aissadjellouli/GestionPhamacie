@@ -19,6 +19,7 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
         var v = a.Vente;
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
+        var synchrone = await Pharma.Infrastructure.SecondServeur.ReplicationSynchrone.ActiverAsync(cx, tx, ct);
 
         // La caisse doit être encore ouverte, et le rester jusqu'à la fin de la transaction : le verrou partagé fait
         // attendre une clôture simultanée (SessionsCaisseSql.CloturerAsync), qui relit ensuite les espèces attendues
@@ -353,7 +354,7 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
         // Journaux obligatoires de la vente (produit bloqué, sans ordonnance, écarts Chifa, reste à charge saisi) : dans la même transaction
         await JournalSql.EcrireEntreesAsync(cx, tx, a.Journaux, new Pharma.Application.Commun.ContexteJournal(venteId, numero), ct);
 
-        await tx.CommitAsync(ct);
+        await Pharma.Infrastructure.SecondServeur.ReplicationSynchrone.ValiderAsync(db, cx, tx, synchrone, ct);
         return (venteId, numero);
     }
 

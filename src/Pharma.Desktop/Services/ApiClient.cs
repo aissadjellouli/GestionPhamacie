@@ -8,7 +8,7 @@ using Pharma.Shared;
 namespace Pharma.Desktop.Services;
 
 /// <summary>Session de l'employé connecté sur ce poste.</summary>
-public sealed class SessionPoste
+public sealed class SessionPoste : ISessionVigie
 {
     public string? Jeton { get; private set; }
     public string? NomComplet { get; private set; }
@@ -112,6 +112,8 @@ public sealed class SessionPoste
     public bool ReleveFaite { get; private set; }
     public void MarquerReleveFaite() => ReleveFaite = true;
 
+    void ISessionVigie.FermerPourRepli(string motif) => Fermer(motif);
+
     public void Fermer(string? motif = null, bool changementUtilisateur = false)
     {
         ReleveFaite = false;
@@ -129,7 +131,8 @@ public sealed class SessionPoste
 public sealed record ReponseLotFefo(LotFefoDto? Lot, IReadOnlyList<LotEcarteDto> Ecartes, string? Erreur);
 
 /// <summary>Appels à l'API locale. Chaque méthode renvoie le résultat ou un message d'erreur lisible.</summary>
-public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAutorisation? autorisations = null, TachesLaissees? tachesLaissees = null)
+public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAutorisation? autorisations = null, TachesLaissees? tachesLaissees = null,
+    AdresseApiCourante? adresseCourante = null, IBasculePoste? bascule = null)
 {
     private const string Injoignable = "Serveur de la pharmacie injoignable : vérifiez que le PC serveur est allumé.";
 
@@ -661,8 +664,22 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(ApercuVenteDto?, string?)> CalculerVenteAsync(CommandeVenteDto commande) =>
         PostAsync<CommandeVenteDto, ApercuVenteDto>("api/caisse/calculer", commande);
 
-    public Task<(VenteEncaisseeDto?, string?)> EncaisserAsync(CommandeVenteDto commande) =>
-        PostAsync<CommandeVenteDto, VenteEncaisseeDto>("api/caisse/encaisser", commande);
+    public async Task<(VenteEncaisseeDto?, string?)> EncaisserAsync(CommandeVenteDto commande)
+    {
+        var generation = bascule?.Generation ?? 0;
+        var resultat = await PostAsync<CommandeVenteDto, VenteEncaisseeDto>("api/caisse/encaisser", commande);
+        // Q25 : encaissement interrompu par la panne du serveur principal : si le poste a basculé sur le 2e serveur, la vente est renvoyée
+        // UNE fois, avec la même clé d'encaissement (le serveur rend la vente déjà arrivée par réplication au lieu d'en créer une seconde).
+        // Un seul serveur : rien de tout cela, comportement inchangé.
+        if (resultat.Item2 is null || bascule is not { Active: true } || !session.EstConnecte) return resultat;
+        if (bascule.Generation == generation)
+        {
+            if (resultat.Item2 != Injoignable && resultat.Item2 != MessageDelaiDepasse) return resultat;
+            await bascule.ApresEchecAsync();
+        }
+        if (bascule.Generation == generation || !session.EstConnecte) return resultat;
+        return await PostAsync<CommandeVenteDto, VenteEncaisseeDto>("api/caisse/encaisser", commande);
+    }
 
     /// <param name="confirmerZero">Clôture avec 0 DA compté confirmée par l'employé (sinon refusée par le serveur).</param>
     public Task<(ClotureDto?, string?)> CloturerCaisseAsync(Dictionary<string, decimal> saisies, bool confirmerZero = false) =>
@@ -1240,12 +1257,12 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     /// débogueur ne s'arrête donc plus sur une TaskCanceledException quand l'API est arrêtée, en pause ou lente à démarrer.
     /// </summary>
     /// <summary>Adresse de l'API utilisée par ce poste (affichage).</summary>
-    public string AdresseServeur => http.BaseAddress?.ToString() ?? "?";
+    public string AdresseServeur => (adresseCourante?.Actuelle ?? http.BaseAddress)?.ToString() ?? "?";
 
     public async Task<bool> ServeurJoignableAsync()
     {
         var delai = TimeSpan.FromSeconds(4);
-        if (http.BaseAddress is not { } adresse || !await PortOuvertAsync(adresse.Host, adresse.Port, delai))
+        if ((adresseCourante?.Actuelle ?? http.BaseAddress) is not { } adresse || !await PortOuvertAsync(adresse.Host, adresse.Port, delai))
         {
             Liaison = EtatLiaison.Injoignable;
             JournalLiaison.Noter("serveur", Liaison, null);

@@ -817,6 +817,7 @@ Scripts (dans `scripts\second-serveur\`, à copier sur les deux serveurs avec `c
 - [ ] **7.** 2e serveur : mêmes variables que le principal. **Où** : 2e serveur. **Compte** : administrateur Windows.
   - `ConnectionStrings__Pharmacie` : `Host=localhost` (la base locale), même compte `pharma_app`, même mot de passe.
   - `Jwt__Cle` : **la même valeur** que le principal (transmise au coffre, jamais par courriel).
+    - **Contrôle par empreinte** (bascule, vague 2) : sur le principal, `Pharma.Api.exe --empreinte-jeton` affiche 16 caractères (jamais la clé). Le script `initialiser-second-serveur.ps1 -EmpreinteJetonPrincipal <ces 16 caractères>` demande la clé **masquée**, la compare et **s'arrête** si elle diffère ; sinon il l'enregistre en variable machine `Jwt__Cle`. Contrôle ensuite possible avec `verifier-second-serveur.ps1`. Sans clé commune, la bascule se fait sans reconnexion des postes, le retrait et le relais sont impossibles ; en marche, une alerte au titulaire le signale (« clés des jetons différentes »).
   - `Chifa__DossierExport` : propre à ce PC (étape 4.4 du parcours A).
   - **Ne pas** régler `AutoriserHttpReseau`.
   - Vérifier la longueur de `Jwt__Cle` (64 ou plus) comme à l'étape 4.4 du parcours A.
@@ -849,8 +850,8 @@ Scripts (dans `scripts\second-serveur\`, à copier sur les deux serveurs avec `c
 - [ ] **9.** 2e serveur : initialiser la réplique. **Où** : 2e serveur. **Compte** : administrateur Windows (+ mot de passe `postgres`, mot de passe de réplication).
   ```powershell
   cd "<dossier>\scripts\second-serveur"
-  .\initialiser-second-serveur.ps1 -Principal <IP du principal> -FichierCle E:\cle-scellement-<...>.pocle -Essai
-  .\initialiser-second-serveur.ps1 -Principal <IP du principal> -FichierCle E:\cle-scellement-<...>.pocle
+  .\initialiser-second-serveur.ps1 -Principal <IP du principal> -EmpreinteJetonPrincipal <empreinte du principal> -FichierCle E:\cle-scellement-<...>.pocle -Essai
+  .\initialiser-second-serveur.ps1 -Principal <IP du principal> -EmpreinteJetonPrincipal <empreinte du principal> -FichierCle E:\cle-scellement-<...>.pocle
   ```
   - Le script demande de taper `OUI`, puis le mot de passe du rôle de réplication, puis **le titulaire** tape le mot de passe du fichier de clé.
   - **Attendu** : le contrôle « lecture seule » réussit. Le service de l'API reste **arrêté**.

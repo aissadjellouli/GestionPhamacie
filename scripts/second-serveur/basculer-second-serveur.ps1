@@ -12,7 +12,9 @@
          sinon refus : arrêtez son API et PostgreSQL, ou débranchez-le du réseau ;
       2. dernière transaction reçue (les ventes postérieures, non reçues, seraient à ressaisir) ; confirmation tapée ;
       3. promotion de la base : pg_promote() ;
-      4. API de ce PC en démarrage automatique et démarrée ; contrôle de /api/healthcheck ;
+      4. API de ce PC : depuis la vague 2, elle tourne déjà en « veille » (healthcheck role = veille) ; le service est mis en démarrage
+         automatique avec relance sur erreur, puis REDÉMARRÉ (la veille s'arrêterait d'elle-même en quelques secondes avec le code 10) ;
+         contrôle de /api/healthcheck : role = principal exigé (un simple « 200 » ne prouve plus rien : la veille répond aussi) ;
       5. consignes : chaque poste bascule par le bouton « Basculer sur le 2e serveur » du bandeau « Serveur injoignable »
          (adresse AdresseApiSecours) ; l'ancien principal ne doit PAS redémarrer son API : à son retour, remettre-en-second.ps1.
     -Essai : ne promeut rien, ne démarre rien ; fait les contrôles et affiche ce qui serait fait.
@@ -58,7 +60,7 @@ $adresses = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
     Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" } | Select-Object -ExpandProperty IPAddress
 if ($Essai) {
     Write-Etape $mode "Promotion de la base de ce PC : SELECT pg_promote(true, 60)."
-    Write-Etape $mode "Service « $ServiceApi » : démarrage automatique, démarré ; contrôle de /api/healthcheck."
+    Write-Etape $mode "Service « $ServiceApi » : démarrage automatique et relance sur erreur, redémarré (ou démarré s'il était arrêté) ; contrôle de /api/healthcheck : role = principal."
     foreach ($ip in $adresses) { Write-Etape $mode "Adresse de l'API pour les postes (AdresseApiSecours) : ${Schema}://${ip}:$PortApi/" }
     Write-Host "$mode Simulation terminée : rien n'a été modifié."
     return
@@ -71,16 +73,23 @@ if ((Local "SELECT pg_is_in_recovery()") -ne "f") { throw "La base est encore en
 Write-Host "Base promue : ce PC est le serveur principal."
 
 # 4. API
-Set-Service $ServiceApi -StartupType Automatic
-Start-Service $ServiceApi
+Set-ServiceApiRelance $ServiceApi
+# L'API en veille a déjà vu la promotion (relevé toutes les 5 s) et peut être en train de s'arrêter seule (code 10) : on attend 8 s,
+# puis on redémarre explicitement si elle tourne encore (rien d'autre ne la relancerait en principal), ou on la démarre si elle est arrêtée.
+Start-Sleep -Seconds 8
+$svc = Get-Service $ServiceApi
+if ($svc.Status -eq "Running") { Restart-Service $ServiceApi -Force }
+elseif ($svc.Status -eq "Stopped") { Start-Service $ServiceApi }
 $ok = $false
+$role = $null
 foreach ($i in 1..20) {
     Start-Sleep -Seconds 3
-    try { $ok = (Invoke-WebRequest "${Schema}://localhost:$PortApi/api/healthcheck" -UseBasicParsing -TimeoutSec 3).StatusCode -eq 200 } catch { $ok = $false }
+    $role = Get-RoleApi "${Schema}://localhost:$PortApi/api/healthcheck"
+    $ok = $role -eq "principal"
     if ($ok) { break }
 }
-if (-not $ok) { Write-Warning "L'API ne répond pas encore : voir le journal de l'API (section « Journaux » de son appsettings) et le message de refus éventuel." }
-else { Write-Host "API démarrée et joignable." }
+if (-not $ok) { Write-Warning ("L'API n'est pas encore principale (rôle lu : {0}) : voir le journal de l'API (section « Journaux » de son appsettings) et le message de refus éventuel. Un rôle « inconnu » = ancienne version de l'API (sans veille) : mettre à jour l'API." -f $(if ($role) { $role } else { "aucune réponse" })) }
+else { Write-Host "API démarrée, joignable, rôle principal." }
 
 # 5. Consignes
 foreach ($ip in $adresses) { Write-Host "Postes : bouton « Basculer sur le 2e serveur » du bandeau (adresse ${Schema}://${ip}:$PortApi/), puis rouvrir Tracodex Officine." }

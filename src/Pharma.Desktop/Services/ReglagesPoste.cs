@@ -8,7 +8,7 @@ namespace Pharma.Desktop.Services;
 /// Réglages propres à ce PC (imprimantes), enregistrés dans C:\ProgramData\PharmaOfficine\poste.json :
 /// chaque poste a ses propres imprimantes. Les variables d'environnement servent de valeur par défaut.
 /// </summary>
-public sealed class ReglagesPoste
+public sealed class ReglagesPoste : IReglagesVigie
 {
     public sealed class Valeurs
     {
@@ -30,6 +30,8 @@ public sealed class ReglagesPoste
         public string? AdresseApi { get; set; }
         /// <summary>Adresse de l'API du PC de secours (affichée dans le bandeau « Serveur injoignable », proposée pour basculer le poste).</summary>
         public string? AdresseApiSecours { get; set; }
+        /// <summary>Case « Basculer automatiquement » de ce poste (lot V2-6) ; null : cochée dès qu'une adresse de secours est réglée.</summary>
+        public bool? BasculeAutomatique { get; set; }
         /// <summary>Délai (secondes) avant le bandeau « Serveur injoignable » ; null : 60 secondes.</summary>
         public int? DelaiServeurInjoignableSecondes { get; set; }
         /// <summary>Dernier onglet choisi à l'écran de connexion de ce poste : « code » (code comptoir) ou « mot_de_passe » ; null : mot de passe.</summary>

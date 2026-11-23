@@ -24,5 +24,11 @@
     <Compile Include="..\..\src\Pharma.Desktop\Services\FichierTachesLaissees.cs" Link="Poste\FichierTachesLaissees.cs" />
     <!-- Règles d'affichage de la barre d'état du poste (pastilles, regroupement, serveur injoignable) -->
     <Compile Include="..\..\src\Pharma.Desktop\Services\PastillesBarre.cs" Link="Poste\PastillesBarre.cs" />
+    <!-- Bascule du poste sur le 2e serveur (lot V2-6) : adresse courante, décisions, vigie, panier gardé en mémoire (sans interface ni réseau réel) -->
+    <Compile Include="..\..\src\Pharma.Desktop\Services\ReglagesPoste.cs" Link="Poste\ReglagesPoste.cs" />
+    <Compile Include="..\..\src\Pharma.Desktop\Services\AdresseApiCourante.cs" Link="Poste\AdresseApiCourante.cs" />
+    <Compile Include="..\..\src\Pharma.Desktop\Services\BasculeSecours.cs" Link="Poste\BasculeSecours.cs" />
+    <Compile Include="..\..\src\Pharma.Desktop\Services\PanierBascule.cs" Link="Poste\PanierBascule.cs" />
+    <Compile Include="..\..\src\Pharma.Desktop\Services\VigiePoste.cs" Link="Poste\VigiePoste.cs" />
   </ItemGroup>
 </Project>

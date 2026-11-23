@@ -77,7 +77,16 @@ public static class DecisionServeurEcarte
 /// (décision du titulaire sur Q10) : les deux serveurs se mettent en lecture seule, aucun n'est « retenu » (ServeurRetenu null) et
 /// l'état n'est pas gardé en base (la table serveur_ecarte exige une timeline retenue plus grande) ; un redémarrage le relit.
 /// </summary>
-public sealed record EcartDetecte(DateTime DepuisUtc, string? ServeurRetenu, long TimelineLocale, long TimelineRetenue, bool Indecis = false);
+/// <param name="Isole">
+/// Vague 2, lot V2-1b (règle de majorité, Q32) : ce serveur s'est lui-même mis en lecture seule (copie perdue ET moins de la moitié des postes vus), sans
+/// serveur retenu (motif « isole »). Comme « Indecis », cet état n'est PAS gardé en base : serveur_ecarte exige un serveur retenu et une timeline retenue plus
+/// grande, qu'un isolement n'a pas ; il est levé automatiquement (SurveillerIsolement) et un redémarrage de l'API l'oublie (la règle se réapplique 2 minutes après).
+/// </param>
+public sealed record EcartDetecte(DateTime DepuisUtc, string? ServeurRetenu, long TimelineLocale, long TimelineRetenue, bool Indecis = false, bool Isole = false)
+{
+    /// <summary>Vrai pour les états qui ne s'écrivent pas dans serveur_ecarte (indécis, isolé).</summary>
+    public bool EnMemoireSeulement => Indecis || Isole;
+}
 
 /// <summary>
 /// Interface que le lot 3 branche (intergiciel 503, initialiseur de connexion, tâches de fond, healthcheck) : l'état détecté.
@@ -95,7 +104,7 @@ public interface IServeurEcarteDetecte
 }
 
 /// <summary>Sortes d'alertes au titulaire de la surveillance du 2e serveur ; chacune a sa propre limite d'une par heure.</summary>
-public enum AlerteSecondServeur { Ecarte, AncienPrincipal, TimelinesEgales, LigneeDifferente }
+public enum AlerteSecondServeur { Ecarte, AncienPrincipal, TimelinesEgales, LigneeDifferente, Isole }
 
 /// <summary>État en mémoire de la détection (singleton) : dernière décision, état écarté, dernière alerte envoyée.</summary>
 public sealed class SuiviServeurEcarte : IServeurEcarteDetecte
@@ -119,6 +128,22 @@ public sealed class SuiviServeurEcarte : IServeurEcarteDetecte
     {
         lock (_verrou) { _ecart = null; Precedente = null; _alertes.Clear(); }
         Change?.Invoke(null);
+    }
+
+    /// <summary>Levée automatique d'un isolement : les alertes déjà envoyées sont gardées (au plus une par heure, même si l'isolement revient).</summary>
+    internal bool LeverIsolement()
+    {
+        lock (_verrou) { if (_ecart is not { Isole: true }) return false; _ecart = null; Precedente = null; }
+        Change?.Invoke(null);
+        return true;
+    }
+
+    /// <summary>Un isolement devient un écart définitif (le 2e serveur s'est promu : timeline plus récente constatée) : le verrou reste, l'écart est gardé en base.</summary>
+    internal bool RemplacerIsolement(EcartDetecte definitif)
+    {
+        lock (_verrou) { if (_ecart is not { Isole: true }) return false; _ecart = definitif; }
+        Change?.Invoke(definitif);
+        return true;
     }
 
     public void Restaurer(EcartDetecte ecart)
@@ -149,25 +174,28 @@ public sealed class SurveillerServeurEcarte(IReleveServeurs releves, SuiviServeu
     public async Task<DecisionEcart?> ExecuterAsync(CancellationToken ct = default)
     {
         if (!releves.AutreServeurRegle) return null;
-        if (suivi.Ecart is { } e)
+        if (suivi.Ecart is { } e && !e.Isole)
         {
             if (e.Indecis) await AlerterTimelinesEgalesAsync(releves.AutreServeur, e.TimelineLocale, ct);
             else await AlerterEcarteAsync(e.ServeurRetenu ?? releves.AutreServeur, ct);
             return new DecisionEcart(e.Indecis ? VerdictEcart.TimelinesEgales : VerdictEcart.Ecarte, true, e.TimelineLocale, e.TimelineRetenue);
         }
 
+        // Isolement (V2-1b) : SurveillerIsolement le lève ; ici seulement, si l'autre serveur est devenu principal avec une timeline plus récente, il devient définitif
+        var isole = suivi.Ecart is { Isole: true };
         var local = await releves.LocalAsync(ct);
         var autre = local is { EnRecovery: false } ? await releves.AutreAsync(ct) : null;
         var decision = local is { EnRecovery: true }
             ? new DecisionEcart(VerdictEcart.Normal, false)   // ce serveur est le 2e serveur en veille : rien à surveiller ici
             : DecisionServeurEcarte.Evaluer(local, autre, suivi.Precedente);
         suivi.Precedente = decision;
+        if (isole && decision is not { Verdict: VerdictEcart.Ecarte, Confirme: true }) return decision;   // isolé : aucune autre alerte ni écart ici
 
         switch (decision)
         {
             case { Verdict: VerdictEcart.Ecarte, Confirme: true }:
                 var ecart = new EcartDetecte(horloge.MaintenantUtc, releves.AutreServeur, decision.TimelineLocale!.Value, decision.TimelineAutre!.Value);
-                suivi.Ecarter(ecart);
+                if (isole) suivi.RemplacerIsolement(ecart); else suivi.Ecarter(ecart);
                 await AlerterEcarteAsync(ecart.ServeurRetenu, ct);
                 break;
             case { Verdict: VerdictEcart.TimelinesEgales, Confirme: true }:

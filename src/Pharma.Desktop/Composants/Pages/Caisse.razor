@@ -9,6 +9,8 @@
 @inject HistoriqueNavigation Historique
 @inject NavigationManager Nav
 @inject RemboursementsTiroir Remboursements
+@inject VigiePoste Bascule
+@inject PanierBascule Panier
 
 @* Écran fixe (docs/charte-graphique.md) : colonne d'actions de caisse à gauche (NavCaisse), une partie à la fois dans l'adresse :
    la vente (caisse), l'annulation ou le retour (caisse?rubrique=annulation), le règlement d'un crédit (caisse?rubrique=credit).
@@ -1466,8 +1468,10 @@
         (soldeAvoirPatient, avoirPatientId) = (a?.Solde ?? 0, patientId);
     }
 
+    // Poste coupé du réseau de la pharmacie (motif « isole », lot V2-6) : ventes suspendues, panier gardé
     private string? RaisonBlocage =>
-        lignes.Count == 0 ? "Panier vide"
+        Bascule.VentesSuspendues ? BasculeSecours.MessageIsole
+        : lignes.Count == 0 ? "Panier vide"
         : lignes.Any(l => !l.Envoyee) ? "Retirez ou remplacez les produits sans lot vendable"
         : erreurCalcul is not null ? erreurCalcul
         : ChoixChifaManquant ? "Volet Chifa : choisissez le prix de chaque ligne en écart (s’aligner sur Chifa ou garder notre prix)"
@@ -1527,8 +1531,8 @@
 
     // ---- Disposition en trois parties (2026-11-15) ----
     /// <summary>Le bouton principal suit le mode choisi : « Crédit » demande en plus le patient.</summary>
-    private bool PeutEncaisserMode => mode == "credit" ? RaisonBlocageCredit is null : PeutEncaisser && !RecuInsuffisant;   // bouton ET F12
-    private string? RaisonBlocageMode => mode == "credit" ? RaisonBlocageCredit : RaisonBlocage ?? RaisonRecuInsuffisant;
+    private bool PeutEncaisserMode => Bascule.VentesSuspendues ? false : mode == "credit" ? RaisonBlocageCredit is null : PeutEncaisser && !RecuInsuffisant;   // bouton ET F12
+    private string? RaisonBlocageMode => Bascule.VentesSuspendues ? BasculeSecours.MessageIsole : mode == "credit" ? RaisonBlocageCredit : RaisonBlocage ?? RaisonRecuInsuffisant;
 
     /// <summary>Montant à payer en espèces (part du patient moins l'avoir utilisé).</summary>
     private decimal APayerEspeces => apercu is { } a ? Math.Max(0m, a.PartPatient - AvoirUtilise) : 0m;
@@ -1682,6 +1686,8 @@
     protected override async Task OnInitializedAsync()
     {
         Session.AvantFermeture += PanierAbandonne;
+        Bascule.Change += SurBascule;
+        Panier.Abonner(MettreDeCoteBasculeAsync);
         // Wilayas (liste bornée) pour la wilaya du médecin choisi, quel que soit le chemin du choix (recherche, reprise, scan)
         _ = ChargerWilayasAsync();
         // « Changer d'utilisateur » panier rempli : la vente part en attente avant la fermeture de la session, réponse attendue
@@ -1701,7 +1707,30 @@
         if (aReprendre is { } id) await ReprendreAuRetourAsync(id);
         // Vente laissée en attente au « Changer d'utilisateur » : reprise par l'employé qui se connecte ensuite sur ce poste
         else if (Session.A("caisse.vendre") && Session.PrendreVenteAReprendre() is { } laissee) await ReprendreLaisseeAsync(laissee.Id, laissee.LaisseePar);
+        // Repli après une bascule (Q26) : panier gardé en mémoire, rendu à l'employé qui se reconnecte sur ce poste
+        if (Session.A("caisse.vendre") && lignes.Count == 0 && Panier.Reprendre<PanierCapture>() is { } rendu) await RendrePanierBasculeAsync(rendu);
     }
+
+    // ---- Bascule du poste sur le 2e serveur (lot V2-6) ----
+    /// <summary>Panier mis de côté EN MÉMOIRE quand le nouveau serveur refuse le jeton (jamais sur disque) : lignes, clé d'encaissement, client, mode.</summary>
+    private sealed record PanierCapture(List<LignePanier> Lignes, Guid Cle, PatientDto? Patient, string Mode, decimal RemisePct);
+
+    private Task MettreDeCoteBasculeAsync() => InvokeAsync(() =>
+    {
+        if (!lignes.Any(l => l.Quantite > 0)) return;
+        Panier.Garder(new PanierCapture([.. lignes], cleEncaissement, patient, mode, remisePct));
+        lignes.Clear();   // rien n'est signalé « retiré » : le panier est rendu à la reconnexion
+    });
+
+    private async Task RendrePanierBasculeAsync(PanierCapture p)
+    {
+        lignes.AddRange(p.Lignes);
+        (cleEncaissement, patient, mode, remisePct) = (p.Cle, p.Patient, p.Mode, p.RemisePct);
+        await RecalculerAsync();
+        messageRetour = "Votre vente en cours a été reprise après le passage de ce poste sur le 2e serveur.";
+    }
+
+    private void SurBascule() => _ = InvokeAsync(StateHasChanged);
 
     // ---- Retour sur la Caisse : mise en attente automatique en partant, reprise en revenant ----
     private long? derniereMiseEnAttente, venteMiseDeCoteEnPartant;
@@ -3094,7 +3123,7 @@
 
     private async Task EncaisserAsync(string modePaiement)
     {
-        if (!PeutEncaisser) return;
+        if (!PeutEncaisser || Bascule.VentesSuspendues) return;
         messageTicket = null;
         enCours = true;
         erreurEncaissement = null;
@@ -3384,6 +3413,8 @@
     public async ValueTask DisposeAsync()
     {
         Session.AvantFermeture -= PanierAbandonne;
+        Bascule.Change -= SurBascule;
+        Panier.Desabonner(MettreDeCoteBasculeAsync);
         Session.OublierAvantChangement(LaisserAuSuivantAsync);
         // Actualisation du bandeau « produit redevenu disponible » arrêtée (2026-11-16)
         arretAlertesDispo.Cancel();

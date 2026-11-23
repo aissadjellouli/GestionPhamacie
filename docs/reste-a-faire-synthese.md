@@ -11,6 +11,11 @@ local nouveau aujourd'hui). Détail : [a-faire.md](a-faire.md), [fonctionnalites
 [diagrammes-sequence.md](diagrammes-sequence.md) (architecture, déploiement, synchronisation) et documents cités.
 À mettre à jour à chaque point d'avancement.
 
+**Point du 2026-11-24, après `0f66edc`, NON COMMITÉ : bascule du 2e serveur, vague 2 (V2-0, V2-1, V2-1b, V2-2, V2-3, V2-6, V2-7) faite et intégrée.** Plan : `docs/taches/2026-11-23-bascule-2e-serveur/plan-vague-2.md`, contrat : `contrat-api.md` (même dossier).
+- Script **165** (`presence_poste`) passé sur `pharmacie_dev` et `pharmacie_test` (sauvegardes avant). Suite complète verte.
+- **Reste** : V2-4 (mise hors jeu du serveur 1 et promotion automatique, scripts 166 et 166b, alerte `egalite_majorite`), V2-5 (relais), V2-8 (essai réel sur 2 PostgreSQL : captures clair/sombre des bandeaux, service relancé en principal après promotion, réplication synchrone), V2-9 (docs). Réglages à poser par le titulaire avec `postgres` : script `163b` et `synchronous_standby_names`.
+- **Méthode** : le titulaire a relevé que le travail se faisait par sous-agents hors `/equipe` ; choix du mode pour la suite en attente.
+
 **Point du 2026-11-23 (fin de nuit), après `d9eb621`, NON COMMITÉ : bascule du 2e serveur, vague 1 faite.**
 - Lots 3 (lecture seule API + base, démarrage en lecture seule, Q10, `--lever-ecart`), 5 (alertes), 6 (script administrateur **163b**, droit `pg_control_system`) et 7 (script **164**, saut des compteurs à la promotion) ; règle « un seul serveur → bascule inactive ». Scripts 163 et 164 passés sur `pharmacie_dev` et `pharmacie_test` (sauvegardes avant). **163b non exécuté** : il exige le compte administrateur PostgreSQL (à lancer par le titulaire).
 - **Décisions du titulaire** (plan `docs/taches/2026-11-23-bascule-2e-serveur/plan.md`) : périmètre « B allégée » ; Q9 rien sur le serveur écarté, vente en cours reprise sur le nouveau ; panier en mémoire seulement ; pas de déconnexion à la bascule (même `Jwt:Cle` sur les deux serveurs, à vérifier à l'installation) ; promotion AUTOMATIQUE : le poste qui perd le serveur 1 s'adresse au serveur 2, qui vérifie le serveur 1 et interroge les autres postes ; serveur 1 vivant mais injoignable par tous → mis hors jeu puis promotion ; quelques postes seulement → relais par le serveur 2, jamais de synchronisation bidirectionnelle.

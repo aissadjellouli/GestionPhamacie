@@ -157,6 +157,12 @@
                 <div class="champ" style="flex: 0 0 220px"><label for="p-delai">Bandeau après (secondes)</label>
                     <input id="p-delai" type="number" min="10" max="3600" placeholder="60" @bind="v.DelaiServeurInjoignableSecondes" /></div>
             </div>
+            @* Lot V2-6 : cochée par défaut dès qu'une adresse de secours existe ; décochée = aucun basculement automatique, bouton manuel du bandeau *@
+            <label class="case @(SecoursSaisi ? null : "inactif")" title="@(SecoursSaisi ? null : "Saisissez d’abord l’adresse de l’API du PC de secours")">
+                <input id="p-bascule-auto" data-champ="bascule_automatique" type="checkbox" disabled="@(!SecoursSaisi)" checked="@(SecoursSaisi && basculeAuto)"
+                       @onchange="e => basculeAuto = e.Value is true" />
+                <span>Basculer automatiquement sur le 2e serveur (ce poste)</span>
+            </label>
             <p class="detail" style="margin: 0">Adresse actuelle : @Api.AdresseServeur. Un changement d’adresse est pris au prochain démarrage du poste. Serveur injoignable trop longtemps : bandeau avec la consigne et le bouton de bascule sur le PC de secours.</p>
         </section>
         }
@@ -184,6 +190,9 @@
     private int largeur = 80;
     private string? erreur, message, avertissement;
     private bool enCours;
+    // Case « Basculer automatiquement » : cochée tant qu'elle n'a pas été décochée (poste.json : absent = oui)
+    private bool basculeAuto = true;
+    private bool SecoursSaisi => !string.IsNullOrWhiteSpace(v.AdresseApiSecours);
 
     private string? Defaut => imprimantes.FirstOrDefault(i => i.ParDefaut).Nom;
 
@@ -195,8 +204,10 @@
             ImprimanteTickets = a.ImprimanteTickets, LargeurTicketMm = a.LargeurTicketMm,
             TicketAutomatique = a.TicketAutomatique, ImprimanteEtiquettes = a.ImprimanteEtiquettes,
             Afficheur = a.Afficheur, PortAfficheur = a.PortAfficheur, ProtocoleAfficheur = a.ProtocoleAfficheur ?? "epson",
-            AdresseApi = a.AdresseApi, AdresseApiSecours = a.AdresseApiSecours, DelaiServeurInjoignableSecondes = a.DelaiServeurInjoignableSecondes
+            AdresseApi = a.AdresseApi, AdresseApiSecours = a.AdresseApiSecours, DelaiServeurInjoignableSecondes = a.DelaiServeurInjoignableSecondes,
+            BasculeAutomatique = a.BasculeAutomatique
         };
+        basculeAuto = a.BasculeAutomatique ?? true;
         (ecranClient, vitesse) = (a.EcranClient ?? 0, a.VitesseAfficheur ?? 9600);
         ecrans = AfficheurClient.Ecrans();
         ports = AfficheurClient.Ports();
@@ -233,7 +244,8 @@
         ProtocoleAfficheur = v.ProtocoleAfficheur ?? "epson",
         AdresseApi = string.IsNullOrWhiteSpace(v.AdresseApi) ? null : v.AdresseApi.Trim(),
         AdresseApiSecours = string.IsNullOrWhiteSpace(v.AdresseApiSecours) ? null : v.AdresseApiSecours.Trim(),
-        DelaiServeurInjoignableSecondes = v.DelaiServeurInjoignableSecondes is { } s ? Math.Clamp(s, 10, 3600) : null
+        DelaiServeurInjoignableSecondes = v.DelaiServeurInjoignableSecondes is { } s ? Math.Clamp(s, 10, 3600) : null,
+        BasculeAutomatique = basculeAuto ? null : false
     };
 
     private void Enregistrer()

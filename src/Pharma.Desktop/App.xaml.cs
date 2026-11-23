@@ -24,22 +24,36 @@ public partial class App : Application
         // http:// ou https:// (HTTPS conseillé dès que le serveur est sur un autre PC : docs/mise-en-production.md ; le certificat du
         // serveur doit être reconnu par Windows). Barre finale ajoutée : les routes « api/… » sont relatives à cette adresse.
         // Adresse réglée dans poste.json (AdresseApi : bascule du poste sur le PC de secours) prioritaire sur PHARMA_API
-        var api = ReglagesPoste.AdresseApiDemarrage(new ReglagesPoste().Actuelles, Environment.GetEnvironmentVariable("PHARMA_API"));
+        var reglages = new ReglagesPoste();
+        var api = ReglagesPoste.AdresseApiDemarrage(reglages.Actuelles, Environment.GetEnvironmentVariable("PHARMA_API"));
         // Chaque appel nomme le poste : il identifie la caisse (le tiroir) partagée par les employés du poste
         var poste = new ConfigurationPoste();
         // Chaque appel est compté : la barre de chargement du haut de la fenêtre s'affiche pendant les appels
         var appels = new AppelsEnCours();
         services.AddSingleton(appels);
         // Délai d'abandon de chaque appel : celui de SuiviAppels (30 s, 2 min ou 10 min selon l'opération), pas les 100 s par défaut
-        var client = new HttpClient(new SuiviAppels(appels)) { BaseAddress = new Uri(api), Timeout = Timeout.InfiniteTimeSpan };
+        // Bascule sur le 2e serveur sans redémarrage (lot V2-6) : le client garde son adresse de départ, RelaisAdresse réécrit chaque requête
+        // vers l'adresse courante ; SurveillanceEcart confie à la vigie les réponses 503 « serveur_ecarte » avant de les rendre à l'appelant
+        var session = new SessionPoste();
+        var panier = new PanierBascule();
+        var adresseCourante = new AdresseApiCourante(new Uri(api));
+        var version = typeof(App).Assembly.GetName().Version is { } v ? $"{v.Major}.{v.Minor:00}" : "?";
+        vigie = new VigiePoste(reglages, session, adresseCourante, new ReseauVigieHttp(poste.Poste), panier, poste.Poste,
+            Environment.GetEnvironmentVariable("PHARMA_API"), version, journal: NoterErreur);
+        var chaine = new SurveillanceEcart(vigie, new RelaisAdresse(adresseCourante, new SuiviAppels(appels)));
+        var client = new HttpClient(chaine) { BaseAddress = new Uri(api), Timeout = Timeout.InfiniteTimeSpan };
         client.DefaultRequestHeaders.Add("X-Pharma-Poste", Uri.EscapeDataString(poste.Poste));
         services.AddSingleton(client);
         services.AddSingleton(poste);
-        services.AddSingleton<ReglagesPoste>();
+        services.AddSingleton(reglages);
+        services.AddSingleton(session);
+        services.AddSingleton(panier);
+        services.AddSingleton(adresseCourante);
+        services.AddSingleton(vigie);
+        services.AddSingleton<IBasculePoste>(vigie);
         services.AddSingleton<ImprimanteEtiquettes>();
         services.AddSingleton<ImprimanteTickets>();
         services.AddSingleton<AfficheurClient>();
-        services.AddSingleton<SessionPoste>();
         services.AddSingleton<ApiClient>();
         services.AddSingleton<FichesContact>();
         // Compteurs du travail en attente (menu du haut et menu de gauche)
@@ -67,11 +81,14 @@ public partial class App : Application
         };
 
         fournisseur = services.BuildServiceProvider();
+        // Vigie du poste : rapport au 2e serveur toutes les 15 s (rien du tout sans adresse de secours : un seul serveur)
+        vigie.Demarrer();
         Resources.Add("services", fournisseur);
         base.OnStartup(e);
     }
 
     private ServiceProvider? fournisseur;
+    private VigiePoste? vigie;
 
     /// <summary>
     /// Fermeture du logiciel : les services créés sont libérés, dont l'afficheur client (port série refermé, fenêtre client fermée)
@@ -79,6 +96,7 @@ public partial class App : Application
     /// </summary>
     protected override void OnExit(ExitEventArgs e)
     {
+        vigie?.Dispose();
         try { fournisseur?.Dispose(); }
         catch (Exception ex) when (ex is InvalidOperationException or ObjectDisposedException or System.IO.IOException) { NoterErreur(ex); }
         fournisseur = null;

@@ -1,4 +1,4 @@
-using Pharma.Api.Securite;
+﻿using Pharma.Api.Securite;
 
 namespace Pharma.Api.Endpoints;
 
@@ -8,8 +8,18 @@ public static class PharmaEndpoints
     {
         // Santé du serveur (2026-11-19 : /api/healthcheck, ancien nom /api/sante retiré sur demande du titulaire)
         // Serveur écarté (lot 3) : statut reste « ok » (le serveur répond) ; ecarte = vrai et serveurRetenu = adresse du serveur retenu (null si indécis) le signalent
-        app.MapGet("/api/healthcheck", (Pharma.Application.SecondServeur.IServeurEcarteDetecte ecart) =>
-            Results.Ok(new { statut = "ok", heure = DateTime.Now, ecarte = ecart.Ecart is not null, serveurRetenu = ecart.Ecart?.ServeurRetenu }));
+        // Vague 2 : role = principal | veille | ecarte (ajout seul ; ecarte l'emporte, puis veille)
+        app.MapGet("/api/healthcheck", (Pharma.Application.SecondServeur.IServeurEcarteDetecte ecart, Pharma.Application.SecondServeur.IVeilleServeur veille) =>
+            Results.Ok(new
+            {
+                statut = "ok",
+                heure = DateTime.Now,
+                ecarte = ecart.Ecart is not null,
+                serveurRetenu = ecart.Ecart?.ServeurRetenu,
+                role = BarrageServeurVeille.Role(ecart.Ecart is not null, veille.EstVeille)
+            }));
+        // Vague 2, lot V2-2 : état signé de ce serveur pour l'autre serveur (signature par l'intergiciel InterServeursMiddleware)
+        app.MapInterServeurs();
         // Mode démonstration (docs/demo-cloud.md, étape 2) : lu sans connexion par le poste et la page mobile (bandeau permanent)
         app.MapGet("/api/demo", (Microsoft.Extensions.Options.IOptions<Pharma.Api.Demo.ReglagesDemo> demo) =>
             Results.Ok(new Pharma.Shared.EtatDemoDto(demo.Value.Actif, demo.Value.Actif ? Pharma.Application.Demo.ModeDemo.Libelle : null)));
@@ -58,6 +68,7 @@ public static class PharmaEndpoints
         api.MapRetoursEssai();
         api.MapEtatPoste();
         api.MapGed();
+        api.MapVigie();
         api.MapSecondServeur();
         api.MapSynchronisation();
         api.MapReglagesMutualises();

@@ -76,7 +76,7 @@ public sealed class GardienServeurEcarte(IServeurEcarteDetecte suivi, IVerrouBas
     /// </summary>
     public async Task SynchroniserAsync(CancellationToken ct = default)
     {
-        if (!releves.AutreServeurRegle || suivi.Ecart is not { Indecis: false } ecart) return;
+        if (!releves.AutreServeurRegle || suivi.Ecart is not { EnMemoireSeulement: false } ecart) return;
         var actif = await depot.LireActifAsync(ct);
         if (actif is not null) { _persiste = true; return; }
         if (_persiste)
@@ -92,7 +92,7 @@ public sealed class GardienServeurEcarte(IServeurEcarteDetecte suivi, IVerrouBas
     {
         try { verrou.Appliquer(ecart is not null); }   // d'abord le verrou (mémoire), puis la trace en base
         catch (Exception e) when (e is not OperationCanceledException) { trace?.Erreur("Serveur écarté : verrou des connexions non appliqué", e); }
-        if (ecart is { Indecis: false }) _derniere = Task.Run(() => PersisterAsync(ecart, CancellationToken.None));
+        if (ecart is { EnMemoireSeulement: false }) _derniere = Task.Run(() => PersisterAsync(ecart, CancellationToken.None));
     }
 
     private async Task PersisterAsync(EcartDetecte ecart, CancellationToken ct)
