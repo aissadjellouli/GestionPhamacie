@@ -60,7 +60,7 @@ public sealed class JournalFiscalSql(NpgsqlDataSource db) : IJournalFiscalDepot
     public async Task<TotauxFiscaux> TotauxAsync(DateOnly du, DateOnly au, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand($"""
-            SELECT count(*) FILTER (WHERE j.evenement <> 'ouverture'), COALESCE(sum(j.montant_ttc), 0), COALESCE(sum(j.montant_ht), 0),
+            SELECT count(*) FILTER (WHERE j.evenement NOT IN ('ouverture', 'saut_compteur')), COALESCE(sum(j.montant_ttc), 0), COALESCE(sum(j.montant_ht), 0),
                    COALESCE(sum(j.montant_tva), 0)
             FROM journal_vente j WHERE {JourLocal} BETWEEN $1 AND $2
             """);

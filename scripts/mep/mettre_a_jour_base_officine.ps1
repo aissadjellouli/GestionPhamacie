@@ -74,6 +74,10 @@
 .PARAMETER DossierMigration
     Dossier des scripts (défaut : database\migration du dépôt). Pour une livraison : <livraison>\Api\database\migration.
 
+.PARAMETER Script163b
+    Chemin du script 163b (défaut : 163b_droit_identifiant_base.sql du dossier des scripts, sinon celui du dépôt). Lancé en fin de rejeu avec le superutilisateur (droit de lire l'identifiant de la base, bascule du 2e serveur).
+.PARAMETER SansDroitIdentifiantBase
+    Ne lance pas 163b : sans ce droit, la détection de lignée de l'API rend « inconnu » et n'écarte jamais un serveur.
 .PARAMETER Script111b
     Chemin du script 111b (défaut : 111b_roles_integrite.sql du dossier des scripts, sinon celui du dépôt).
 
@@ -110,6 +114,8 @@ param(
     [int]$ScriptDepart = 0,
     [string]$DossierMigration = "",
     [string]$Script111b = "",
+    [string]$Script163b = "",
+    [switch]$SansDroitIdentifiantBase,
     [string]$PgBin = "",
     [string]$DossierDepot = ""
 )
@@ -165,6 +171,11 @@ Invoke-Principal {
         $Script111b = Join-Path $DossierMigration "111b_roles_integrite.sql"
         if (-not (Test-Path -LiteralPath $Script111b)) { $Script111b = Join-Path $DossierDepot "database\migration\111b_roles_integrite.sql" }
     }
+    if (-not $Script163b) {
+        $Script163b = Join-Path $DossierMigration "163b_droit_identifiant_base.sql"
+        if (-not (Test-Path -LiteralPath $Script163b)) { $Script163b = Join-Path $DossierDepot "database\migration\163b_droit_identifiant_base.sql" }
+    }
+    if (-not $SansDroitIdentifiantBase -and -not (Test-Path -LiteralPath $Script163b)) { throw "Script 163b introuvable ($Script163b). Le copier depuis le dépôt (il n'est pas dans le dossier publié), préciser -Script163b ou donner -SansDroitIdentifiantBase." }
     if ($SeparerRoles -and -not (Test-Path -LiteralPath $Script111b)) { throw "-SeparerRoles : script 111b introuvable ($Script111b). Le copier depuis le dépôt (il n'est pas dans le dossier publié) ou préciser -Script111b." }
 
     if ($SansControleService) { Write-Avert "-SansControleService : le service de l'API n'est pas contrôlé (essai sur une copie seulement)." }
@@ -232,6 +243,7 @@ Invoke-Principal {
             Write-Simul "$($s.Name) ($compte)"
         }
         if ($SeparerRoles -and -not $fait111b) { Write-Simul "111b_roles_integrite.sql ($CompteSuperUtilisateur, superutilisateur)" }
+        if (-not $SansDroitIdentifiantBase) { Write-Simul "163b_droit_identifiant_base.sql ($CompteSuperUtilisateur, superutilisateur), en fin de rejeu" }
         Write-Simul "Le script 101b n'est jamais lancé."
         return
     }
@@ -311,6 +323,14 @@ Invoke-Principal {
         Write-Ok "111b_roles_integrite.sql : séparation des rôles faite."
     }
     Write-Ok "$joues scripts rejoués sans erreur."
+
+    # 163b : droit de lire l'identifiant de la base (superutilisateur, rejouable, avec ou sans séparation des rôles)
+    if ($SansDroitIdentifiantBase) { Write-Avert "-SansDroitIdentifiantBase : 163b non lancé. La détection de lignée de l'API rendra « inconnu » (aucun serveur écarté)." }
+    else {
+        $r = Invoke-Psql -Compte $CompteSuperUtilisateur -Base $Base -Arguments @("-f", $Script163b)
+        $r.Lignes | Where-Object { $_ } | ForEach-Object { Write-Info "  $_" }
+        Write-Ok "163b_droit_identifiant_base.sql : droit de lire l'identifiant de la base accordé à $RoleApp."
+    }
 
     # Vérifications finales
     Write-Etape "Vérifications finales"

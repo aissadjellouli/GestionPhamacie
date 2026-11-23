@@ -37,6 +37,7 @@ Options communes : `-Hote` (défaut `localhost`), `-Port` (défaut 5432), `-PgBi
 4. Crée la base (propriétaire `pharma_app`, UTF8).
 5. Passe `init\schema.sql`, puis `083_fuseau_horaire.sql` (le fuseau horaire n'est pas repris dans `schema.sql`), puis `init\seed_referentiel.sql`.
 6. Sauf `-SansSeparationRoles` : passe `111b_roles_integrite.sql` avec le superutilisateur (voir 3.1).
+6 bis. Passe `163b_droit_identifiant_base.sql` avec le superutilisateur, avec ou sans séparation des rôles (voir 3.9).
 7. Vérifie : fuseau `Africa/Algiers` ; comptages de référence (wilayas, rôles, utilisateurs, aucune vente) ; `pharma_app` lit et écrit (écriture d'essai annulée) ; avec `111b` : `objets_encore_a_pharma_app = 0`, propriétaire de la base `pharma_proprietaire`, `pharma_app` ne peut plus modifier `journal_audit`.
 
 **Résultat attendu** : la ligne « Terminé », le compte de départ `titulaire` (mot de passe provisoire à changer à la première connexion), code de sortie 0.
@@ -59,6 +60,8 @@ Options communes : `-Hote` (défaut `localhost`), `-Port` (défaut 5432), `-PgBi
 | `-CompteSuperUtilisateur <compte>` | Défaut `postgres` ; demandé seulement si les rôles sont ou vont être séparés |
 | `-DossierMigration <dossier>` | Dossier des scripts (défaut : `database\migration` du dépôt). Pour une livraison : `<livraison>\Api\database\migration` |
 | `-Script111b <fichier>` | Chemin de `111b_roles_integrite.sql` (il n'est pas dans le dossier publié) |
+| `-Script163b <fichier>` | Chemin de `163b_droit_identifiant_base.sql` (il n'est pas dans le dossier publié) |
+| `-SansDroitIdentifiantBase` | Ne lance pas `163b` (la détection de lignée de l'API rend alors « inconnu », voir 3.9) |
 | `-NomService <nom>` | Service de l'API (défaut `PharmaOfficine API`) |
 | `-SansControleService` | Ne contrôle pas le service. **Essais sur une copie seulement** |
 | `-WhatIf` | Simulation |
@@ -71,6 +74,7 @@ Options communes : `-Hote` (défaut `localhost`), `-Port` (défaut 5432), `-PgBi
 4. Rejeu des scripts numérotés (`NNN_*.sql`, 001 à 999, **jamais les scripts « b »**), un par un, dans l'ordre, chacun avec `ON_ERROR_STOP`. Les scripts sont idempotents : il n'y a pas de table de suivi. Chaque script est lancé seul, **hors transaction** (le `033` contient `CREATE INDEX CONCURRENTLY`, interdit dans une transaction ; c'est le seul script dans ce cas).
 5. **Avant le script `101`** (si `101` n'est pas encore appliqué) : les 3 requêtes de contrôle des n° de facture Chifa, en lecture seule. S'il y a des lignes : **arrêt** avec la liste. **Ne pas continuer : voir le titulaire.** Après sa décision, relancer avec `-ContinuerMalgreConflitsChifa`.
 6. Avec `-SeparerRoles` et rôles non séparés : `111b` est passé (superutilisateur) juste après le script `111`.
+6 bis. Après le rejeu, sauf `-SansDroitIdentifiantBase` : `163b` est passé (superutilisateur, rejouable, avec ou sans séparation des rôles).
 7. Contrôles finaux et résumé : scripts joués, durée, état des rôles, chemin de la sauvegarde.
 
 **Point de départ du rejeu (`-ScriptDepart`)**. Toujours le script **001** : toute la suite se rejoue sur une base déjà à jour, sans départ automatique (l'ancien départ à 101, qui contournait les échecs des scripts `007`, `018`, `097` et `098`, est supprimé : ces scripts, ainsi que `024`, `126` et `129`, sont corrigés, voir la règle des vues en 4). Le paramètre `-ScriptDepart <NNN>` reste, pour un **incident seulement** (reprise au script en échec) ; une fois la cause corrigée, relancer sans ce paramètre pour que toute la suite soit rejouée. La restauration d'une sauvegarde depuis l'application rejoue aussi toute la suite (001 à 032 en transaction, 033 seul, 034 et suivants en transaction).
@@ -78,7 +82,7 @@ Options communes : `-Hote` (défaut `localhost`), `-Port` (défaut 5432), `-PgBi
 **Comptes**
 - Avant `111b` : `pharma_app`.
 - Après `111b` : le superutilisateur, avec `SET ROLE pharma_proprietaire` dans la même session `psql` (`-c "SET ROLE pharma_proprietaire" -f script`). **[À VÉRIFIER]** Cette méthode n'a pas encore été essayée avec le compte `postgres` (aucun mot de passe superutilisateur disponible pour l'essai du 2026-11-16) : l'essayer sur une **copie** de la base avant la production. Le script contrôle en début de course que `SET ROLE pharma_proprietaire` donne bien le rôle attendu et s'arrête sinon.
-- `111b` : toujours le superutilisateur.
+- `111b` et `163b` : toujours le superutilisateur.
 
 **Le script `101b` n'est jamais lancé par ce script** (voir 3.2).
 
@@ -111,7 +115,7 @@ Pour une mise à jour qui a échoué ou qu'on abandonne : la sauvegarde `.dump` 
 | Dossier | Rôle |
 | --- | --- |
 | `database\init\` | **Base neuve** d'officine : `schema.sql` (toute la structure) et `seed_referentiel.sql` (référentiel de départ) équivalent aux scripts 001 à NNN. À tenir à jour **à chaque nouveau script** : leur en-tête cite « 001 à NNN » et `creer_base_officine.ps1` refuse de créer une base si NNN n'est pas le dernier script. `clean.sql` remet une base à vierge (jamais en service) |
-| `database\migration\` | **Mise à jour** d'une base existante : scripts `NNN_nom.sql` rejoués dans l'ordre, idempotents. Les scripts « b » (`101b`, `111b`) sont à part (3.1, 3.2) |
+| `database\migration\` | **Mise à jour** d'une base existante : scripts `NNN_nom.sql` rejoués dans l'ordre, idempotents. Les scripts « b » (`101b`, `111b`, `163b`) sont à part (3.1, 3.2, 3.9) |
 | `database\cloud\` | Base **centrale** : scripts `001` à `042` (`030` à `042` : écrans du central, lots S7.1 à S7.6 ; `041` : délai de grâce des mots de passe provisoires ; `042` : motif de la déconnexion après inactivité), jamais sur une base d'officine |
 | `database\tests\` | Tests SQL des scripts de `migration` (transaction annulée) ; `rejeu_complet.ps1` : rejeu de toute la suite sur une copie jetable (pas un test SQL) |
 | `database\cloud\tests\` | Tests SQL des scripts du central (lancés par `-AvecTests`) |
@@ -153,6 +157,15 @@ Un ancien script rejoué seul peut ramener une **fonction ou une vue à une anci
 ### 3.8 `157` : rapprochement d'un volet après un retour (vue, déclencheurs, miroir central)
 
 `157_rapprochement_volet_apres_retour.sql` (après 155) ajoute `regularisation_part_organisme.part_organisme_rendue_avant` (défaut 0 : aucune régularisation existante n'a suivi un retour en tiers payant) ; il **remplace** la vue `v_vente_part_organisme` (mêmes colonnes), `journal_vente_depuis_regularisation` (112) et `proteger_regularisation_part_organisme` (098), et pose le déclencheur `trg_regularisation_rendue_avant`. Aucune donnée modifiée ; rejouable. Rejouer la suite remet un instant la vue de 155 jusqu'au passage de 157 : toujours rejouer **toute** la suite (3.4). La table est **montante** : la colonne est ajoutée à `database/cloud/002_tables_miroir.sql` ; **repasser `002` sur les bases centrales**. Retour arrière manuel décrit en fin de script. Test : `database/tests/157_rapprochement_volet_apres_retour_tests.sql` (transaction annulée, lot vendable à TVA 0 % nécessaire).
+
+### 3.9 `163b` : droit de lire l'identifiant de la base (bascule du 2e serveur)
+
+`database\migration\163b_droit_identifiant_base.sql`, par base, avec le **superutilisateur**, sur le modèle de `111b` (hors suite numérotée, jamais dans l'init). Il fait `GRANT EXECUTE ON FUNCTION pg_control_system() TO pharma_app` : **seul** droit accordé (« droit ciblé », décision du titulaire). L'API compare l'identifiant de la base (`pg_control_system()`) pour savoir si deux serveurs descendent de la même base ; sans ce droit (fonction réservée au superutilisateur) la détection rend « inconnu » et n'écarte jamais un serveur. Le compte de l'API est `pharma_app` **avec ou sans** la séparation des rôles (`111b`) : le script ne dépend donc pas de `111b`. Le droit est propre à chaque base : à refaire après une restauration sur une base neuve (fait par `basculer-pc-secours.ps1`).
+
+- Outils : lancé par `creer_base_officine.ps1` (après `111b`), `mettre_a_jour_base_officine.ps1` (en fin de rejeu ; `-SansDroitIdentifiantBase` pour l'omettre, `-Script163b` pour le chemin) et `basculer-pc-secours.ps1` (sur la base restaurée). À la main : `psql -h localhost -U postgres -d <base> -v ON_ERROR_STOP=1 -f database\migration\163b_droit_identifiant_base.sql` (résultat attendu : `t`).
+- Rejouable sans erreur. Refus s'il n'est pas lancé par un superutilisateur.
+- Retour arrière (règle 11) : `database\migration\retour\163b_droit_identifiant_base_retour.sql` (`REVOKE`), superutilisateur, rejouable.
+- Test : `database\tests\163b_droit_identifiant_base_tests.sql` (aller, retour, aller, `has_function_privilege`) ; exige un superutilisateur sur une base jetable, **ignoré avec un message** sinon.
 
 ## 4. Règles pour écrire un nouveau script
 

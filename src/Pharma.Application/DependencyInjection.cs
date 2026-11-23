@@ -402,6 +402,8 @@ public static class DependencyInjection
         services.AddSingleton<SecondServeur.SuiviServeurEcarte>();
         services.AddSingleton<SecondServeur.IServeurEcarteDetecte>(sp => sp.GetRequiredService<SecondServeur.SuiviServeurEcarte>());
         services.AddScoped<SecondServeur.SurveillerServeurEcarte>();
+        // Lot 3 : lecture seule du serveur écarté (verrou de la base et écart gardé en base ; IVerrouBase et IEcartsDepot viennent de l'Infrastructure)
+        services.AddSingleton<SecondServeur.GardienServeurEcarte>();
         services.AddScoped<SecondServeur.ModifierServeurOfficine>();
         services.AddScoped<SecondServeur.ModifierSeuilsReplication>();
         services.AddScoped<SecondServeur.ModifierCopieGed>();

@@ -58,7 +58,13 @@ public static class DependencyInjection
         if (string.IsNullOrWhiteSpace(options.ChaineConnexion))
             throw new InvalidOperationException("Chaîne de connexion « Pharmacie » manquante.");
 
-        services.AddSingleton(NpgsqlDataSource.Create(AvecFuseau(options.ChaineConnexion)));
+        // Bascule du 2e serveur, lot 3 : source de l'API verrouillable en lecture seule (serveur écarté) ; l'écart gardé en base a sa propre
+        // source, sans verrou, pour pouvoir s'écrire et se lever même quand les connexions de l'API sont en lecture seule
+        var verrou = new SecondServeur.ConnexionsLectureSeule();
+        services.AddSingleton(verrou);
+        services.AddSingleton<Application.SecondServeur.IVerrouBase>(verrou);
+        services.AddSingleton(verrou.CreerSource(AvecFuseau(options.ChaineConnexion)));
+        services.AddSingleton<Application.SecondServeur.IEcartsDepot>(new SecondServeur.EcartsSql(NpgsqlDataSource.Create(AvecFuseau(options.ChaineConnexion))));
         // Dossiers du serveur et protection des secrets hors base : inchangés sous Windows sans réglage (C:\ProgramData\PharmaOfficine, DPAPI)
         var racine = DossiersDonnees.Racine(options.RacineDonnees);
         var protection = options.Protection ?? new ProtectionDpapiMachine();
@@ -228,6 +234,7 @@ public static class DependencyInjection
         // 2e serveur (script 122) : export / import de la clé (même fichier), réglages par serveur, réplication
         services.AddSingleton<Application.SecondServeur.ICleIntegriteStockee>(scelleur);
         services.AddScoped<Application.SecondServeur.ISecondServeurDepot, SecondServeur.SecondServeurSql>();
+        services.AddScoped<Application.SecondServeur.ISautCompteursBascule, SecondServeur.SautCompteursBasculeSql>();
         services.AddScoped<Application.Integrite.IIntegriteDepot, Securite.IntegriteSql>();
         services.AddScoped<Application.Synchronisation.ISortieSyncDepot, Synchronisation.SortieSyncSql>();
         // Synchronisation, lot S2 : envoi et accusés (script 128) ; clé et certificat de CE serveur hors base (DPAPI machine)

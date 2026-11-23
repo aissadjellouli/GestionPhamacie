@@ -127,7 +127,7 @@ function Test-NomBase([string]$Nom) {
     }
 }
 
-# Scripts numérotés « NNN_*.sql » (jamais les scripts « 101b », « 111b » : ils se lancent à part), dans l'ordre des numéros.
+# Scripts numérotés « NNN_*.sql » (jamais les scripts « 101b », « 111b », « 163b » : ils se lancent à part), dans l'ordre des numéros.
 function Get-ScriptsNumerotes {
     param([Parameter(Mandatory)][string]$Dossier)
     if (-not (Test-Path -LiteralPath $Dossier)) { throw "Dossier de scripts introuvable : $Dossier" }
@@ -138,7 +138,7 @@ function Get-ScriptsNumerotes {
 }
 
 # Numéros de database\migration jamais attribués (docs/base-de-donnees.md, « Numérotation ») : tolérés par Test-SuiteSansTrou.
-# Les scripts « b » (101b, 111b) ne sont pas dans la liste numérotée (Get-ScriptsNumerotes les ignore).
+# Les scripts « b » (101b, 111b, 163b) ne sont pas dans la liste numérotée (Get-ScriptsNumerotes les ignore).
 $script:NumerosNonAttribues = @(113, 119)
 
 # La suite numérotée de l'officine doit être sans trou ni doublon (comme celle du central, creer_base_centrale.ps1), hors numéros non attribués.

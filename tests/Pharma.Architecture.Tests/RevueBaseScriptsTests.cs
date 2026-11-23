@@ -47,9 +47,9 @@ public partial class RevueBaseScriptsTests
         Assert.Empty(numeros.Intersect(nonAttribues));   // un numéro listé « non attribué » ne doit pas avoir de script
         var manquants = Enumerable.Range(1, numeros.Max()).Except(numeros).Except(nonAttribues).ToList();
         Assert.True(manquants.Count == 0, "Numéros manquants dans database/migration (ni script, ni numéro non attribué) : " + string.Join(", ", manquants));
-        // Scripts à suffixe : seulement ceux documentés (docs/scripts-base-de-donnees.md, 3.1 et 3.2)
+        // Scripts à suffixe : seulement ceux documentés (docs/scripts-base-de-donnees.md, 3.1, 3.2 et 3.9)
         var suffixes = fichiers.Where(f => SuffixeLettre().IsMatch(f!)).Select(f => f![..4]).Order().ToList();
-        Assert.Equal(["101b", "111b"], suffixes);
+        Assert.Equal(["101b", "111b", "163b"], suffixes);
     }
 
     [Fact]

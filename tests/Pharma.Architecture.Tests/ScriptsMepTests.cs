@@ -114,6 +114,8 @@ public partial class ScriptsMepTests
                 Assert.Contains(choisis, n => n.StartsWith("100_"));       // au-delà de 099
                 Assert.Contains(choisis, n => n.StartsWith("139_"));
                 Assert.DoesNotContain(choisis, n => n.StartsWith("101b") || n.StartsWith("111b"));
+                Assert.DoesNotContain(choisis, n => n.StartsWith("163b"));
+                Assert.Contains(tous, n => n.StartsWith("163b_"));
                 Assert.Contains(tous, n => n.StartsWith("111b_"));          // les scripts « b » existent bien et sont exclus
             }
         }

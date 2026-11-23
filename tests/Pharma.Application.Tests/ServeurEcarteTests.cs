@@ -89,7 +89,7 @@ public class ServeurEcarteTests
     // ---- Boucle (horloge simulée) ----
 
     [Fact]
-    public async Task Boucle_ecarte_au_deuxieme_passage_l_etat_est_colle_et_aucune_alerte_cote_ecarte()
+    public async Task Boucle_ecarte_au_deuxieme_passage_l_etat_est_colle_et_le_titulaire_est_alerte()
     {
         var f = new Fabrique { Local = Ecriture(1), Autre = Ecriture(2) };
         var changements = new List<EcartDetecte?>();
@@ -106,7 +106,7 @@ public class ServeurEcarteTests
         Assert.Equal("AUTRE", ecart.ServeurRetenu);
         Assert.Equal(f.Horloge.MaintenantUtc, ecart.DepuisUtc);
         Assert.Single(changements);
-        Assert.Empty(f.Alertes.Messages);   // alerte du côté écarté : lot 5
+        Assert.Contains("a été remplacé par AUTRE ; il est en lecture seule ; les postes doivent basculer", Assert.Single(f.Alertes.Messages));
 
         f.Autre = null;   // l'autre devient injoignable : l'état reste
         f.Horloge.Avancer(SurveillerServeurEcarte.Intervalle);
@@ -137,7 +137,7 @@ public class ServeurEcarteTests
         await f.PasserAsync();
         Assert.Empty(f.Alertes.Messages);
         await f.PasserAsync();
-        Assert.Contains("ancien serveur principal", Assert.Single(f.Alertes.Messages));
+        Assert.Contains("ancien serveur principal", Assert.Single(f.Alertes.Messages), StringComparison.OrdinalIgnoreCase);
         f.Horloge.Avancer(TimeSpan.FromMinutes(30));
         await f.PasserAsync();
         Assert.Single(f.Alertes.Messages);
@@ -165,13 +165,88 @@ public class ServeurEcarteTests
     }
 
     [Fact]
-    public async Task Boucle_timelines_egales_ni_ecart_ni_alerte()
+    public async Task Boucle_timelines_egales_alerte_puis_lecture_seule_sans_serveur_retenu_q10()
     {
         var f = new Fabrique { Local = Ecriture(2), Autre = Ecriture(2) };
         await f.PasserAsync();
+        Assert.Null(f.Suivi.Ecart);   // un relevé ne suffit pas
         Assert.Equal(VerdictEcart.TimelinesEgales, (await f.PasserAsync())!.Verdict);
-        Assert.Null(f.Suivi.Ecart);
-        Assert.Empty(f.Alertes.Messages);
+
+        Assert.Contains("même timeline", Assert.Single(f.Alertes.Messages));
+        var ecart = f.Suivi.Ecart;
+        Assert.NotNull(ecart);
+        Assert.True(ecart.Indecis);
+        Assert.Null(ecart.ServeurRetenu);   // aucun serveur retenu : les postes ne doivent pas basculer
+        Assert.Equal(VerdictEcart.TimelinesEgales, (await f.PasserAsync())!.Verdict);   // l'état est gardé
+    }
+
+    [Fact]
+    public async Task Boucle_timelines_egales_alerte_une_fois_par_heure_meme_une_fois_en_lecture_seule()
+    {
+        var f = new Fabrique { Local = Ecriture(2), Autre = Ecriture(2) };
+        await f.PasserAsync();
+        Assert.Empty(f.Alertes.Messages);   // un seul relevé : jamais d'alerte
+        Assert.Equal(VerdictEcart.TimelinesEgales, (await f.PasserAsync())!.Verdict);
+        Assert.True(f.Suivi.Ecart!.Indecis);   // adapté : avec Q10 (lot 3) l'état indécis est posé, l'alerte continue chaque heure
+        Assert.Contains("même timeline", Assert.Single(f.Alertes.Messages));
+        f.Horloge.Avancer(TimeSpan.FromMinutes(59));
+        await f.PasserAsync();
+        Assert.Single(f.Alertes.Messages);
+        f.Horloge.Avancer(TimeSpan.FromMinutes(2));
+        await f.PasserAsync();
+        Assert.Equal(2, f.Alertes.Messages.Count);
+    }
+
+    [Fact]
+    public async Task Boucle_ecarte_realerte_toutes_les_heures_sans_nouveau_releve()
+    {
+        var f = new Fabrique { Local = Ecriture(1), Autre = Ecriture(2) };
+        await f.PasserAsync();
+        await f.PasserAsync();
+        Assert.Single(f.Alertes.Messages);
+        f.Horloge.Avancer(TimeSpan.FromMinutes(59));
+        await f.PasserAsync();
+        Assert.Single(f.Alertes.Messages);
+        f.Horloge.Avancer(TimeSpan.FromMinutes(1));
+        await f.PasserAsync();
+        Assert.Equal(2, f.Alertes.Messages.Count);
+        Assert.Equal(4, f.Releves.Appels);   // aucun relevé de plus une fois écarté
+    }
+
+    [Fact]
+    public async Task Boucle_ecarte_restaure_au_demarrage_alerte_aussi()
+    {
+        var f = new Fabrique { Local = Ecriture(1), Autre = Ecriture(2) };
+        f.Suivi.Restaurer(new EcartDetecte(f.Horloge.MaintenantUtc, "RETENU", 1, 2));
+        await f.PasserAsync();
+        Assert.Contains("remplacé par RETENU", Assert.Single(f.Alertes.Messages));
+        Assert.Equal(0, f.Releves.Appels);
+    }
+
+    [Fact]
+    public async Task Boucle_alertes_independantes_par_sorte_et_levee_efface_la_memoire()
+    {
+        var f = new Fabrique { Local = Ecriture(1), Autre = Ecriture(2) };
+        await f.PasserAsync();
+        await f.PasserAsync();
+        Assert.Single(f.Alertes.Messages);
+        f.Suivi.Lever();   // levée d'un faux positif : l'alerte repart sans délai si la situation se reproduit
+        await f.PasserAsync();
+        await f.PasserAsync();
+        Assert.Equal(2, f.Alertes.Messages.Count);
+    }
+
+    [Fact]
+    public async Task Surveillance_inactive_sans_2e_serveur_declare_et_active_avec()
+    {
+        var sans = new Fabrique { Local = Ecriture(1), Autre = Ecriture(2), Regle = false };
+        Assert.Null(await sans.PasserAsync());
+        Assert.Equal(0, sans.Releves.Appels);
+        Assert.Empty(sans.Alertes.Messages);
+
+        var avec = new Fabrique { Local = Ecriture(1), Autre = Ecriture(2) };
+        Assert.NotNull(await avec.PasserAsync());
+        Assert.True(avec.Releves.Appels > 0);
     }
 
     [Fact]
@@ -236,7 +311,14 @@ public class ServeurEcarteTests
     private sealed class Alertes : IAlertesTitulaire
     {
         public List<string> Messages { get; } = [];
-        public Task SauvegardeEnEchecAsync(bool disqueAbsent, string detail, CancellationToken ct = default) { Messages.Add(detail); return Task.CompletedTask; }
+        public Task SauvegardeEnEchecAsync(bool disqueAbsent, string detail, CancellationToken ct = default) => Task.CompletedTask;
+        public List<string> Smss { get; } = [];
+        public Task SecondServeurAsync(string objet, string detail, string sms, CancellationToken ct = default)
+        {
+            Messages.Add(objet + " " + detail);
+            Smss.Add(sms);
+            return Task.CompletedTask;
+        }
         public Task EcartCaisseAsync(string employe, string poste, decimal ecart, decimal seuilCaisse, CancellationToken ct = default, bool releve = false) => Task.CompletedTask;
         public Task LotBloqueAsync(string produit, string numeroLot, int boitesEnStock, int boitesVendues, CancellationToken ct = default) => Task.CompletedTask;
         public Task EcartsInventaireAsync(string rayon, int lignes, int boites, decimal valeur, CancellationToken ct = default) => Task.CompletedTask;

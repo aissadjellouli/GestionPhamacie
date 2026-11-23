@@ -136,6 +136,10 @@ builder.Services.AddHostedService<VerificationIntegriteNocturne>();
 builder.Services.AddHostedService<ScellementMensuelRegistre>();
 builder.Services.AddHostedService<ClotureFiscaleMensuelle>();
 builder.Services.AddHostedService<SerialisationHorsLigne>();
+// Serveur écarté (lecture seule) : les tâches de fond qui écrivent sont arrêtées, relancées à la levée ; sauvegardes et surveillance du 2e serveur restent en marche
+TacheSuspendueSiEcarte.Envelopper(builder.Services, typeof(Pharma.Api.Taches.EnvoiSynchronisation), typeof(Pharma.Api.Taches.SurveillanceSynchronisation),
+    typeof(Pharma.Api.Taches.PurgeSynchronisation), typeof(EnvoiNotifications), typeof(AlertesQuotidiennes), typeof(SurveillancePeriodique),
+    typeof(VerificationIntegriteNocturne), typeof(ScellementMensuelRegistre), typeof(ClotureFiscaleMensuelle), typeof(SerialisationHorsLigne));
 builder.Services.AddProblemDetails();
 // Limite de débit par adresse IP sur les routes de connexion (mots de passe, codes comptoir, super admin)
 builder.Services.AjouterLimiteConnexions(builder.Configuration);
@@ -175,7 +179,7 @@ if (demo.Actif)
     app.Logger.LogWarning("Mode démonstration actif : données fictives ; SMS, e-mails, synchronisation, sauvegardes, super admin, 2e serveur, "
                           + "reprise ODBC et export Chifa coupés");
     // Le compte super admin ne se crée pas en démonstration (super admin coupé)
-    if (args.Contains(ConsoleSuperAdmin.Argument) || ConsoleCleScellement.Concerne(args))
+    if (args.Contains(ConsoleSuperAdmin.Argument) || ConsoleCleScellement.Concerne(args) || ConsoleLeverEcart.Concerne(args))
     {
         Console.Error.WriteLine(Pharma.Application.Demo.ModeDemo.Indisponible("commandes du super admin et de la clé de scellement"));
         return 3;
@@ -190,13 +194,70 @@ if (args.Contains(ConsoleSuperAdmin.Argument))
 if (ConsoleCleScellement.Concerne(args))
     return ConsoleCleScellement.Executer(app.Services, args);
 
+// Levée d'un faux positif « serveur écarté » : Pharma.Api.exe --lever-ecart [--identifiant X] [--motif "texte"] (compte titulaire ; le serveur ne démarre pas)
+if (ConsoleLeverEcart.Concerne(args))
+    return await ConsoleLeverEcart.ExecuterAsync(app.Services, args);
+
+// Serveur écarté (bascule du 2e serveur, lot 3) : l'écart gardé en base est relu (état collant, même si l'autre serveur ne répond plus) ;
+// face à un autre serveur principal plus récent (Q8), ou à la même timeline (Q10), ce serveur démarre EN LECTURE SEULE au lieu d'être refusé.
+// Le gardien s'abonne d'abord : tout passage à « écarté » verrouille les connexions de la base et écrit l'écart.
+var gardienEcart = app.Services.GetRequiredService<Pharma.Application.SecondServeur.GardienServeurEcarte>();
+gardienEcart.Demarrer();
+var suiviEcart = app.Services.GetRequiredService<Pharma.Application.SecondServeur.SuiviServeurEcarte>();
+if (!demo.Actif)
+{
+    await gardienEcart.ChargerAsync();
+    if (gardienEcart.EcartIgnore is { } ignore)
+        app.Logger.LogWarning("Une ligne active de serveur_ecarte (depuis {Depuis:u}) est ignorée : aucun 2e serveur déclaré (SecondServeur:AutreServeur), le serveur reste en écriture. Levez-la avec --lever-ecart", ignore.DepuisUtc);
+    if (suiviEcart.Ecart is null && demarrage.AutreServeurPrincipal == true && demarrage.BaseEnRecovery == false)
+    {
+        using var porteeEcart = app.Services.CreateScope();
+        if (await Pharma.Application.SecondServeur.DemarrageEcarte.AppliquerAsync(
+                app.Services.GetRequiredService<Pharma.Application.SecondServeur.IReleveServeurs>(), suiviEcart,
+                porteeEcart.ServiceProvider.GetRequiredService<Pharma.Application.Notifications.IAlertesTitulaire>(),
+                app.Services.GetRequiredService<Pharma.Application.Commun.IHorloge>(), TimeSpan.FromSeconds(1),
+                app.Services.GetRequiredService<Pharma.Application.Commun.ITraceErreurs>()) is { } ecartDemarrage)
+            app.Logger.LogCritical("Ce serveur démarre en LECTURE SEULE : {Motif} (timeline {TimelineLocale} contre {TimelineRetenue})",
+                ecartDemarrage.Indecis ? "deux bases en écriture avec la même timeline" : "un autre serveur est devenu principal", ecartDemarrage.TimelineLocale, ecartDemarrage.TimelineRetenue);
+    }
+}
+
 // Jamais deux API qui écrivent : base en lecture seule (2e serveur en veille) ou autre serveur principal => refus, message clair
-if (Pharma.Application.SecondServeur.ReplicationOfficine.RefusDemarrage(demarrage.BaseEnRecovery, demarrage.AutreServeurPrincipal,
+if (suiviEcart.Ecart is null && Pharma.Application.SecondServeur.ReplicationOfficine.RefusDemarrage(demarrage.BaseEnRecovery, demarrage.AutreServeurPrincipal,
         builder.Configuration["SecondServeur:AutreServeur"], demarrage.Timeline, demarrage.TimelineAutre) is { } refusServeur)
 {
     app.Logger.LogCritical("{Refus}", refusServeur);
     Console.Error.WriteLine(refusServeur);
     return 2;
+}
+
+// Promotion du 2e serveur : avant toute écriture (les tâches de fond ne démarrent qu'à app.Run), les compteurs sautent une réserve, une seule
+// fois par timeline (tickets +100 000 ; factures, avoirs, bons de commande +1 000 ; script 164). Pourquoi au démarrage de l'API et non dans
+// le script de bascule : l'API est le seul écrivain, démarre toujours après la promotion (quel que soit l'outil qui l'a faite) et le saut est
+// ainsi garanti avant la première vente ; le script ne garantirait que les promotions qu'il a faites lui-même.
+if (Pharma.Application.SecondServeur.SautCompteursBascule.Applicable(
+        Pharma.Application.SecondServeur.DeuxServeursDeclares.Est(builder.Configuration["SecondServeur:AutreServeur"]), demo.Actif, demarrage.BaseEnRecovery))
+{
+    try
+    {
+        using var porteeSaut = app.Services.CreateScope();
+        var saut = await porteeSaut.ServiceProvider.GetRequiredService<Pharma.Application.SecondServeur.ISautCompteursBascule>().AppliquerAsync();
+        if (saut.SautFait)
+            app.Logger.LogWarning("Promotion détectée (timeline {Timeline}) : {Compteurs} compteur(s) sauté(s) avant toute écriture", saut.Timeline, saut.CompteursSautes);
+        else
+            app.Logger.LogInformation("Saut des compteurs : rien à faire (timeline {Timeline})", saut.Timeline);
+    }
+    catch (Exception e) when (e is PostgresException or NpgsqlException or TimeoutException or System.Net.Sockets.SocketException)
+    {
+        var sqlState = (e as PostgresException)?.SqlState;
+        if (Pharma.Application.SecondServeur.SautCompteursBascule.Decider(sqlState, e is not PostgresException) == Pharma.Application.SecondServeur.SuiteSautCompteurs.Refuser)
+        {
+            app.Logger.LogCritical(e, "Saut des compteurs à la promotion impossible : démarrage refusé (aucune écriture avec des compteurs non sautés)");
+            Console.Error.WriteLine("Saut des compteurs à la promotion impossible : démarrage refusé. Voir le journal du serveur.");
+            return 4;
+        }
+        app.Logger.LogWarning("Saut des compteurs non fait ({Etat}) : script 164 non passé, base en lecture seule ou injoignable", sqlState ?? "base injoignable");
+    }
 }
 
 // Fuseau horaire : l'officine est en UTC+1 toute l'année (Africa/Algiers) ; la base est réglée par la migration 083
@@ -289,6 +350,9 @@ app.Use(async (ctx, suite) =>
     }
     await suite();
 });
+
+// Serveur écarté (bascule du 2e serveur, lot 3) : toute requête refusée (503 « serveur_ecarte », adresse du serveur retenu), sauf /api/healthcheck
+app.Use(BarrageServeurEcarte.Filtrer);
 
 // Démonstration : fonctions coupées refusées (422 « Indisponible en démonstration : … »), avant toute authentification
 if (demo.Actif) app.Use(Pharma.Api.Demo.FonctionsCoupeesDemo.FiltrerAsync);

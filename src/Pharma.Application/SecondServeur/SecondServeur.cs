@@ -85,6 +85,8 @@ public static class ReplicationOfficine
     /// Deux bases principales : celle qui a la plus haute timeline (promue le plus récemment, par la bascule) garde la main ; l'ancienne
     /// (revenue après une panne, sans avoir été remise en 2e serveur) refuse. Timelines égales ou inconnues : les deux refusent.
     /// Inconnu (base ou autre serveur injoignable) : pas de refus ici.
+    /// Bascule du 2e serveur, lot 3 (Q8, Q10) : l'API n'appelle ce refus que si le serveur ne démarre pas déjà EN LECTURE SEULE
+    /// (<see cref="DemarrageEcarte"/> : autre principal plus récent de même lignée, ou même timeline) ; il ne reste que les cas indécidables.
     /// </summary>
     public static string? RefusDemarrage(bool? baseEnRecovery, bool? autreServeurPrincipal, string? autreServeur, long? timeline = null, long? timelineAutre = null)
     {

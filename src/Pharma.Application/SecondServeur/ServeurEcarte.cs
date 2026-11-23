@@ -72,8 +72,12 @@ public static class DecisionServeurEcarte
     }
 }
 
-/// <summary>Écart confirmé : CE serveur est écarté, l'autre est retenu.</summary>
-public sealed record EcartDetecte(DateTime DepuisUtc, string? ServeurRetenu, long TimelineLocale, long TimelineRetenue);
+/// <summary>
+/// Écart confirmé : CE serveur est écarté, l'autre est retenu. <paramref name="Indecis"/> : deux bases en écriture avec la même timeline
+/// (décision du titulaire sur Q10) : les deux serveurs se mettent en lecture seule, aucun n'est « retenu » (ServeurRetenu null) et
+/// l'état n'est pas gardé en base (la table serveur_ecarte exige une timeline retenue plus grande) ; un redémarrage le relit.
+/// </summary>
+public sealed record EcartDetecte(DateTime DepuisUtc, string? ServeurRetenu, long TimelineLocale, long TimelineRetenue, bool Indecis = false);
 
 /// <summary>
 /// Interface que le lot 3 branche (intergiciel 503, initialiseur de connexion, tâches de fond, healthcheck) : l'état détecté.
@@ -90,6 +94,9 @@ public interface IServeurEcarteDetecte
     void Restaurer(EcartDetecte ecart);
 }
 
+/// <summary>Sortes d'alertes au titulaire de la surveillance du 2e serveur ; chacune a sa propre limite d'une par heure.</summary>
+public enum AlerteSecondServeur { Ecarte, AncienPrincipal, TimelinesEgales, LigneeDifferente }
+
 /// <summary>État en mémoire de la détection (singleton) : dernière décision, état écarté, dernière alerte envoyée.</summary>
 public sealed class SuiviServeurEcarte : IServeurEcarteDetecte
 {
@@ -100,11 +107,17 @@ public sealed class SuiviServeurEcarte : IServeurEcarteDetecte
     public event Action<EcartDetecte?>? Change;
 
     internal DecisionEcart? Precedente { get; set; }
-    internal DateTime? DerniereAlerteUtc { get; set; }
+    // Dernière alerte envoyée par sorte d'alerte (une par heure au plus chacune). Gardée en mémoire seulement : aucun mécanisme existant
+    // ne garde cet horodatage en base ; un redémarrage de l'API autorise donc une alerte de plus (au plus une par redémarrage).
+    private readonly Dictionary<AlerteSecondServeur, DateTime> _alertes = [];
+
+    internal DateTime? DerniereAlerteUtc(AlerteSecondServeur sorte) { lock (_verrou) return _alertes.TryGetValue(sorte, out var d) ? d : null; }
+    internal void NoterAlerte(AlerteSecondServeur sorte, DateTime quand) { lock (_verrou) _alertes[sorte] = quand; }
+    internal void OublierAlertes() { lock (_verrou) _alertes.Clear(); }
 
     public void Lever()
     {
-        lock (_verrou) { _ecart = null; Precedente = null; DerniereAlerteUtc = null; }
+        lock (_verrou) { _ecart = null; Precedente = null; _alertes.Clear(); }
         Change?.Invoke(null);
     }
 
@@ -123,19 +136,25 @@ public sealed class SuiviServeurEcarte : IServeurEcarteDetecte
 }
 
 /// <summary>
-/// Un passage de la surveillance (toutes les 30 s, tâche SurveillanceSecondServeur). Côté retenu et lignée différente : alerte au
-/// titulaire seulement (au plus une par heure). Côté écarté : seul l'état est posé (le lot 3 fait le reste, le lot 5 alerte).
+/// Un passage de la surveillance (toutes les 30 s, tâche SurveillanceSecondServeur). Alertes au titulaire, au plus une par heure et par
+/// sorte, sans donnée de patient : serveur écarté (état posé ici, lecture seule par le lot 3), ancien principal qui écrit encore,
+/// lignée différente, deux bases à la même timeline (Q10 : alerte AVANT le verrou, puis lecture seule ici aussi).
 /// </summary>
 public sealed class SurveillerServeurEcarte(IReleveServeurs releves, SuiviServeurEcarte suivi, IAlertesTitulaire alertes, IHorloge horloge, ITraceErreurs? trace = null)
 {
     public static readonly TimeSpan Intervalle = TimeSpan.FromSeconds(30);
     public static readonly TimeSpan IntervalleAlertes = TimeSpan.FromHours(1);
 
-    /// <summary>Null si rien à surveiller (autre serveur non réglé). Déjà écarté : l'état est gardé, plus de relevé.</summary>
+    /// <summary>Null si rien à surveiller (autre serveur non réglé). Déjà écarté : l'état est gardé, plus de relevé, alerte toutes les heures.</summary>
     public async Task<DecisionEcart?> ExecuterAsync(CancellationToken ct = default)
     {
         if (!releves.AutreServeurRegle) return null;
-        if (suivi.Ecart is { } e) return new DecisionEcart(VerdictEcart.Ecarte, true, e.TimelineLocale, e.TimelineRetenue);
+        if (suivi.Ecart is { } e)
+        {
+            if (e.Indecis) await AlerterTimelinesEgalesAsync(releves.AutreServeur, e.TimelineLocale, ct);
+            else await AlerterEcarteAsync(e.ServeurRetenu ?? releves.AutreServeur, ct);
+            return new DecisionEcart(e.Indecis ? VerdictEcart.TimelinesEgales : VerdictEcart.Ecarte, true, e.TimelineLocale, e.TimelineRetenue);
+        }
 
         var local = await releves.LocalAsync(ct);
         var autre = local is { EnRecovery: false } ? await releves.AutreAsync(ct) : null;
@@ -147,28 +166,57 @@ public sealed class SurveillerServeurEcarte(IReleveServeurs releves, SuiviServeu
         switch (decision)
         {
             case { Verdict: VerdictEcart.Ecarte, Confirme: true }:
-                suivi.Ecarter(new EcartDetecte(horloge.MaintenantUtc, releves.AutreServeur, decision.TimelineLocale!.Value, decision.TimelineAutre!.Value));
+                var ecart = new EcartDetecte(horloge.MaintenantUtc, releves.AutreServeur, decision.TimelineLocale!.Value, decision.TimelineAutre!.Value);
+                suivi.Ecarter(ecart);
+                await AlerterEcarteAsync(ecart.ServeurRetenu, ct);
+                break;
+            case { Verdict: VerdictEcart.TimelinesEgales, Confirme: true }:
+                // Q10 : l'alerte part AVANT le verrou (la base est encore en écriture), puis ce serveur passe en lecture seule
+                await AlerterTimelinesEgalesAsync(releves.AutreServeur, decision.TimelineLocale, ct);
+                suivi.Ecarter(new EcartDetecte(horloge.MaintenantUtc, null, decision.TimelineLocale!.Value, decision.TimelineLocale.Value, Indecis: true));
                 break;
             case { Verdict: VerdictEcart.Retenu, Confirme: true }:
-                await AlerterAsync("L'ancien serveur principal (" + releves.AutreServeur + ") a encore une base en écriture, avec une timeline plus ancienne ("
-                    + decision.TimelineAutre + " contre " + decision.TimelineLocale + " ici) : il aurait dû être écarté. Ce serveur reste le serveur retenu ; rien n'est changé ici.", ct);
+                await AlerterAsync(AlerteSecondServeur.AncienPrincipal, "Un ancien serveur principal écrit encore",
+                    "Un ancien serveur principal (" + releves.AutreServeur + ") écrit encore : sa base est en écriture, avec une timeline plus ancienne ("
+                    + decision.TimelineAutre + " contre " + decision.TimelineLocale + " ici). Ce serveur reste le serveur retenu.\n\n"
+                    + "À faire : arrêtez l'ancien serveur ou remettez-le en 2e serveur, et vérifiez que tous les postes sont branchés sur ce serveur.",
+                    "Un ancien serveur principal ecrit encore : il doit etre arrete ou remis en 2e serveur.", ct);
                 break;
             case { Verdict: VerdictEcart.LigneeDifferente, Confirme: true }:
-                await AlerterAsync("L'autre serveur (" + releves.AutreServeur + ") a une base en écriture qui n'est pas une copie de celle-ci "
-                    + "(identifiant système différent) : vérifiez le réglage SecondServeur:AutreServeur. Aucun serveur n'est écarté.", ct);
+                await AlerterAsync(AlerteSecondServeur.LigneeDifferente, "L'autre serveur n'est pas une copie de celui-ci",
+                    "L'autre serveur (" + releves.AutreServeur + ") a une base en écriture qui n'est pas une copie de celle-ci "
+                    + "(identifiant système différent) : vérifiez le réglage SecondServeur:AutreServeur. Aucun serveur n'est écarté.",
+                    "L'autre serveur n'est pas une copie de celui-ci : verifiez le reglage SecondServeur:AutreServeur.", ct);
                 break;
             case { Verdict: VerdictEcart.Normal }:
-                suivi.DerniereAlerteUtc = null;   // situation rétablie : la prochaine alerte repart sans délai
+                suivi.OublierAlertes();   // situation rétablie : la prochaine alerte repart sans délai
                 break;
         }
         return decision;
     }
 
-    private async Task AlerterAsync(string message, CancellationToken ct)
+    public static string MessageTimelinesEgales(string? autreServeur, long? timeline) =>
+        $"Deux bases en écriture avec la même timeline ({timeline}) : ce serveur et l'autre ({autreServeur}). Aucun ne peut être retenu : les deux passent en "
+        + "lecture seule. Arrêtez PostgreSQL sur celui que vous n'avez pas choisi, puis redémarrez l'API de l'autre.";
+
+    private Task AlerterTimelinesEgalesAsync(string? autreServeur, long? timeline, CancellationToken ct) =>
+        AlerterAsync(AlerteSecondServeur.TimelinesEgales, "Aucun serveur ne peut être désigné", MessageTimelinesEgales(autreServeur, timeline),
+            "Aucun serveur ne peut etre designe : les deux sont en lecture seule, decision du titulaire necessaire.", ct);
+
+    private Task AlerterEcarteAsync(string? serveurRetenu, CancellationToken ct)
+    {
+        var retenu = string.IsNullOrWhiteSpace(serveurRetenu) ? "l'autre serveur" : serveurRetenu;
+        return AlerterAsync(AlerteSecondServeur.Ecarte, "Ce serveur a été remplacé",
+            $"Ce serveur a été remplacé par {retenu} ; il est en lecture seule ; les postes doivent basculer.",
+            $"Ce serveur a ete remplace par {retenu} ; il est en lecture seule ; les postes doivent basculer.", ct);
+    }
+
+    /// <summary>Au plus une alerte par heure et par sorte ; jamais bloquant, aucune donnée de patient.</summary>
+    private async Task AlerterAsync(AlerteSecondServeur sorte, string objet, string detail, string sms, CancellationToken ct)
     {
         var maintenant = horloge.MaintenantUtc;
-        if (suivi.DerniereAlerteUtc is { } a && maintenant - a < IntervalleAlertes) return;
-        suivi.DerniereAlerteUtc = maintenant;
-        await AlerteNonEnvoyeeSignalee.SansBlocageAsync(() => alertes.SauvegardeEnEchecAsync(false, message, ct), "serveur écarté (2e serveur)", trace);
+        if (suivi.DerniereAlerteUtc(sorte) is { } a && maintenant - a < IntervalleAlertes) return;
+        suivi.NoterAlerte(sorte, maintenant);
+        await AlerteNonEnvoyeeSignalee.SansBlocageAsync(() => alertes.SecondServeurAsync(objet, detail, sms, ct), "serveur écarté (2e serveur)", trace);
     }
 }

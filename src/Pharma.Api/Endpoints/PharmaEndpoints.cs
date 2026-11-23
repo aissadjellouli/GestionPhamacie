@@ -7,7 +7,9 @@ public static class PharmaEndpoints
     public static void MapPharmaEndpoints(this WebApplication app)
     {
         // Santé du serveur (2026-11-19 : /api/healthcheck, ancien nom /api/sante retiré sur demande du titulaire)
-        app.MapGet("/api/healthcheck", () => Results.Ok(new { statut = "ok", heure = DateTime.Now }));
+        // Serveur écarté (lot 3) : statut reste « ok » (le serveur répond) ; ecarte = vrai et serveurRetenu = adresse du serveur retenu (null si indécis) le signalent
+        app.MapGet("/api/healthcheck", (Pharma.Application.SecondServeur.IServeurEcarteDetecte ecart) =>
+            Results.Ok(new { statut = "ok", heure = DateTime.Now, ecarte = ecart.Ecart is not null, serveurRetenu = ecart.Ecart?.ServeurRetenu }));
         // Mode démonstration (docs/demo-cloud.md, étape 2) : lu sans connexion par le poste et la page mobile (bandeau permanent)
         app.MapGet("/api/demo", (Microsoft.Extensions.Options.IOptions<Pharma.Api.Demo.ReglagesDemo> demo) =>
             Results.Ok(new Pharma.Shared.EtatDemoDto(demo.Value.Actif, demo.Value.Actif ? Pharma.Application.Demo.ModeDemo.Libelle : null)));

@@ -9,7 +9,7 @@ Mis à jour le 2026-11-23.
 les anomalies traitées et la matrice des droits ; déconnexion après 15 minutes par défaut pour une installation neuve ;
 don d'un lot bloqué ou périmé refusé ; balance mensuelle du registre avec le solde reporté du mois précédent ; facture
 corrigée gardée dans l'année de son numéro ; dossier de sauvegarde limité aux disques du poste ; GED contrôlée à l'entrée.
-Ajouts de la nuit du 2026-11-23 : tests d'intégration SQL sur PostgreSQL (49 tests) ; installation neuve corrigée (données techniques de l'init) ; 2e serveur : détection d'un serveur écarté (lot 1 de la bascule allégée, lecture seule et écrans à venir). Ce sont des corrections et des règles de fonctions déjà comptées : le résumé ci-dessous ne change pas. Détail :
+Bascule du 2e serveur (vague 1, non commitée) : serveur écarté en lecture seule, alertes, saut des compteurs à la promotion, droit de lecture de l'identifiant de la base, inactive avec un seul serveur ; postes et promotion automatique à venir. Ajouts de la nuit du 2026-11-23 : tests d'intégration SQL sur PostgreSQL (49 tests) ; installation neuve corrigée (données techniques de l'init) ; 2e serveur : détection d'un serveur écarté (lot 1 de la bascule allégée, lecture seule et écrans à venir). Ce sont des corrections et des règles de fonctions déjà comptées : le résumé ci-dessous ne change pas. Détail :
 [regles-metier.md](regles-metier.md), section « Corrections de la revue complète (2026-11-23) ».
 
 

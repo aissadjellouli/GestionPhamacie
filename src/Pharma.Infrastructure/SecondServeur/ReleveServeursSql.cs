@@ -12,7 +12,7 @@ public sealed class ReleveServeursSql(string chaineConnexion, string? autreServe
 {
     private const int DelaiSecondes = 3;
 
-    public bool AutreServeurRegle => !string.IsNullOrWhiteSpace(autreServeur) && !string.IsNullOrWhiteSpace(chaineConnexion);
+    public bool AutreServeurRegle => DeuxServeursDeclares.Est(autreServeur) && !string.IsNullOrWhiteSpace(chaineConnexion);
     public string? AutreServeur => string.IsNullOrWhiteSpace(autreServeur) ? null : autreServeur.Trim();
 
     public Task<ReleveServeur?> LocalAsync(CancellationToken ct = default) => LireHoteAsync(null, ct);

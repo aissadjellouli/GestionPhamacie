@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 163 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 164 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, rejouer TOUTE la suite
 -- database/migration depuis le script 001 (mettre_a_jour_base_officine.ps1), jamais ce fichier ni un script isolé.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 163 ; à régénérer à chaque nouveau script.
+-- par les scripts 001 à 164 ; à régénérer à chaque nouveau script.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -933,6 +933,134 @@ CREATE FUNCTION public.avoir_mouvement_immuable() RETURNS trigger
 BEGIN
     RAISE EXCEPTION 'Un mouvement d''avoir ne se modifie pas et ne se supprime pas.';
 END $$;
+
+
+--
+-- Name: bascule_noter_saut(bigint, text, text, bigint, bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.bascule_noter_saut(p_promotion bigint, p_compteur text, p_detail text, p_ancienne bigint, p_nouvelle bigint) RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    INSERT INTO bascule_saut (promotion_id, compteur, detail, ancienne, nouvelle, reserve)
+    VALUES (p_promotion, p_compteur, p_detail, p_ancienne, p_nouvelle, p_nouvelle - p_ancienne);
+    INSERT INTO journal_audit (utilisateur_id, action, table_cible, details)
+    VALUES (NULL, 'saut_compteur_bascule', 'bascule_saut',
+            jsonb_build_object('motif', 'bascule', 'compteur', p_compteur, 'detail', p_detail,
+                               'ancienne_valeur', p_ancienne, 'nouvelle_valeur', p_nouvelle, 'reserve', p_nouvelle - p_ancienne));
+END $$;
+
+
+--
+-- Name: bascule_saut_promotion(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.bascule_saut_promotion(p_timeline integer DEFAULT NULL::integer) RETURNS TABLE(timeline_notee integer, saut_fait boolean, compteurs_sautes integer)
+    LANGUAGE plpgsql
+    AS $$
+#variable_conflict use_column
+DECLARE
+    c_reserve_tickets   constant bigint := 100000;
+    c_reserve_factures  constant bigint := 1000;
+    c_reserve_avoirs    constant bigint := 1000;
+    c_reserve_commandes constant bigint := 1000;
+    v_tl        int;
+    v_max       int;
+    v_promotion bigint;
+    v_n         int := 0;
+    v_compteur  compteur_ticket;
+    v_ancienne  bigint;
+    v_nouvelle  bigint;
+    v_annee     int := extract(year FROM (now() AT TIME ZONE 'Africa/Algiers'))::int;
+    r           record;
+BEGIN
+    IF pg_is_in_recovery() THEN
+        RAISE EXCEPTION 'Saut des compteurs refusé : la base est en lecture seule (2e serveur pas encore promu)' USING ERRCODE = 'read_only_sql_transaction';
+    END IF;
+    v_tl := COALESCE(p_timeline, bascule_timeline_courante());
+    IF v_tl IS NULL OR v_tl < 1 THEN
+        RAISE EXCEPTION 'Saut des compteurs refusé : timeline invalide (%)', v_tl USING ERRCODE = 'check_violation';
+    END IF;
+    -- Deux démarrages en même temps : le second attend la fin du premier, puis ne refait rien
+    PERFORM pg_advisory_xact_lock(hashtextextended('bascule_saut_promotion', 0));
+    SELECT max(b.timeline) INTO v_max FROM bascule_promotion b;
+
+    IF v_max IS NULL THEN
+        INSERT INTO bascule_promotion (timeline, saut, motif)
+        VALUES (v_tl, false, 'Première note : timeline courante gardée sans saut (mise en service du suivi des promotions)');
+        timeline_notee := v_tl; saut_fait := false; compteurs_sautes := 0;
+        RETURN NEXT;
+        RETURN;
+    END IF;
+    IF v_tl <= v_max THEN
+        timeline_notee := v_tl; saut_fait := false; compteurs_sautes := 0;
+        RETURN NEXT;
+        RETURN;
+    END IF;
+
+    INSERT INTO bascule_promotion (timeline, saut, motif)
+    VALUES (v_tl, true, format('Promotion : timeline %s après la timeline %s ; compteurs sautés (tickets +%s, factures +%s, avoirs +%s, commandes +%s)',
+                               v_tl, v_max, c_reserve_tickets, c_reserve_factures, c_reserve_avoirs, c_reserve_commandes))
+    RETURNING id INTO v_promotion;
+
+    -- Tickets « T- » : plage sautée notée (motif « bascule »), compteur avancé sous la garde du script 151, journal fiscal
+    SELECT * INTO v_compteur FROM compteur_ticket WHERE id = 1 FOR UPDATE;
+    IF FOUND THEN
+        v_ancienne := v_compteur.dernier_numero;
+        v_nouvelle := v_ancienne + c_reserve_tickets;
+        INSERT INTO compteur_ticket_saut (du, au, motif) VALUES (v_ancienne + 1, v_nouvelle, 'bascule');
+        PERFORM set_config('pharma.saut_ticket', v_nouvelle::text, true);
+        UPDATE compteur_ticket SET dernier_numero = v_nouvelle WHERE id = 1;
+        PERFORM set_config('pharma.saut_ticket', '', true);
+        PERFORM bascule_noter_saut(v_promotion, 'ticket', v_compteur.prefixe, v_ancienne, v_nouvelle);
+        INSERT INTO journal_vente (evenement, survenu_le, motif)
+        VALUES ('saut_compteur', now(),
+                format('Bascule du 2e serveur (timeline %s) : compteur des tickets sauté de %s%s à %s%s (réserve de %s n°)',
+                       v_tl, v_compteur.prefixe, lpad(v_ancienne::text, GREATEST(6, char_length(v_ancienne::text)), '0'),
+                       v_compteur.prefixe, lpad(v_nouvelle::text, GREATEST(6, char_length(v_nouvelle::text)), '0'), c_reserve_tickets));
+        v_n := v_n + 1;
+    END IF;
+
+    -- Factures et avoirs : l'année en cours (créée si absente) et toute année déjà ouverte
+    INSERT INTO facture_compteur (type, annee, dernier) VALUES ('facture', v_annee, 0), ('avoir', v_annee, 0) ON CONFLICT (type, annee) DO NOTHING;
+    FOR r IN SELECT f.type, f.annee, f.dernier FROM facture_compteur f ORDER BY f.type, f.annee FOR UPDATE LOOP
+        v_nouvelle := r.dernier + CASE WHEN r.type = 'avoir' THEN c_reserve_avoirs ELSE c_reserve_factures END;
+        UPDATE facture_compteur SET dernier = v_nouvelle WHERE type = r.type AND annee = r.annee;
+        PERFORM bascule_noter_saut(v_promotion, r.type, r.annee::text, r.dernier, v_nouvelle);
+        v_n := v_n + 1;
+    END LOOP;
+
+    -- Bons de commande « C- » (séquence) : en dernier, un setval ne s'annule pas avec la transaction
+    IF to_regclass('public.seq_numero_commande') IS NOT NULL THEN
+        SELECT CASE WHEN s.is_called THEN s.last_value ELSE s.last_value - 1 END INTO v_ancienne FROM seq_numero_commande s;
+        v_nouvelle := v_ancienne + c_reserve_commandes;
+        PERFORM bascule_noter_saut(v_promotion, 'commande', 'C-', v_ancienne, v_nouvelle);
+        PERFORM setval('seq_numero_commande', v_nouvelle, true);
+        v_n := v_n + 1;
+    END IF;
+
+    timeline_notee := v_tl; saut_fait := true; compteurs_sautes := v_n;
+    RETURN NEXT;
+END $$;
+
+
+--
+-- Name: FUNCTION bascule_saut_promotion(p_timeline integer); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.bascule_saut_promotion(p_timeline integer) IS 'Saut des compteurs à la promotion du 2e serveur, une seule fois par timeline, avant toute écriture (script 164, décision Q13).';
+
+
+--
+-- Name: bascule_timeline_courante(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.bascule_timeline_courante() RETURNS integer
+    LANGUAGE sql
+    AS $$
+    SELECT ('x' || substr(pg_walfile_name(pg_current_wal_lsn()), 1, 8))::bit(32)::int
+$$;
 
 
 --
@@ -6029,6 +6157,82 @@ ALTER TABLE public.avoir_mouvement ALTER COLUMN id ADD GENERATED ALWAYS AS IDENT
 
 
 --
+-- Name: bascule_promotion; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bascule_promotion (
+    id bigint NOT NULL,
+    timeline integer NOT NULL,
+    saut boolean NOT NULL,
+    motif character varying(300) NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT bascule_promotion_timeline_check CHECK ((timeline >= 1))
+);
+
+
+--
+-- Name: TABLE bascule_promotion; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.bascule_promotion IS 'Une ligne par timeline de la base : saut des compteurs fait à cette promotion (saut) ou première note sans saut ; clé unique = un seul saut par promotion ; ajout seul (script 164).';
+
+
+--
+-- Name: bascule_promotion_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.bascule_promotion ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.bascule_promotion_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: bascule_saut; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bascule_saut (
+    id bigint NOT NULL,
+    promotion_id bigint NOT NULL,
+    compteur text NOT NULL,
+    detail character varying(100),
+    ancienne bigint NOT NULL,
+    nouvelle bigint NOT NULL,
+    reserve bigint NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT bascule_saut_ancienne_check CHECK ((ancienne >= 0)),
+    CONSTRAINT bascule_saut_reserve_check CHECK ((reserve >= 1)),
+    CONSTRAINT ck_bascule_saut_compteur CHECK ((compteur = ANY (ARRAY['ticket'::text, 'facture'::text, 'avoir'::text, 'commande'::text]))),
+    CONSTRAINT ck_bascule_saut_valeurs CHECK ((nouvelle = (ancienne + reserve)))
+);
+
+
+--
+-- Name: TABLE bascule_saut; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.bascule_saut IS 'Chaque saut de compteur fait à une promotion (ancienne et nouvelle valeur, réserve) ; ajout seul (script 164).';
+
+
+--
+-- Name: bascule_saut_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.bascule_saut ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.bascule_saut_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: boite; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6840,7 +7044,7 @@ CREATE TABLE public.compteur_ticket_saut (
     motif text NOT NULL,
     epoque integer,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_compteur_ticket_saut_motif CHECK ((motif = 'restauration'::text)),
+    CONSTRAINT ck_compteur_ticket_saut_motif CHECK ((motif = ANY (ARRAY['restauration'::text, 'bascule'::text]))),
     CONSTRAINT ck_compteur_ticket_saut_plage CHECK ((au >= du)),
     CONSTRAINT compteur_ticket_saut_du_check CHECK ((du >= 1))
 );
@@ -8060,7 +8264,7 @@ CREATE TABLE public.journal_vente (
     hash bytea,
     hash_precedent bytea,
     officine_id uuid DEFAULT public.officine_courante() NOT NULL,
-    CONSTRAINT ck_journal_vente_evenement CHECK ((evenement = ANY (ARRAY['ouverture'::text, 'vente'::text, 'annulation'::text, 'retour'::text, 'avoir'::text, 'regularisation'::text, 'annulation_regularisation'::text]))),
+    CONSTRAINT ck_journal_vente_evenement CHECK ((evenement = ANY (ARRAY['ouverture'::text, 'vente'::text, 'annulation'::text, 'retour'::text, 'avoir'::text, 'regularisation'::text, 'annulation_regularisation'::text, 'saut_compteur'::text]))),
     CONSTRAINT ck_journal_vente_montants CHECK (((montant_ht + montant_tva) = montant_ttc))
 );
 
@@ -13714,6 +13918,22 @@ ALTER TABLE ONLY public.avoir_mouvement
 
 
 --
+-- Name: bascule_promotion bascule_promotion_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bascule_promotion
+    ADD CONSTRAINT bascule_promotion_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bascule_saut bascule_saut_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bascule_saut
+    ADD CONSTRAINT bascule_saut_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: boite boite_code_etiquette_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -15105,6 +15325,14 @@ ALTER TABLE ONLY public.utilisation_financement
 
 
 --
+-- Name: bascule_promotion ux_bascule_promotion_timeline; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bascule_promotion
+    ADD CONSTRAINT ux_bascule_promotion_timeline UNIQUE (timeline);
+
+
+--
 -- Name: historique_chifa ux_historique_organisme_facture; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -15963,6 +16191,13 @@ CREATE INDEX idx_versement_bordereau_bordereau ON public.versement_bordereau USI
 
 
 --
+-- Name: ix_bascule_saut_promotion; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_bascule_saut_promotion ON public.bascule_saut USING btree (promotion_id);
+
+
+--
 -- Name: ix_comptage_reception_ligne; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -16695,6 +16930,34 @@ CREATE TRIGGER trg_annulation_registre_immuable BEFORE DELETE OR UPDATE ON publi
 --
 
 CREATE TRIGGER trg_annulation_registre_non_vidable BEFORE TRUNCATE ON public.annulation_registre FOR EACH STATEMENT EXECUTE FUNCTION public.ajout_seul_refuser();
+
+
+--
+-- Name: bascule_promotion trg_bascule_promotion_ajout_seul; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bascule_promotion_ajout_seul BEFORE DELETE OR UPDATE ON public.bascule_promotion FOR EACH ROW EXECUTE FUNCTION public.integrite_ajout_seul_restauration();
+
+
+--
+-- Name: bascule_promotion trg_bascule_promotion_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bascule_promotion_non_vidable BEFORE TRUNCATE ON public.bascule_promotion FOR EACH STATEMENT EXECUTE FUNCTION public.integrite_ajout_seul_restauration();
+
+
+--
+-- Name: bascule_saut trg_bascule_saut_ajout_seul; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bascule_saut_ajout_seul BEFORE DELETE OR UPDATE ON public.bascule_saut FOR EACH ROW EXECUTE FUNCTION public.integrite_ajout_seul_restauration();
+
+
+--
+-- Name: bascule_saut trg_bascule_saut_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bascule_saut_non_vidable BEFORE TRUNCATE ON public.bascule_saut FOR EACH STATEMENT EXECUTE FUNCTION public.integrite_ajout_seul_restauration();
 
 
 --
@@ -17668,6 +17931,14 @@ ALTER TABLE ONLY public.avoir_mouvement
 
 ALTER TABLE ONLY public.avoir_mouvement
     ADD CONSTRAINT avoir_mouvement_vente_id_fkey FOREIGN KEY (vente_id) REFERENCES public.vente(id);
+
+
+--
+-- Name: bascule_saut bascule_saut_promotion_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bascule_saut
+    ADD CONSTRAINT bascule_saut_promotion_id_fkey FOREIGN KEY (promotion_id) REFERENCES public.bascule_promotion(id);
 
 
 --

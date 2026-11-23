@@ -379,6 +379,11 @@ public interface IAlertesTitulaire
     /// un seul message par passage ; précise si la valeur de l'officine a été remplacée (l'ancienne est au journal). Aucune donnée de patient.
     /// </summary>
     Task ReglagesImposesAsync(IReadOnlyList<Reglages.ReglageImpose> tables, CancellationToken ct = default) => Task.CompletedTask;
+    /// <summary>
+    /// Bascule du 2e serveur (serveur remplacé, ancien principal qui écrit encore, deux bases sans serveur désignable) : texte sans donnée
+    /// de patient ; <paramref name="sms"/> court, sans accents. Mêmes destinataires que les alertes de synchronisation, SMS selon « SMS sauvegarde ».
+    /// </summary>
+    Task SecondServeurAsync(string objet, string detail, string sms, CancellationToken ct = default) => Task.CompletedTask;
 }
 
 /// <summary>
@@ -472,6 +477,15 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
             var r = await depot.ReglagesAsync(ct);
             return await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.Synchronisation, objet,
                 detail, null, r.SmsSauvegarde ? sms : null), ct);
+        });
+
+    // Pas de nouveau sujet de notification (il exigerait de modifier les contraintes de la base) : sujet « synchronisation » existant
+    public Task SecondServeurAsync(string objet, string detail, string sms, CancellationToken ct = default) =>
+        ProtegerAsync(TypeNotification.Synchronisation, objet, async () =>
+        {
+            var r = await depot.ReglagesAsync(ct);
+            return await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.Synchronisation, objet, detail, null,
+                r.SmsSauvegarde ? sms : null), ct);
         });
 
     public Task ReglagesImposesAsync(IReadOnlyList<Reglages.ReglageImpose> tables, CancellationToken ct = default)
