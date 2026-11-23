@@ -71,6 +71,24 @@ public static class PorteeConnexion
     public static bool MotDePasseAChanger(this ClaimsPrincipal user) =>
         user.FindFirstValue(RegleMotDePasse.Revendication) == RegleMotDePasse.AChanger;
 
+    /// <summary>Revendication du jeton : poste sur lequel l'employé s'est connecté.</summary>
+    public const string RevendicationPoste = "poste";
+
+    private static string? PosteAnnonce(HttpRequest requete) =>
+        requete.Headers[EnTetePoste].FirstOrDefault() is { Length: > 0 } brut && Uri.UnescapeDataString(brut).Trim() is { Length: > 0 } poste ? poste : null;
+
+    /// <summary>
+    /// Poste de la requête. Avec une connexion, c'est le poste lié au jeton (jamais l'en-tête, que n'importe quel client peut écrire) ;
+    /// un jeton sans poste n'en a aucun. Sans connexion (écran de connexion), c'est l'en-tête.
+    /// </summary>
     public static string? Poste(this HttpRequest requete) =>
-        requete.Headers[EnTetePoste].FirstOrDefault() is { Length: > 0 } brut ? Uri.UnescapeDataString(brut) : null;
+        requete.HttpContext.User.Identity?.IsAuthenticated == true
+            ? (requete.HttpContext.User.FindFirstValue(RevendicationPoste) is { Length: > 0 } lie ? lie : null)
+            : PosteAnnonce(requete);
+
+    /// <summary>Vrai si le jeton est lié à un poste et que l'en-tête en annonce un autre.</summary>
+    public static bool PosteDiffere(HttpContext http) =>
+        http.User.Identity?.IsAuthenticated == true
+        && http.User.FindFirstValue(RevendicationPoste) is { Length: > 0 } lie
+        && PosteAnnonce(http.Request) is { } annonce && !string.Equals(annonce, lie, StringComparison.Ordinal);
 }

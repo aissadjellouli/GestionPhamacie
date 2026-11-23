@@ -149,7 +149,7 @@ public class AvoirTests
     public async Task Dette_payee_avec_l_avoir_au_plus_son_solde()
     {
         var credits = new CreditsEnMemoire(500);
-        var cas = new EncaisserReglementCredit(credits, new SessionsEnMemoire(), new JournalEspion(), new AvoirsEnMemoire(100));
+        var cas = new EncaisserReglementCredit(credits, new SessionsEnMemoire(), new AvoirsEnMemoire(100));
         await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(3, 150, RegleAvoir.Mode, 5, "Caisse 1"));
         Assert.Null(credits.Encaisse);
         await cas.ExecuterAsync(3, 100, RegleAvoir.Mode, 5, "Caisse 1");

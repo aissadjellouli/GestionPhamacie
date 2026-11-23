@@ -107,7 +107,7 @@ public static class CalculsPilotage
 {
     public static readonly string[] Tranches = ["0 à 30 jours", "31 à 60 jours", "61 à 90 jours", "plus de 90 jours", "non déposé"];
 
-    public static decimal? PanierMoyen(decimal chiffreAffaires, int ventes) => ventes <= 0 ? null : Math.Round(chiffreAffaires / ventes, 2);
+    public static decimal? PanierMoyen(decimal chiffreAffaires, int ventes) => ventes <= 0 ? null : Pharma.Domain.Commun.Arrondi.Centime(chiffreAffaires / ventes);
 
     /// <summary>Taux de marge sur le chiffre d'affaires HT, en % à une décimale (même règle que la marge des rapports).</summary>
     public static decimal? TauxMarge(decimal chiffreAffairesHt, decimal cout) =>

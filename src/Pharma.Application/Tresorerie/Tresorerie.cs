@@ -173,7 +173,7 @@ public sealed class SaisirMouvementTresorerie(ITresorerie tresorerie, IPermissio
         {
             if (n == NatureMouvement.Depense) throw new RegleMetierException("Une dépense ne solde pas de facture client.");
             if (factures is null) throw new InvalidOperationException("Service des factures absent.");
-            var ouvertes = (await factures.ListerAsync(new Factures.FiltreFactures(null, null, "a_encaisser", null, null), ct)).ToDictionary(f => f.Id);
+            var ouvertes = (await factures.AEncaisserParIdsAsync(facturesASolder.Distinct().ToList(), ct)).ToDictionary(f => f.Id);
             var choisies = facturesASolder.Distinct().Select(i => ouvertes.TryGetValue(i, out var f) ? f
                 : throw new RegleMetierException("Une des factures choisies n’est plus à encaisser : rechargez la liste.")).ToList();
             if (n == NatureMouvement.VersementOrganisme && choisies.Any(f => f.OrganismeId != organismeId))

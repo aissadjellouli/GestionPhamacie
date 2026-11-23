@@ -74,7 +74,18 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
                 liste.Add(new BoiteVendue(r.GetInt64(1), r.GetString(2)));
             }
         }
-        return new VenteRetournable(vente, lignes.Select(l => l with { Boites = boites.GetValueOrDefault(l.LigneVenteId) ?? [] }).ToList(), organisme);
+        // Part payée par le patient pour les prestations (lignes sans lot) : elles ne se rendent pas (script 105, D-12)
+        decimal partPrestations;
+        await using (var cmd = db.CreateCommand("""
+            SELECT COALESCE(SUM(l.montant_patient - l.reduction_auto - l.reduction_manuelle), 0)
+            FROM ligne_vente l WHERE l.vente_id = $1 AND l.lot_id IS NULL
+            """))
+        {
+            cmd.Parameters.AddWithValue(venteId);
+            partPrestations = (decimal)(await cmd.ExecuteScalarAsync(ct))!;
+        }
+        return new VenteRetournable(vente, lignes.Select(l => l with { Boites = boites.GetValueOrDefault(l.LigneVenteId) ?? [] }).ToList(), organisme,
+            partPrestations);
     }
 
     public async Task EnregistrerAsync(RetourAEcrire a, CancellationToken ct = default)
@@ -98,6 +109,8 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
             if (!await r.ReadAsync(ct) || r.GetString(0) != "validee") throw new RegleMetierException("Cette vente n’est plus encaissée (annulée ?).");
             (dansUnBordereau, deposee) = (r.GetBoolean(2), r.GetBoolean(3));
         }
+        // Patient verrouillé, dette et part payée relues sous verrou : refus si elles ont changé depuis l'affichage
+        await AnnulationsVenteSql.VerifierLectureAsync(cx, tx, a.VenteId, a.Lecture, ct);
         var partOrganisme = a.Lignes.Sum(l => l.MontantOrganisme);
         if (partOrganisme > 0)
         {
@@ -204,7 +217,13 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
                 ct, l.LotId, l.Quantite, reference, a.UtilisateurId);
             if (l.Destination == DestinationRetour.Destruction)
             {
-                await Executer(cx, tx, "UPDATE lot SET quantite_disponible = quantite_disponible - $2 WHERE id = $1", ct, l.LotId, l.Quantite);
+                await using (var sortie = new NpgsqlCommand("UPDATE lot SET quantite_disponible = quantite_disponible - $2 WHERE id = $1 AND quantite_disponible >= $2", cx, tx))
+                {
+                    sortie.Parameters.AddWithValue(l.LotId);
+                    sortie.Parameters.AddWithValue(l.Quantite);
+                    if (await sortie.ExecuteNonQueryAsync(ct) == 0)
+                        throw new RegleMetierException("Le stock du lot vient de changer : la boîte rapportée ne peut pas partir à la destruction. Rechargez et recommencez.");
+                }
                 await Executer(cx, tx, "INSERT INTO mouvement_stock (lot_id, type, quantite, reference, utilisateur_id) VALUES ($1, 'destruction', $2, $3, $4)",
                     ct, l.LotId, -l.Quantite, $"{reference} : à détruire", a.UtilisateurId);
             }
@@ -275,6 +294,7 @@ public sealed class RetoursClientSql(NpgsqlDataSource db) : IRetoursClient
                 throw new RegleMetierException("Vente sans patient : la part non couverte ne peut pas devenir une dette.");
         }
 
+        await Securite.JournalSql.EcrireEntreesAsync(cx, tx, a.Journaux, new Pharma.Application.Commun.ContexteJournal(a.VenteId, a.Numero), ct);
         await tx.CommitAsync(ct);
     }
 

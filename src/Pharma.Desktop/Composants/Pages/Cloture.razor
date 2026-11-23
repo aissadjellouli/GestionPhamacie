@@ -140,6 +140,10 @@
                         {
                             <div class="info-bandeau" role="status">@Libelles.Dinars(resultat.VerseAuCoffre, 2) portés au coffre automatiquement ; le fond de caisse reste dans le tiroir.</div>
                         }
+                        @if (resultat.AvertissementVersement is not null)
+                        {
+                            <div class="bandeau-attention" role="alert">@resultat.AvertissementVersement</div>
+                        }
                         @if (!Intermediaire) { <button type="button" class="btn" @onclick="RapportAsync">@(Releve ? "Imprimer le rapport de relève" : "Imprimer le rapport de clôture")</button> }
                     </div>
                 }

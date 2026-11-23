@@ -350,6 +350,8 @@ public sealed class VentesEcritureSql(NpgsqlDataSource db, Pharma.Application.Se
             await JournalSql.EcrireAsync(cx, tx, v.UtilisateurId, "delivrance_psychotrope", "vente", venteId,
                 new Dictionary<string, object?> { ["ticket"] = numero, ["ordonnance_id"] = ordonnanceId },
                 Permissions.PsychotropesDelivrer, ct, autorisation?.AutoriseParId);
+        // Journaux obligatoires de la vente (produit bloqué, sans ordonnance, écarts Chifa, reste à charge saisi) : dans la même transaction
+        await JournalSql.EcrireEntreesAsync(cx, tx, a.Journaux, new Pharma.Application.Commun.ContexteJournal(venteId, numero), ct);
 
         await tx.CommitAsync(ct);
         return (venteId, numero);

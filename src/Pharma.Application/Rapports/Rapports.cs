@@ -355,8 +355,8 @@ public static class RapportCsv
             _ => v.ToString() ?? ""
         };
         // Une cellule qui commence par = + - @ serait lue comme une formule par Excel
-        if (s.Length > 0 && "=+-@".Contains(s[0]) && v is string) s = "'" + s;
-        return s.Contains(';') || s.Contains('"') || s.Contains('\n') ? $"\"{s.Replace("\"", "\"\"")}\"" : s;
+        if (v is string) s = Pharma.Domain.Commun.ProtectionTableur.Neutraliser(s);
+        return s.Contains(';') || s.Contains('"') || s.Contains('\n') || s.Contains('\r') ? $"\"{s.Replace("\"", "\"\"")}\"" : s;
     }
 }
 

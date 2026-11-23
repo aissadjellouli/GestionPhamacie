@@ -38,7 +38,7 @@ public class RetourRenduPatientTests
         var droits = new DroitsParEmploye(new() { [5] = ["caisse.vendre"], [8] = ["caisse.vendre", "caisse.retour_especes"] });
         var journal = new JournalEspion();
         return (new EnregistrerRetourClient(stock, sessions ?? new SessionsEnMemoire(), droits,
-            new VerificationCodeComptoir(codes, new VerificateurFactice(), new HorlogeFixe(new DateOnly(2026, 11, 21)), journal), journal), stock, journal);
+            new VerificationCodeComptoir(codes, new VerificateurFactice(), new HorlogeFixe(new DateOnly(2026, 11, 21)), journal)), stock, journal);
     }
 
     private static readonly LigneRetourDemandee[] DeuxBoites = [new(1, 2, "stock", null)];

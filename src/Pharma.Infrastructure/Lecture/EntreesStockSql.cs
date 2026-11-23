@@ -7,7 +7,7 @@ using Pharma.Domain.Commun;
 namespace Pharma.Infrastructure.Lecture;
 
 /// <summary>Entrées de stock (lots) et leurs corrections tracées (table correction_lot, script 103).</summary>
-public sealed class EntreesStockSql(NpgsqlDataSource db) : IEntreesStock
+public sealed class EntreesStockSql(NpgsqlDataSource db, Pharma.Application.Securite.AutorisationCourante? autorisation = null) : IEntreesStock
 {
     private const string Colonnes = """
         SELECT l.id, l.produit_id, p.nom_commercial, l.numero_lot, l.date_peremption, l.quantite_disponible, l.ppa, l.shp,
@@ -120,6 +120,26 @@ public sealed class EntreesStockSql(NpgsqlDataSource db) : IEntreesStock
                 throw new RegleMetierException("Le stock de ce lot vient de changer (vente ou sortie sur un autre poste) : rechargez la liste et recommencez.");
         }
 
+        // Lot dont le n° est rappelé : bloqué comme à la réception (motif tracé)
+        if (c.BloquerLot)
+        {
+            await using var blocage = new NpgsqlCommand(
+                "UPDATE lot SET bloque = true, motif_blocage = 'Même n° de lot qu''un lot rappelé : bloqué à la correction d''entrée' WHERE id = $1", cx, tx);
+            blocage.Parameters.AddWithValue(c.LotId);
+            await blocage.ExecuteNonQueryAsync(ct);
+        }
+
+        // Boîtes étiquetées encore en stock (lot verrouillé par l'UPDATE ci-dessus) : la quantité ne descend pas en dessous
+        if (c.Quantite is { } nouvelle)
+        {
+            await using var controle = new NpgsqlCommand("SELECT count(*)::int FROM boite WHERE lot_id = $1 AND statut = 'en_stock'", cx, tx);
+            controle.Parameters.AddWithValue(c.LotId);
+            var enStock = (int)(await controle.ExecuteScalarAsync(ct))!;
+            if (nouvelle < enStock)
+                throw new RegleMetierException(
+                    $"{enStock} boîte(s) étiquetée(s) de ce lot sont en stock : retirez d’abord les boîtes absentes (Sortie de stock ou inventaire).", "quantite");
+        }
+
         // Quantité : mouvement d'ajustement (le registre des psychotropes l'inscrit en écart, par le déclencheur)
         long? mouvementId = null;
         if (c.Quantite is { } q && q != c.QuantiteAvant)
@@ -150,6 +170,18 @@ public sealed class EntreesStockSql(NpgsqlDataSource db) : IEntreesStock
             j.Parameters.AddWithValue(c.UtilisateurId);
             await j.ExecuteNonQueryAsync(ct);
         }
+        if (c.Journal is { } ecrit)
+            await Securite.JournalSql.EcrireAsync(cx, tx, c.UtilisateurId, ecrit.Action, ecrit.TableCible, ecrit.EnregistrementId, ecrit.Details, ecrit.PermissionCode, ct,
+                autorisation?.AutoriseParId);
         await tx.CommitAsync(ct);
+    }
+
+    public async Task<bool> NumeroRappeleAsync(long lotId, long produitId, string numeroLot, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("SELECT EXISTS (SELECT 1 FROM lot WHERE produit_id = $1 AND numero_lot = $2 AND bloque AND id <> $3)");
+        cmd.Parameters.AddWithValue(produitId);
+        cmd.Parameters.AddWithValue(numeroLot);
+        cmd.Parameters.AddWithValue(lotId);
+        return (bool)(await cmd.ExecuteScalarAsync(ct))!;
     }
 }

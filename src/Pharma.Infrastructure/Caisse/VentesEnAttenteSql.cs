@@ -2,6 +2,7 @@ using System.Text.Json;
 using Npgsql;
 using NpgsqlTypes;
 using Pharma.Application.Caisse;
+using Pharma.Domain.Commun;
 
 namespace Pharma.Infrastructure.Caisse;
 
@@ -32,12 +33,26 @@ public sealed class VentesEnAttenteSql(NpgsqlDataSource db) : IVentesEnAttente
     }
 
     public async Task<long> EnregistrerAsync(string poste, long utilisateurId, string libelle, int lignes, decimal total, string contenu,
-        MotifAttente? motif, CancellationToken ct = default)
+        MotifAttente? motif, CancellationToken ct = default, int maxParPoste = int.MaxValue)
     {
-        await using var cmd = db.CreateCommand("""
+        await using var cx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cx.BeginTransactionAsync(ct);
+        // Verrou du poste, levé à la fin de la transaction : le compte et l'insertion ne se croisent pas avec un autre envoi du même poste
+        await using (var verrou = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtextextended('panier_attente:' || $1, 0))", cx, tx))
+        {
+            verrou.Parameters.AddWithValue(poste);
+            await verrou.ExecuteNonQueryAsync(ct);
+        }
+        await using (var compte = new NpgsqlCommand("SELECT count(*) FROM panier_attente WHERE poste = $1", cx, tx))
+        {
+            compte.Parameters.AddWithValue(poste);
+            if ((long)(await compte.ExecuteScalarAsync(ct))! >= maxParPoste)
+                throw new RegleMetierException(GererVentesEnAttente.MessageTropDAttente);
+        }
+        await using var cmd = new NpgsqlCommand("""
             INSERT INTO panier_attente (poste, utilisateur_id, libelle, lignes, total, contenu, motif_code, motif_texte, produits_dus)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id
-            """);
+            """, cx, tx);
         cmd.Parameters.AddWithValue(poste);
         cmd.Parameters.AddWithValue(utilisateurId);
         cmd.Parameters.AddWithValue(libelle);
@@ -50,7 +65,9 @@ public sealed class VentesEnAttenteSql(NpgsqlDataSource db) : IVentesEnAttente
         {
             Value = motif?.ProduitsDus is { Count: > 0 } dus ? JsonSerializer.Serialize(dus) : DBNull.Value, NpgsqlDbType = NpgsqlDbType.Jsonb
         });
-        return (long)(await cmd.ExecuteScalarAsync(ct))!;
+        var id = (long)(await cmd.ExecuteScalarAsync(ct))!;
+        await tx.CommitAsync(ct);
+        return id;
     }
 
     public async Task<string?> ReprendreAsync(long id, string poste, CancellationToken ct = default)

@@ -14,7 +14,7 @@ namespace Pharma.Architecture.Tests;
 /// - Les tests statiques vérifient le contenu des scripts ;
 /// - le test de rejeu crée une base jetable (schema.sql + seed_referentiel.sql = base à jour), rejoue la suite deux fois comme
 ///   Sauvegardes/RestaurationPostgres (001 à 032 en transaction, 033 seul, 034 et suivants en transaction) puis compare la structure
-///   (pg_dump --schema-only) avant/après. Sans serveur PostgreSQL joignable, sans psql/pg_dump ou sans droit CREATEDB, il ne fait rien.
+///   (pg_dump --schema-only) avant/après. Sans serveur PostgreSQL joignable, sans psql/pg_dump ou sans droit CREATEDB, il est IGNORÉ avec la raison affichée (FactPostgres), il ne réussit plus à vide.
 /// </summary>
 public partial class ScriptsRejouablesTests
 {
@@ -49,23 +49,20 @@ public partial class ScriptsRejouablesTests
         Assert.True(fautifs.Count == 0, "Vue définie avec « alias.* » (nommer les colonnes une à une) : " + string.Join(", ", fautifs));
     }
 
-    [Fact]
+    [FactPostgres]
     public void Toute_la_suite_se_rejoue_deux_fois_sur_une_base_a_jour_sans_changer_la_structure()
     {
-        var psql = Outil("psql.exe");
-        var pgDump = Outil("pg_dump.exe");
-        if (psql is null || pgDump is null) return;
+        var psql = Outil("psql.exe") ?? throw new InvalidOperationException("psql introuvable (le test devait être ignoré).");
+        var pgDump = Outil("pg_dump.exe") ?? throw new InvalidOperationException("pg_dump introuvable (le test devait être ignoré).");
         var cnx = new NpgsqlConnectionStringBuilder(ChaineConnexion());
         var nom = "pharmacie_jetable_rejeu_" + Guid.NewGuid().ToString("N")[..8];
         var administration = new NpgsqlConnectionStringBuilder(cnx.ConnectionString) { Database = "postgres", Pooling = false }.ConnectionString;
-        try
+        using (var cx = new NpgsqlConnection(administration))
         {
-            using var cx = new NpgsqlConnection(administration);
-            cx.Open();
+            cx.Open();   // serveur injoignable ou sans droit CREATEDB : FactPostgres ignore le test avant d'arriver ici ; un échec ici est donc réel
             using var creer = new NpgsqlCommand($"CREATE DATABASE \"{nom}\" ENCODING 'UTF8' TEMPLATE template0", cx);
             creer.ExecuteNonQuery();
         }
-        catch (NpgsqlException) { return; }   // (PostgresException comprise) serveur injoignable ou compte sans droit CREATEDB : rien à vérifier ici
 
         var temporaires = new List<string>();
         try
@@ -105,7 +102,7 @@ public partial class ScriptsRejouablesTests
     }
 
     /// <summary>Mêmes lots que Sauvegardes/RestaurationPostgres : 001 à 032 en transaction, 033 seul (index CONCURRENTLY), 034 et suivants en transaction.</summary>
-    private static List<(List<string> Fichiers, bool Transaction)> Lots()
+    internal static List<(List<string> Fichiers, bool Transaction)> Lots()
     {
         var scripts = Scripts().Select(s => (s.Numero, Fichier: Path.Combine(Migration, s.Nom))).ToList();
         return new List<(List<string>, bool)>
@@ -120,7 +117,7 @@ public partial class ScriptsRejouablesTests
     private static HashSet<string> ExpressionsNommees(string vue) =>
         ExpressionTable().Matches(vue).Select(m => m.Groups[1].Value.ToLowerInvariant()).ToHashSet();
 
-    private static string Chemin(string fichier) => fichier.Replace('\\', '/');
+    internal static string Chemin(string fichier) => fichier.Replace('\\', '/');
 
     private static void ExecuterPsql(string psql, NpgsqlConnectionStringBuilder cnx, string nomBase, string[] arguments, string contexte = "")
     {
@@ -171,7 +168,7 @@ public partial class ScriptsRejouablesTests
     }
 
     /// <summary>Outil PostgreSQL de la dernière version installée (PHARMA_PG_BIN pour un autre dossier) ; null s'il n'y en a pas.</summary>
-    private static string? Outil(string nom)
+    internal static string? Outil(string nom)
     {
         if (Environment.GetEnvironmentVariable("PHARMA_PG_BIN") is { Length: > 0 } bin && File.Exists(Path.Combine(bin, nom))) return Path.Combine(bin, nom);
         var racine = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "PostgreSQL");
@@ -182,7 +179,7 @@ public partial class ScriptsRejouablesTests
             : null;
     }
 
-    private static string ChaineConnexion()
+    internal static string ChaineConnexion()
     {
         if (Environment.GetEnvironmentVariable("PHARMA_TEST_CNX") is { Length: > 0 } cnx) return cnx;
         var dossierApi = Path.Combine(RacineDepot(), "src", "Pharma.Api");
@@ -192,7 +189,7 @@ public partial class ScriptsRejouablesTests
         return doc.RootElement.GetProperty("ConnectionStrings").GetProperty("Pharmacie").GetString()!;
     }
 
-    private static string RacineDepot()
+    internal static string RacineDepot()
     {
         if (Environment.GetEnvironmentVariable("PHARMA_RACINE_DEPOT") is { Length: > 0 } racine) return racine;
         var dossier = new DirectoryInfo(AppContext.BaseDirectory);

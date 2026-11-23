@@ -67,7 +67,13 @@ public static class PointsEntree
             var (appelant, refus) = await AppelantAsync(ctx, ct);
             if (appelant is null) return refus!;
             var log = lf.CreateLogger("Pharma.Cloud.Lots");
-            var contenu = await LireCorpsAsync(ctx.Request, ct);
+            byte[] contenu;
+            try { contenu = await LireCorpsAsync(ctx.Request, ct); }
+            catch (CorpsTropGrosException)
+            {
+                log.LogWarning("Lot refusé pour l'officine {Officine} : corps annoncé plus grand que {Max} octets", appelant.Officine, ControleLot.TailleMax);
+                return Results.Problem(ControleLot.MessageClient(StatusCodes.Status413PayloadTooLarge), statusCode: StatusCodes.Status413PayloadTooLarge);
+            }
             var c = ControleLot.Controler(contenu, appelant.Officine);
             if (!c.Valide)
             {
@@ -198,18 +204,20 @@ public static class PointsEntree
                 // Certificat révoqué ou officine partie entre le contrôle de l'API et la base
                 return Results.Problem("Certificat révoqué, échu ou inconnu.", statusCode: 401);
             }
+            catch (ReponseCentraleVideException v) { return AnomalieBase(lf, appelant.Officine, v); }
         }).RequireRateLimiting("officine");
 
         // Lot S7.3 (script 034) : comptes distants rattachés à l'officine du certificat, droits (dont « ordres »), retrait (effet
         // immédiat, ordres ouverts du compte annulés). Officine = celle du certificat et du jeton, jamais un champ de la demande ; le
         // mot de passe du titulaire est vérifié par l'API locale avant l'appel.
-        v1.MapGet("/acces-distants", async (HttpContext ctx, Npgsql.NpgsqlDataSource db, CancellationToken ct) =>
+        v1.MapGet("/acces-distants", async (HttpContext ctx, Npgsql.NpgsqlDataSource db, ILoggerFactory lf, CancellationToken ct) =>
         {
             var (appelant, refus) = await AppelantAsync(ctx, ct);
             if (appelant is null) return refus!;
             ctx.Response.Headers.CacheControl = "no-store";
             try { return Results.Ok(await Comptes.AccesDistantsPoste.ListerAsync(db, appelant.Officine, appelant.EmpreinteCertificat, ct)); }
             catch (Npgsql.PostgresException p) when (p.SqlState == "42501") { return Results.Problem("Certificat révoqué, échu ou inconnu.", statusCode: 401); }
+            catch (ReponseCentraleVideException v) { return AnomalieBase(lf, appelant.Officine, v); }
         }).RequireRateLimiting("officine");
 
         v1.MapPost("/acces-distants/droits", async (DemandeDroitsCompteDistantDto d, HttpContext ctx, Npgsql.NpgsqlDataSource db, ILoggerFactory lf, CancellationToken ct) =>
@@ -225,6 +233,7 @@ public static class PointsEntree
                 return Results.Ok(new ReponseCompteDistantDto(annules));
             }
             catch (Npgsql.PostgresException p) when (p.SqlState == "42501") { return Results.Problem("Certificat révoqué, échu ou inconnu.", statusCode: 401); }
+            catch (ReponseCentraleVideException v) { return AnomalieBase(lf, appelant.Officine, v); }
         }).RequireRateLimiting("officine");
 
         v1.MapPost("/acces-distants/retrait", async (DemandeRetraitCompteDistantDto d, HttpContext ctx, Npgsql.NpgsqlDataSource db, ILoggerFactory lf, CancellationToken ct) =>
@@ -240,6 +249,7 @@ public static class PointsEntree
                 return Results.Ok(new ReponseCompteDistantDto(annules));
             }
             catch (Npgsql.PostgresException p) when (p.SqlState == "42501") { return Results.Problem("Certificat révoqué, échu ou inconnu.", statusCode: 401); }
+            catch (ReponseCentraleVideException v) { return AnomalieBase(lf, appelant.Officine, v); }
         }).RequireRateLimiting("officine");
 
         // Lot S5.3 : téléchargement d'un fichier de référentiel (nomenclature) désigné par un ordre de cette officine ; 404 sinon
@@ -336,11 +346,23 @@ public static class PointsEntree
     }
 
     /// <summary>
+    /// Une fonction SQL du central n'a rendu aucune ligne (cloisonnement, fonction modifiée) : 503 passager, noté au journal applicatif
+    /// (nom de la fonction, jamais de donnée).
+    /// </summary>
+    private static IResult AnomalieBase(ILoggerFactory lf, Guid officine, ReponseCentraleVideException v)
+    {
+        lf.CreateLogger("Pharma.Cloud.Comptes").LogError("Officine {Officine} : aucune ligne rendue par {Fonction}", officine, v.Fonction);
+        return Results.Problem("Serveur central momentanément indisponible : nouvel essai plus tard.", statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    /// <summary>
     /// Corps d'un dépôt de lot lu UNE fois (revue du 2026-11-22 : il était copié deux fois, jusqu'à 17 Mio) : tableau de la taille annoncée
     /// (Content-Length), sinon flux en mémoire ; la taille maximale reste celle du serveur. Un corps plus court que l'annonce : erreur.
     /// </summary>
-    public static async Task<byte[]> LireCorpsAsync(HttpRequest requete, CancellationToken ct)
+    public static async Task<byte[]> LireCorpsAsync(HttpRequest requete, CancellationToken ct, long maximum = ControleLot.TailleMax)
     {
+        // Refus AVANT toute allocation : un Content-Length annoncé plus grand que la taille maximale ne réserve rien
+        if (requete.ContentLength is long annonce && annonce > maximum) throw new CorpsTropGrosException();
         if (requete.ContentLength is long n && n >= 0 && n <= Array.MaxLength)
         {
             var contenu = new byte[n];
@@ -351,6 +373,9 @@ public static class PointsEntree
         await requete.Body.CopyToAsync(flux, ct);
         return flux.ToArray();
     }
+
+    /// <summary>Corps annoncé (Content-Length) plus grand que la taille maximale : refusé en 413 sans allocation.</summary>
+    public sealed class CorpsTropGrosException : Exception;
 
     /// <summary>
     /// Refus 409 d'un dépôt de lot avec son accusé en JSON (trou, lot déjà reçu avec un autre contenu), lu côté officine par

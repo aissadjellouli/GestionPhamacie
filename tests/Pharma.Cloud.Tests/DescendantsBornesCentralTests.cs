@@ -40,11 +40,31 @@ public class DescendantsBornesCentralTests
     }
 
     [Fact]
-    public void Un_element_seul_trop_gros_part_quand_meme()
+    public void Un_element_plus_grand_que_la_taille_lisible_part_sans_donnees_avec_sa_version()
     {
-        // L'officine l'écarte (et le signale) puis passe aux suivants : il ne bloque jamais la file
-        var gros = "{\"x\":\"" + new string('a', ChangementsDescendantsDto.OctetsDonneesParReponse + 1000) + "\"}";
-        var r = DepotCentral.Borner([Element(1, gros), Element(2, "{\"a\":1}")]);
-        Assert.Equal(1, r.Single().Version);
+        // Revue du 2026-11-23 : le premier élément était gardé tel quel, même trop gros. Il part maintenant SANS données (l'officine l'écarte,
+        // acquitte sa version et passe au suivant) et la réponse ne peut plus dépasser la limite de lecture de l'officine
+        var gros = "{\"x\":\"" + new string('a', ChangementsDescendantsDto.MaxDonnees) + "\"}";
+        var journal = new JournalEssai();
+        var r = DepotCentral.Borner([Element(1, gros), Element(2, "{\"a\":1}")], journal);
+        Assert.Equal([1L, 2L], r.Select(c => c.Version));
+        Assert.Equal("", r[0].DonneesJson);
+        Assert.Equal("{\"a\":1}", r[1].DonneesJson);
+        Assert.Single(journal.Messages);
+        Assert.DoesNotContain("aaaa", journal.Messages[0]);   // jamais les données au journal
+        Assert.True(TailleReponse(r) < ChangementsDescendantsDto.MaxReponse);
+        // Juste à la taille maximale : gardé tel quel
+        var limite = "{\"x\":\"" + new string('a', ChangementsDescendantsDto.MaxDonnees - 8) + "\"}";
+        Assert.Equal(ChangementsDescendantsDto.MaxDonnees, limite.Length);
+        Assert.Equal(limite, DepotCentral.Borner([Element(1, limite)]).Single().DonneesJson);
+    }
+
+    private sealed class JournalEssai : Microsoft.Extensions.Logging.ILogger
+    {
+        public readonly List<string> Messages = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel niveau) => true;
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel niveau, Microsoft.Extensions.Logging.EventId id, TState etat, Exception? exception,
+            Func<TState, Exception?, string> formateur) => Messages.Add(formateur(etat, exception));
     }
 }

@@ -142,8 +142,21 @@ public sealed class ReglerDonRemise(IUtilisateursAdmin admin, IJournal journal, 
 }
 
 /// <summary>Matrice des droits par rôle (hors droits réglés par personne). Le rôle titulaire n'est jamais modifié.</summary>
-public sealed class EnregistrerDroits(IUtilisateursAdmin admin, IJournal journal)
+public sealed class EnregistrerDroits(IUtilisateursAdmin admin, IJournal journal, VerificationMotDePasseActuel? verification = null)
 {
+    public const string ChampMotDePasse = "mot_de_passe";
+
+    /// <summary>
+    /// Enregistrement demandé par l'employé à l'écran : il ressaisit son mot de passe (titulaire ou détenteur du droit admin.utilisateurs ;
+    /// essais comptés, blocage après 5 refus). Un ordre central déjà validé passe par <see cref="ExecuterAsync"/>.
+    /// </summary>
+    public async Task ExecuterParEmployeAsync(IReadOnlyList<DroitsRole> droits, long auteurId, string? motDePasse, CancellationToken ct = default)
+    {
+        if (verification is null) throw new InvalidOperationException("Vérification du mot de passe non configurée.");
+        await verification.VerifierAsync(auteurId, motDePasse, "droits_modifies", ChampMotDePasse, ct);
+        await ExecuterAsync(droits, auteurId, ct);
+    }
+
     public async Task ExecuterAsync(IReadOnlyList<DroitsRole> droits, long auteurId, CancellationToken ct = default)
     {
         var etat = await admin.LireAsync(ct);

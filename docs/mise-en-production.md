@@ -427,9 +427,8 @@ Un seul script enchaîne tout dans le bon ordre, avec des contrôles : `scripts\
 - [ ] **4.8** Vérifier l'API sur le PC serveur. **Où** : PC serveur. **Compte** : administrateur Windows.
   ```powershell
   (Invoke-WebRequest http://localhost:5080/api/healthcheck -UseBasicParsing).StatusCode
-  (Invoke-WebRequest http://localhost:5080/api/auth/comptoir -UseBasicParsing).StatusCode
   ```
-  - **Attendu** : `200` pour les deux (le second peut renvoyer un code différent si aucune session n'est ouverte ; dans ce cas, un code de réponse, même 401, prouve que l'API répond).
+  - **Attendu** : `200`.
   - **Si échec** : ouvrir le service (`Get-Service`), puis le journal.
 
 - [ ] **4.9** Sauvegarder la clé de scellement créée au premier démarrage. **Où** : PC serveur. **Compte** : administrateur Windows.

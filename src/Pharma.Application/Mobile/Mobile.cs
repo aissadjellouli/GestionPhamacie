@@ -48,7 +48,8 @@ public interface IMobile
     Task<FicheProduit?> FicheAsync(long produitId, CancellationToken ct = default);
 
     Task<LotAConfirmer?> LotAsync(long lotId, CancellationToken ct = default);
-    Task ConfirmerPeremptionAsync(long lotId, DateOnly date, CancellationToken ct = default);
+    /// <summary>Vrai si la date a été posée ; faux si le lot n'était plus « à vérifier » (confirmé entre-temps) : rien n'est modifié.</summary>
+    Task<bool> ConfirmerPeremptionAsync(long lotId, DateOnly date, CancellationToken ct = default);
 
     Task<long> AjouterScanAsync(NouveauScanReception scan, CancellationToken ct = default);
     Task<IReadOnlyList<ScanReception>> ScansEnAttenteAsync(CancellationToken ct = default);
@@ -128,7 +129,8 @@ public sealed class ConfirmerPeremption(IMobile mobile, IPermissionService droit
         if (!lot.DateAVerifier)
             throw new RegleMetierException($"Lot {lot.NumeroLot} : la date a déjà été confirmée (réception ou inventaire).");
         RegleInventaire.VerifierDate(date, horloge.Aujourdhui);
-        await mobile.ConfirmerPeremptionAsync(lotId, date, ct);
+        if (!await mobile.ConfirmerPeremptionAsync(lotId, date, ct))
+            throw new RegleMetierException($"Lot {lot.NumeroLot} : la date vient d’être confirmée par quelqu’un d’autre (réception ou inventaire).");
         await journal.EcrireAsync(utilisateurId, "peremption_verifiee", "lot", lotId,
             new Dictionary<string, object?> { ["produit"] = lot.Produit, ["lot"] = lot.NumeroLot, ["date"] = date.ToString("yyyy-MM-dd") },
             Permissions.StockAjuster, ct);

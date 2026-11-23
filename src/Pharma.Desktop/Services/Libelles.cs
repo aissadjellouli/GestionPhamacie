@@ -256,6 +256,7 @@ public static class Libelles
         "reglages_notification" => "Réglages des notifications",
         "destinataire_notification" => "Destinataire des alertes",
         "reglages_sauvegarde" => "Réglages des sauvegardes",
+        "dossier_sauvegarde_change" => "Dossier des sauvegardes changé",
         "emplacement" => "Emplacement",
         "produit_range" => "Produit rangé",
         "inventaire_termine" => "Inventaire terminé",
@@ -493,6 +494,7 @@ public static class Libelles
                                   + $" (avant : achat {(B("avant_achat") ? "bloqué" : "permis")}, vente {(B("avant_vente") ? "bloquée" : "permise")})" + (T("motif") is "—" ? "" : $" · motif : {T("motif")}"),
                 "remise_automatique_arretee" => $"{N("pourcentage"):0.##} % sur {T("cible")} : arrêtée",
                 "reglages_sauvegarde" => $"{(B("actif") ? "Automatique" : "Manuelle seulement")} à {T("heure")} · dossier {T("dossier")} · {T("conservation")} conservée(s)",
+                "dossier_sauvegarde_change" => $"{T("ancien")} → {T("nouveau")}",
                 // Libellés lisibles (recette 2026-11-15, 6e passage) : plus de « Motif reglable », « Prix applique », « Ventes : 3 306 236 »
                 "motif_reglable" => $"{ListeMotifs(T("liste"))} : « {T("libelle")} » · {(B("actif") ? "proposé" : "désactivé")}",
                 "ecart_prix_chifa" => $"Ticket {T("ticket")}" + (T("volet") is "—" ? "" : $" · volet n° {T("volet")}") + LignesEcartChifa(d)

@@ -228,6 +228,36 @@ public class Vente
         RecalculerTotaux();
     }
 
+    /// <summary>
+    /// Répartit la part de l'organisme au prorata du montant des lignes prises en charge (arrondi au centime). Chaque part reste comprise
+    /// entre 0 et le montant de sa ligne : l'écart d'arrondi porté par la dernière ligne, s'il la fait sortir de ces bornes, est reporté
+    /// sur les lignes précédentes (de la dernière à la première), jamais perdu.
+    /// </summary>
+    public static IReadOnlyList<decimal> RepartirPartOrganisme(decimal organisme, IReadOnlyList<decimal> montants)
+    {
+        var somme = montants.Sum();
+        var parts = new decimal[montants.Count];
+        if (parts.Length == 0) return parts;
+        var reparti = 0m;
+        for (var i = 0; i < parts.Length - 1; i++)
+        {
+            parts[i] = somme == 0 ? 0 : Math.Clamp(Arrondi.Centime(organisme * montants[i] / somme), 0, montants[i]);
+            reparti += parts[i];
+        }
+        var dernier = parts.Length - 1;
+        var reste = organisme - reparti;
+        parts[dernier] = Math.Clamp(reste, 0, montants[dernier]);
+        reste -= parts[dernier];
+        // Excédent (reste > 0) ajouté, ou déficit (reste < 0) retiré, sur les lignes précédentes, chacune restant dans ses bornes
+        for (var i = dernier - 1; i >= 0 && reste != 0; i--)
+        {
+            var nouvelle = Math.Clamp(parts[i] + reste, 0, montants[i]);
+            reste -= nouvelle - parts[i];
+            parts[i] = nouvelle;
+        }
+        return parts;
+    }
+
     public void RecalculerTotaux()
     {
         var brut = _lignes.Sum(l => l.PrixUnitaire * l.Quantite);
@@ -237,14 +267,8 @@ public class Vente
             var prises = _lignes.Where(l => l.PriseEnCharge).ToList();
             var basePrise = prises.Sum(l => l.PrixUnitaire * l.Quantite);
             var organisme = Math.Min(brut - Math.Min(reste, brut), basePrise);
-            var reparti = 0m;
-            for (var i = 0; i < prises.Count; i++)
-            {
-                var montant = prises[i].PrixUnitaire * prises[i].Quantite;
-                var part = i == prises.Count - 1 ? organisme - reparti : basePrise == 0 ? 0 : Arrondi.Centime(organisme * montant / basePrise);
-                prises[i].ImposerPartOrganisme(part);
-                reparti += part;
-            }
+            var parts = RepartirPartOrganisme(organisme, prises.Select(l => l.PrixUnitaire * l.Quantite).ToList());
+            for (var i = 0; i < prises.Count; i++) prises[i].ImposerPartOrganisme(parts[i]);
         }
         PartOrganisme = _lignes.Sum(l => l.MontantOrganisme);
         var partPatientBrute = brut - PartOrganisme;

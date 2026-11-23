@@ -206,6 +206,7 @@ internal sealed class VentesEspion : IVentesEcriture
         }
         Recu = vente;
         Enregistrements++;
+        JournalEspion.Rejouer(vente.Journaux, new ContexteJournal(1, "T-000001"));
         if (vente.CleEncaissement is { } cle)
             ParCle[cle] = new VenteDejaEncaissee(1, "T-000001", vente.Vente.MontantTotal, vente.Vente.PartOrganisme, vente.Vente.PartPatient,
                 vente.Reglement.Montant > 0 ? vente.Reglement.Mode : null, false,
@@ -244,6 +245,24 @@ internal sealed class SessionsEnMemoire : ISessionsCaisse
 
 internal sealed class JournalEspion : IJournal
 {
+    private static readonly AsyncLocal<JournalEspion?> Dernier = new();
+
+    /// <summary>
+    /// Les journaux obligatoires sont écrits par la couche données dans la transaction de l'opération : les doublures de dépôt les rejouent
+    /// ici (dernier espion créé par le test en cours) pour que les tests lisent les mêmes Actions et Details qu'avant.
+    /// </summary>
+    public static void Rejouer(IReadOnlyList<JournalAEcrire>? entrees, ContexteJournal contexte)
+    {
+        if (entrees is null || Dernier.Value is not { } espion) return;
+        foreach (var e in entrees)
+        {
+            espion.Actions.Add(e.Action);
+            espion.Details.Add(e.Details(contexte));
+        }
+    }
+
+    public JournalEspion() => Dernier.Value = this;
+
     public List<string> Actions { get; } = [];
     public List<IReadOnlyDictionary<string, object?>> Details { get; } = [];
     public Task EcrireAsync(long u, string action, string? t, long? id, IReadOnlyDictionary<string, object?> d, string? p, CancellationToken ct = default)
@@ -259,7 +278,7 @@ public class CaisseApplicationTests
     private static Encaisser Cas(SessionsEnMemoire sessions, DroitsFactices droits, VentesEspion ventes, params Patient[] patients) =>
         new(new CatalogueEnMemoire(), new PatientsEnMemoire(patients), ventes, sessions, droits, new HorlogeFixe(CatalogueEnMemoire.Aujourdhui), new ScansEnMemoire());
 
-    private static CommandeVente Commande(long produitId, long lotId, int qte = 1, ModePaiement mode = ModePaiement.Especes,
+    internal static CommandeVente Commande(long produitId, long lotId, int qte = 1, ModePaiement mode = ModePaiement.Especes,
         long? patientId = null, OrdonnanceSaisie? ordonnance = null, decimal remise = 0) =>
         new([new LigneCommande(produitId, lotId, qte)], false, null, null, patientId, ordonnance, remise, mode, mode == ModePaiement.Especes ? 100_000m : null);
 

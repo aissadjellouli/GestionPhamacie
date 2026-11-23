@@ -7,11 +7,13 @@ internal sealed class AttenteEnMemoire : IVentesEnAttente
 {
     public List<(long Id, string Poste, string Contenu)> Paniers { get; } = [];
     public Dictionary<long, MotifAttente?> Motifs { get; } = [];
+    public int MaxRecu { get; private set; }
     public Task<IReadOnlyList<VenteEnAttente>> ListerAsync(string poste, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<VenteEnAttente>>(Paniers.Where(p => p.Poste == poste)
             .Select(p => new VenteEnAttente(p.Id, "x", 1, 0, "E", DateTime.UtcNow)).ToList());
-    public Task<long> EnregistrerAsync(string poste, long u, string l, int n, decimal t, string c, MotifAttente? motif, CancellationToken ct = default)
+    public Task<long> EnregistrerAsync(string poste, long u, string l, int n, decimal t, string c, MotifAttente? motif, CancellationToken ct = default, int maxParPoste = int.MaxValue)
     {
+        MaxRecu = maxParPoste;
         var id = Paniers.Count + 1L;
         Paniers.Add((id, poste, c));
         Motifs[id] = motif;

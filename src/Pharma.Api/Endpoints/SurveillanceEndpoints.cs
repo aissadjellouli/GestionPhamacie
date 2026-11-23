@@ -60,8 +60,8 @@ internal static class SurveillanceEndpoints
             Results.Ok((await lister.ExecuterAsync(traitees == true, user.UtilisateurId(), ct)).Select(a => new AlerteSurveillanceDto(
                 a.Id, a.Type, a.Niveau, a.UtilisateurId, a.Employe, a.Jour, a.Message, a.Valeur, a.Statut, a.MiseAJourLe, a.TraiteePar, a.TraiteeLe, a.ActionPrise))));
 
-        surveillance.MapPost("/{id:long}/traiter", async (long id, TraiterAlerteRequete req, TraiterSurveillance traiter, ClaimsPrincipal user, CancellationToken ct) =>
-            await traiter.ExecuterAsync(id, req.ActionPrise, user.UtilisateurId(), ct)
+        surveillance.MapPost("/{id:long}/traiter", async (long id, TraiterSurveillanceRequete req, TraiterSurveillance traiter, ClaimsPrincipal user, CancellationToken ct) =>
+            await traiter.ExecuterAsync(id, req.ActionPrise, user.UtilisateurId(), ct, req.MotDePasseTitulaire)
                 ? Results.NoContent()
                 : Results.NotFound(new ErreurDto("Anomalie introuvable ou déjà traitée : actualisez la liste.")));
 

@@ -369,6 +369,20 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
         return liste;
     }
 
+    public async Task<IReadOnlyList<FactureResume>> AEncaisserParIdsAsync(IReadOnlyCollection<long> ids, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand($"""
+            {SelectResume}
+            WHERE id = ANY($1) AND type = 'facture' AND statut <> 'remplacee' AND NOT hors_suivi AND reste > 0
+            ORDER BY date_facture DESC, id DESC
+            """);
+        cmd.Parameters.AddWithValue(ids.ToArray());
+        var liste = new List<FactureResume>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct)) liste.Add(Resume(r));
+        return liste;
+    }
+
     /// <summary>Une page de la liste, et les totaux de toutes les factures qui répondent aux filtres (pas seulement la page).</summary>
     public async Task<ListeFactures> PageAsync(FiltreFactures filtre, Pharma.Application.Commun.DemandePage page, CancellationToken ct = default)
     {
@@ -541,6 +555,20 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
         await using var tx = await cx.BeginTransactionAsync(ct);
         await VerrouillerEtControler(cx, tx, f, id, ct);
 
+        // Avoirs et règlements déjà imputés, relus sous le verrou de la facture (même verrou que l'encaissement et l'avoir)
+        await using (var cmd = new NpgsqlCommand("""
+            SELECT (SELECT COALESCE(sum(a.montant_ttc), 0) FROM facture_client a WHERE a.facture_origine_id = f.id AND a.type = 'avoir'),
+                   (SELECT COALESCE(sum(r.montant), 0) FROM reglement_facture_client r WHERE r.facture_id = f.id), f.numero
+            FROM facture_client f WHERE f.id = $1 FOR UPDATE OF f
+            """, cx, tx))
+        {
+            cmd.Parameters.AddWithValue(id);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            if (!await r.ReadAsync(ct)) throw new RegleMetierException("Facture introuvable.");
+            RegleFacture.VerifierAnneeCorrection(r.GetString(2), f.Date);   // sous le verrou de la facture
+            RegleFacture.VerifierCorrection(f.Totaux.Ttc, r.GetDecimal(0), r.GetDecimal(1));
+        }
+
         // La version en vigueur part dans l'historique, avec le motif du rejet
         await using (var cmd = new NpgsqlCommand("""
             INSERT INTO facture_client_version (facture_id, version, contenu, motif, utilisateur_id)
@@ -586,11 +614,11 @@ public sealed class FacturesSql(NpgsqlDataSource db) : IFactures
 
     public async Task HorsSuiviAsync(long id, bool horsSuivi, string? motif, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("UPDATE facture_client SET hors_suivi = $2, motif_hors_suivi = $3 WHERE id = $1");
+        await using var cmd = db.CreateCommand("UPDATE facture_client SET hors_suivi = $2, motif_hors_suivi = $3 WHERE id = $1 AND statut <> 'remplacee'");
         cmd.Parameters.AddWithValue(id);
         cmd.Parameters.AddWithValue(horsSuivi);
         cmd.Parameters.Add(Texte(motif));
-        await cmd.ExecuteNonQueryAsync(ct);
+        if (await cmd.ExecuteNonQueryAsync(ct) == 0) throw new RegleMetierException("Une facture remplacée n’est plus suivie : elle est hors comptabilité.");
     }
 
     public async Task<int> DelaiPaiementAsync(Destinataire d, long id, CancellationToken ct = default)

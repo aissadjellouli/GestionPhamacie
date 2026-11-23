@@ -10,7 +10,12 @@ internal sealed class RetoursEnMemoire(VenteRetournable vente) : IRetoursClient
 {
     public RetourAEcrire? Ecrit { get; private set; }
     public Task<VenteRetournable?> LireAsync(long id, CancellationToken ct = default) => Task.FromResult<VenteRetournable?>(vente);
-    public Task EnregistrerAsync(RetourAEcrire r, CancellationToken ct = default) { Ecrit = r; return Task.CompletedTask; }
+    public Task EnregistrerAsync(RetourAEcrire r, CancellationToken ct = default)
+    {
+        Ecrit = r;
+        JournalEspion.Rejouer(r.Journaux, new ContexteJournal(r.VenteId, r.Numero));
+        return Task.CompletedTask;
+    }
 }
 
 public class RetourClientTests
@@ -31,7 +36,7 @@ public class RetourClientTests
         var droits = new DroitsParEmploye(new() { [5] = ["caisse.vendre"], [8] = ["caisse.vendre", "caisse.retour_especes"] });
         var journal = new JournalEspion();
         return (new EnregistrerRetourClient(stock, sessions ?? new SessionsEnMemoire(), droits,
-            new VerificationCodeComptoir(codes, new VerificateurFactice(), new HorlogeFixe(new DateOnly(2026, 11, 9)), journal), journal, patients), stock);
+            new VerificationCodeComptoir(codes, new VerificateurFactice(), new HorlogeFixe(new DateOnly(2026, 11, 9)), journal), patients), stock);
     }
 
     [Fact]
@@ -286,7 +291,7 @@ public class RetourBoitesNonScanneesTests
         var droits = new DroitsParEmploye(new() { [8] = ["caisse.vendre", "caisse.retour_especes"] });
         var journal = new JournalEspion();
         return new EnregistrerRetourClient(new RetoursEnMemoire(Vente()), new SessionsEnMemoire(), droits,
-            new VerificationCodeComptoir(codes, new VerificateurFactice(), new HorlogeFixe(new DateOnly(2026, 11, 9)), journal), journal);
+            new VerificationCodeComptoir(codes, new VerificateurFactice(), new HorlogeFixe(new DateOnly(2026, 11, 9)), journal));
     }
 
     [Fact]

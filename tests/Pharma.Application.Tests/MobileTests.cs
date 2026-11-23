@@ -23,7 +23,12 @@ internal sealed class MobileEnMemoire : IMobile
     public Task<FicheProduit?> FicheAsync(long produitId, CancellationToken ct = default) =>
         Task.FromResult<FicheProduit?>(new(produitId, "Sintrom 4 mg cp", "Acénocoumarol", "4 mg", "comprimé", 300, Lots.Sum(l => l.Quantite), 1, "C-03-1", null, null, Lots));
     public Task<LotAConfirmer?> LotAsync(long lotId, CancellationToken ct = default) => Task.FromResult(Lot);
-    public Task ConfirmerPeremptionAsync(long lotId, DateOnly date, CancellationToken ct = default) { Confirme = (lotId, date); return Task.CompletedTask; }
+    public bool ConfirmationPossible { get; set; } = true;
+    public Task<bool> ConfirmerPeremptionAsync(long lotId, DateOnly date, CancellationToken ct = default)
+    {
+        if (ConfirmationPossible) Confirme = (lotId, date);
+        return Task.FromResult(ConfirmationPossible);
+    }
     public Task<long> AjouterScanAsync(NouveauScanReception s, CancellationToken ct = default)
     {
         var id = Scans.Count + 1L;

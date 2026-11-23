@@ -13,7 +13,7 @@ public sealed record CodeValable(Guid Officine, string Serveur, bool DejaActivee
 /// reçues se fait dans une transaction où l'officine courante est posée (set_config('app.officine_id', …, true) = SET LOCAL) :
 /// la Row Level Security cloisonne même une requête sans filtre.
 /// </summary>
-public sealed class DepotCentral(NpgsqlDataSource db)
+public sealed class DepotCentral(NpgsqlDataSource db, Microsoft.Extensions.Logging.ILogger<DepotCentral>? journal = null)
 {
     public async Task<CodeValable?> CodeValableAsync(string empreinteCode, CancellationToken ct)
     {
@@ -220,7 +220,7 @@ public sealed class DepotCentral(NpgsqlDataSource db)
                 max = r.GetInt64(4);
             }
         }
-        var liste = Borner(lus);
+        var liste = Borner(lus, journal);
         await tx.CommitAsync(ct);
         return new(Pharma.Shared.ChangementsDescendantsDto.ContratV1, max, liste);
     }
@@ -239,14 +239,24 @@ public sealed class DepotCentral(NpgsqlDataSource db)
 
     /// <summary>
     /// Éléments d'une réponse descendante, dans l'ordre des versions : au plus MaxElements et OctetsDonneesParReponse octets écrits,
-    /// toujours au moins le premier (un élément seul trop gros est écarté par l'officine, qui passe alors au suivant).
+    /// toujours au moins le premier. Un élément dont les données dépassent MaxDonnees (la taille lisible par l'officine, même mesure
+    /// qu'elle) n'est jamais écrit : il part SANS données (version, table et clé seules) et est journalisé ; l'officine l'écarte, acquitte
+    /// sa version et passe au suivant, sans que la réponse puisse dépasser la limite de lecture.
     /// </summary>
-    public static List<Pharma.Shared.ChangementDescendantDto> Borner(IEnumerable<Pharma.Shared.ChangementDescendantDto> tries)
+    public static List<Pharma.Shared.ChangementDescendantDto> Borner(IEnumerable<Pharma.Shared.ChangementDescendantDto> tries,
+        Microsoft.Extensions.Logging.ILogger? journal = null)
     {
         var liste = new List<Pharma.Shared.ChangementDescendantDto>();
         var octets = 0L;
-        foreach (var c in tries)
+        foreach (var element in tries)
         {
+            var c = element;
+            if (c.DonneesJson is { Length: > Pharma.Shared.ChangementsDescendantsDto.MaxDonnees })
+            {
+                journal?.LogWarning("Élément descendant {Table} version {Version} écarté côté central : données de {Taille} caractères (maximum {Max})",
+                    c.Table, c.Version, c.DonneesJson.Length, Pharma.Shared.ChangementsDescendantsDto.MaxDonnees);
+                c = c with { DonneesJson = "" };
+            }
             // Taille réelle dans la réponse (mêmes options que les réponses JSON de l'API : échappements compris)
             octets += System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(c, OptionsReponse).Length + 1;
             if (liste.Count >= Pharma.Shared.ChangementsDescendantsDto.MaxElements

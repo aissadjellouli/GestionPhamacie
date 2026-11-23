@@ -102,12 +102,18 @@ public sealed record FichierCleExporte(string NomFichier, byte[] Contenu, string
 /// Export de la clé de scellement (titulaire seul) : fichier chiffré par le mot de passe choisi, à ranger hors du PC (clé USB au
 /// coffre). Journal des actions : empreinte et nom du fichier, jamais la clé ni le mot de passe.
 /// </summary>
-public sealed class ExporterCleScellement(ICleIntegriteStockee cle, IJournal journal, IHorloge horloge)
+public sealed class ExporterCleScellement(ICleIntegriteStockee cle, IJournal journal, IHorloge horloge, Securite.VerificationMotDePasseActuel verification)
 {
     public const string Action = "export_cle_scellement";
 
-    public async Task<FichierCleExporte> ExecuterAsync(string? motDePasse, string? confirmation, long utilisateurId, CancellationToken ct = default)
+    public const string ChampMotDePasseTitulaire = "mot_de_passe_titulaire";
+
+    /// <param name="motDePasse">Mot de passe qui chiffre le fichier exporté.</param>
+    /// <param name="motDePasseTitulaire">Mot de passe de connexion du titulaire, ressaisi (essais comptés, blocage après 5 refus).</param>
+    public async Task<FichierCleExporte> ExecuterAsync(string? motDePasse, string? confirmation, long utilisateurId, CancellationToken ct = default,
+        string? motDePasseTitulaire = null)
     {
+        await verification.VerifierAsync(utilisateurId, motDePasseTitulaire, Action, ChampMotDePasseTitulaire, ct);
         CoffreCle.ControlerMotDePasse(motDePasse, confirmation);
         var brute = cle.Lire();
         try

@@ -24,11 +24,15 @@ internal sealed class CreditsEnMemoire(decimal solde) : ICreditsClients
         Task.FromResult(new Pharma.Application.Commun.Page<PatientEnCredit>([], 0, p.Page, p.Taille));
     public Task<SituationCredit?> SituationAsync(long id, CancellationToken ct = default) =>
         Task.FromResult<SituationCredit?>(new SituationCredit(new PatientEnCredit(id, "Patient fictif", null, solde, 5000, null), []));
-    public Task<string> EncaisserAsync(long p, decimal m, string mode, long s, long u, IReadOnlyList<long>? ventes = null, CancellationToken ct = default) { Encaisse = (m, mode, s); return Task.FromResult("RC-000007"); }
+    public JournalAEcrire? JournalEncaissement { get; private set; }
+    public Task<string> EncaisserAsync(long p, decimal m, string mode, long s, long u, IReadOnlyList<long>? ventes = null, CancellationToken ct = default, JournalAEcrire? journal = null)
+    { Encaisse = (m, mode, s); JournalEncaissement = journal; JournalEspion.Rejouer(journal is null ? null : [journal], new ContexteJournal(0, "RC-000007")); return Task.FromResult("RC-000007"); }
     public Task<Pharma.Application.Commun.Page<MouvementCredit>> MouvementsAsync(long p, Pharma.Application.Commun.DemandePage page, Pharma.Application.Commun.FiltreReleve? filtre = null, CancellationToken ct = default) =>
         Task.FromResult(new Pharma.Application.Commun.Page<MouvementCredit>([], 0, page.Page, page.Taille));
     public (decimal Avant, decimal Apres, string Motif)? Correction { get; private set; }
-    public Task CorrigerAsync(long p, decimal avant, decimal apres, string motif, long u, string? poste, CancellationToken ct = default) { Correction = (avant, apres, motif); return Task.CompletedTask; }
+    public JournalAEcrire? JournalCorrection { get; private set; }
+    public Task CorrigerAsync(long p, decimal avant, decimal apres, string motif, long u, string? poste, CancellationToken ct = default, JournalAEcrire? journal = null)
+    { Correction = (avant, apres, motif); JournalCorrection = journal; JournalEspion.Rejouer(journal is null ? null : [journal], new ContexteJournal(0, "")); return Task.CompletedTask; }
 }
 
 public class ReglementsTests
@@ -72,11 +76,11 @@ public class ReglementsTests
     public async Task Credit_client_encaisse_dans_la_caisse_du_poste()
     {
         var stock = new CreditsEnMemoire(210);
-        var recu = await new EncaisserReglementCredit(stock, new SessionsEnMemoire(), new JournalEspion()).ExecuterAsync(3, 200, "especes", 5, "Caisse 1");
+        var recu = await new EncaisserReglementCredit(stock, new SessionsEnMemoire()).ExecuterAsync(3, 200, "especes", 5, "Caisse 1");
         Assert.Equal(("RC-000007", 10m), (recu.Numero, recu.ResteDu));
         Assert.Equal((200m, "especes", 1L), stock.Encaisse);
         await Assert.ThrowsAsync<RegleMetierException>(() =>
-            new EncaisserReglementCredit(new CreditsEnMemoire(210), new SessionsEnMemoire { Ouverte = null }, new JournalEspion()).ExecuterAsync(3, 100, "especes", 5, "Caisse 1"));
+            new EncaisserReglementCredit(new CreditsEnMemoire(210), new SessionsEnMemoire { Ouverte = null }).ExecuterAsync(3, 100, "especes", 5, "Caisse 1"));
     }
 
     private static EnregistrerReglement AvecTresorerie(ReglementsEnMemoire stock, TresorerieEnMemoire tresorerie) =>

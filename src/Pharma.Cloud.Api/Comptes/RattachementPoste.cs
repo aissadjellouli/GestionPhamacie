@@ -49,7 +49,7 @@ public static class RattachementPoste
             cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)(compte is { Length: <= 200 } ? compte : null) ?? DBNull.Value, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Text });
             cmd.Parameters.AddWithValue(empreinte);
             await using var r = await cmd.ExecuteReaderAsync(ct);
-            await r.ReadAsync(ct);
+            await Reception.DepotCentral.LigneAttendueAsync(r, "cloud_poste_code_rattachement", ct);
             statut = r.GetString(0);
             expire = r.IsDBNull(1) ? null : r.GetFieldValue<DateTimeOffset>(1);
         }

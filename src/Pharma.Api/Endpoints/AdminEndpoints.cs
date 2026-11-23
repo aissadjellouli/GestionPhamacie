@@ -104,9 +104,9 @@ internal static class AdminEndpoints
             })
            .ExigerPermission(Permissions.AdminUtilisateurs);
 
-        admin.MapPut("/droits", async (List<DroitsRoleDto> req, EnregistrerDroits enregistrer, ClaimsPrincipal user, CancellationToken ct) =>
+        admin.MapPut("/droits", async (EnregistrementDroitsDto req, EnregistrerDroits enregistrer, ClaimsPrincipal user, CancellationToken ct) =>
             {
-                await enregistrer.ExecuterAsync(req.Select(d => new DroitsRole(d.RoleId, d.Permissions)).ToList(), user.UtilisateurId(), ct);
+                await enregistrer.ExecuterParEmployeAsync(req.Roles.Select(d => new DroitsRole(d.RoleId, d.Permissions)).ToList(), user.UtilisateurId(), req.MotDePasse, ct);
                 return Results.NoContent();
             })
            .ExigerPermission(Permissions.AdminUtilisateurs);

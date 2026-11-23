@@ -43,7 +43,7 @@ public sealed class OptionsJournalFichier
 /// Journal en fichiers texte UTF-8 : un fichier par jour (préfixe-AAAAMMJJ.log, ex. pharma-api-20261121.log), découpé à la taille maximale,
 /// conservé le nombre de mois réglé. Écrit par une tâche de fond : une requête n'attend jamais le disque.
 /// </summary>
-public sealed class JournalFichierProvider : ILoggerProvider
+public sealed class JournalFichierProvider : ILoggerProvider, IAsyncDisposable
 {
     public const string PrefixeApiLocale = "pharma-api-";
     private readonly OptionsJournalFichier options;
@@ -191,11 +191,34 @@ public sealed class JournalFichierProvider : ILoggerProvider
         return supprimes;
     }
 
+    private static readonly TimeSpan AttenteArret = TimeSpan.FromSeconds(5);
+    private int termine;
+
+    /// <summary>Ferme la file et écourte les attentes entre deux essais : les dernières lignes sont écrites tout de suite. Sans attente, rejouable.</summary>
+    private void Terminer()
+    {
+        if (Interlocked.Exchange(ref termine, 1) != 0) return;
+        file.Writer.TryComplete();
+        arret.Cancel();
+    }
+
+    /// <summary>Arrêt normal (hôte, tests) : attend l'écriture des dernières lignes, au plus 5 s, sans bloquer de fil.</summary>
+    public async ValueTask DisposeAsync()
+    {
+        Terminer();
+        try { await ecriture.WaitAsync(AttenteArret); }
+        catch (TimeoutException) { /* disque bloqué : le serveur s'arrête quand même */ }
+    }
+
+    /// <summary>
+    /// Fabrique de journaux qui ne connaît que IDisposable : l'attente (5 s au plus) se fait sur un fil du pool, jamais sur le contexte
+    /// de l'appelant, et un échec ou un dépassement n'empêche pas l'arrêt.
+    /// </summary>
     public void Dispose()
     {
-        file.Writer.TryComplete();
-        arret.Cancel();   // plus d'attente entre deux essais : les dernières lignes sont écrites tout de suite
-        ecriture.Wait(TimeSpan.FromSeconds(5));
+        Terminer();
+        try { Task.Run(async () => await ecriture.WaitAsync(AttenteArret)).Wait(AttenteArret + TimeSpan.FromSeconds(1)); }
+        catch (Exception e) when (e is AggregateException or TimeoutException) { /* disque bloqué : le serveur s'arrête quand même */ }
     }
 
     private sealed class Journal(JournalFichierProvider fournisseur, string categorie) : ILogger

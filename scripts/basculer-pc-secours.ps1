@@ -8,7 +8,11 @@
       1. dernière copie pharmacie_*.dump du dossier -Copies ;
       2. intégrité : empreinte SHA-256 comparée à celle notée lors de la copie (<copie>.sha256), puis pg_restore --list ;
       3. restauration dans la base -Base (une base existante n'est jamais supprimée : gardée sous « <base>_avant_bascule_<date> ») ;
-      4. version du schéma : tous les scripts database\migration du dossier de l'API rejoués dans l'ordre (ils sont idempotents) ;
+      4. version du schéma : tous les scripts database\migration du dossier de l'API rejoués dans l'ordre, depuis le 001 (ils sont
+         idempotents), comme les outils de mise en production (docs/scripts-base-de-donnees.md, règle 10) : avec le superutilisateur
+         mais sous « SET ROLE » (pharma_app, ou pharma_proprietaire si la séparation des rôles est en place sur ce PC), avec le marqueur
+         de session pharma.reglage_central=on. Séparation en place (rôle pharma_proprietaire présent sur ce PC, ou -SeparerRoles) :
+         111b est rétabli juste après le script 111, comme mettre_a_jour_base_officine.ps1 ;
          le dernier script rejoué est affiché : il doit être le dernier livré avec l'API ;
       5. démarrage du service de l'API et adresse à donner aux postes.
     -Essai : simulation, ne touche à rien (ni base, ni service) ; affiche ce qui serait fait.
@@ -31,6 +35,9 @@ param(
     [int]   $PortApi     = 5443,                    # port HTTPS de l'API : celui des postes (5080 n'écoute que sur le PC lui-même)
     [string]$SuperUser   = "postgres",
     [string]$AppUser     = "pharma_app",
+    [string]$RoleProprietaire = "pharma_proprietaire",
+    [string]$Script111b  = "",                      # 111b_roles_integrite.sql (absent du dossier publié) ; vide : cherché près de l'API puis dans le dépôt
+    [switch]$SeparerRoles,                          # impose la séparation des rôles même si le rôle pharma_proprietaire n'existe pas encore sur ce PC
     [switch]$Essai
 )
 
@@ -75,7 +82,7 @@ Write-Host "Copie lisible et complète (pg_restore --list)."
 
 # Scripts de la base livrés avec l'API
 $dossierScripts = Join-Path $DossierApi "database"
-$scripts = Get-ChildItem $dossierScripts -Filter "*.sql" -File -ErrorAction SilentlyContinue | Sort-Object Name
+$scripts = Get-ChildItem $dossierScripts -Filter "*.sql" -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^\d{3}_' } | Sort-Object Name
 if (-not $scripts) { throw "Scripts de la base introuvables dans $dossierScripts : installer l'API sur le PC de secours (même version que le PC serveur)." }
 Write-Host ("Scripts à rejouer : {0} (dernier : {1})" -f $scripts.Count, $scripts[-1].Name)
 
@@ -84,6 +91,7 @@ $adresses = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
 
 if ($Essai) {
     Write-Host "$mode Restauration dans la base $Base (une base $Base existante serait gardée sous ${Base}_avant_bascule_<date>)."
+    Write-Host "$mode Scripts rejoués sous SET ROLE $AppUser (ou $RoleProprietaire si la séparation des rôles est en place sur ce PC, 111b rétabli après le script 111), avec le marqueur pharma.reglage_central=on."
     Write-Host "$mode Démarrage du service « $Service »."
     foreach ($ip in $adresses) { Write-Host "$mode Adresse à donner aux postes (PC de secours) : https://${ip}:$PortApi/ (un nom ou une IP présent dans le certificat de ce PC)" }
     Write-Host "$mode Simulation terminée : aucune base ni aucun service n'a été modifié."
@@ -101,6 +109,18 @@ function Invoke-Super([string]$sql, [string]$db = "postgres") {
     return $r
 }
 try {
+    # Séparation des rôles (111b) : en place sur ce PC si le rôle pharma_proprietaire y existe (les rôles sont communs à tout le serveur PostgreSQL), ou si -SeparerRoles
+    $separee = $SeparerRoles.IsPresent -or [bool](Invoke-Super "SELECT 1 FROM pg_roles WHERE rolname = '$RoleProprietaire'")
+    if ($separee) {
+        if (-not $Script111b) {
+            foreach ($c in @((Join-Path $dossierScripts "111b_roles_integrite.sql"), (Join-Path $DossierApi "database\migration\111b_roles_integrite.sql"), (Join-Path $PSScriptRoot "..\database\migration\111b_roles_integrite.sql"))) {
+                if (Test-Path -LiteralPath $c) { $Script111b = $c; break }
+            }
+        }
+        if (-not $Script111b -or -not (Test-Path -LiteralPath $Script111b)) { throw "Séparation des rôles en place sur ce PC : script 111b_roles_integrite.sql introuvable (préciser -Script111b). Rien n'a été modifié." }
+        Write-Host "Séparation des rôles (111b) en place sur ce PC : elle sera rétablie sur la base restaurée ($Script111b)."
+    }
+    else { Write-Warning "Séparation des rôles (111b) non en place sur ce PC ($RoleProprietaire absent) : les journaux ne seront pas protégés contre $AppUser. Pour la rétablir : -SeparerRoles." }
     & sc.exe stop $Service 2>$null | Out-Null   # service éventuellement démarré : arrêté pendant la bascule
     $horodatage = "{0:yyyyMMdd_HHmmss}" -f (Get-Date)
     $neuve = "{0}_bascule_{1}" -f $Base, $horodatage
@@ -114,10 +134,32 @@ try {
     }
 
     # 4. Version du schéma : scripts rejoués dans l'ordre, arrêt au premier échec
-    foreach ($s in $scripts) {
-        $env:PGPASSWORD = $superPwd
-        & $psql -h $HostPg -p $Port -U $SuperUser -d $neuve -v ON_ERROR_STOP=1 -q -f $s.FullName | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "Script $($s.Name) en échec sur $neuve : base laissée telle quelle pour examen, $Base n'a pas été touchée." }
+    # Même méthode que mettre_a_jour_base_officine.ps1 : marqueur pharma.reglage_central=on (garde des réglages imposés, script 141) ;
+    # jamais le superutilisateur seul (les objets créés lui appartiendraient) : SET ROLE pharma_app, puis pharma_proprietaire après 111b.
+    $ancienOpts = $env:PGOPTIONS
+    $env:PGOPTIONS = "-c client_min_messages=warning -c pharma.reglage_central=on"
+    $roleScripts = $AppUser
+    try {
+        foreach ($s in $scripts) {
+            $env:PGPASSWORD = $superPwd
+            & $psql -h $HostPg -p $Port -U $SuperUser -d $neuve -v ON_ERROR_STOP=1 -q -c "SET ROLE $roleScripts" -f $s.FullName | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Script $($s.Name) en échec sur $neuve : base laissée telle quelle pour examen, $Base n'a pas été touchée." }
+            if ($separee -and $roleScripts -eq $AppUser -and $s.Name.StartsWith("111_")) {
+                # La base restaurée appartient à $AppUser : 111b (superutilisateur, sans SET ROLE) rend la propriété à $RoleProprietaire, puis la suite passe sous ce rôle
+                & $psql -h $HostPg -p $Port -U $SuperUser -d $neuve -v ON_ERROR_STOP=1 -q -f $Script111b | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw "Script 111b en échec sur $neuve : base laissée telle quelle pour examen, $Base n'a pas été touchée." }
+                $roleScripts = $RoleProprietaire
+                Write-Host "Séparation des rôles rétablie (111b) : les scripts suivants passent sous $RoleProprietaire."
+            }
+        }
+    }
+    finally {
+        $env:PGOPTIONS = $ancienOpts
+        if ($null -eq $ancienOpts) { Remove-Item Env:\PGOPTIONS -ErrorAction SilentlyContinue }
+    }
+    if ($separee) {
+        $restes = Invoke-Super "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tableowner = '$AppUser'" $neuve
+        if ($restes -ne "0") { throw "Séparation des rôles incomplète sur ${neuve} : $restes table(s) encore à $AppUser. Base laissée telle quelle pour examen, $Base n'a pas été touchée." }
     }
     Write-Host "Schéma à jour : dernier script rejoué $($scripts[-1].Name)."
 

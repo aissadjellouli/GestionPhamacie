@@ -242,9 +242,6 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         }
     }
 
-    /// <summary>Employés proposés pour le changement d'utilisateur (vide si la caisse du poste est fermée).</summary>
-    public Task<(ComptoirDto?, string?)> ComptoirAsync() => GetAsync<ComptoirDto?>("api/auth/comptoir", null);
-
     public async Task<string?> DefinirCodeComptoirAsync(string code) =>
         (await EnvoyerCorpsAsync<CodeComptoirRequete, object>(HttpMethod.Put, "api/auth/code-comptoir", new(code))).Item2;
 
@@ -732,6 +729,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public Task<(List<MedecinDto>, string?)> RechercherMedecinsAsync(string q) =>
         GetAsync<List<MedecinDto>>($"api/medecins?q={Uri.EscapeDataString(q)}", []);
 
+    /// <summary>Fiche d'un médecin par son identifiant (404 : erreur « introuvable »).</summary>
+    public Task<(MedecinDto?, string?)> MedecinAsync(long id) => GetAsync<MedecinDto?>($"api/medecins/{id}", null);
+
     /// <summary>Médecins sans wilaya (filtre « wilaya à renseigner »), par nom si <paramref name="q"/> est donné.</summary>
     public Task<(List<MedecinDto>, string?)> MedecinsSansWilayaAsync(string? q) =>
         GetAsync<List<MedecinDto>>($"api/medecins?sansWilaya=true&q={Uri.EscapeDataString(q ?? "")}", []);
@@ -850,8 +850,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
     public Task<(EtatDroitsDto?, string?)> DroitsAsync() => GetAsync<EtatDroitsDto?>("api/admin/droits", null);
 
-    public async Task<string?> EnregistrerDroitsAsync(List<DroitsRoleDto> droits) =>
-        (await EnvoyerCorpsAsync<List<DroitsRoleDto>, object>(HttpMethod.Put, "api/admin/droits", droits)).Item2;
+    public async Task<string?> EnregistrerDroitsAsync(List<DroitsRoleDto> droits, string motDePasse) =>
+        (await EnvoyerCorpsAsync<EnregistrementDroitsDto, object>(HttpMethod.Put, "api/admin/droits", new(droits, motDePasse))).Item2;
 
     public Task<(IdentifiantDto?, string?)> CreerUtilisateurAsync(NouvelUtilisateurDto utilisateur) =>
         PostAsync<NouvelUtilisateurDto, IdentifiantDto>("api/admin/utilisateurs", utilisateur);
@@ -875,8 +875,9 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     // ---- Notifications (titulaire) et sauvegardes ---------------------------------
 
     public Task<(ReglagesNotificationDto?, string?)> ReglagesNotificationAsync() => GetAsync<ReglagesNotificationDto?>("api/admin/notifications/reglages", null);
-    public async Task<string?> ModifierReglagesNotificationAsync(ModificationReglagesNotificationDto r) =>
-        (await EnvoyerCorpsAsync<ModificationReglagesNotificationDto, object>(HttpMethod.Put, "api/admin/notifications/reglages", r)).Item2;
+    public async Task<string?> ModifierReglagesNotificationAsync(ModificationReglagesNotificationDto r, string motDePasseTitulaire) =>
+        (await EnvoyerCorpsAsync<ModificationReglagesNotificationDto, object>(HttpMethod.Put, "api/admin/notifications/reglages",
+            r with { MotDePasseTitulaire = motDePasseTitulaire })).Item2;
     public Task<(List<DestinataireDto>, string?)> DestinatairesAsync() => GetAsync<List<DestinataireDto>>("api/admin/notifications/destinataires", []);
     public Task<(IdentifiantDto?, string?)> EnregistrerDestinataireAsync(long? id, SaisieDestinataireDto d) => id is null
         ? PostAsync<SaisieDestinataireDto, IdentifiantDto>("api/admin/notifications/destinataires", d)
@@ -1002,8 +1003,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         (await EnvoyerCorpsAsync<CopieGedDto, object>(HttpMethod.Put, "api/admin/second-serveur/copie-ged", d)).Item2;
     public async Task<string?> ModifierSeuilsReplicationAsync(SeuilsReplicationDto d) =>
         (await EnvoyerCorpsAsync<SeuilsReplicationDto, object>(HttpMethod.Put, "api/admin/second-serveur/seuils", d)).Item2;
-    public Task<(FichierCleDto?, string?)> ExporterCleScellementAsync(string motDePasse, string confirmation) =>
-        PostAsync<ExportCleDto, FichierCleDto>("api/admin/second-serveur/cle/exporter", new(motDePasse, confirmation));
+    public Task<(FichierCleDto?, string?)> ExporterCleScellementAsync(string motDePasse, string confirmation, string motDePasseTitulaire) =>
+        PostAsync<ExportCleDto, FichierCleDto>("api/admin/second-serveur/cle/exporter", new(motDePasse, confirmation, motDePasseTitulaire));
 
     /// <summary>
     /// Bascule d'un poste : état de la liaison avec l'API du 2e serveur (elle ne démarre qu'une fois sa base promue : jamais un poste
@@ -1106,8 +1107,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         : EnvoyerCorpsAsync<SaisieMotifReglableDto, IdentifiantDto>(HttpMethod.Put, $"api/motifs/{id}", m);
     public Task<(List<AlerteSurveillanceDto>, string?)> SurveillanceAsync(bool traitees) =>
         GetAsync<List<AlerteSurveillanceDto>>($"api/surveillance?traitees={(traitees ? "true" : "false")}", []);
-    public async Task<string?> TraiterSurveillanceAsync(long id, string? action) =>
-        (await PostAsync<TraiterAlerteRequete, object>($"api/surveillance/{id}/traiter", new(action))).Item2;
+    public async Task<string?> TraiterSurveillanceAsync(long id, string? action, string motDePasseTitulaire) =>
+        (await PostAsync<TraiterSurveillanceRequete, object>($"api/surveillance/{id}/traiter", new(action, motDePasseTitulaire))).Item2;
     // ---- Intégrité des journaux (titulaire) ----
     public Task<(TableauIntegriteDto?, string?)> IntegriteAsync() => GetAsync<TableauIntegriteDto?>("api/surveillance/integrite", null);
     public Task<(TableauIntegriteDto?, string?)> VerifierIntegriteAsync() => PostAsync<object, TableauIntegriteDto>("api/surveillance/integrite/verifier", new());

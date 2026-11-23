@@ -12,7 +12,7 @@ public class RoutesProtegeesTests
     /// <summary>Routes ouvertes sans jeton, voulues : connexion, état du serveur, mode démonstration.</summary>
     private static readonly HashSet<string> Publiques =
     [
-        "POST /api/auth/connexion", "POST /api/auth/connexion-code", "GET /api/auth/comptoir",
+        "POST /api/auth/connexion", "POST /api/auth/connexion-code",
         "GET /api/healthcheck", "GET /api/demo", "POST /api/super-admin/connexion",
     ];
 

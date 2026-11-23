@@ -16,7 +16,8 @@ public sealed class ChangerMonMotDePasse(IComptesLecture comptes, IVerificateurM
     /// Mot de passe actuel faux : compté avec les essais de connexion du même identifiant (même blocage), chaque refus inscrit
     /// au journal ; bloqué, le changement est refusé avant même la vérification.
     /// </summary>
-    public async Task<Session> ExecuterAsync(long utilisateurId, string? actuel, string? nouveau, string? confirmation, CancellationToken ct = default)
+    public async Task<Session> ExecuterAsync(long utilisateurId, string? actuel, string? nouveau, string? confirmation, CancellationToken ct = default,
+        string? poste = null)
     {
         // Démonstration : les trois comptes communs gardent le mot de passe de démonstration (docs/regles-metier.md)
         if (demo is { Actif: true } && await comptes.ParIdAsync(utilisateurId, ct) is { } demande && Demo.ModeDemo.EstCompteDemo(demande.Identifiant))
@@ -29,7 +30,7 @@ public sealed class ChangerMonMotDePasse(IComptesLecture comptes, IVerificateurM
         await comptes.ChangerMotDePasseAsync(compte.Id, hacheur.Hacher(nouveau!), ct);
         await journal.EcrireAsync(compte.Id, "mot_de_passe_change", "utilisateur", compte.Id,
             new Dictionary<string, object?> { ["premiere_connexion"] = compte.DoitChangerMotDePasse }, null, ct);
-        var (jeton, expire) = jetons.Creer(compte.Id, compte.NomComplet);
+        var (jeton, expire) = jetons.Creer(compte.Id, compte.NomComplet, poste: string.IsNullOrWhiteSpace(poste) ? null : poste.Trim());
         return new Session(jeton, compte.NomComplet, expire);
     }
 }

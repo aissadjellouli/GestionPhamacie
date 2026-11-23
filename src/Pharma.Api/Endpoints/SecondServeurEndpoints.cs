@@ -49,7 +49,7 @@ public static class SecondServeurEndpoints
         // Export de la clé de scellement : fichier chiffré par le mot de passe du titulaire (jamais la clé en clair)
         s.MapPost("/cle/exporter", async (ExportCleDto d, ExporterCleScellement exporter, ClaimsPrincipal user, CancellationToken ct) =>
         {
-            var f = await exporter.ExecuterAsync(d.MotDePasse, d.Confirmation, user.UtilisateurId(), ct);
+            var f = await exporter.ExecuterAsync(d.MotDePasse, d.Confirmation, user.UtilisateurId(), ct, d.MotDePasseTitulaire);
             return Results.Ok(new FichierCleDto(f.NomFichier, Convert.ToBase64String(f.Contenu), f.Empreinte));
         });
     }

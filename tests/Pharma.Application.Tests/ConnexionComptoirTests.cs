@@ -125,7 +125,7 @@ public class ConnexionComptoirTests
         var codes = new CodesEnMemoire();
         codes.Comptes[9] = new CompteComptoir(9, "vendeur.b", "Vendeur B", "hash:2580", 0, null);
         var verif = new VerificationCodeComptoir(codes, new VerificateurFactice(), new HorlogeFixe(Jour), new JournalEspion());
-        var compte = await verif.VerifierAsync(VerificationCodeComptoir.Reference(9), "2580", "Caisse 1");
+        var compte = await verif.VerifierAsync(VerificationCodeComptoir.Reference(9), "2580", "Caisse 1", default, demandeurId: 3);   // demandeur connecté seulement
         Assert.Equal(9, compte.Id);
     }
 

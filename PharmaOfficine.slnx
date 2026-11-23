@@ -260,6 +260,9 @@
     <File Path="database/migration/158_retour_regularisation_dettes_patient.sql" />
     <File Path="database/migration/159_retour_regularisation_rendu_patient.sql" />
     <File Path="database/migration/160_message_central_postes.sql" />
+    <File Path="database/migration/161_index_cles_etrangeres_manquantes.sql" />
+    <File Path="database/migration/162_deconnexion_inactivite_defaut_15_minutes.sql" />
+    <File Path="database/migration/retour/162_deconnexion_inactivite_defaut_15_minutes_retour.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
@@ -298,6 +301,8 @@
     <File Path="database/tests/158_retour_regularisation_dettes_patient_tests.sql" />
     <File Path="database/tests/159_retour_regularisation_rendu_patient_tests.sql" />
     <File Path="database/tests/160_message_central_postes_tests.sql" />
+    <File Path="database/tests/161_index_cles_etrangeres_manquantes_tests.sql" />
+    <File Path="database/tests/162_deconnexion_inactivite_defaut_15_minutes_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
     <File Path="database/tests/101b_suppression_num_facture_chifa_tests.sql" />
     <File Path="database/tests/rejeu_complet.ps1" />
@@ -382,9 +387,11 @@
     <File Path="database/cloud/040_import_comptes_duree_provisoire.sql" />
     <File Path="database/cloud/041_delai_provisoire_comptes_anterieurs.sql" />
     <File Path="database/cloud/042_deconnexion_motif_inactivite.sql" />
+    <File Path="database/cloud/043_regles_rattachement_ordres_central.sql" />
     <File Path="database/cloud/tests/040_import_comptes_duree_provisoire_tests.sql" />
     <File Path="database/cloud/tests/041_delai_provisoire_comptes_anterieurs_tests.sql" />
     <File Path="database/cloud/tests/042_deconnexion_motif_inactivite_tests.sql" />
+    <File Path="database/cloud/tests/043_regles_rattachement_ordres_central_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />
@@ -444,6 +451,7 @@
     <Project Path="tests/Pharma.Domain.Tests/Pharma.Domain.Tests.csproj" />
     <Project Path="tests/Pharma.Application.Tests/Pharma.Application.Tests.csproj" />
     <Project Path="tests/Pharma.Architecture.Tests/Pharma.Architecture.Tests.csproj" />
+    <Project Path="tests/Pharma.Infrastructure.Sql.Tests/Pharma.Infrastructure.Sql.Tests.csproj" />
     <Project Path="tests/Pharma.Cloud.Tests/Pharma.Cloud.Tests.csproj" />
     <Project Path="tests/Pharma.Cloud.Charge/Pharma.Cloud.Charge.csproj" />
     <Project Path="tests/Pharma.Cloud.Web.Tests/Pharma.Cloud.Web.Tests.csproj" />

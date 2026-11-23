@@ -97,6 +97,8 @@
     </div>
 </div>
 
+<FenetreMotDePasseTitulaire Demande="demandeMdp" Fermee="() => demandeMdp = null" />
+
 @code {
     private List<AlerteSurveillanceDto> anomalies = [];
     private bool traitees, enCours;
@@ -191,15 +193,20 @@
         (sensibles, _) = await Api.ProduitsSensiblesAsync();
     }
 
-    private async Task TraiterAsync(AlerteSurveillanceDto a)
+    private FenetreMotDePasseTitulaire.DemandeMotDePasse? demandeMdp;
+
+    // Marquer une anomalie traitée la sort de la liste : le titulaire ressaisit son mot de passe (vérifié par le serveur) ; l'action saisie reste à l'écran
+    private Task TraiterAsync(AlerteSurveillanceDto a)
     {
-        enCours = true;
-        erreur = await Api.TraiterSurveillanceAsync(a.Id, actionPrise);
-        enCours = false;
-        if (erreur is null)
+        erreur = null;
+        demandeMdp = new("Marquer l’anomalie comme traitée", $"Anomalie du {a.Jour:dd/MM/yyyy} : confirmez votre identité.", async mdp =>
         {
+            var e = await Api.TraiterSurveillanceAsync(a.Id, actionPrise, mdp);
+            if (e is not null) return e;
             (enEdition, message) = (null, $"Anomalie du {a.Jour:dd/MM/yyyy} traitée.");
             await ChargerAsync();
-        }
+            return null;
+        });
+        return Task.CompletedTask;
     }
 }

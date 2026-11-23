@@ -133,11 +133,25 @@ internal static class CaisseEndpoints
 
         // Clôture : si le titulaire a choisi le versement automatique, le compté moins le fond par défaut part au coffre (pas à la relève)
         caisse.MapPost("/cloturer", async (ClotureRequete req, CloturerSessionCaisse cloturer, Pharma.Application.Tresorerie.VerserCaisseAuCoffre verser,
-                ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>
+                ILogger<CloturerSessionCaisse> journalServeur, ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>
             {
                 var vue = await cloturer.ExecuterAsync(user.UtilisateurId(), requete.Poste(), req.Saisies.Requise(), ct, req.ConfirmerZero);
-                var verse = await verser.ApresClotureAutomatiqueAsync(vue.SessionId, user.UtilisateurId(), ct);
-                return Results.Ok(VersDto(vue) with { VerseAuCoffre = verse });
+                // Le versement au coffre suit la clôture, dans sa propre transaction (trésorerie) : la clôture est faite et ne doit jamais être
+                // renvoyée en erreur au poste. Si le versement échoue, l'échec est inscrit au journal du serveur et signalé dans la réponse :
+                // la caisse reste « à verser » (Trésorerie), le titulaire la verse à la main.
+                try
+                {
+                    var verse = await verser.ApresClotureAutomatiqueAsync(vue.SessionId, user.UtilisateurId(), CancellationToken.None);
+                    return Results.Ok(VersDto(vue) with { VerseAuCoffre = verse });
+                }
+                catch (Exception e)
+                {
+                    journalServeur.LogError(e, "Versement automatique au coffre impossible après la clôture de la session {SessionId}", vue.SessionId);
+                    return Results.Ok(VersDto(vue) with
+                    {
+                        AvertissementVersement = "La caisse est clôturée, mais le versement automatique au coffre a échoué : versez-la depuis Trésorerie (caisses à verser)."
+                    });
+                }
             })
            .ExigerPermission(Permissions.CaisseCloturer);
 
@@ -254,7 +268,7 @@ internal static class CaisseEndpoints
            .ExigerPermission(Permissions.CaisseVendre);
 
         caisse.MapGet("/validateurs-retour", async (Pharma.Application.Securite.ListerValidateurs lister, CancellationToken ct) =>
-                Results.Ok((await lister.ExecuterAsync(Permissions.CaisseRetourEspeces, ct)).Select(v => new VendeurComptoirDto(v.Identifiant, v.NomComplet))))
+                Results.Ok((await lister.ExecuterAsync(Permissions.CaisseRetourEspeces, ct)).Select(v => new VendeurComptoirDto(Pharma.Application.Securite.VerificationCodeComptoir.Reference(v.Id), v.NomComplet))))
            .ExigerPermission(Permissions.CaisseVendre);
 
         // Qui peut délivrer un psychotrope : affiché au vendeur qui n'a pas ce droit, dès que le produit est au panier
@@ -273,11 +287,11 @@ internal static class CaisseEndpoints
 
         // Qui peut valider un produit bloqué (à la vente ou à l'achat) avec son code comptoir
         api.MapGet("/produits/validateurs-blocage", async (Pharma.Application.Securite.ListerValidateurs lister, CancellationToken ct) =>
-                Results.Ok((await lister.ExecuterAsync(Permissions.ProduitsBloquer, ct)).Select(v => new VendeurComptoirDto(v.Identifiant, v.NomComplet))))
+                Results.Ok((await lister.ExecuterAsync(Permissions.ProduitsBloquer, ct)).Select(v => new VendeurComptoirDto(Pharma.Application.Securite.VerificationCodeComptoir.Reference(v.Id), v.NomComplet))))
            .ExigerConnexion();
 
         caisse.MapGet("/validateurs-annulation", async (Pharma.Application.Securite.ListerValidateurs lister, CancellationToken ct) =>
-                Results.Ok((await lister.ExecuterAsync(Permissions.CaisseAnnulerVente, ct)).Select(v => new VendeurComptoirDto(v.Identifiant, v.NomComplet))))
+                Results.Ok((await lister.ExecuterAsync(Permissions.CaisseAnnulerVente, ct)).Select(v => new VendeurComptoirDto(Pharma.Application.Securite.VerificationCodeComptoir.Reference(v.Id), v.NomComplet))))
            .ExigerPermission(Permissions.CaisseVendre);
 
         // Relève au changement d'équipe : comptage, clôture, et caisse rouverte aussitôt avec l'argent compté

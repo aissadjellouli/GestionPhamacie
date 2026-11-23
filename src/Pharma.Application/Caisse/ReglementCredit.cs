@@ -37,11 +37,15 @@ public interface ICreditsClients
     Task<Page<MouvementCredit>> MouvementsAsync(long patientId, DemandePage page, FiltreReleve? filtre = null, CancellationToken ct = default);
     /// <summary>Paiement du patient (sans vente) dans la caisse, dette diminuée ; renvoie le n° du reçu.</summary>
     /// <summary>Renvoie le numéro du reçu (RC-000001).</summary>
-    /// <remarks>Ventes : ventes à crédit choisies par le patient (087), le montant leur est imputé ; le surplus solde la dette la plus ancienne.</remarks>
+    /// <remarks>
+    /// Ventes : ventes à crédit choisies par le patient (087), le montant leur est imputé ; le surplus solde la dette la plus ancienne.
+    /// Journal : entrée obligatoire, écrite dans la transaction (Numero du contexte : le n° du reçu).
+    /// </remarks>
     Task<string> EncaisserAsync(long patientId, decimal montant, string mode, long sessionCaisseId, long utilisateurId,
-        IReadOnlyList<long>? ventes = null, CancellationToken ct = default);
+        IReadOnlyList<long>? ventes = null, CancellationToken ct = default, JournalAEcrire? journal = null);
     /// <summary>Remplace la dette (attendue : celle lue avant, sinon refus) ; le relevé inscrit une « correction » avec son motif.</summary>
-    Task CorrigerAsync(long patientId, decimal detteAttendue, decimal nouvelleDette, string motif, long utilisateurId, string? poste, CancellationToken ct = default);
+    Task CorrigerAsync(long patientId, decimal detteAttendue, decimal nouvelleDette, string motif, long utilisateurId, string? poste, CancellationToken ct = default,
+        JournalAEcrire? journal = null);
 }
 
 public sealed record RecuCredit(string Numero, string Patient, decimal Montant, string Mode, decimal ResteDu);
@@ -64,7 +68,7 @@ public sealed class ConsulterCredits(ICreditsClients credits)
 }
 
 /// <summary>Le patient rembourse tout ou partie de sa dette : l'argent entre dans la caisse ouverte du poste.</summary>
-public sealed class EncaisserReglementCredit(ICreditsClients credits, ISessionsCaisse sessions, IJournal journal, IAvoirs? avoirs = null)
+public sealed class EncaisserReglementCredit(ICreditsClients credits, ISessionsCaisse sessions, IAvoirs? avoirs = null, AutorisationCourante? autorisation = null)
 {
     public async Task<RecuCredit> ExecuterAsync(long patientId, decimal montant, string? mode, long utilisateurId, string? poste,
         IReadOnlyList<long>? ventes = null, CancellationToken ct = default)
@@ -76,11 +80,13 @@ public sealed class EncaisserReglementCredit(ICreditsClients credits, ISessionsC
         // Dette payée avec l'avoir du patient (script 106) : au plus son solde, revérifié sous verrou du patient à l'écriture
         if (mode == RegleAvoir.Mode && (avoirs is null ? 0 : await avoirs.SoldeAsync(patientId, ct)) is var soldeAvoir && montant > soldeAvoir)
             throw RegleAvoir.Insuffisant(soldeAvoir);
-        var numero = await credits.EncaisserAsync(patientId, montant, mode!, session.Id, utilisateurId, ventes, ct);
-        await journal.EcrireAsync(utilisateurId, "reglement_credit", "patient", patientId,
-            new Dictionary<string, object?> { ["montant"] = montant, ["mode"] = mode, ["reste_du"] = s.Patient.Solde - montant, ["recu"] = numero, ["ventes"] = ventes,
+        // Journal obligatoire écrit dans la transaction de l'encaissement (jamais après, avec un jeton annulable)
+        var journal = new JournalAEcrire(utilisateurId, "reglement_credit", "patient", patientId,
+            c => new Dictionary<string, object?> { ["montant"] = montant, ["mode"] = mode, ["reste_du"] = s.Patient.Solde - montant, ["recu"] = c.Numero, ["ventes"] = ventes,
                 // N° de ticket des ventes choisies : le journal les affiche à la place des identifiants (recette 2026-11-15)
-                ["tickets"] = ventes is { Count: > 0 } ? s.Ventes.Where(v => ventes.Contains(v.Id)).Select(v => v.Numero).ToList() : null }, null, ct);
+                ["tickets"] = ventes is { Count: > 0 } ? s.Ventes.Where(v => ventes.Contains(v.Id)).Select(v => v.Numero).ToList() : null }, null,
+            autorisation?.AutoriseParId);
+        var numero = await credits.EncaisserAsync(patientId, montant, mode!, session.Id, utilisateurId, ventes, ct, journal);
         return new RecuCredit(numero, s.Patient.Nom, montant, mode!, s.Patient.Solde - montant);
     }
 }
@@ -129,7 +135,7 @@ public sealed class ImprimerReleveCredit(ICreditsClients credits, IDocumentsCred
 /// Correction de la dette d'un patient par le titulaire (erreur de reprise, geste commercial, créance abandonnée) : motif
 /// obligatoire, inscrite au relevé de dette (type « correction ») et au journal avec la dette avant et après.
 /// </summary>
-public sealed class CorrigerDetteCredit(ICreditsClients credits, Securite.IPermissionService droits, IJournal journal)
+public sealed class CorrigerDetteCredit(ICreditsClients credits, Securite.IPermissionService droits, AutorisationCourante? autorisation = null)
 {
     public const int MotifMin = 5;
 
@@ -143,8 +149,9 @@ public sealed class CorrigerDetteCredit(ICreditsClients credits, Securite.IPermi
         nouvelleDette = Arrondi.Centime(nouvelleDette);
         var s = await credits.SituationAsync(patientId, ct) ?? throw new RegleMetierException("Patient introuvable.");
         if (s.Patient.Solde == nouvelleDette) throw new RegleMetierException("La dette est déjà de ce montant : rien à corriger.", "nouvelle_dette");
-        await credits.CorrigerAsync(patientId, s.Patient.Solde, nouvelleDette, texte, utilisateurId, string.IsNullOrWhiteSpace(poste) ? null : poste.Trim(), ct);
-        await journal.EcrireAsync(utilisateurId, "correction_credit", "patient", patientId,
-            new Dictionary<string, object?> { ["avant"] = s.Patient.Solde, ["apres"] = nouvelleDette, ["motif"] = texte }, null, ct);
+        // Journal obligatoire écrit dans la transaction de la correction
+        var journal = JournalAEcrire.Fixe(utilisateurId, "correction_credit", "patient", patientId,
+            new Dictionary<string, object?> { ["avant"] = s.Patient.Solde, ["apres"] = nouvelleDette, ["motif"] = texte }, null, autorisation?.AutoriseParId);
+        await credits.CorrigerAsync(patientId, s.Patient.Solde, nouvelleDette, texte, utilisateurId, string.IsNullOrWhiteSpace(poste) ? null : poste.Trim(), ct, journal);
     }
 }

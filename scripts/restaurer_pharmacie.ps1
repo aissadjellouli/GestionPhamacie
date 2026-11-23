@@ -10,8 +10,9 @@
     GED : le dossier GED du disque externe est recopié dans la GED du serveur. Rien n'est supprimé, et un document déjà
     présent et plus récent sur le serveur est gardé.
 
-    Avant : arrêter le service de l'API (sc.exe stop "PharmaOfficine API"). Après : appliquer les scripts database/migration/0xx
-    plus récents que la sauvegarde, s'il y en a (voir docs/mise-en-production.md, « Restauration »), puis redémarrer le service.
+    Avant : arrêter le service de l'API (sc.exe stop "PharmaOfficine API"). Après : rejouer TOUTE la suite database/migration depuis le script 001
+    (scripts\mep\mettre_a_jour_base_officine.ps1 ; jamais un script isolé ni seulement les plus récents : docs/scripts-base-de-donnees.md, § 3.4),
+    puis redémarrer le service.
 
 .EXAMPLE
     .\scripts\restaurer_pharmacie.ps1 -Sauvegardes "E:\Sauvegardes\Pharmacie"
@@ -127,7 +128,7 @@ SELECT 'Ventes : ' || (SELECT count(*) FROM vente) || ', dernière le ' || COALE
     || ' · produits : ' || (SELECT count(*) FROM produit) || ' · employés : ' || (SELECT count(*) FROM utilisateur)
 "@
         Write-Host "Base $Base restaurée. $resume"
-        Write-Host "Les opérations faites après cette sauvegarde sont à ressaisir. Appliquer ensuite les scripts database/migration/0xx plus récents que la sauvegarde s'il y en a."
+        Write-Host "Les opérations faites après cette sauvegarde sont à ressaisir. Rejouer ensuite toute la suite database/migration depuis le script 001 (mettre_a_jour_base_officine.ps1), jamais un script isolé."
     }
     finally {
         $env:PGPASSWORD = $null

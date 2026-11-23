@@ -25,7 +25,8 @@ public sealed record EcartAValider(
     decimal ValeurEcart, string ComptePar, DateTime CompteLe);
 
 /// <summary>Résultat d'une ligne au moment de terminer : écart, valeur et décision.</summary>
-public sealed record DecisionLigne(long LigneId, int Ecart, decimal ValeurEcart, DecisionEcart Decision);
+/// <summary>Compte et Theorique : valeurs sur lesquelles l'écart a été calculé ; la base les relit sous verrou avant d'ajuster.</summary>
+public sealed record DecisionLigne(long LigneId, int Ecart, decimal ValeurEcart, DecisionEcart Decision, int? Compte = null, int? Theorique = null);
 
 public interface IInventaires
 {
@@ -53,7 +54,11 @@ public interface IInventaires
     /// <summary>Lot désigné par une étiquette interne, un code de lot ou un Data Matrix (GTIN et lot) ; null sinon.</summary>
     Task<long?> LotParCodeAsync(string code, CancellationToken ct = default);
     /// <summary>Écarts, ajustements sous les seuils, dates vérifiées et fin de l'inventaire, en une transaction.</summary>
-    Task TerminerAsync(long id, IReadOnlyList<DecisionLigne> decisions, long utilisateurId, CancellationToken ct = default);
+    /// <summary>
+    /// Clôture en une transaction : inventaire verrouillé, comptes relus (un comptage changé depuis le calcul des écarts refuse la clôture),
+    /// ajustements, puis journal (écrit dans la même transaction).
+    /// </summary>
+    Task TerminerAsync(long id, IReadOnlyList<DecisionLigne> decisions, long utilisateurId, JournalDansTransaction? journal = null, CancellationToken ct = default);
     Task AnnulerAsync(long id, CancellationToken ct = default);
     Task<IReadOnlyList<EcartAValider>> EcartsAValiderAsync(CancellationToken ct = default);
     /// <summary>Valider applique l'ajustement au stock actuel ; refuser laisse le stock (recompter).</summary>
@@ -201,7 +206,7 @@ public sealed record BilanInventaire(int Lignes, int Conformes, int Ajustes, int
 /// Fin du comptage : chaque écart est ajusté tout de suite s'il reste sous les seuils, sinon il attend le titulaire,
 /// prévenu par SMS ou e-mail.
 /// </summary>
-public sealed class TerminerInventaire(IInventaires inventaires, IPermissionService droits, IJournal journal, IAlertesTitulaire? alertes = null,
+public sealed class TerminerInventaire(IInventaires inventaires, IPermissionService droits, IAlertesTitulaire? alertes = null,
     Surveillance.Surveiller? surveillance = null, ITraceErreurs? trace = null)
 {
     public async Task<BilanInventaire> ExecuterAsync(long id, long utilisateurId, CancellationToken ct = default)
@@ -217,21 +222,22 @@ public sealed class TerminerInventaire(IInventaires inventaires, IPermissionServ
         {
             var ecart = l.Compte!.Value - (l.Theorique ?? 0);
             var valeur = Arrondi.Centime(ecart * l.PrixAchatHt);
-            return new DecisionLigne(l.Id, ecart, valeur, RegleInventaire.Decider(ecart, valeur, p.SeuilBoites, p.SeuilMontant));
+            return new DecisionLigne(l.Id, ecart, valeur, RegleInventaire.Decider(ecart, valeur, p.SeuilBoites, p.SeuilMontant),
+                l.Compte, l.Theorique);
         }).ToList();
 
-        await inventaires.TerminerAsync(id, decisions, utilisateurId, ct);
         var aValider = decisions.Where(x => x.Decision == DecisionEcart.AValider).ToList();
         var bilan = new BilanInventaire(decisions.Count, decisions.Count(x => x.Decision == DecisionEcart.Conforme),
             decisions.Count(x => x.Decision == DecisionEcart.Ajuste), aValider.Count,
             decisions.Sum(x => x.Ecart), decisions.Sum(x => x.ValeurEcart));
 
-        await journal.EcrireAsync(utilisateurId, "inventaire_termine", "inventaire", id,
+        // Journal des actions sensibles écrit dans la transaction de la clôture
+        await inventaires.TerminerAsync(id, decisions, utilisateurId, new JournalDansTransaction("inventaire_termine", "inventaire", id,
             new Dictionary<string, object?>
             {
                 ["rayon"] = d.Rayon, ["lots"] = bilan.Lignes, ["ajustes"] = bilan.Ajustes, ["a_valider"] = bilan.AValider,
                 ["boites_ecart"] = bilan.BoitesEcart, ["valeur_ecart"] = bilan.ValeurEcart
-            }, Permissions.StockAjuster, ct);
+            }, Permissions.StockAjuster), ct);
 
         // L'inventaire est terminé : l'alerte ne le fait jamais échouer (échec : journal du serveur, bandeau du titulaire)
         if (alertes is not null && aValider.Count > 0)

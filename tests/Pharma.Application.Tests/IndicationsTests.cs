@@ -152,7 +152,7 @@ public class IndicationsTests
         var journal = new JournalEspion();
         var droits = new DroitsParEmploye(new() { [8] = ["caisse.vendre", "caisse.retour_especes"] });
         return (new EnregistrerRetourClient(stock, new SessionsEnMemoire(), droits,
-            new VerificationCodeComptoir(new CodesEnMemoire(), new VerificateurFactice(), new HorlogeFixe(new DateOnly(2026, 11, 15)), journal), journal,
+            new VerificationCodeComptoir(new CodesEnMemoire(), new VerificateurFactice(), new HorlogeFixe(new DateOnly(2026, 11, 15)), journal),
             motifs: new MotifsActifs(motifs)), stock, journal);
     }
 

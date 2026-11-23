@@ -35,7 +35,7 @@ public static partial class DepartOfficine
         cmd.Parameters.AddWithValue(officine);
         cmd.Parameters.AddWithValue(operateur);
         await using var r = await cmd.ExecuteReaderAsync(ct);
-        await r.ReadAsync(ct);
+        await Reception.DepotCentral.LigneAttendueAsync(r, "cloud_depart_officine", ct);
         return new ResultatDepart(r.GetInt32(0), new DateTimeOffset(DateTime.SpecifyKind(r.GetDateTime(1), DateTimeKind.Utc)), r.GetBoolean(2));
     }
 

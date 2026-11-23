@@ -11,6 +11,34 @@ local nouveau aujourd'hui). Détail : [a-faire.md](a-faire.md), [fonctionnalites
 [diagrammes-sequence.md](diagrammes-sequence.md) (architecture, déploiement, synchronisation) et documents cités.
 À mettre à jour à chaque point d'avancement.
 
+**Point du 2026-11-23 (soir) : revue complète de `develop` et correctifs, NON COMMITÉS.** Rien commité ni poussé depuis
+`7c218ba`. Revue en 6 domaines (caisse, stock, factures, sécurité, central et synchronisation, base), puis correctifs
+fusionnés dans la copie de travail : build 0 erreur 0 avertissement ; tests Domain 736, Application 1 876, Architecture 398,
+Cloud 162 + 1 ignoré, Cloud.Web 54, tous verts. Règles : section « Corrections de la revue complète (2026-11-23) » de
+[regles-metier.md](regles-metier.md).
+- **Bloquant corrigé** : le dernier retour remboursait aussi la prestation de la vente.
+- **Majeurs corrigés** : dette relue sous verrou à l'annulation et au retour ; journaux obligatoires écrits dans la transaction
+  (caisse et stock) ; correction de facture sous les avoirs et règlements ; plus de limite de 300 factures à solder ;
+  inventaire verrouillé ; éléments descendants écartés acquittés ; élément trop gros écarté par le central ; corps de lot
+  contrôlé avant allocation ; garde de rejeu du script central 040 ; script de bascule rejoué avec le bon rôle et le marqueur.
+- **Sécurité** : poste lié au jeton, ressaisie du mot de passe pour les actions sensibles, sauvegardes refusées sur un chemin
+  réseau, `#numéro` refusé sans connexion, GED contrôlée et journalisée, exports CSV protégés contre les formules.
+- **Décisions du titulaire codées** : don d'un lot bloqué ou périmé refusé ; solde reporté = fin du mois précédent ; année
+  du numéro de facture verrouillée ; déconnexion après 15 minutes par défaut (installations neuves) ; route
+  `GET /api/auth/comptoir` supprimée ; EF Core retiré (SQL direct Npgsql partout, ADR 0002 et 0004 complétés) ; script de
+  retour arrière obligatoire à partir du 162.
+- **Scripts** : locaux **161** (index des clés étrangères) et **162** (défaut de déconnexion, avec son retour) passés sur
+  `pharmacie_dev` et `pharmacie_test` (suite complète rejouée ; copie jetable vérifiée par `rejeu_complet.ps1` ; init
+  vérifié équivalent par `InitEquivalentSuiteMigrationsTests` sur PostgreSQL). Central **040** (garde) et **043**
+  (rattachement, ordres) passés sur `pharmacie_cloud_dev`. Sauvegardes avant : `…_avant_revue_161_162_…` et
+  `…_avant_040_043_…` dans `C:\MesAtlassian\sauvegardes-bd` (la sauvegarde centrale `--enable-row-security` ne contient pas
+  les lignes cloisonnées par officine).
+- **À décider** : plan des tests d'intégration SQL (`docs/taches/2026-11-23-tests-integration-sql/plan.md`, 7 questions) ;
+  plan de la bascule du 2e serveur (lecture seule puis resynchronisation, pas encore écrit) ; extension `pgcrypto` créée par
+  `schema.sql` mais par aucun script ; numéro de lot corrigé vers un numéro rappelé (bloqué aujourd'hui, ou refus ?) ;
+  commentaire d'un don d'échantillon visible par tous ; type GED « JournalFiscal » déposé par le poste mais refusé par le serveur.
+
+
 ## 1. En cours
 
 Rien en cours de développement. Démonstration cloud : étapes 1 et 2 écrites, premier démarrage réel en attente de Docker (section 3).

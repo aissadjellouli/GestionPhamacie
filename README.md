@@ -8,7 +8,7 @@ Logiciel de gestion d’officine pour les pharmacies algériennes : caisse, stoc
 | --- | --- |
 | `src/Pharma.Domain` | Entités, statuts typés et règles métier (FEFO, péremption, crédit, EAN-13, Data Matrix GS1) |
 | `src/Pharma.Application` | Cas d’usage par fonctionnalité et ports (interfaces) qu’ils utilisent |
-| `src/Pharma.Infrastructure` | Adaptateurs : PostgreSQL (Npgsql + EF Core), sécurité, impression, Chifa |
+| `src/Pharma.Infrastructure` | Adaptateurs : PostgreSQL (Npgsql, SQL direct), sécurité, impression, Chifa |
 | `src/Pharma.Api` | API ASP.NET Core locale, authentification JWT, droits vérifiés en base, tâche des alertes |
 | `src/Pharma.Desktop` | Poste client WPF + Blazor (BlazorWebView) |
 | `src/Pharma.Cloud.Api` | Serveur central de synchronisation (API mTLS, console d'administration) |
@@ -16,7 +16,7 @@ Logiciel de gestion d’officine pour les pharmacies algériennes : caisse, stoc
 | `src/Pharma.Shared` | Contrat HTTP (DTO) entre l’API et les postes |
 | `tests/Pharma.Domain.Tests` | Tests unitaires du domaine (xUnit) |
 | `tests/Pharma.Application.Tests` | Tests des cas d’usage, avec doublures |
-| `tests/Pharma.Architecture.Tests` | Sens des dépendances entre couches, mapping EF |
+| `tests/Pharma.Architecture.Tests` | Sens des dépendances entre couches, scripts SQL et init |
 | `tests/Pharma.Cloud.Tests`, `tests/Pharma.Cloud.Web.Tests`, `tests/Pharma.Cloud.Charge` | Tests du serveur central, de ses écrans et essai de charge |
 | `database/migration/` | **Migration** d'une base en service : scripts numérotés `0NN_*.sql` (source de vérité du schéma), rejoués dans l'ordre à chaque nouvelle version ; voir docs/base-de-donnees.md |
 | `database/init/` | **Création à la mise en production** d'une base neuve : `schema.sql` (toute la structure), `seed_referentiel.sql` (référentiel de départ), `clean.sql` (remise à vierge) ; voir docs/mise-en-production.md |

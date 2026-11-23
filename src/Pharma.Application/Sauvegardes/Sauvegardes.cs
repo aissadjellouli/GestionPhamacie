@@ -1,4 +1,5 @@
 using Pharma.Application.Commun;
+using Pharma.Application.Securite;
 using Pharma.Application.Notifications;
 using Pharma.Domain.Commun;
 
@@ -249,7 +250,29 @@ public sealed class ObtenirSauvegardes(ISauvegardesDepot depot)
         CancellationToken ct = default) => depot.JournalPageAsync(filtre, page, ct);
 }
 
-public sealed class ModifierReglagesSauvegarde(ISauvegardesDepot depot, IJournal journal, SuperAdmin.ICompteSuperAdmin? superAdmin = null)
+/// <summary>Où les sauvegardes peuvent être déposées : un disque de ce poste (fixe ou amovible), jamais le réseau.</summary>
+public static class DossierSauvegarde
+{
+    public const string RefusReseau = "Le dossier des sauvegardes doit être sur un disque de ce poste (disque interne ou disque externe branché) : "
+        + "un dossier réseau (partage \\\\serveur\\partage) ou un lecteur réseau n’est pas accepté.";
+
+    /// <summary>Chemin réseau (partage UNC, y compris \\?\UNC\) ou lecteur réseau (Windows) ?</summary>
+    public static bool EstReseau(string chemin)
+    {
+        var c = chemin.Trim();
+        if (c.StartsWith(@"\\", StringComparison.Ordinal) || c.StartsWith("//", StringComparison.Ordinal)) return true;
+        if (!OperatingSystem.IsWindows()) return false;
+        try
+        {
+            var racine = Path.GetPathRoot(c);
+            return !string.IsNullOrEmpty(racine) && new DriveInfo(racine).DriveType == DriveType.Network;
+        }
+        catch (Exception e) when (e is ArgumentException or IOException or UnauthorizedAccessException) { return false; }
+    }
+}
+
+public sealed class ModifierReglagesSauvegarde(ISauvegardesDepot depot, IJournal journal, IPermissionService droits,
+    SuperAdmin.ICompteSuperAdmin? superAdmin = null)
 {
     public async Task ExecuterAsync(bool actif, string? dossier, TimeOnly heure, int conservation, long utilisateurId, CancellationToken ct = default,
         int? retentionGedJours = null, int? nettoyageGedAnnees = null, int alerteSansDisqueJours = ReglagesSauvegarde.AlerteSansDisqueParDefaut)
@@ -257,13 +280,21 @@ public sealed class ModifierReglagesSauvegarde(ISauvegardesDepot depot, IJournal
         var d = string.IsNullOrWhiteSpace(dossier) ? null : dossier.Trim();
         if (d is not null && !Path.IsPathFullyQualified(d))
             throw new RegleMetierException("Indiquez un chemin complet, par exemple E:\\SauvegardesPharmacie.", "dossier");
+        if (d is not null && DossierSauvegarde.EstReseau(d)) throw new RegleMetierException(DossierSauvegarde.RefusReseau, "dossier");
         if (actif && d is null) throw new RegleMetierException("Choisissez le dossier avant d’activer les sauvegardes.", "dossier");
         if (conservation is < 1 or > 365) throw new RegleMetierException("Nombre de sauvegardes conservées entre 1 et 365.", "conservation");
         if (retentionGedJours is < 1 or > 365) throw new RegleMetierException("Copie dans la GED : entre 1 et 365 jours (vide : réglage du serveur).", "retention_ged");
         if (nettoyageGedAnnees is < 1 or > 100) throw new RegleMetierException("Nettoyage de la GED : entre 1 et 100 ans (vide : jamais).", "nettoyage_ged");
         if (alerteSansDisqueJours is < 1 or > 90)
             throw new RegleMetierException("Alerte sans sauvegarde sur le disque externe : entre 1 et 90 jours.", "alerte_sans_disque");
+        // Changer le dossier des sauvegardes est réservé au titulaire (les autres réglages restent au droit admin.sauvegardes)
+        var ancien = (await depot.ReglagesAsync(ct)).Dossier;
+        var dossierChange = !string.Equals(ancien, d, StringComparison.OrdinalIgnoreCase);
+        if (dossierChange) await droits.ExigerTitulaireAsync(utilisateurId, "changer le dossier des sauvegardes", ct);
         await depot.EnregistrerReglagesAsync(actif, d, heure, conservation, retentionGedJours, nettoyageGedAnnees, alerteSansDisqueJours, ct);
+        if (dossierChange)
+            await journal.EcrireAsync(utilisateurId, "dossier_sauvegarde_change", "parametre_sauvegarde", 1,
+                new Dictionary<string, object?> { ["ancien"] = ancien, ["nouveau"] = d }, Domain.Securite.Permissions.AdminSauvegardes, ct);
         // Copie avec le compte du super admin : la restauration retrouve le disque externe même si la base est détruite
         try
         {

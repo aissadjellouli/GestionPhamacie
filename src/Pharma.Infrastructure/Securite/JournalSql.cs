@@ -37,6 +37,16 @@ public sealed class JournalSql(NpgsqlDataSource db, Pharma.Application.Securite.
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    /// <summary>Écrit les entrées obligatoires d'une opération dans sa transaction (elles sont validées ou annulées avec elle).</summary>
+    internal static async Task EcrireEntreesAsync(NpgsqlConnection cx, NpgsqlTransaction tx, IReadOnlyList<JournalAEcrire>? entrees,
+        ContexteJournal contexte, CancellationToken ct)
+    {
+        if (entrees is null) return;
+        foreach (var e in entrees)
+            await EcrireAsync(cx, tx, e.UtilisateurId, e.Action, e.TableCible, e.EnregistrementId ?? contexte.VenteId, e.Details(contexte),
+                e.PermissionCode, ct, e.PersonneAutorisee);
+    }
+
     private static void AjouterParametres(NpgsqlCommand cmd, long utilisateurId, string action, string? tableCible,
         long? enregistrementId, IReadOnlyDictionary<string, object?> details, string? permissionCode)
     {

@@ -179,10 +179,14 @@ public class EnvoiSynchronisationTests
         {
             var l = Autres.Where(a => a.Version > apres).ToList();
             if (VersionReglage > apres) l.Add(new("reglage_central", "familles_envoyees", VersionReglage, System.Text.Json.JsonSerializer.Serialize(new { familles = reglage })));
-            return new DescendantsRecus(l, Math.Max(VersionReglage, Autres.Select(a => a.Version).DefaultIfEmpty(0).Max()), Ecartes);
+            var ecartesCeTour = VersionEcartee == 0 || VersionEcartee > apres ? Ecartes : 0;
+            return new DescendantsRecus(l, Math.Max(VersionReglage, Autres.Select(a => a.Version).DefaultIfEmpty(0).Max()), ecartesCeTour,
+                VersionEcartee > apres ? VersionEcartee : 0);
         }
         /// <summary>Éléments écartés par le client à la réception (mal formés ou trop gros).</summary>
         public int Ecartes;
+        /// <summary>Plus grande version parmi les éléments écartés (0 : non précisée) ; ils ne sont plus rendus une fois acquittés.</summary>
+        public long VersionEcartee;
 
         public Task<DescendantsRecus> EchangerAsync(string adresse, long versionAppliquee, CancellationToken ct = default)
         {
@@ -383,6 +387,35 @@ public class EnvoiSynchronisationTests
         var r = await Envoi(b, c, s).ExecuterAsync(Maintenant);
         Assert.Null(r.Erreur);
         Assert.Contains("2 élément(s) descendant(s) écarté(s)", b.Envois[^1]);
+    }
+
+    [Fact]
+    public async Task Elements_descendants_ecartes_sont_acquittes_meme_sans_element_garde()
+    {
+        // Revue du 2026-11-23 : la version acquittée ne tenait compte que des éléments gardés ; un écarté était redonné sans fin
+        var (b, c, s) = (new Base(), new Certificat(), new Central { Ecartes = 1, VersionEcartee = 50 });
+        b.Ajouter(1);
+        Assert.Null((await Envoi(b, c, s).ExecuterAsync(Maintenant)).Erreur);
+        Assert.Equal(50, b.P.DescendantVersion);
+        // Passage où il ne reste QUE un élément écarté (rien de gardé) : sa version est quand même acquittée
+        s.VersionEcartee = 60;
+        Assert.Null((await Envoi(b, c, s).ExecuterAsync(Maintenant)).Erreur);
+        Assert.Equal(60, b.P.DescendantVersion);
+        Assert.Contains("1 élément(s) descendant(s) écarté(s)", b.Envois[^1]);
+        await Envoi(b, c, s).ExecuterAsync(Maintenant);
+        Assert.Equal(60, s.VersionsRecues[^1]);   // le central reçoit 60 : il ne redonne pas l'écarté
+    }
+
+    [Fact]
+    public async Task Element_ecarte_apres_un_element_bloquant_n_est_pas_acquitte_et_les_deux_messages_restent()
+    {
+        var (b, c, s) = (new Base(), new Certificat(), new Central { Ecartes = 1, VersionEcartee = 50 });
+        s.Autres.Add(new("prix_central", "x", 5, "{}"));
+        b.Ajouter(1);
+        Assert.Null((await Envoi(b, c, s).ExecuterAsync(Maintenant)).Erreur);
+        Assert.Equal(4, b.P.DescendantVersion);   // avant le premier bloquant, jamais jusqu'à l'écarté
+        Assert.Contains("écarté(s)", b.Envois[^1]);
+        Assert.Contains("ignoré(s)", b.Envois[^1]);
     }
 
     [Theory]

@@ -109,6 +109,13 @@ internal static class PatientsEndpoints
                     .Select(m => new MedecinDto(m.Id, m.Nom, m.Specialite, m.Telephone, m.Adresse, m.Email, m.NumeroOrdre, m.CodeCnas, m.Wilaya))))
            .ExigerPermission(DroitsRechercheMedecins);
 
+        // Fiche d'un médecin par son identifiant (même droit que la recherche) : relue avant une correction ciblée (wilaya de la caisse)
+        api.MapGet("/medecins/{id:long}", async (long id, RechercherMedecins rechercher, CancellationToken ct) =>
+                await rechercher.LireAsync(id, ct) is { } m
+                    ? Results.Ok(new MedecinDto(m.Id, m.Nom, m.Specialite, m.Telephone, m.Adresse, m.Email, m.NumeroOrdre, m.CodeCnas, m.Wilaya))
+                    : Results.NotFound())
+           .ExigerPermission(DroitsRechercheMedecins);
+
         // Référentiel des wilayas (liste bornée : fiche médecin, zone de l'officine)
         api.MapGet("/wilayas", async (Pharma.Application.Psychotropes.IZonePsychotropesDepot zone, CancellationToken ct) =>
                 Results.Ok((await zone.WilayasAsync(ct)).Select(w => new WilayaDto(w.Code, w.Nom)).ToList()))

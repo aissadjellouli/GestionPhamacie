@@ -102,12 +102,12 @@ public sealed class MobileSql(NpgsqlDataSource db) : IMobile
         return await r.ReadAsync(ct) ? new LotAConfirmer(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetBoolean(3)) : null;
     }
 
-    public async Task ConfirmerPeremptionAsync(long lotId, DateOnly date, CancellationToken ct = default)
+    public async Task<bool> ConfirmerPeremptionAsync(long lotId, DateOnly date, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("UPDATE lot SET date_peremption = $2, date_a_verifier = false WHERE id = $1 AND date_a_verifier");
         cmd.Parameters.AddWithValue(lotId);
         cmd.Parameters.AddWithValue(date);
-        await cmd.ExecuteNonQueryAsync(ct);
+        return await cmd.ExecuteNonQueryAsync(ct) > 0;
     }
 
     public async Task<long> AjouterScanAsync(NouveauScanReception s, CancellationToken ct = default)

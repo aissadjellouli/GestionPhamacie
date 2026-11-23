@@ -52,6 +52,9 @@ public sealed class EffacerCodeComptoir(ICodesComptoir codes, IPermissionService
     {
         await droits.ExigerAsync(utilisateurId, Permissions.AdminUtilisateurs, "effacer un code comptoir", ct);
         var cible = await codes.ParIdAsync(cibleId, ct) ?? throw new RegleMetierException("Employé introuvable.");
+        // Comme le compte d'un titulaire (règle des comptes) : seul un titulaire efface le code comptoir d'un titulaire
+        if (await droits.EstTitulaireAsync(cibleId, ct))
+            await droits.ExigerTitulaireAsync(utilisateurId, "effacer le code comptoir d'un pharmacien titulaire", ct);
         await codes.DefinirAsync(cibleId, null, ct);
         await journal.EcrireAsync(utilisateurId, "code_comptoir", "utilisateur", cibleId,
             new Dictionary<string, object?> { ["action"] = "efface", ["employe"] = cible.NomComplet }, Permissions.AdminUtilisateurs, ct);
@@ -81,7 +84,7 @@ public sealed class SeConnecterParCode(ICodesComptoir codes, IVerificateurMotDeP
         await comptes.NoterConnexionAsync(compte.Id, poste?.Trim(), "code", ct);
         // Surveillance : même employé actif sur deux postes à la fois
         if (surveillance is not null) await surveillance.ExecuterAsync(ct);
-        var (jeton, expire) = jetons.Creer(compte.Id, compte.NomComplet, comptoir: true);
+        var (jeton, expire) = jetons.Creer(compte.Id, compte.NomComplet, comptoir: true, poste: poste?.Trim());
         return new Session(jeton, compte.NomComplet, expire);
     }
 }
@@ -96,8 +99,10 @@ public sealed class VerificationCodeComptoir(ICodesComptoir codes, IVerificateur
     /// <summary>Référence d'un valideur proposé au poste (« #numéro ») : son identifiant de connexion n'est pas divulgué.</summary>
     public static string Reference(long utilisateurId) => "#" + utilisateurId;
 
-    private async Task<CompteComptoir?> TrouverAsync(string identifiant, CancellationToken ct) =>
-        identifiant.StartsWith('#') && long.TryParse(identifiant.AsSpan(1), out var id)
+    // La référence « #numéro » n'est lue que pour un demandeur déjà connecté (autorisation sur place) : jamais depuis la connexion
+    // par code (route anonyme), qui ne permet pas de deviner un compte par son numéro.
+    private async Task<CompteComptoir?> TrouverAsync(string identifiant, bool demandeurConnecte, CancellationToken ct) =>
+        demandeurConnecte && identifiant.StartsWith('#') && long.TryParse(identifiant.AsSpan(1), out var id)
             ? await codes.TrouverActifParIdAsync(id, ct)
             : await codes.TrouverActifAsync(identifiant, ct);
 
@@ -112,7 +117,7 @@ public sealed class VerificationCodeComptoir(ICodesComptoir codes, IVerificateur
         long? demandeurId = null)
     {
         if (string.IsNullOrWhiteSpace(identifiant) || string.IsNullOrWhiteSpace(code)) throw new RegleMetierException(SeConnecterParCode.Refus);
-        var compte = await TrouverAsync(identifiant.Trim(), ct);
+        var compte = await TrouverAsync(identifiant.Trim(), demandeurId is not null, ct);
         if (compte?.CodeHash is null) throw new RegleMetierException(SeConnecterParCode.Refus);
         var maintenant = horloge.MaintenantUtc;
         if (demandeurId is { } d && demandeurs is not null)

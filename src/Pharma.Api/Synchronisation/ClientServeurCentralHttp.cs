@@ -91,19 +91,21 @@ public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogge
         }
         var gardes = new List<ChangementDescendantSync>();
         var ecartes = 0;
+        long ecarteeMax = 0;
         foreach (var c in d.Changements.Where(c => c is not null).OrderBy(c => c.Version).Take(MaxElements))
         {
             if (string.IsNullOrEmpty(c.Table) || string.IsNullOrEmpty(c.Cle) || c.DonneesJson is null || c.DonneesJson.Length > MaxDonnees || !ObjetJson(c.DonneesJson))
             {
                 logger.LogWarning("Synchronisation : élément descendant {Table} version {Version} écarté (mal formé ou trop gros)", c.Table?.Length > 63 ? "?" : c.Table, c.Version);
                 ecartes++;
+                ecarteeMax = Math.Max(ecarteeMax, c.Version);
                 continue;
             }
             gardes.Add(new ChangementDescendantSync(c.Table, c.Cle, c.Version, c.DonneesJson));
         }
         if (d.Changements.Count > MaxElements)
             logger.LogWarning("Synchronisation : {Nombre} éléments descendants reçus, {Max} gardés pour ce passage", d.Changements.Count, MaxElements);
-        return new DescendantsRecus(gardes, d.VersionMax, ecartes);
+        return new DescendantsRecus(gardes, d.VersionMax, ecartes, ecarteeMax);
     }
 
     private static bool ObjetJson(string json)

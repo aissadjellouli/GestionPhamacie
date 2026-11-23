@@ -200,6 +200,13 @@ public sealed class PatientsSql(NpgsqlDataSource db) : IPatients, IMedecins, IOr
         return await LireMedecinsAsync(cmd, ct);
     }
 
+    async Task<Medecin?> IMedecins.LireAsync(long id, CancellationToken ct)
+    {
+        await using var cmd = db.CreateCommand("SELECT id, nom, specialite, telephone, adresse, email, numero_ordre, code_prestataire, wilaya FROM medecin WHERE id = $1");
+        cmd.Parameters.AddWithValue(id);
+        return (await LireMedecinsAsync(cmd, ct)).FirstOrDefault();
+    }
+
     async Task<IReadOnlyList<Medecin>> IMedecins.SansWilayaAsync(string? texte, int limite, CancellationToken ct)
     {
         await using var cmd = db.CreateCommand("""

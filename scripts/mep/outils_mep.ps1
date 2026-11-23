@@ -137,6 +137,23 @@ function Get-ScriptsNumerotes {
     return $liste
 }
 
+# Numéros de database\migration jamais attribués (docs/base-de-donnees.md, « Numérotation ») : tolérés par Test-SuiteSansTrou.
+# Les scripts « b » (101b, 111b) ne sont pas dans la liste numérotée (Get-ScriptsNumerotes les ignore).
+$script:NumerosNonAttribues = @(113, 119)
+
+# La suite numérotée de l'officine doit être sans trou ni doublon (comme celle du central, creer_base_centrale.ps1), hors numéros non attribués.
+function Test-SuiteSansTrou {
+    param([Parameter(Mandatory)][object[]]$Scripts, [int[]]$NonAttribues = $script:NumerosNonAttribues)
+    $numeros = @($Scripts | ForEach-Object { [int]$_.Name.Substring(0, 3) })
+    $doublons = @($numeros | Group-Object | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Name })
+    if ($doublons.Count -gt 0) { throw "Suite des scripts : numéro(s) en double : $($doublons -join ', ')." }
+    $presentsInterdits = @($numeros | Where-Object { $NonAttribues -contains $_ })
+    if ($presentsInterdits.Count -gt 0) { throw "Suite des scripts : le(s) numéro(s) $($presentsInterdits -join ', ') figurent dans la liste des numéros non attribués (outils_mep.ps1) mais un script existe : mettre la liste à jour." }
+    $attendus = 1..($numeros | Measure-Object -Maximum).Maximum | Where-Object { $NonAttribues -notcontains $_ }
+    $manquants = @($attendus | Where-Object { $numeros -notcontains $_ } | ForEach-Object { '{0:000}' -f $_ })
+    if ($manquants.Count -gt 0) { throw "Suite des scripts interrompue : numéro(s) manquant(s) $($manquants -join ', ') (ni script, ni numéro non attribué)." }
+}
+
 # L'en-tête d'un fichier d'init doit citer « 001 à NNN » avec NNN = dernier script numéroté du dépôt.
 function Test-EnteteInit {
     param([Parameter(Mandatory)][string]$Fichier, [Parameter(Mandatory)][string]$Dernier)

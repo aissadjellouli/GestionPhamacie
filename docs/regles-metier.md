@@ -39,6 +39,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - [Pilotage (tableau de bord du titulaire)](#pilotage-tableau-de-bord-du-titulaire)
 - [Suivi des dettes et créances](#suivi-des-dettes-et-créances)
 - [Points relevés à l'inventaire](#points-relevés-à-linventaire)
+- [Corrections de la revue complète (2026-11-23)](#corrections-de-la-revue-complète-2026-11-23)
 
 ## Points relevés à l'inventaire
 
@@ -48,7 +49,6 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Droit `caisse.supprimer_ligne`** : défini, mais aucun contrôle ne l'exige ; retirer une ligne du panier est seulement signalé à la surveillance de la caisse. (à confirmer)
 - **Droit `chifa.importer`** : défini, mais aucune fonction ne l'exige. (à confirmer) `chifa.bordereaux` est exigé par Finances › Bordereaux Chifa depuis le 2026-11-15 (script 110).
 - **Import Chifa** : les fichiers lus sont archivés dans la GED, puis la lecture s'arrête (format des fichiers non connu) ; les bordereaux se saisissent à la main (n° de CHIFA-Officine), voir « Bordereaux ».
-- **Lot choisi au scan d'un code fabricant** (fonction SQL `lot_fefo`) : ne tient pas compte des lots bloqués. (à confirmer)
 - **État du stock** (vue `v_etat_stock`) : compte les lots bloqués ; seuls les lots périmés sont exclus.
 - **Date de péremption confirmée à l'inventaire** : refusée seulement si elle est passée de plus d'un an, alors que le commentaire du code dit « ne peut pas être déjà passée ». (à confirmer)
 - **Prix public** : le code exige un prix supérieur à 0, la base accepte 0.
@@ -541,7 +541,7 @@ Inventaire des règles métier **telles que le logiciel les applique aujourd'hui
 - **Quand le premier lot ne suffit pas, le lot suivant dans l'ordre FEFO est proposé** (les lots déjà au panier du poste sont écartés). — `src/Pharma.Application/Catalogue/ObtenirLotFefo.cs`
 - **Les lots périmés ou bloqués encore en stock sont listés au comptoir avec leur raison** (et le motif de blocage), pour expliquer pourquoi ils ne sont pas servis. — `src/Pharma.Application/Catalogue/ObtenirLotFefo.cs` (droit `caisse.vendre` à l'API)
 - **Le stock vendable affiché au comptoir exclut les boîtes périmées et bloquées**. — `src/Pharma.Application/Catalogue/ObtenirLotFefo.cs`
-- **Un code-barres fabricant scanné renvoie le lot qui périme le plus tôt avec du stock et non périmé** ; ce calcul en base ne tient pas compte du blocage (à confirmer si voulu). — fonction `lot_fefo`, `database/init/schema.sql`
+- **Un code-barres fabricant scanné renvoie le lot qui périme le plus tôt avec du stock, non périmé et non bloqué** (lots bloqués exclus depuis le script 065). — fonction `lot_fefo`, `database/migration/065_stock_vendable_hors_bloque.sql`
 - **Une boîte identifiée scannée en caisse (étiquette interne ou Data Matrix) est servie de son propre lot** ; si un autre lot vendable du même produit périme avant elle, le caissier est averti de servir d'abord ce lot. — `src/Pharma.Domain/Stock/RegleFefo.cs`, `src/Pharma.Application/Caisse/ControlerBoite.cs`
 - **Couleur de cet avertissement : rouge si le lot à servir d'abord est en péremption proche (niveau rouge ou orange), orange sinon** ; l'emplacement (ou « réserve … ») où trouver ce lot est indiqué. — `src/Pharma.Domain/Stock/RegleFefo.cs`, `src/Pharma.Application/Caisse/ControlerBoite.cs`
 - **En caisse, une boîte identifiée qui n'est plus en stock est refusée** (« déjà vendue, retournée ou détruite ») ; une boîte d'un lot bloqué ou périmé est refusée (vente interdite) ; une boîte dont le lot est épuisé dans le logiciel est refusée (« Vérifiez le stock »). Droit `caisse.vendre`. — `src/Pharma.Application/Caisse/ControlerBoite.cs`
@@ -1413,7 +1413,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 
 - **Une session (jeton) dure 12 heures par défaut.** : réglable par `Jwt:DureeHeures`. — `src/Pharma.Api/Securite/JetonService.cs`
 - **Hors poste de développement, le serveur refuse de démarrer si sa clé de signature est absente, trop courte (moins de 64 caractères) ou restée à la valeur d'exemple.** — `src/Pharma.Api/Securite/JetonService.cs`
-- **La déconnexion automatique après inactivité se règle entre 0 (désactivée) et 240 minutes.** : réglage des paramètres de caisse ; 0 par défaut. — `src/Pharma.Application/Caisse/Sessions.cs`
+- **La déconnexion automatique après inactivité se règle entre 0 (désactivée) et 240 minutes.** : réglage des paramètres de caisse ; 15 minutes par défaut pour une installation neuve (décision du titulaire du 2026-11-23, script 162) ; les bases existantes gardent leur valeur, que le titulaire règle dans Administration › Caisse. — `src/Pharma.Application/Caisse/Sessions.cs`, `database/migration/162_deconnexion_inactivite_defaut_15_minutes.sql`
 - **Chaque poste envoie son nom au serveur ; ce nom identifie la caisse du poste.** — `src/Pharma.Api/Securite/PermissionsComptoir.cs`
 - **La barre d'état du poste (dernière sauvegarde, caisse ouverte) est visible par tout employé connecté, sans montant ni message d'erreur.** Depuis le 2026-11-21, la sauvegarde n'y apparaît plus qu'en retard ou en échec (« Barre d'état : éléments fixes et pastilles »). — `src/Pharma.Application/Administration/EtatPoste.cs`
 - **Chaque employé choisit son affichage (automatique, clair ou sombre) sans droit particulier, même connecté par code comptoir.** — `src/Pharma.Application/Securite/Affichage.cs`
@@ -1439,7 +1439,7 @@ Sources : `database/init/seed_referentiel.sql`, `src/Pharma.Domain/Securite/Perm
 ### Autorisation sur place
 
 - **Une action refusée faute de droit peut être autorisée sur place par le code comptoir d'un autre employé présent qui a ce droit.** — `src/Pharma.Api/Securite/AutorisationParCode.cs`
-- **Une action réservée au titulaire peut être autorisée sur place par le code comptoir d'un titulaire.** — `src/Pharma.Api/Securite/AutorisationParCode.cs`
+- **Une action réservée au titulaire n'est jamais autorisable sur place par un code comptoir** : le rôle titulaire est hors de la liste des droits qu'un collègue peut accorder ; le titulaire se connecte lui-même. — `src/Pharma.Domain/Securite/CodeComptoir.cs`, `src/Pharma.Api/Securite/PermissionsComptoir.cs`
 - **L'autorisation sur place est activée par défaut et peut être désactivée par le titulaire (Administration › Caisse).** : réglage `autorisation_par_code`, droit `admin.parametres`. — `database/migration/047_numeros_recus_autorisation_code.sql`
 - **Un employé ne peut pas s'autoriser lui-même avec son propre code.** — `src/Pharma.Api/Securite/AutorisationParCode.cs`
 - **Seuls les droits acceptés par le valideur au poste sont accordés.** : un code saisi pour vendre sans ordonnance n'autorise pas, dans la même opération, un dépassement du plafond de crédit. — `src/Pharma.Api/Securite/AutorisationParCode.cs`
@@ -1600,7 +1600,7 @@ Lot 3 (M6b, conformité fiscale 2027), 2026-11-16. Le journal est séparé de la
 ## GED (documents)
 
 - **La GED est un dossier du serveur (par défaut C:\ProgramData\PharmaOfficine\GED), rangé par type de document.** — `src/Pharma.Application/Ged/Ged.cs`
-- **Types acceptés depuis les postes : Factures, Rapports, Clotures, Registre, Commandes, Retours, Etiquettes, Inventaires, Credits.** : un autre type est refusé. — `src/Pharma.Application/Ged/Ged.cs`
+- **Types acceptés depuis les postes : Factures, Rapports, Clotures, Registre, Commandes, Retours, Etiquettes, Inventaires, Credits, Financements.** : un autre type est refusé. — `src/Pharma.Application/Ged/Ged.cs`
 - **La GED contient aussi les ordonnances scannées, les fichiers Chifa et les copies des sauvegardes.** — `src/Pharma.Application/Ged/Ged.cs`
 - **Un document vide ou de plus de 30 Mo est refusé.** — `src/Pharma.Application/Ged/Ged.cs`
 - **Le nom du document est nettoyé (sans chemin ni caractère interdit) et limité à 150 caractères.** — `src/Pharma.Application/Ged/Ged.cs`
@@ -1709,7 +1709,7 @@ Lot 3 (M6b, conformité fiscale 2027), 2026-11-16. Le journal est séparé de la
 - **Seul le titulaire traite une anomalie** (la marque « traitée »). — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Seul le titulaire lit et modifie les réglages du contrôle interne** (seuils, horaires, fréquence du comptage des produits sensibles). Ils sont dans Administration › Contrôle interne (`admin/controle-interne`), groupés en Caisse (avec les horaires d'ouverture), Stock et réception (avec la réception à l'aveugle), Crédits et accès ; l'écran Contrôle interne ne garde que les anomalies, les pertes et vigilance et les produits sensibles. — `src/Pharma.Application/Surveillance/Surveillance.cs`
 - **Seul le titulaire consulte et choisit les produits sensibles.** — `src/Pharma.Application/Surveillance/Surveillance.cs`
-- **Le rôle titulaire n'est pas reconnu pour une connexion par code comptoir, ni tant que le mot de passe doit être changé** : sauf autorisation « sur place » (mécanisme `AutoriseSurPlaceAsync`, détail à confirmer). — `src/Pharma.Api/Securite/PermissionsComptoir.cs`
+- **Le rôle titulaire n'est pas reconnu pour une connexion par code comptoir, ni tant que le mot de passe doit être changé** ; l'autorisation « sur place » (`AutoriseSurPlaceAsync`) ne l'accorde pas non plus, le rôle titulaire étant hors de la liste des droits autorisables par un collègue. — `src/Pharma.Api/Securite/PermissionsComptoir.cs`
 
 ### Événements de caisse (ce qui se passe au comptoir sans laisser de vente)
 - **Trois types d'événements sont enregistrés** : ligne retirée du panier (`ligne_retiree`), tiroir ouvert sans vente (`tiroir_ouvert`), vente en attente abandonnée (`attente_abandonnee`). Un panier non encaissé ni mis en attente, perdu en quittant l'écran de caisse, est signalé comme lignes retirées. — `database/migration/054_surveillance_caisse.sql`
@@ -2633,3 +2633,62 @@ Règles appliquées par `GenererCodeAccesDistant` (API locale), la route `POST /
   — `src/Pharma.Desktop/Services/PastillesBarre.cs`, `src/Pharma.Desktop/Composants/Mise/BarreEtat.razor`,
   `src/Pharma.Application/Administration/CompteursBarre.cs`, `src/Pharma.Api/Endpoints/EtatPosteEndpoints.cs`,
   `src/Pharma.Desktop/Services/ImprimanteTickets.cs` (`DerniereErreur`)
+
+## Corrections de la revue complète (2026-11-23)
+
+Revue complète de la branche `develop` (caisse, stock, factures, sécurité, serveur central, base). Ces règles remplacent, là où elles diffèrent, les règles plus anciennes des sections citées.
+
+**Caisse, annulations et retours**
+- **Le solde exact du dernier retour porte sur la part payée des seules lignes produit** : une prestation ne se rend jamais (D-12) et ne réduit pas la dette d'une vente à crédit. Exemple : 500 DA de produit + 200 DA de prestation, retour de la boîte = 500 DA. — `src/Pharma.Domain/Ventes/RegleRetour.cs` (`PartPatientProduits`), `src/Pharma.Application/Caisse/RetourClient.cs`
+- **À l'annulation et au retour, la dette du patient et ce qu'il a payé sur la vente sont relus sous verrou du patient** ; s'ils diffèrent de ce que le caissier a vu, l'opération est refusée (« La dette du patient a changé depuis l'affichage de la vente : rechargez-la avant de continuer. »). La relecture n'est faite que si la dette sert à l'opération (crédit, dette réduite ou régularisation). — `src/Pharma.Infrastructure/Caisse/AnnulationsVenteSql.cs` (`VerifierLectureAsync`)
+- **Les lots remis en stock à l'annulation sont verrouillés dans l'ordre de leur identifiant**, comme à l'encaissement. — `AnnulationsVenteSql.cs`
+- **La borne de 20 ventes en attente par poste est garantie par le serveur de données** (verrou par poste, contrôle et insertion dans une même transaction). — `src/Pharma.Infrastructure/Caisse/VentesEnAttenteSql.cs`
+- **Un montant d'encaissement de dette ou d'avoir utilisé ne peut pas avoir plus de 2 décimales** (refus avec message). — `src/Pharma.Domain/Ventes/RegleCredit.cs`, `RegleAvoir.cs`
+- **Le versement automatique au coffre suit la clôture dans sa propre transaction** : s'il échoue, la clôture reste valide, l'échec est journalisé au serveur et signalé au poste (caisse à verser depuis Trésorerie). — `src/Pharma.Api/Endpoints/CaisseEndpoints.cs`, `Cloture.razor`
+- **Avec un reste à charge saisi, la part organisme de chaque ligne reste entre 0 et le montant de la ligne** ; l'excédent d'arrondi est reporté sur les lignes précédentes. — `src/Pharma.Domain/Ventes/Vente.cs` (`RepartirPartOrganisme`)
+
+**Journaux écrits avec l'opération**
+- **Les journaux obligatoires sont écrits dans la transaction de l'opération** (l'opération et son journal réussissent ou échouent ensemble) : vente (produit bloqué, sans ordonnance, écart de prix Chifa, reste à charge manuel), annulation, retour, encaissement et correction de dette, sortie de stock, correction d'entrée, fin d'inventaire. — `src/Pharma.Application/Commun/JournalAEcrire.cs`, `src/Pharma.Infrastructure/Securite/JournalSql.cs`
+
+**Factures et trésorerie**
+- **Une facture rejetée ne peut pas être corrigée à un TTC inférieur au total de ses avoirs et de ses règlements imputés** (contrôle sous verrou de la facture). Le plafond « total des avoirs ≤ TTC » vaut aussi pour une facture rejetée. — `src/Pharma.Domain/Factures/RegleFacture.cs` (`VerifierCorrection`), `src/Pharma.Infrastructure/Factures/FacturesSql.cs`
+- **La ligne d'un avoir porte le taux de TVA de l'avoir (TVA / HT)**, cohérent avec ses totaux. — `src/Pharma.Application/Factures/Factures.cs`
+- **Ligne libre : montant = quantité × prix unitaire arrondi au centime.** Les lignes issues des ventes gardent le montant réellement payé ou pris en charge. — `RegleFacture.cs`
+- **Une facture remplacée ne se retire ni ne se remet en suivi.** — `Factures.cs`, `FacturesSql.cs`
+- **Les factures soldées par un encaissement ou un versement sont relues par identifiant, sans limite de nombre**, et doivent encore être à encaisser. — `src/Pharma.Application/Tresorerie/Tresorerie.cs`
+- **Le panier moyen est arrondi au centime, moitié vers le haut.** — `src/Pharma.Application/Pilotage/PilotageFinancier.cs`
+- **Une période de rapport décalée vers l'avenir ne peut pas finir après aujourd'hui** (quand la date du jour est fournie). — `src/Pharma.Domain/Rapports/PeriodeRapport.cs`
+
+**Stock, inventaire, traçabilité**
+- **Un comptage ne s'enregistre que sur un inventaire en cours** (verrou partagé) ; **la clôture relit les comptes sous verrou et refuse si un comptage a changé** (« rouvrez l'inventaire et terminez-le à nouveau »). — `src/Pharma.Infrastructure/Lecture/InventairesSql.cs`, `src/Pharma.Application/Stock/Inventaire.cs`
+- **La date confirmée à l'inventaire ne remplace que celle d'un lot encore « à vérifier »** ; sur le mobile, la confirmation n'est journalisée que si la date a été écrite. — `InventairesSql.cs`, `MobileSql.cs`, `src/Pharma.Application/Mobile/Mobile.cs`
+- **La quantité corrigée d'une entrée ne descend pas sous les boîtes étiquetées en stock** (contrôle sous verrou). **Un n° de lot corrigé vers un n° rappelé bloque le lot corrigé** (motif tracé, journal `lot_bloque_numero_rappele`). — `src/Pharma.Application/Stock/CorrigerEntree.cs`, `src/Pharma.Infrastructure/Lecture/EntreesStockSql.cs`
+- **Un caractère isolé en fin de code Data Matrix, ou une date de péremption impossible, rend le code illisible** (jamais d'erreur serveur). — `src/Pharma.Domain/Commun/Gs1DataMatrix.cs`
+- **Dans le parcours d'une boîte, le commentaire des étapes est masqué avec le nom du patient.** — `src/Pharma.Application/Tracabilite/ConsulterParcoursBoite.cs`
+- **Un décrément de stock sans stock suffisant donne un message métier** (manquants de réception, retour envoyé à la destruction), jamais l'erreur brute de la base. — `src/Pharma.Infrastructure/Achats/ManquantsReception.cs`, `src/Pharma.Infrastructure/Caisse/RetoursClientSql.cs`
+
+**Sécurité et droits**
+- **Le nom du poste est lié au jeton à la connexion** : une requête dont l'en-tête du poste diffère est refusée (403) ; un jeton sans poste n'en a aucun (reconnexion nécessaire après la mise à jour). — `src/Pharma.Api/Securite/JetonService.cs`, `src/Pharma.Api/Program.cs`, `PermissionsComptoir.cs`
+- **La référence `#numéro` d'un valideur n'est acceptée que pour un demandeur connecté**, jamais par la connexion par code anonyme ; les listes de valideurs ne renvoient jamais l'identifiant de connexion. — `src/Pharma.Application/Securite/ConnexionComptoir.cs`, `CaisseEndpoints.cs`
+- **Seul un titulaire efface le code comptoir d'un titulaire.** — `ConnexionComptoir.cs`
+- **L'export de la clé de scellement, les réglages des notifications, le marquage « traité » d'une anomalie et l'enregistrement de la matrice des droits exigent la ressaisie du mot de passe de l'employé connecté** ; un mot de passe faux compte avec les essais de connexion (blocage après 5) et est journalisé. — `src/Pharma.Application/Securite/VerificationMotDePasseActuel.cs`, `FenetreMotDePasseTitulaire.razor`
+- **Le dossier des sauvegardes est un disque de ce poste (interne ou externe branché)** : un chemin réseau ou un lecteur réseau est refusé. **Le changer est réservé au titulaire** et journalisé (`dossier_sauvegarde_change`, ancien et nouveau dossier). — `src/Pharma.Application/Sauvegardes/Sauvegardes.cs`
+- **GED : le type réel du fichier est contrôlé au dépôt** (extension acceptée : pdf, xlsx, docx, csv, txt, png, jpg, jpeg, bmp, tif, tiff, et contenu conforme) ; chaque dépôt est journalisé (`document_depose_ged` : employé, type, nom, taille, empreinte SHA-256). — `src/Pharma.Application/Ged/Ged.cs`
+- **Les exports CSV neutralisent les formules** (apostrophe devant une cellule qui commence par `=`, `+`, `-`, `@`, tabulation ou retour). — `src/Pharma.Domain/Commun/ProtectionTableur.cs`
+- **Une connexion super administrateur refusée ne journalise pas l'identifiant saisi.** — `src/Pharma.Api/Endpoints/SuperAdminEndpoints.cs`
+
+**Serveur central et synchronisation**
+- **Un élément descendant de plus de 64 Kio n'est jamais écrit par le central** : il part sans données avec sa version, et il est journalisé sans les données ; l'officine l'écarte. **La version acquittée tient compte de tous les éléments reçus, écartés compris**, mais s'arrête avant le premier élément bloquant : un élément écarté n'est plus redonné. La note du passage cumule les messages au lieu de les écraser. — `src/Pharma.Application/Synchronisation/EnvoiLots.cs`, `src/Pharma.Cloud.Api/Reception/DepotCentral.cs`
+- **Un corps de lot annoncé plus grand que 17 Mio est refusé (413) avant toute lecture** ; un lot illisible est journalisé avec le type de l'erreur seulement, jamais son message. — `src/Pharma.Cloud.Api/PointsEntree.cs`, `ControleLot.cs`
+- **Rattachement : seuls les vrais refus comptent dans les 5 refus du quart d'heure** (les essais déjà bloqués ne font plus glisser la fenêtre). **Un compte rattaché de nouveau qui perd le droit « ordres » voit ses ordres ouverts annulés.** — `database/cloud/043_regles_rattachement_ordres_central.sql`
+- **Un seul ordre ouvert du même type et un seul message en attente par officine, même demandés au même instant par deux comptes** (verrou par officine). — `043_regles_rattachement_ordres_central.sql`
+- **La durée d'un message aux postes (1 à 7 jours) est revérifiée au poste, minimum compris.** — `src/Pharma.Domain/Reglages/MessagePostes.cs`
+- **La confirmation ou le refus d'un ordre attend au plus 30 secondes un autre traitement d'ordre**, puis répond « réessayez dans un instant ». — `src/Pharma.Application/Synchronisation/OrdresCentraux.cs`
+- **À la caisse, la fiche du médecin est relue par son identifiant avant l'enregistrement de sa wilaya.** — `Caisse.razor`, `GET /api/medecins/{id}`
+
+**Décisions du titulaire (2026-11-23)**
+- **Le don d'une boîte (Stock › Sorties, droit `stock.donner`) est refusé pour un lot bloqué ou périmé** (contrôle côté serveur, sous verrou du lot ; périmé = date de péremption atteinte). Les sorties « périmé » et « cassé » restent possibles. — `src/Pharma.Application/Stock/SortieStock.cs`, `src/Pharma.Infrastructure/Lecture/SortiesStockSql.cs`
+- **Balance mensuelle du registre des psychotropes : le solde reporté d'un mois est le solde de fin du mois précédent** (premier mois : les lignes d'ouverture ; sans ouverture, fin − entrées + sorties). Reporté + entrées − sorties = solde de fin, à l'écran, en PDF, CSV et xlsx ; le reporté est toujours affiché, 0 compris. — `src/Pharma.Application/Stock/RegistrePsychotropes.cs`, `src/Pharma.Infrastructure/Lecture/RegistreSql.cs`
+- **Une facture client corrigée peut changer de date, mais pas d'année par rapport à son numéro** (« La date de la facture doit rester dans l'année de son numéro »). Le remplacement d'une facture rejetée, qui prend un nouveau numéro, n'est pas concerné. — `src/Pharma.Domain/Factures/RegleFacture.cs`, `src/Pharma.Infrastructure/Factures/FacturesSql.cs`
+- **Écran de connexion : aucune route ouverte ne dit plus si la caisse d'un poste est ouverte.** Les onglets « Code comptoir » et « Mot de passe » sont toujours proposés, « Mot de passe » par défaut, et le dernier choix est retenu sur le poste (`poste.json`). Le serveur refuse le code comptoir si la caisse du poste n'est pas ouverte. — `src/Pharma.Desktop/Composants/Pages/Connexion.razor`
+- **Chaque nouveau script de base, à partir du 162, a son script de retour arrière** (`database/migration/retour/`). — `docs/scripts-base-de-donnees.md` (section 4, règle 11)

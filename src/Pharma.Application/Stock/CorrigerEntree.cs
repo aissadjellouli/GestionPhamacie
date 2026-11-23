@@ -32,7 +32,8 @@ public sealed record ChampCorrige(string Champ, string? AncienneValeur, string? 
 /// « ajustement » pour une quantité, une ligne de journal correction_lot par champ.
 /// </summary>
 public sealed record CorrectionAEcrire(long LotId, int QuantiteAvant, decimal? Ppa, string? NumeroLot, DateOnly? DatePeremption, decimal? Shp,
-    int? Quantite, string Motif, long UtilisateurId, IReadOnlyList<ChampCorrige> Champs);
+    int? Quantite, string Motif, long UtilisateurId, IReadOnlyList<ChampCorrige> Champs, bool BloquerLot = false,
+    JournalDansTransaction? Journal = null);
 
 public interface IEntreesStock
 {
@@ -41,6 +42,8 @@ public interface IEntreesStock
     /// <summary>Un autre lot porte déjà ce produit, ce grossiste, ce n° et cette péremption (contrainte ux_lot_fournisseur_date).</summary>
     Task<bool> LotIdentiqueExisteAsync(long lotId, long produitId, long fournisseurId, string numeroLot, DateOnly peremption, CancellationToken ct = default);
     Task<IReadOnlyList<CorrectionLot>> CorrectionsAsync(long lotId, CancellationToken ct = default);
+    /// <summary>Un autre lot de ce produit, bloqué (rappel), porte déjà ce n° de lot.</summary>
+    Task<bool> NumeroRappeleAsync(long lotId, long produitId, string numeroLot, CancellationToken ct = default);
     Task CorrigerAsync(CorrectionAEcrire c, CancellationToken ct = default);
 }
 
@@ -61,7 +64,7 @@ public sealed class ConsulterEntreesStock(IEntreesStock entrees)
 /// et du même grossiste est refusé avant l'écriture. Les ventes restent liées au lot par son identifiant : la traçabilité (ventes du
 /// lot, rappel, parcours des boîtes) suit le nouveau n° ; le PPA et le SHP corrigés ne changent pas les ventes passées.
 /// </summary>
-public sealed class CorrigerEntreeStock(IEntreesStock entrees, IPermissionService droits, IJournal journal)
+public sealed class CorrigerEntreeStock(IEntreesStock entrees, IPermissionService droits)
 {
     public const int MotifMax = 200;
 
@@ -78,6 +81,7 @@ public sealed class CorrigerEntreeStock(IEntreesStock entrees, IPermissionServic
         string? numero = null;
         DateOnly? peremption = null;
         int? quantite = null;
+        var bloquer = false;
 
         if (d.Ppa is { } p && p != lot.Ppa)
         {
@@ -89,7 +93,15 @@ public sealed class CorrigerEntreeStock(IEntreesStock entrees, IPermissionServic
         {
             var n = RegleLot.Normaliser(d.NumeroLot);
             if (n.Length == 0) throw new RegleMetierException("Indiquez le nouveau n° de lot.", "numero_lot");
-            if (n != lot.NumeroLot) { numero = n; champs.Add(new("numero_lot", lot.NumeroLot, n)); }
+            if (n != lot.NumeroLot)
+            {
+                numero = n;
+                champs.Add(new("numero_lot", lot.NumeroLot, n));
+                // Même règle qu'à la réception : un n° de lot rappelé (autre lot bloqué du même produit) n'est jamais vendable sans choix.
+                // La correction ne le laisse pas vendable : le lot corrigé est bloqué (le blocage figure au journal des actions sensibles).
+                if (!lot.Bloque && await entrees.NumeroRappeleAsync(lot.LotId, lot.ProduitId, n, ct))
+                    bloquer = true;
+            }
         }
         if (d.DatePeremption is { } dp && dp != lot.DatePeremption)
         {
@@ -120,13 +132,15 @@ public sealed class CorrigerEntreeStock(IEntreesStock entrees, IPermissionServic
                 $"{lot.Produit} : un autre lot {numero ?? lot.NumeroLot} du {Date(peremption ?? lot.DatePeremption)} existe déjà chez {lot.Fournisseur}. "
                 + "Corrigez plutôt cet autre lot, ou vérifiez le n° et la date.", "numero_lot");
 
-        await entrees.CorrigerAsync(new CorrectionAEcrire(lot.LotId, lot.Quantite, ppa, numero, peremption, shp, quantite, motif, utilisateurId, champs), ct);
-        await journal.EcrireAsync(utilisateurId, "correction_entree_stock", "lot", lot.LotId,
+        // Journal des actions sensibles écrit dans la transaction de la correction
+        var journal = new JournalDansTransaction("correction_entree_stock", "lot", lot.LotId,
             new Dictionary<string, object?>
             {
-                ["produit"] = lot.Produit, ["lot"] = lot.NumeroLot, ["motif"] = motif,
+                ["produit"] = lot.Produit, ["lot"] = lot.NumeroLot, ["motif"] = motif, ["lot_bloque_numero_rappele"] = bloquer,
                 ["champs"] = champs.Select(c => $"{c.Champ} : {c.AncienneValeur ?? "—"} → {c.NouvelleValeur ?? "—"}").ToList()
-            }, Permissions.StockCorrigerEntree, ct);
+            }, Permissions.StockCorrigerEntree);
+        await entrees.CorrigerAsync(new CorrectionAEcrire(lot.LotId, lot.Quantite, ppa, numero, peremption, shp, quantite, motif, utilisateurId, champs,
+            bloquer, journal), ct);
         return await entrees.LotAsync(lotId, ct) ?? lot;
     }
 

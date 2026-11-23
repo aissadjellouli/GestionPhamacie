@@ -32,6 +32,8 @@ public sealed class ReglagesPoste
         public string? AdresseApiSecours { get; set; }
         /// <summary>Délai (secondes) avant le bandeau « Serveur injoignable » ; null : 60 secondes.</summary>
         public int? DelaiServeurInjoignableSecondes { get; set; }
+        /// <summary>Dernier onglet choisi à l'écran de connexion de ce poste : « code » (code comptoir) ou « mot_de_passe » ; null : mot de passe.</summary>
+        public string? OngletConnexion { get; set; }
     }
 
     public const int DelaiInjoignableParDefaut = 60;

@@ -159,6 +159,7 @@ Invoke-Principal {
     Initialize-OutilsMep -PgBin $PgBin -Hote $Hote -Port $Port -Simulation $WhatIfPreference
 
     $scripts = Get-ScriptsNumerotes $DossierMigration
+    Test-SuiteSansTrou $scripts
     Write-Ok "$($scripts.Count) scripts numérotés dans $DossierMigration (du $($scripts[0].Name.Substring(0,3)) au $($scripts[-1].Name.Substring(0,3)))."
     if (-not $Script111b) {
         $Script111b = Join-Path $DossierMigration "111b_roles_integrite.sql"

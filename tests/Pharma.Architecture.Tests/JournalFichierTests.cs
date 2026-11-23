@@ -14,6 +14,28 @@ public sealed class JournalFichierTests : IDisposable
     }
 
     [Fact]
+    public async Task DisposeAsync_ecrit_les_dernieres_lignes_sans_bloquer_et_Dispose_reste_sur()
+    {
+        // Revue du 2026-11-23 : Dispose attendait l'écriture par un Wait(5 s) ; arrêt asynchrone, rejouable
+        var provider = new JournalFichierProvider(new OptionsJournalFichier { Dossier = dossier });
+        provider.CreateLogger("Essai").LogInformation("dernière ligne avant l'arrêt");
+        await provider.DisposeAsync();
+        var fichier = Directory.GetFiles(dossier, "*.log").Single();
+        using (var lecture = new FileStream(fichier, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            Assert.Contains("dernière ligne avant l'arrêt", new StreamReader(lecture).ReadToEnd());
+        await provider.DisposeAsync();   // deuxième arrêt : sans effet, sans exception
+        provider.Dispose();
+
+        // Dispose seul (fabrique de journaux synchrone) : même résultat
+        var autre = new JournalFichierProvider(new OptionsJournalFichier { Dossier = dossier, Prefixe = "autre-" });
+        autre.CreateLogger("Essai").LogInformation("ligne du Dispose synchrone");
+        autre.Dispose();
+        autre.Dispose();
+        using var lecture2 = new FileStream(Directory.GetFiles(dossier, "autre-*.log").Single(), FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        Assert.Contains("ligne du Dispose synchrone", new StreamReader(lecture2).ReadToEnd());
+    }
+
+    [Fact]
     public void Ecriture_reprise_apres_un_fichier_inaccessible_et_lignes_perdues_signalees()
     {
         Directory.CreateDirectory(dossier);

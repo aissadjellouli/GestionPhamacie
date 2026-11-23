@@ -56,7 +56,14 @@ public sealed record AnnulationAEcrire(
     long VenteId, string Motif, long UtilisateurId, long? ValidePar, bool Ancienne, string? Mode, decimal MontantRembourse,
     long? SessionCaisseId, string Poste, decimal ReductionDette = 0, long? PatientDetteId = null, bool AccordClient = false,
     decimal? DejaRenduLu = null, RegularisationAAnnuler? Regularisation = null,
-    IReadOnlyList<(long VenteId, decimal Montant)>? ImputationsVente = null, decimal AvoirVente = 0);
+    IReadOnlyList<(long VenteId, decimal Montant)>? ImputationsVente = null, decimal AvoirVente = 0,
+    LectureDette? Lecture = null, IReadOnlyList<JournalAEcrire>? Journaux = null);
+
+/// <summary>
+/// Dette du patient et part payée de la vente telles qu'affichées au caissier : relues sous verrou du patient dans la transaction
+/// d'écriture, et l'opération est refusée si elles ont changé entre-temps. PayeSurVente : vente à crédit seulement.
+/// </summary>
+public sealed record LectureDette(long PatientId, decimal Solde, decimal? PayeSurVente = null);
 
 public interface IAnnulationsVente
 {
@@ -226,28 +233,30 @@ public sealed class AnnulerVente(IAnnulationsVente annulations, ISessionsCaisse 
             regul = new RegularisationAAnnuler(g.Id, g.Sort, detteRegulAnnulee, imputationsRegul, rembourseRegul, valideSortie, avoirRegul);
         }
 
-        var bon = await annulations.AnnulerAsync(new AnnulationAEcrire(v.Id, texte, utilisateurId, validePar, !v.CaisseOuverte, modeRemboursement, rembourse,
-            session?.Id, nomPoste, reductionDette, patientDette, solder && reductionDette > 0, v.DejaRendu, regul, imputationsVente, avoirVente), ct);
+        // Journaux obligatoires : écrits dans la transaction de l'annulation (jamais après, avec un jeton annulable)
         var imputeVente = imputationsVente.Sum(i => i.Montant);
-        await journal.EcrireAsync(utilisateurId, "vente_annulee", "vente", v.Id,
-            new Dictionary<string, object?>
-            {
-                ["ticket"] = v.Numero, ["motif"] = texte, ["montant"] = v.Total, ["rembourse"] = rembourse, ["mode"] = v.Mode,
-                ["mode_remboursement"] = modeRemboursement, ["deja_rendu"] = v.DejaRendu, ["dette_diminuee"] = reductionDette,
-                ["ancienne"] = !v.CaisseOuverte, ["valide_par"] = validePar,
-                ["dette_soldee_au_choix"] = solder && reductionDette > 0, ["patient_dette"] = reductionDette > 0 ? patientDette : null,
-                ["accord_client"] = solder && reductionDette > 0 ? true : null,
-                // Trop-payé d'une vente à crédit en partie payée, et avoir (script 106)
-                ["trop_paye"] = tropPayeCredit > 0 ? tropPayeCredit : null,
-                ["trop_paye_vente_impute"] = imputeVente > 0 ? imputeVente : null,
-                ["ventes_soldees"] = imputeVente > 0 ? imputationsVente.Select(i => new { vente = i.VenteId, montant = i.Montant }).ToList() : null,
-                ["avoir_cree"] = avoirVente > 0 ? avoirVente : null,
-                ["avoir_rendu"] = avoirRendu > 0 ? avoirRendu : null
-            }, validePar is null ? null : Permissions.CaisseAnnulerVente, ct);
-
-        if (regul is not null)
-            await journal.EcrireAsync(utilisateurId, ActionRegularisationAnnulee, "vente", v.Id,
+        var autorisePar = autorisation?.AutoriseParId;
+        var journaux = new List<JournalAEcrire>
+        {
+            JournalAEcrire.Fixe(utilisateurId, "vente_annulee", "vente", v.Id,
                 new Dictionary<string, object?>
+                {
+                    ["ticket"] = v.Numero, ["motif"] = texte, ["montant"] = v.Total, ["rembourse"] = rembourse, ["mode"] = v.Mode,
+                    ["mode_remboursement"] = modeRemboursement, ["deja_rendu"] = v.DejaRendu, ["dette_diminuee"] = reductionDette,
+                    ["ancienne"] = !v.CaisseOuverte, ["valide_par"] = validePar,
+                    ["dette_soldee_au_choix"] = solder && reductionDette > 0, ["patient_dette"] = reductionDette > 0 ? patientDette : null,
+                    ["accord_client"] = solder && reductionDette > 0 ? true : null,
+                    // Trop-payé d'une vente à crédit en partie payée, et avoir (script 106)
+                    ["trop_paye"] = tropPayeCredit > 0 ? tropPayeCredit : null,
+                    ["trop_paye_vente_impute"] = imputeVente > 0 ? imputeVente : null,
+                    ["ventes_soldees"] = imputeVente > 0 ? imputationsVente.Select(i => new { vente = i.VenteId, montant = i.Montant }).ToList() : null,
+                    ["avoir_cree"] = avoirVente > 0 ? avoirVente : null,
+                    ["avoir_rendu"] = avoirRendu > 0 ? avoirRendu : null
+                }, validePar is null ? null : Permissions.CaisseAnnulerVente, autorisePar)
+        };
+        if (regul is not null)
+            journaux.Add(new JournalAEcrire(utilisateurId, ActionRegularisationAnnulee, "vente", v.Id,
+                c => new Dictionary<string, object?>
                 {
                     ["ticket"] = v.Numero, ["regularisation"] = regul.Id, ["sort"] = regul.Sort, ["montant_patient"] = v.Regularisation!.MontantPatient,
                     ["paye_par_le_patient"] = v.Regularisation.PayeParLePatient, ["dette_annulee"] = regul.DetteAnnulee,
@@ -255,8 +264,17 @@ public sealed class AnnulerVente(IAnnulationsVente annulations, ISessionsCaisse 
                     ["choix"] = new[] { regul.Impute > 0, regul.Rembourse > 0, regul.Avoir > 0 }.Count(x => x) > 1 ? "reparti"
                         : regul.Impute > 0 ? "solder_autres_dettes" : regul.Rembourse > 0 ? "rembourser" : regul.Avoir > 0 ? "avoir" : null,
                     ["trop_paye_impute"] = regul.Impute, ["ventes_soldees"] = regul.Imputations.Select(i => new { vente = i.VenteId, montant = i.Montant }).ToList(),
-                    ["rembourse"] = regul.Rembourse, ["avoir"] = regul.Avoir, ["bon"] = bon?.Numero, ["valide_par"] = regul.ValidePar, ["motif"] = texte
-                }, null, ct);
+                    ["rembourse"] = regul.Rembourse, ["avoir"] = regul.Avoir, ["bon"] = c.Bon, ["valide_par"] = regul.ValidePar, ["motif"] = texte
+                }, null, autorisePar));
+
+        // Dette et part payée relues sous verrou du patient à l'écriture : refus si elles ont changé depuis l'affichage. Seule la dette
+        // réellement utilisée par l'annulation est surveillée (une autre vente du patient ne bloque pas une vente payée comptant).
+        var patientLu = patientDette ?? v.PatientId;
+        var detteUtilisee = reductionDette > 0 || v.Regularisation is not null || v.Mode == "credit";
+        var lecture = patientLu is { } pl && detteUtilisee ? new LectureDette(pl, dette, v.Mode == "credit" ? v.PayeSurVente : null) : null;
+
+        var bon = await annulations.AnnulerAsync(new AnnulationAEcrire(v.Id, texte, utilisateurId, validePar, !v.CaisseOuverte, modeRemboursement, rembourse,
+            session?.Id, nomPoste, reductionDette, patientDette, solder && reductionDette > 0, v.DejaRendu, regul, imputationsVente, avoirVente, lecture, journaux), ct);
 
         // Au-delà du seuil réglé par le titulaire : journal et notification, une fois quand le seuil est franchi
         if (session is not null && (await sessions.ParametresAsync(ct)).SeuilAnnulations is var seuil and > 0

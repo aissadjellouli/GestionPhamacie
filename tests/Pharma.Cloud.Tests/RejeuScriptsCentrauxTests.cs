@@ -48,6 +48,23 @@ public class RejeuScriptsCentrauxTests
         Assert.True(ecarts.Count == 0, "Écarts après rejeu complet : " + string.Join(" | ", ecarts));
     }
 
+    [Fact]
+    public async Task Rejouer_le_040_seul_apres_le_041_ne_ramene_pas_l_ancienne_echeance_du_provisoire()
+    {
+        // Revue du 2026-11-23 : le 040 redéfinissait cloud_compte_provisoire_echeance sans garde (le 041 la remplace)
+        using var base_ = BaseCentraleJetable.Creer();
+        if (base_ is null) return;
+        await using var db = NpgsqlDataSource.Create(base_.Connexion);
+        var ct = CancellationToken.None;
+        var avant = await Lire(db, ct);
+        base_.Rejouer(Path.Combine(Depot.Racine(), "database", "cloud", "040_import_comptes_duree_provisoire.sql"));
+        var apres = await Lire(db, ct);
+        var ecarts = avant.Except(apres).Concat(apres.Except(avant)).Distinct().Order(StringComparer.Ordinal).Take(10).ToList();
+        Assert.True(ecarts.Count == 0, "Écarts après rejeu du 040 seul : " + string.Join(" | ", ecarts));
+        await using var cmd = db.CreateCommand("SELECT pg_get_functiondef('cloud_compte_provisoire_echeance(timestamptz, timestamptz)'::regprocedure)");
+        Assert.Contains("provisoire_controle_depuis", (string)(await cmd.ExecuteScalarAsync(ct))!);
+    }
+
     private static async Task<List<string>> Lire(NpgsqlDataSource db, CancellationToken ct)
     {
         await using var cmd = db.CreateCommand(Empreinte);

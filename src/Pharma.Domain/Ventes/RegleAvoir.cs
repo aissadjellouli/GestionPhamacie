@@ -31,6 +31,7 @@ public static class RegleAvoir
     public static void VerifierUtilisation(decimal montant, decimal solde, decimal aPayer, bool patientConnu)
     {
         if (montant <= 0) return;
+        if (montant != Arrondi.Centime(montant)) throw new RegleMetierException("Paiement par avoir : le montant ne peut pas avoir plus de 2 décimales (centimes).", "avoir");
         if (!patientConnu) throw new RegleMetierException("Paiement par avoir : choisissez le patient.", "avoir");
         if (montant > aPayer) throw new RegleMetierException($"L’avoir utilisé dépasse le montant à payer ({aPayer:N2} DA).", "avoir");
         if (montant > solde) throw Insuffisant(solde);

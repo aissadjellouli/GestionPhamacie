@@ -338,8 +338,8 @@ public static class ExportFiscalCsv
             IFormattable f => f.ToString(null, CultureInfo.InvariantCulture),
             _ => v.ToString() ?? ""
         };
-        // Neutralise une formule de tableur et protège séparateur, guillemets et retours à la ligne
-        if (t.Length > 0 && "=+-@".Contains(t[0]) && v is string) t = "'" + t;
+        // Neutralise une formule de tableur (= + - @, tabulation, retour) et protège séparateur, guillemets et retours à la ligne
+        if (v is string) t = Pharma.Domain.Commun.ProtectionTableur.Neutraliser(t);
         return t.Contains(separateur) || t.Contains('"') || t.Contains('\n') || t.Contains('\r') ? "\"" + t.Replace("\"", "\"\"") + "\"" : t;
     }
 }

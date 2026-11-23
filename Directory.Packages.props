@@ -1,7 +1,6 @@
 <Project>
   <!-- Versions figées. Mise à jour : commande "dotnet list package" avec l'option outdated, puis tests. -->
   <ItemGroup>
-    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.1" />
     <!-- Serveur central (lot S2) : accès PostgreSQL sans EF -->
     <PackageVersion Include="Npgsql" Version="10.0.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />

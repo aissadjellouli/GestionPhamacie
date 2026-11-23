@@ -2,6 +2,7 @@
 @inject ApiClient Api
 @inject NavigationManager Nav
 @inject SessionPoste Session
+@inject ReglagesPoste Reglages
 
 <div class="page connexion">
     <div class="entete-connexion">
@@ -10,12 +11,8 @@
         <p class="sous-titre">Chaque employé se connecte avec son propre identifiant.</p>
     </div>
 
-    @* Le mode (code comptoir si la caisse du poste est ouverte, sinon mot de passe) est connu avant d'afficher : pas de bascule *@
-    @if (!pret)
-    {
-        <Chargement />
-    }
-    @if (pret && caisseOuverte && !superAdmin)
+    @* Les deux onglets sont toujours proposés (« Mot de passe » par défaut) ; le dernier choisi sur ce poste est retenu *@
+    @if (!superAdmin)
     {
         <div class="onglets-connexion" role="tablist" aria-label="Mode de connexion">
             <button type="button" role="tab" aria-selected="@(parCode ? "true" : "false")" class="@(parCode ? "actif" : null)" @onclick="() => Basculer(true)">Code comptoir</button>
@@ -23,11 +20,7 @@
         </div>
     }
 
-    @if (!pret)
-    {
-        @* en attente de l'état du poste (au plus 3 secondes) *@
-    }
-    else if (superAdmin)
+    @if (superAdmin)
     {
         <form class="carte" @onsubmit="SeConnecterSuperAdminAsync">
             <h2 style="margin: 0">Super admin</h2>
@@ -50,7 +43,7 @@
     else if (parCode)
     {
         <form class="carte" @onsubmit="SeConnecterParCodeAsync">
-            <p class="sous-titre" style="margin: 0">La caisse du poste reste ouverte : tapez votre identifiant et votre code.</p>
+            <p class="sous-titre" style="margin: 0">Caisse du poste ouverte : tapez votre identifiant et votre code.</p>
             <div class="champ">
                 <label for="c-identifiant" class="requis">Identifiant</label>
                 <input id="c-identifiant" type="text" autocomplete="username" autofocus @bind="vendeur" @bind:event="oninput"
@@ -99,8 +92,8 @@
     private string? erreur;
     private bool enCours;
 
-    // Changement d'utilisateur au comptoir : proposé quand la caisse du poste est ouverte (identifiant tapé, aucune liste de noms)
-    private bool caisseOuverte, parCode;
+    // Onglet « Code comptoir » (changement d'utilisateur, caisse du poste ouverte : le serveur refuse sinon) ou « Mot de passe » (défaut)
+    private bool parCode;
     private string? vendeur;
     private bool VendeurManque => Obligatoire.Manque(controle, vendeur ?? "");
     private string code = "";
@@ -113,49 +106,14 @@
     private bool MotDePasseManque => Obligatoire.Manque(controle, motDePasse);
     private bool CodeManque => Obligatoire.Manque(controle, code);
 
-    /// <summary>État du poste connu (ou délai dépassé) : le formulaire s'affiche directement dans le bon mode.</summary>
-    private bool pret;
+    protected override void OnInitialized() => parCode = Reglages.Actuelles.OngletConnexion == "code";
 
-    /// <summary>
-    /// Dernier état connu de la caisse du poste (gardé tant que le poste est ouvert) : au changement d'utilisateur, le bon
-    /// formulaire s'affiche aussitôt, puis l'état est relu en arrière-plan. Seul le premier lancement attend le serveur.
-    /// </summary>
-    private static bool? caisseOuverteConnue;
-
-    protected override async Task OnInitializedAsync()
-    {
-        if (caisseOuverteConnue is { } connue)
-        {
-            (parCode, caisseOuverte, pret) = (connue, connue, true);
-            _ = RelireEnArrierePlanAsync();
-            return;
-        }
-        // Premier lancement : attente du serveur, 3 secondes au plus ; sinon mot de passe (le code comptoir demande une caisse ouverte)
-        var lecture = Api.ComptoirAsync();
-        if (await Task.WhenAny(lecture, Task.Delay(TimeSpan.FromSeconds(3))) == lecture)
-        {
-            var (comptoir, e) = await lecture;
-            parCode = caisseOuverte = comptoir?.CaisseOuverte == true;
-            if (e is null) caisseOuverteConnue = caisseOuverte;
-        }
-        pret = true;
-    }
-
-    /// <summary>État relu : s'il a changé (caisse fermée entre-temps), le formulaire suit, sauf si l'employé a déjà commencé à saisir.</summary>
-    private async Task RelireEnArrierePlanAsync()
-    {
-        var (comptoir, e) = await Api.ComptoirAsync();
-        if (e is not null || comptoir is null) return;
-        caisseOuverteConnue = comptoir.CaisseOuverte;
-        if (comptoir.CaisseOuverte == caisseOuverte) return;
-        caisseOuverte = comptoir.CaisseOuverte;
-        if (string.IsNullOrEmpty(identifiant) && string.IsNullOrEmpty(vendeur) && !superAdmin) parCode = caisseOuverte;
-        await InvokeAsync(StateHasChanged);
-    }
-
+    /// <summary>Choix d'un onglet : retenu pour ce poste (préférence locale, poste.json), jamais en base.</summary>
     private void Basculer(bool versCode)
     {
         (parCode, erreur, controle) = (versCode, null, false);
+        Reglages.Actuelles.OngletConnexion = versCode ? "code" : "mot_de_passe";
+        Reglages.Enregistrer(Reglages.Actuelles);
     }
 
     // Compte super admin (restauration, reprise de données) : formulaire à part
@@ -164,7 +122,6 @@
     private void BasculerSuperAdmin(bool versSuperAdmin)
     {
         (superAdmin, erreur, controle, motDePasse) = (versSuperAdmin, null, false, "");
-        if (!versSuperAdmin) parCode = caisseOuverte;
     }
 
     private async Task SeConnecterSuperAdminAsync()

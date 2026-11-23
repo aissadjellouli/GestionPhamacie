@@ -59,6 +59,8 @@ public interface IFactures
     /// <summary>Numéro attribué sans trou ; remplaceId : l'ancienne facture passe « remplacée » dans la même transaction.</summary>
     Task<(long Id, string Numero)> EmettreAsync(FactureAEcrire f, long? remplaceId, CancellationToken ct = default);
     Task<IReadOnlyList<FactureResume>> ListerAsync(FiltreFactures filtre, CancellationToken ct = default);
+    /// <summary>Factures encore à encaisser parmi celles demandées (sans limite de nombre) ; les autres sont absentes du résultat.</summary>
+    Task<IReadOnlyList<FactureResume>> AEncaisserParIdsAsync(IReadOnlyCollection<long> ids, CancellationToken ct = default);
     Task<ListeFactures> PageAsync(FiltreFactures filtre, DemandePage page, CancellationToken ct = default);
     /// <summary>Version null : la version en vigueur ; sinon une version précédente (correction après rejet).</summary>
     Task<FactureDetail?> DetailAsync(long id, int? version, CancellationToken ct = default);
@@ -188,6 +190,7 @@ public sealed class Facturation(IFactures factures, IPermissionService droits, I
         var ancienne = await Detail(id, ct);
         await VerifierRepriseAsync(ancienne, utilisateurId, "corriger une facture rejetée déjà payée en entier", ct);
         var f = await PreparerAsync(MemeDestinataire(demande, ancienne), sauf: id, utilisateurId, ct);
+        RegleFacture.VerifierAnneeCorrection(ancienne.Resume.Numero, f.Date);
         await factures.CorrigerAsync(id, f, string.IsNullOrWhiteSpace(motif) ? null : motif.Trim(), ct);
         await Journaliser(utilisateurId, "facture_corrigee", id, ancienne.Resume.Numero, f);
     }
@@ -211,7 +214,9 @@ public sealed class Facturation(IFactures factures, IPermissionService droits, I
         var f = await Detail(factureId, ct);
         RegleFacture.VerifierAvoir(f.Resume.Type, f.Resume.Statut, f.Resume.Ttc, f.Resume.Avoirs, montant, motif);
         var ht = f.Resume.Ttc == 0 ? montant : Arrondi.Centime(montant * f.Ht / f.Resume.Ttc);
-        var ligne = new LigneFacture(null, null, "libre", $"Avoir sur la facture {f.Resume.Numero} : {motif!.Trim()}", 1, montant, 0, montant);
+        // Taux de la ligne = TVA / HT de l'avoir (taux moyen de la facture) : la ligne et les totaux de l'avoir disent la même chose
+        var taux = ht > 0 ? Arrondi.Centime((montant - ht) / ht * 100) : 0;
+        var ligne = new LigneFacture(null, null, "libre", $"Avoir sur la facture {f.Resume.Numero} : {motif!.Trim()}", 1, montant, taux, montant);
         var avoir = new FactureAEcrire("avoir", RegleFacture.Lire(f.Resume.Destinataire), f.PatientId, f.ClientId, f.Resume.OrganismeId,
             f.Resume.DestinataireNom, f.DestinataireInfos, horloge.Aujourdhui, null, null, new Totaux(ht, montant - ht, montant), 0, [ligne],
             factureId, motif.Trim(), null, utilisateurId);
@@ -228,6 +233,7 @@ public sealed class Facturation(IFactures factures, IPermissionService droits, I
         await droits.ExigerAsync(utilisateurId, Permissions.FacturesGerer, "retirer une facture du suivi", ct);
         var f = await Detail(id, ct);
         if (f.Resume.Type != "facture") throw new RegleMetierException("Un avoir n’est pas suivi en trésorerie.");
+        if (f.Resume.Statut == "remplacee") throw new RegleMetierException("Une facture remplacée n’est plus suivie : elle est hors comptabilité.");
         RegleFacture.VerifierHorsSuivi(horsSuivi, motif);
         await factures.HorsSuiviAsync(id, horsSuivi, horsSuivi ? motif!.Trim() : null, ct);
         await journal.EcrireAsync(utilisateurId, horsSuivi ? "facture_hors_suivi" : "facture_remise_en_suivi", "facture_client", id,

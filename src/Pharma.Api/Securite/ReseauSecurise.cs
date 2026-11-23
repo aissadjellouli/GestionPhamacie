@@ -37,9 +37,13 @@ public static class ReseauSecurise
     public static bool HttpsConfigure(IConfiguration config) =>
         AdressesEcoute(config).Any(u => u.StartsWith("https://", StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>Vrai si l'API écoute ailleurs que sur localhost (HTTP ou HTTPS), ou si aucune adresse n'est configurée (Kestrel écoute alors localhost seulement).</summary>
+    public static bool EcouteAilleursQueLocalhost(IConfiguration config) =>
+        AdressesEcoute(config).Any(u => !EstLocale(u));
+
     private static bool EstLocale(string url)
     {
-        var reste = url["http://".Length..];
+        var reste = url[(url.IndexOf("://", StringComparison.Ordinal) is var i and >= 0 ? i + 3 : 0)..];
         var fin = reste.StartsWith('[') ? reste.IndexOf(']') + 1 : reste.IndexOfAny([':', '/']);
         var hote = fin <= 0 ? reste : reste[..fin];
         return HotesLocaux.Contains(hote, StringComparer.OrdinalIgnoreCase);

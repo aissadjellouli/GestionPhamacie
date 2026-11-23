@@ -620,7 +620,7 @@
                 <label for="a-valideur" class="requis">Validé par</label>
                 <select id="a-valideur" @bind="validateur" class="@Obligatoire.Classe(ValidateurManque)" aria-invalid="@Obligatoire.Aria(ValidateurManque)">
                     <option value="">Choisir…</option>
-                    @foreach (var val in validateurs) { <option value="@val.Identifiant">@val.NomComplet</option> }
+                    @foreach (var val in validateurs) { <option value="@val.Reference">@val.NomComplet</option> }
                 </select>
             </div>
             <div class="champ" style="flex: 1 1 140px">

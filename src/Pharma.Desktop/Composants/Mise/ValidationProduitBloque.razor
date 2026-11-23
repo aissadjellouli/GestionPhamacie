@@ -20,7 +20,7 @@
                     <label for="vb-valideur-@Id" class="requis">Validé par</label>
                     <select id="vb-valideur-@Id" value="@Accord.Validateur" @onchange="e => Changer(() => Accord.Validateur = e.Value as string)">
                         <option value="">Choisir…</option>
-                        @foreach (var v in validateurs) { <option value="@v.Identifiant">@v.NomComplet</option> }
+                        @foreach (var v in validateurs) { <option value="@v.Reference">@v.NomComplet</option> }
                     </select>
                 </div>
                 <div class="champ" style="flex: 1 1 130px">

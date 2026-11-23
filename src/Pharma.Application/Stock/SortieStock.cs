@@ -10,7 +10,9 @@ public sealed record LotEnStock(long LotId, long ProduitId, string Produit, stri
     bool SousRegistre);
 
 /// <summary>Sortie de stock : boîtes périmées ou cassées retirées de la vente et détruites (registre des psychotropes tenu par la base).</summary>
-public sealed record SortieStockAEcrire(long LotId, int Quantite, string Motif, string Reference, long UtilisateurId);
+/// <param name="Journal">Entrée du journal à écrire dans la transaction, d'après le nombre de boîtes détruites.</param>
+public sealed record SortieStockAEcrire(long LotId, int Quantite, string Motif, string Reference, long UtilisateurId,
+    Func<int, JournalDansTransaction>? Journal = null);
 
 public interface ISortiesStock
 {
@@ -29,8 +31,15 @@ public sealed class ListerLotsEnStock(ISortiesStock sorties)
 /// Déclaration de boîtes périmées ou cassées (droit stock.declarer_perime) : elles sortent du stock et sont détruites ; pour un
 /// psychotrope, le registre est tenu par la base (destruction ou casse). Inscrit au journal.
 /// </summary>
-public sealed class DeclarerSortieStock(ISortiesStock sorties, IPermissionService droits, IJournal journal, Surveillance.Surveiller? surveillance = null)
+public sealed class DeclarerSortieStock(ISortiesStock sorties, IPermissionService droits, Surveillance.Surveiller? surveillance = null,
+    IHorloge? horloge = null)
 {
+    /// <summary>Message de refus d'un don de lot bloqué ou périmé (null si le don est possible). Contrôle refait par la base sous verrou du lot.</summary>
+    public static string? RefusDon(string produit, string numeroLot, bool bloque, bool perime) =>
+        bloque ? $"{produit}, lot {numeroLot} : lot bloqué, il ne peut pas être donné."
+        : perime ? $"{produit}, lot {numeroLot} : lot périmé, il ne peut pas être donné (déclarez-le en périmé)."
+        : null;
+
     /// <summary>echantillon : échantillon ou gratuité donné (à qui et pourquoi, obligatoire) ; jamais un produit sous registre.</summary>
     public static readonly string[] Motifs = ["perime", "casse", "echantillon"];
 
@@ -53,15 +62,18 @@ public sealed class DeclarerSortieStock(ISortiesStock sorties, IPermissionServic
             throw new RegleMetierException($"{lot.Produit} : produit sous registre (psychotrope), jamais donné en échantillon.", "motif_sortie");
         if (m == "echantillon" && texte is null)
             throw new RegleMetierException("Échantillon, gratuité ou don : indiquez à qui et pourquoi (ex. Dr X, visite médicale ; personne dans le besoin).", "commentaire_sortie");
+        if (m == "echantillon" && RefusDon(lot.Produit, lot.NumeroLot, lot.Bloque, lot.DatePeremption <= (horloge?.Aujourdhui ?? DateOnly.FromDateTime(DateTime.Today))) is { } refus)
+            throw new RegleMetierException(refus, "motif_sortie");
 
         var reference = (m switch { "perime" => "Périmé", "casse" => "Cassé", _ => "Don" }) + (texte is null ? "" : " : " + texte);
-        var detruites = await sorties.SortirAsync(new SortieStockAEcrire(lotId, quantite, m, reference, utilisateurId), ct);
-        await journal.EcrireAsync(utilisateurId, "sortie_stock", "lot", lotId,
-            new Dictionary<string, object?>
-            {
-                ["produit"] = lot.Produit, ["lot"] = lot.NumeroLot, ["quantite"] = quantite, ["motif"] = m, ["commentaire"] = texte,
-                ["boites_detruites"] = detruites
-            }, permission, ct);
+        // Journal écrit dans la transaction de la sortie (même connexion), pas après coup
+        var detruites = await sorties.SortirAsync(new SortieStockAEcrire(lotId, quantite, m, reference, utilisateurId,
+            boites => new JournalDansTransaction("sortie_stock", "lot", lotId,
+                new Dictionary<string, object?>
+                {
+                    ["produit"] = lot.Produit, ["lot"] = lot.NumeroLot, ["quantite"] = quantite, ["motif"] = m, ["commentaire"] = texte,
+                    ["boites_detruites"] = boites
+                }, permission)), ct);
         // Surveillance : casses et échantillons par employé (anomalies au titulaire)
         if (m != "perime" && surveillance is not null) await surveillance.ExecuterAsync(ct);
         return detruites;

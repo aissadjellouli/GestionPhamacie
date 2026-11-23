@@ -47,7 +47,8 @@ public sealed class SeConnecter(
         await comptes.NoterConnexionAsync(compte.Id, string.IsNullOrWhiteSpace(poste) ? null : poste.Trim(), "mot_de_passe", ct);
         // Surveillance : même employé actif sur deux postes à la fois
         if (surveillance is not null) await surveillance.ExecuterAsync(ct);
-        var (jeton, expire) = jetons.Creer(compte.Id, compte.NomComplet, motDePasseAChanger: compte.DoitChangerMotDePasse);
+        var (jeton, expire) = jetons.Creer(compte.Id, compte.NomComplet, motDePasseAChanger: compte.DoitChangerMotDePasse,
+            poste: string.IsNullOrWhiteSpace(poste) ? null : poste.Trim());
         return new Session(jeton, compte.NomComplet, expire, compte.DoitChangerMotDePasse);
     }
 }

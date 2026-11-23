@@ -1,5 +1,6 @@
 using Npgsql;
 using NpgsqlTypes;
+using Pharma.Application.Commun;
 using Pharma.Application.Stock;
 using Pharma.Domain.Commun;
 using Pharma.Domain.Stock;
@@ -10,7 +11,7 @@ namespace Pharma.Infrastructure.Lecture;
 /// Inventaire tournant. Un lot appartient au rayon de l'emplacement de vente de son produit
 /// (à défaut, de sa réserve, sinon « (Sans emplacement) ») : on compte toutes ses boîtes, réserve comprise, pour éviter les faux écarts.
 /// </summary>
-public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
+public sealed class InventairesSql(NpgsqlDataSource db, Pharma.Application.Securite.AutorisationCourante? autorisation = null) : IInventaires
 {
     /// <summary>Lot déjà dans un inventaire en cours : jamais ajouté à un second (sinon son écart serait ajusté deux fois).</summary>
     private static string DejaEnCours(string lot) =>
@@ -187,24 +188,44 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
 
     public async Task EnregistrerComptageAsync(long ligneId, int compte, DateOnly? dateVerifiee, long utilisateurId, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("""
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        await ExigerEnCoursAsync(cnx, tx, ligneId, ct);
+        await using var cmd = new NpgsqlCommand("""
             UPDATE ligne_inventaire li
             SET compte = $2, theorique = l.quantite_disponible, date_verifiee = COALESCE($3, li.date_verifiee),
                 compte_par = $4, compte_le = now(), statut = 'compte'
             FROM lot l
             WHERE li.id = $1 AND l.id = li.lot_id
-            """);
+            """, cnx, tx);
         cmd.Parameters.AddWithValue(ligneId);
         cmd.Parameters.AddWithValue(compte);
         cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)dateVerifiee ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Date });
         cmd.Parameters.AddWithValue(utilisateurId);
-        await cmd.ExecuteNonQueryAsync(ct);
+        if (await cmd.ExecuteNonQueryAsync(ct) == 0)
+            throw new RegleMetierException("Cet inventaire n’est plus en cours : le comptage n’est pas enregistré.");
+        await tx.CommitAsync(ct);
+    }
+
+    /// <summary>
+    /// Verrouille l'inventaire de la ligne (FOR SHARE : les comptages se font en parallèle, la clôture, qui le prend FOR UPDATE, les attend)
+    /// et refuse si l'inventaire n'est plus en cours.
+    /// </summary>
+    private static async Task ExigerEnCoursAsync(NpgsqlConnection cnx, NpgsqlTransaction tx, long ligneId, CancellationToken ct)
+    {
+        await using var cmd = new NpgsqlCommand("""
+            SELECT i.statut FROM ligne_inventaire li JOIN inventaire i ON i.id = li.inventaire_id WHERE li.id = $1 FOR SHARE OF i
+            """, cnx, tx);
+        cmd.Parameters.AddWithValue(ligneId);
+        var statut = await cmd.ExecuteScalarAsync(ct) as string ?? throw new RegleMetierException("Ligne d’inventaire introuvable.");
+        if (statut != "en_cours") throw new RegleMetierException("Cet inventaire n’est plus en cours : le comptage n’est pas enregistré.");
     }
 
     public async Task<int?> AjouterBoiteAsync(long ligneId, int compteMax, long utilisateurId, long? boiteId = null, CancellationToken ct = default)
     {
         await using var cnx = await db.OpenConnectionAsync(ct);
         await using var tx = await cnx.BeginTransactionAsync(ct);
+        await ExigerEnCoursAsync(cnx, tx, ligneId, ct);
         // Boîte identifiée : vue à cet inventaire (boîtes fantômes), une seule fois (index ux_boite_vue_inventaire)
         if (boiteId is { } b)
         {
@@ -319,7 +340,7 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
         return await lotDm.ExecuteScalarAsync(ct) as long?;
     }
 
-    public async Task TerminerAsync(long id, IReadOnlyList<DecisionLigne> decisions, long utilisateurId, CancellationToken ct = default)
+    public async Task TerminerAsync(long id, IReadOnlyList<DecisionLigne> decisions, long utilisateurId, JournalDansTransaction? journal = null, CancellationToken ct = default)
     {
         await using var cnx = await db.OpenConnectionAsync(ct);
         await using var tx = await cnx.BeginTransactionAsync(ct);
@@ -329,6 +350,18 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
             cmd.Parameters.AddWithValue(id);
             rayon = await cmd.ExecuteScalarAsync(ct) as string ?? throw new RegleMetierException("Cet inventaire est déjà terminé.");
         }
+
+        // Comptes relus sous le verrou : les écarts ont été calculés sur une lecture antérieure ; si un comptage a changé entre-temps, rien n'est ajusté
+        var relus = new Dictionary<long, (int? Compte, int? Theorique)>();
+        await using (var cmd = new NpgsqlCommand("SELECT id, compte, theorique FROM ligne_inventaire WHERE inventaire_id = $1 FOR UPDATE", cnx, tx))
+        {
+            cmd.Parameters.AddWithValue(id);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            while (await r.ReadAsync(ct)) relus[r.GetInt64(0)] = (r.IsDBNull(1) ? null : r.GetInt32(1), r.IsDBNull(2) ? null : r.GetInt32(2));
+        }
+        if (relus.Count != decisions.Count || decisions.Any(d => !relus.TryGetValue(d.LigneId, out var lu)
+                || lu.Compte is null || (d.Compte is not null && (d.Compte != lu.Compte || d.Theorique != lu.Theorique))))
+            throw new RegleMetierException("Un comptage a changé pendant la clôture : rouvrez l’inventaire et terminez-le à nouveau.");
 
         foreach (var d in decisions)
         {
@@ -346,10 +379,10 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
                 await Ajuster(cnx, tx, d.LigneId, d.Ecart, $"Inventaire n° {id} (rayon {rayon})", utilisateurId, ct);
         }
 
-        // Dates confirmées pendant le comptage : le lot n'est plus « date à vérifier »
+        // Dates confirmées pendant le comptage : le lot n'est plus « date à vérifier » (un lot dont la date a été corrigée entre-temps n'est pas touché)
         await using (var cmd = new NpgsqlCommand("""
             UPDATE lot l SET date_peremption = li.date_verifiee, date_a_verifier = false
-            FROM ligne_inventaire li WHERE li.inventaire_id = $1 AND li.lot_id = l.id AND li.date_verifiee IS NOT NULL
+            FROM ligne_inventaire li WHERE li.inventaire_id = $1 AND li.lot_id = l.id AND li.date_verifiee IS NOT NULL AND l.date_a_verifier
             """, cnx, tx))
         {
             cmd.Parameters.AddWithValue(id);
@@ -362,6 +395,9 @@ public sealed class InventairesSql(NpgsqlDataSource db) : IInventaires
             cmd.Parameters.AddWithValue(utilisateurId);
             await cmd.ExecuteNonQueryAsync(ct);
         }
+        if (journal is not null)
+            await Securite.JournalSql.EcrireAsync(cnx, tx, utilisateurId, journal.Action, journal.TableCible, journal.EnregistrementId, journal.Details,
+                journal.PermissionCode, ct, autorisation?.AutoriseParId);
         await tx.CommitAsync(ct);
     }
 

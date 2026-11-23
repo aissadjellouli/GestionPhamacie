@@ -19,6 +19,8 @@ public static partial class MessagePostes
     public const int LongueurMax = 200;
     public const int JoursMin = 1;
     public const int JoursMax = 7;
+    /// <summary>Tolérance (secondes) sous la durée minimale : fin tronquée à la seconde par le central, horodatage arrondi au transport.</summary>
+    private const int ToleranceSecondes = 2;
 
     /// <summary>
     /// Caractères interdits : contrôles (dont retour à la ligne et le caractère nul U+0000, refusé par PostgreSQL : sans ce contrôle,
@@ -60,8 +62,8 @@ public static partial class MessagePostes
     public static bool JoursValides(int jours) => jours is >= JoursMin and <= JoursMax;
 
     /// <summary>
-    /// Lecture des données d'un ordre « message » (poste, à la réception) : format, clés, texte et durée (fin après la création, 7 jours
-    /// au plus). Code null : message valable ; sinon le code du refus (format, vide, trop_long, texte, lien, duree).
+    /// Lecture des données d'un ordre « message » (poste, à la réception) : format, clés, texte et durée (fin 1 à 7 jours après la création).
+    /// Code null : message valable ; sinon le code du refus (format, vide, trop_long, texte, lien, duree).
     /// </summary>
     public static (string? Texte, DateTime? JusquAuUtc, string? Code) Lire(string? donneesJson, DateTime creeLeUtc)
     {
@@ -84,7 +86,8 @@ public static partial class MessagePostes
                 return (null, null, "format");
             var finUtc = fin.UtcDateTime;
             var cree = creeLeUtc.Kind == DateTimeKind.Local ? creeLeUtc.ToUniversalTime() : DateTime.SpecifyKind(creeLeUtc, DateTimeKind.Utc);
-            if (finUtc <= cree || finUtc > cree.AddDays(JoursMax)) return (null, null, "duree");
+            // Durée de 1 à 7 jours (le central tronque la fin à la seconde : tolérance de 2 s sous le jour minimal)
+            if (finUtc < cree.AddDays(JoursMin).AddSeconds(-ToleranceSecondes) || finUtc > cree.AddDays(JoursMax)) return (null, null, "duree");
             return (texte, finUtc, null);
         }
         catch (JsonException)

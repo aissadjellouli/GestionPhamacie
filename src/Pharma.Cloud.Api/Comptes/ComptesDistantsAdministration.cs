@@ -98,7 +98,7 @@ public static class ComptesDistantsAdministration
                     cmd.Parameters.AddWithValue(empreinte);
                     cmd.Parameters.AddWithValue(auteur);
                     await using var r = await cmd.ExecuteReaderAsync(ct);
-                    await r.ReadAsync(ct);
+                    await Reception.DepotCentral.LigneAttendueAsync(r, "cloud_compte_distant_code_rattachement", ct);
                     var statut = r.GetString(0);
                     if (statut != "ok")
                     {

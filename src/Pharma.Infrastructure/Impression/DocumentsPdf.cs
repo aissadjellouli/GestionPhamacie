@@ -692,7 +692,7 @@ public sealed partial class DocumentsPdf : IDocumentsPdf, Pharma.Application.Rap
         {
             var row = b.AddRow();
             row.TopPadding = row.BottomPadding = Unit.FromPoint(2);
-            string[] c = [m.Produit, $"{m.Mois:00}/{m.Annee}", m.SoldeReporte == 0 ? "—" : m.SoldeReporte.ToString(Fr),
+            string[] c = [m.Produit, $"{m.Mois:00}/{m.Annee}", m.SoldeReporte.ToString(Fr),
                 m.Entrees.ToString(Fr), m.Sorties.ToString(Fr), m.SoldeFin?.ToString(Fr) ?? "—"];
             for (var i = 0; i < c.Length; i++) row.Cells[i].AddParagraph(c[i]);
         }

@@ -110,7 +110,8 @@ public sealed class RegistreSql(NpgsqlDataSource db) : IRegistrePsychotropes
             balance.Add(new BalanceMensuelle(r.GetInt64(0), r.GetString(1), r.GetInt32(2), r.GetInt32(3), r.GetInt32(4), r.GetInt32(5),
                 r.IsDBNull(6) ? null : r.GetInt32(6), r.GetInt32(8)));
         }
-        return (nombre, balance);
+        // Solde reporté = solde de fin du mois précédent (le premier mois garde les lignes d'ouverture)
+        return (nombre, ConsulterRegistre.Chainer(balance));
     }
 
     public async Task<IReadOnlyList<ProduitRegistre>> ProduitsAsync(CancellationToken ct = default)

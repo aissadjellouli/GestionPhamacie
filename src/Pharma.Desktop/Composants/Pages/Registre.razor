@@ -154,7 +154,7 @@
                         <tbody>
                             @foreach (var b in registre.Balance.Skip((pageBalance - 1) * tailleBalance).Take(tailleBalance))
                             {
-                                <tr><td>@b.Produit</td><td>@($"{b.Mois:00}/{b.Annee}")</td><td class="nombre">@(b.SoldeReporte == 0 ? "—" : b.SoldeReporte.ToString())</td><td class="nombre">@b.Entrees</td><td class="nombre">@b.Sorties</td><td class="nombre">@(b.SoldeFin?.ToString() ?? "—")</td></tr>
+                                <tr><td>@b.Produit</td><td>@($"{b.Mois:00}/{b.Annee}")</td><td class="nombre">@b.SoldeReporte</td><td class="nombre">@b.Entrees</td><td class="nombre">@b.Sorties</td><td class="nombre">@(b.SoldeFin?.ToString() ?? "—")</td></tr>
                             }
                         </tbody>
                     </table>

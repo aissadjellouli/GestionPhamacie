@@ -1,4 +1,3 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -17,7 +16,6 @@ using Pharma.Infrastructure.Alertes;
 using Pharma.Infrastructure.Chifa;
 using Pharma.Infrastructure.Impression;
 using Pharma.Infrastructure.Lecture;
-using Pharma.Infrastructure.Persistence;
 using Pharma.Infrastructure.Securite;
 using Pharma.Infrastructure.Systeme;
 using Pharma.Infrastructure.Tracabilite;
@@ -66,7 +64,6 @@ public static class DependencyInjection
         var protection = options.Protection ?? new ProtectionDpapiMachine();
         services.AddSingleton(protection);
         static string Choisir(string? reglage, string defaut) => string.IsNullOrWhiteSpace(reglage) ? defaut : reglage;
-        services.AddDbContext<PharmaDbContext>((sp, o) => o.UseNpgsql(sp.GetRequiredService<NpgsqlDataSource>()));
         // Mode démonstration (docs/demo-cloud.md, étape 2) : lu par les cas d'usage (mots de passe des comptes de démonstration)
         // et par les générateurs de PDF (filigrane) ; les adaptateurs factices remplacent les envois réels plus bas
         services.AddSingleton(new Application.Demo.ModeDemo(options.ModeDemo));

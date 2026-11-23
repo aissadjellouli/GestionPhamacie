@@ -5,7 +5,7 @@ using Pharma.Domain.Commun;
 namespace Pharma.Infrastructure.Lecture;
 
 /// <summary>Sortie de boîtes périmées ou cassées : lot, mouvement (registre tenu par le déclencheur), boîtes détruites.</summary>
-public sealed class SortiesStockSql(NpgsqlDataSource db) : ISortiesStock
+public sealed class SortiesStockSql(NpgsqlDataSource db, Pharma.Application.Securite.AutorisationCourante? autorisation = null) : ISortiesStock
 {
     private const string Requete = """
         SELECT l.id, l.produit_id, p.nom_commercial, l.numero_lot, l.date_peremption, l.quantite_disponible, l.bloque,
@@ -38,6 +38,19 @@ public sealed class SortiesStockSql(NpgsqlDataSource db) : ISortiesStock
     {
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
+        // Don : lot bloqué ou périmé refusé, contrôle sous verrou du lot (les autres sorties restent possibles)
+        if (s.Motif == "echantillon")
+        {
+            await using var controle = new NpgsqlCommand("""
+                SELECT l.bloque, l.date_peremption <= current_date, p.nom_commercial, l.numero_lot
+                FROM lot l JOIN produit p ON p.id = l.produit_id WHERE l.id = $1 FOR UPDATE OF l
+                """, cx, tx);
+            controle.Parameters.AddWithValue(s.LotId);
+            await using var lu = await controle.ExecuteReaderAsync(ct);
+            if (!await lu.ReadAsync(ct)) throw new RegleMetierException("Lot introuvable.");
+            var refus = Pharma.Application.Stock.DeclarerSortieStock.RefusDon(lu.GetString(2), lu.GetString(3), lu.GetBoolean(0), lu.GetBoolean(1));
+            if (refus is not null) throw new RegleMetierException(refus, "motif_sortie");
+        }
         await using (var verrou = new NpgsqlCommand(
             "UPDATE lot SET quantite_disponible = quantite_disponible - $2 WHERE id = $1 AND quantite_disponible >= $2", cx, tx))
         {
@@ -75,6 +88,9 @@ public sealed class SortiesStockSql(NpgsqlDataSource db) : ISortiesStock
             boites.Parameters.AddWithValue(s.Motif);
             detruites = await boites.ExecuteNonQueryAsync(ct);
         }
+        if (s.Journal?.Invoke(detruites) is { } j)
+            await Securite.JournalSql.EcrireAsync(cx, tx, s.UtilisateurId, j.Action, j.TableCible, j.EnregistrementId, j.Details, j.PermissionCode, ct,
+                autorisation?.AutoriseParId);
         await tx.CommitAsync(ct);
         return detruites;
     }

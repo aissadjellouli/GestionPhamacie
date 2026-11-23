@@ -28,7 +28,7 @@ internal static class NotificationsEndpoints
                 await modifier.ExecuterAsync(new ModificationReglagesNotification(d.SmtpServeur, d.SmtpPort, d.SmtpTls, d.SmtpExpediteur,
                     d.SmtpIdentifiant, d.NouveauMotDePasse, d.ModemPort, d.HeureRapport, d.SmsSeuilEcart, d.SmsLotBloque, d.SmsSauvegarde,
                     d.SignalerSansDestinataire),
-                    user.UtilisateurId(), ct);
+                    user.UtilisateurId(), ct, d.MotDePasseTitulaire);
                 return Results.NoContent();
             })
            .ExigerTitulaire();

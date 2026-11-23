@@ -4,7 +4,7 @@
     <RootNamespace>Pharma.Infrastructure</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Npgsql" />
     <PackageReference Include="BCrypt.Net-Next" />
     <PackageReference Include="PDFsharp-MigraDoc" />
     <PackageReference Include="MailKit" />

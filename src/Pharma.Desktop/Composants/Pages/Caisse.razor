@@ -2855,8 +2855,8 @@
         {
             // Fiche relue juste avant : seule la wilaya change (une correction faite ailleurs depuis la recherche ou la mise en attente
             // n'est pas écrasée par la copie gardée dans la caisse)
-            var (trouves, erreurLecture) = await Api.RechercherMedecinsAsync(m.Nom);
-            if (erreurLecture is not null || trouves.FirstOrDefault(x => x.Id == m.Id) is not { } fiche)
+            var (relue, erreurLecture) = await Api.MedecinAsync(m.Id);
+            if (erreurLecture is not null || relue is not { } fiche)
             {
                 RefuserWilaya(m, erreurLecture ?? "Fiche du médecin introuvable : wilaya non enregistrée. Rouvrez la fiche depuis Factures › Médecins.");
                 return;

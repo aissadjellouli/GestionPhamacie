@@ -65,8 +65,13 @@ internal sealed class JetonsFactices : IGenerateurJeton
 
     public List<bool> AChanger { get; } = [];
 
-    public (string Jeton, DateTime ExpireLe) Creer(long utilisateurId, string nomComplet, bool comptoir = false, bool motDePasseAChanger = false)
+    /// <summary>Poste lié à chaque jeton créé (null : aucun).</summary>
+    public List<string?> Postes { get; } = [];
+
+    public (string Jeton, DateTime ExpireLe) Creer(long utilisateurId, string nomComplet, bool comptoir = false, bool motDePasseAChanger = false,
+        string? poste = null)
     {
+        Postes.Add(poste);
         Comptoir.Add(comptoir);
         AChanger.Add(motDePasseAChanger);
         return ($"jeton-{utilisateurId}", new DateTime(2026, 11, 8, 20, 0, 0, DateTimeKind.Utc));
@@ -82,4 +87,15 @@ internal sealed class TracabiliteEspion : ITracabiliteLecture
         CodeRecu = codeOuSerie;
         return Task.FromResult<ParcoursBoite?>(null);
     }
+}
+
+/// <summary>Ressaisie du mot de passe du titulaire : tous les employés 1 à 20 ont le mot de passe <see cref="Mot"/>.</summary>
+internal static class MotDePasseTitulaireFactice
+{
+    public const string Mot = "mot-de-passe-titulaire";
+
+    public static Pharma.Application.Securite.VerificationMotDePasseActuel Verification(IJournal? journal = null,
+        Pharma.Application.Securite.EssaisConnexion? essais = null) =>
+        new(new ComptesEnMemoire(Enumerable.Range(1, 20).Select(i => new Utilisateur { Id = i, Identifiant = $"employe{i}", MotDePasseHash = "hash:" + Mot }).ToArray()),
+            new VerificateurFactice(), journal ?? new JournalEspion(), essais);
 }

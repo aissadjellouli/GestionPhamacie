@@ -24,7 +24,8 @@ public partial class MarqueurRejeuReglagesTests(BaseJetableM4 jetable) : IClassF
                      Fichier("scripts", "mep", "outils_mep.ps1"),             // mettre_a_jour_base_officine.ps1 passe par Invoke-OutilPg
                      Fichier("database", "tests", "rejeu_complet.ps1"),
                      Fichier("scripts", "initialiser_base_locale.ps1"),
-                     Fichier("scripts", "paquet", "installer.ps1")
+                     Fichier("scripts", "paquet", "installer.ps1"),
+                     Fichier("scripts", "basculer-pc-secours.ps1")             // PC de secours : suite rejouée après pg_restore
                  })
         {
             var lignes = File.ReadAllLines(fichier).Where(l => AffectationPgOptions().IsMatch(l)).ToList();

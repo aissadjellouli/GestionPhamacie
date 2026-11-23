@@ -131,11 +131,15 @@ public sealed class ListerSurveillance(ISurveillance surveillance, IPermissionSe
     }
 }
 
-public sealed class TraiterSurveillance(ISurveillance surveillance, IPermissionService droits)
+public sealed class TraiterSurveillance(ISurveillance surveillance, IPermissionService droits, Securite.VerificationMotDePasseActuel verification)
 {
-    public async Task<bool> ExecuterAsync(long id, string? actionPrise, long utilisateurId, CancellationToken ct = default)
+    public const string ChampMotDePasseTitulaire = "mot_de_passe_titulaire";
+
+    /// <param name="motDePasseTitulaire">Mot de passe du titulaire, ressaisi : marquer une anomalie « traitée » la sort de la liste.</param>
+    public async Task<bool> ExecuterAsync(long id, string? actionPrise, long utilisateurId, CancellationToken ct = default, string? motDePasseTitulaire = null)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "traiter un point du contrôle interne", ct);
+        await verification.VerifierAsync(utilisateurId, motDePasseTitulaire, "traiter_anomalie_surveillance", ChampMotDePasseTitulaire, ct);
         var action = string.IsNullOrWhiteSpace(actionPrise) ? null : actionPrise.Trim();
         return await surveillance.TraiterAsync(id, action is { Length: > 300 } ? action[..300] : action, utilisateurId, ct);
     }

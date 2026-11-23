@@ -415,7 +415,7 @@ public class SauvegardesTests
     public async Task Duree_de_la_copie_GED_entre_1_et_365_jours()
     {
         var depot = new SauvegardesEnMemoire();
-        var modifier = new ModifierReglagesSauvegarde(depot, new JournalEspion());
+        var modifier = new ModifierReglagesSauvegarde(depot, new JournalEspion(), new DroitsFactices { Titulaire = true });
         await Assert.ThrowsAsync<Pharma.Domain.Commun.RegleMetierException>(() =>
             modifier.ExecuterAsync(true, @"E:\Sauvegardes", new TimeOnly(22, 0), 2, 1, default, 0));
         await Assert.ThrowsAsync<Pharma.Domain.Commun.RegleMetierException>(() =>

@@ -18,7 +18,9 @@ internal sealed class AnnulationsEnMemoire(VenteAnnulable vente) : IAnnulationsV
     public Task<MouvementTiroirEcrit?> AnnulerAsync(AnnulationAEcrire a, CancellationToken ct = default)
     {
         Ecrite = a;
-        return Task.FromResult(a.Regularisation is { Rembourse: > 0 } ? new MouvementTiroirEcrit(41, "BS-000041") : null);
+        var bon = a.Regularisation is { Rembourse: > 0 } ? new MouvementTiroirEcrit(41, "BS-000041") : null;
+        JournalEspion.Rejouer(a.Journaux, new ContexteJournal(a.VenteId, "T-000012", bon?.Numero));
+        return Task.FromResult(bon);
     }
     public Task<IReadOnlyDictionary<long, decimal>> AutresDettesAsync(long p, long v, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyDictionary<long, decimal>>(AutresDettes);

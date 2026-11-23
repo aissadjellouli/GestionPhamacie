@@ -249,6 +249,8 @@
     </div>
 </div>
 
+<FenetreMotDePasseTitulaire Demande="demandeMdp" Fermee="() => demandeMdp = null" />
+
 @code {
     /// <summary>Sous-rubrique dans l'adresse (admin/notifications?rubrique=…) : une partie à la fois, l'écran reste fixe.</summary>
     [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
@@ -379,20 +381,28 @@
     private bool TelManquant => controleDest && fiche.CanalSms && string.IsNullOrWhiteSpace(fiche.Telephone);
     private bool TypesManquants => controleDest && fiche.Types.Count == 0;
 
+    private FenetreMotDePasseTitulaire.DemandeMotDePasse? demandeMdp;
+    private const string ExplicationReglages = "Les réglages des notifications portent le serveur d’envoi et son mot de passe : confirmez votre identité.";
+
     private async Task EnregistrerAsync() => await Executer(async () =>
     {
         controleSmtp = true;
         const string smtpIncomplet = "Renseignez à la fois le serveur SMTP et l’adresse de l’expéditeur, ou aucun des deux.";
         if (ServeurManquant) { await champServeur.FocusAsync(); return smtpIncomplet; }
         if (ExpediteurManquant) { await champExpediteur.FocusAsync(); return smtpIncomplet; }
-        var e = await Api.ModifierReglagesNotificationAsync(new ModificationReglagesNotificationDto(r!.SmtpServeur, r.SmtpPort, r.SmtpTls, r.SmtpExpediteur,
-            r.SmtpIdentifiant, string.IsNullOrEmpty(nouveauMotDePasse) ? null : nouveauMotDePasse, r.ModemPort, r.HeureRapport, r.SmsSeuilEcart, r.SmsLotBloque, r.SmsSauvegarde,
-            r.SignalerSansDestinataire));
-        if (e is not null) return e;
-        (nouveauMotDePasse, changementMotDePasse) = (null, false);
-        controleSmtp = false;
-        await ChargerReglagesAsync();
-        message = "Réglages enregistrés." + (motDePasseEnregistre ? " Mot de passe chiffré sur ce serveur." : "");
+        // Le titulaire ressaisit son mot de passe (vérifié par le serveur) ; les champs de l'écran restent saisis en cas de refus
+        demandeMdp = new("Enregistrer les réglages des notifications", ExplicationReglages, async mdp =>
+        {
+            var e = await Api.ModifierReglagesNotificationAsync(new ModificationReglagesNotificationDto(r!.SmtpServeur, r.SmtpPort, r.SmtpTls, r.SmtpExpediteur,
+                r.SmtpIdentifiant, string.IsNullOrEmpty(nouveauMotDePasse) ? null : nouveauMotDePasse, r.ModemPort, r.HeureRapport, r.SmsSeuilEcart, r.SmsLotBloque,
+                r.SmsSauvegarde, r.SignalerSansDestinataire), mdp);
+            if (e is not null) return e;
+            (nouveauMotDePasse, changementMotDePasse) = (null, false);
+            controleSmtp = false;
+            await ChargerReglagesAsync();
+            message = "Réglages enregistrés." + (motDePasseEnregistre ? " Mot de passe chiffré sur ce serveur." : "");
+            return null;
+        });
         return null;
     });
 
@@ -414,12 +424,16 @@
     {
         if (string.IsNullOrEmpty(nouveauMotDePasse)) return "Saisissez le mot de passe du compte d’envoi.";
         // Les autres réglages sont renvoyés tels qu'ils sont à l'écran : seul le mot de passe change
-        var e = await Api.ModifierReglagesNotificationAsync(new ModificationReglagesNotificationDto(r!.SmtpServeur, r.SmtpPort, r.SmtpTls, r.SmtpExpediteur,
-            r.SmtpIdentifiant, nouveauMotDePasse, r.ModemPort, r.HeureRapport, r.SmsSeuilEcart, r.SmsLotBloque, r.SmsSauvegarde, r.SignalerSansDestinataire));
-        if (e is not null) return e;
-        (nouveauMotDePasse, changementMotDePasse) = (null, false);
-        await ChargerReglagesAsync();
-        message = "Mot de passe enregistré, chiffré sur ce serveur.";
+        demandeMdp = new("Enregistrer le mot de passe d’envoi", ExplicationReglages, async mdp =>
+        {
+            var e = await Api.ModifierReglagesNotificationAsync(new ModificationReglagesNotificationDto(r!.SmtpServeur, r.SmtpPort, r.SmtpTls, r.SmtpExpediteur,
+                r.SmtpIdentifiant, nouveauMotDePasse, r.ModemPort, r.HeureRapport, r.SmsSeuilEcart, r.SmsLotBloque, r.SmsSauvegarde, r.SignalerSansDestinataire), mdp);
+            if (e is not null) return e;
+            (nouveauMotDePasse, changementMotDePasse) = (null, false);
+            await ChargerReglagesAsync();
+            message = "Mot de passe enregistré, chiffré sur ce serveur.";
+            return null;
+        });
         return null;
     });
 

@@ -135,7 +135,7 @@ public sealed class CreditsClientsSql(NpgsqlDataSource db) : ICreditsClients
     }
 
     public async Task<string> EncaisserAsync(long patientId, decimal montant, string mode, long sessionCaisseId, long utilisateurId,
-        IReadOnlyList<long>? ventes = null, CancellationToken ct = default)
+        IReadOnlyList<long>? ventes = null, CancellationToken ct = default, JournalAEcrire? journal = null)
     {
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
@@ -192,12 +192,13 @@ public sealed class CreditsClientsSql(NpgsqlDataSource db) : ICreditsClients
                 await EcritureAvoir.DebiterAsync(cx, tx, patientId, montant, Pharma.Domain.Ventes.RegleAvoir.OriginePaiement, null, paiement, null,
                     $"Encaissement de dette · reçu {id}", utilisateurId, ct);
         }
+        await Securite.JournalSql.EcrireEntreesAsync(cx, tx, journal is null ? null : [journal], new ContexteJournal(0, id), ct);
         await tx.CommitAsync(ct);
         return id;
     }
 
     public async Task CorrigerAsync(long patientId, decimal detteAttendue, decimal nouvelleDette, string motif, long utilisateurId, string? poste,
-        CancellationToken ct = default)
+        CancellationToken ct = default, JournalAEcrire? journal = null)
     {
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
@@ -210,6 +211,7 @@ public sealed class CreditsClientsSql(NpgsqlDataSource db) : ICreditsClients
             cmd.Parameters.AddWithValue(nouvelleDette);
             if (await cmd.ExecuteNonQueryAsync(ct) == 0) throw new RegleMetierException("La dette du patient vient de changer : rechargez sa situation.");
         }
+        await Securite.JournalSql.EcrireEntreesAsync(cx, tx, journal is null ? null : [journal], new ContexteJournal(0, ""), ct);
         await tx.CommitAsync(ct);
     }
 

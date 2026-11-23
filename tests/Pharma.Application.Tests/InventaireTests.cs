@@ -48,7 +48,9 @@ internal sealed class InventairesEnMemoire : IInventaires
         return Task.FromResult<int?>(compte);
     }
     public Task<long?> LotParCodeAsync(string code, CancellationToken ct = default) => Task.FromResult(LotScanne);
-    public Task TerminerAsync(long id, IReadOnlyList<DecisionLigne> decisions, long u, CancellationToken ct = default) { Decisions = decisions; return Task.CompletedTask; }
+    public JournalDansTransaction? JournalClôture { get; private set; }
+    public Task TerminerAsync(long id, IReadOnlyList<DecisionLigne> decisions, long u, JournalDansTransaction? journal = null, CancellationToken ct = default)
+    { Decisions = decisions; JournalClôture = journal; return Task.CompletedTask; }
     public Task AnnulerAsync(long id, CancellationToken ct = default) => Task.CompletedTask;
     public Task<IReadOnlyList<EcartAValider>> EcartsAValiderAsync(CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<EcartAValider>>([new(3, 5, "C", "Sintrom", "L103", 25, 20, -5, -1000, "Assistant", DateTime.UtcNow)]);
@@ -70,7 +72,7 @@ public class InventaireApplicationTests
     public async Task Terminer_corrige_les_petits_ecarts_et_previent_le_titulaire_pour_les_gros()
     {
         var (depot, alertes) = (new InventairesEnMemoire(), new AlertesTitulaireEspion());
-        var bilan = await new TerminerInventaire(depot, new DroitsFactices("stock.ajuster"), new JournalEspion(), alertes).ExecuterAsync(5, 2);
+        var bilan = await new TerminerInventaire(depot, new DroitsFactices("stock.ajuster"), alertes).ExecuterAsync(5, 2);
 
         Assert.Equal(new BilanInventaire(3, 1, 1, 1, -7, -1400), bilan);
         Assert.Equal([DecisionEcart.Conforme, DecisionEcart.Ajuste, DecisionEcart.AValider], depot.Decisions!.Select(d => d.Decision));
@@ -83,7 +85,7 @@ public class InventaireApplicationTests
         var depot = new InventairesEnMemoire();
         depot.Detail = depot.Detail with { Lignes = [.. depot.Detail.Lignes, InventairesEnMemoire.Ligne(4, 104, "Oubli", null, null, 10)] };
         var ex = await Assert.ThrowsAsync<RegleMetierException>(() =>
-            new TerminerInventaire(depot, new DroitsFactices("stock.ajuster"), new JournalEspion()).ExecuterAsync(5, 2));
+            new TerminerInventaire(depot, new DroitsFactices("stock.ajuster")).ExecuterAsync(5, 2));
         Assert.Contains("1 lot(s)", ex.Message);
     }
 

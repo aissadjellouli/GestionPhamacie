@@ -36,8 +36,12 @@ public static class ExportRappel
     public static void Montrer(string chemin) =>
         Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{chemin}\"") { UseShellExecute = true });
 
-    private static string Champ(string valeur) =>
-        valeur.IndexOfAny([';', '"', '\n', '\r']) >= 0 ? $"\"{valeur.Replace("\"", "\"\"")}\"" : valeur;
+    // Nom du patient, téléphone... : une cellule qui commence par = + - @, une tabulation ou un retour serait lue comme une formule par Excel
+    private static string Champ(string brut)
+    {
+        var valeur = brut.Length > 0 && "=+-@\t\r".Contains(brut[0]) ? "'" + brut : brut;
+        return valeur.IndexOfAny([';', '"', '\n', '\r']) >= 0 ? $"\"{valeur.Replace("\"", "\"\"")}\"" : valeur;
+    }
 
     private static string Nettoyer(string texte) =>
         string.Concat(texte.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_'));

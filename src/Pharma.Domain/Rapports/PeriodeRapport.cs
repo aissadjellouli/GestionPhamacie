@@ -35,10 +35,16 @@ public sealed record PeriodeRapport(TypePeriode Type, DateOnly Du, DateOnly Au)
     }
 
     /// <summary>Même durée, juste avant (sens -1) ou juste après (sens +1).</summary>
-    public PeriodeRapport Decaler(int sens) =>
-        Type == TypePeriode.Dates
+    /// <summary>Avec « aujourdhui » : la période suivante ne peut pas finir dans le futur (même règle que les dates choisies).</summary>
+    public PeriodeRapport Decaler(int sens, DateOnly? aujourdhui = null)
+    {
+        var decalee = Type == TypePeriode.Dates
             ? this with { Du = Du.AddDays(sens * NombreJours), Au = Au.AddDays(sens * NombreJours) }
             : Calculer(Type, sens < 0 ? Du.AddDays(-1) : Au.AddDays(1));
+        if (sens > 0 && aujourdhui is { } jour && decalee.Au > jour)
+            throw new RegleMetierException("La date de fin ne peut pas être dans le futur.");
+        return decalee;
+    }
 
     public static DateOnly Lundi(DateOnly d) => d.AddDays(-(((int)d.DayOfWeek + 6) % 7));
 

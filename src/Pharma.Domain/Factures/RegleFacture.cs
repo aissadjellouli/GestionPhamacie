@@ -41,6 +41,17 @@ public static class RegleFacture
     /// <summary>F-2026-0001 (facture) ou AV-2026-0001 (avoir).</summary>
     public static string Numero(bool avoir, int annee, int sequence) => $"{(avoir ? "AV" : "F")}-{annee}-{sequence:0000}";
 
+    /// <summary>
+    /// Une correction peut changer la date de la facture, jamais vers une autre année que celle de son numéro (F-2026-0042 : 2026) :
+    /// la numérotation est annuelle.
+    /// </summary>
+    public static void VerifierAnneeCorrection(string numero, DateOnly date)
+    {
+        var parties = numero.Split('-');
+        if (parties.Length >= 2 && int.TryParse(parties[1], out var annee) && annee != date.Year)
+            throw new RegleMetierException($"La date de la facture doit rester dans l’année de son numéro ({annee}) : le numéro {numero} ne change pas à la correction.", "date_facture");
+    }
+
     /// <summary>Part facturée : l'organisme reçoit sa part prise en charge ; patient et entreprise, la part payée par le patient.</summary>
     public static string Part(Destinataire d) => d == Destinataire.Organisme ? "organisme" : "patient";
 
@@ -125,7 +136,9 @@ public static class RegleFacture
         if (quantite <= 0) throw new RegleMetierException($"« {designation.Trim()} » : la quantité doit être supérieure à 0.");
         if (prixTtc <= 0) throw new RegleMetierException($"« {designation.Trim()} » : le prix doit être supérieur à 0.");
         if (tauxTva is < 0 or > 100) throw new RegleMetierException($"« {designation.Trim()} » : taux de TVA invalide.");
-        return new LigneFacture(null, null, "libre", designation.Trim(), quantite, Arrondi.Centime(prixTtc), tauxTva, Arrondi.Centime(quantite * prixTtc));
+        // Montant = quantité × prix unitaire arrondi tel qu'affiché : la ligne se vérifie à la calculatrice
+        var prix = Arrondi.Centime(prixTtc);
+        return new LigneFacture(null, null, "libre", designation.Trim(), quantite, prix, tauxTva, Arrondi.Centime(quantite * prix));
     }
 
     /// <summary>Prix TTC : HT = TTC / (1 + taux), arrondi ligne par ligne ; TVA = TTC - HT.</summary>
@@ -178,6 +191,17 @@ public static class RegleFacture
     {
         VerifierReprise(statut);
         if (reste <= 0) throw new RegleMetierException("Cette facture a été payée en entier après son rejet : elle est soldée, il n'y a plus rien à corriger.");
+    }
+
+    /// <summary>
+    /// Correction d'une facture rejetée : le nouveau TTC ne peut pas descendre sous ce qui est déjà couvert par des avoirs
+    /// et des règlements imputés (sinon avoirs plus règlements dépasseraient la facture).
+    /// </summary>
+    public static void VerifierCorrection(decimal nouveauTtc, decimal avoirs, decimal reglements)
+    {
+        var couvert = avoirs + reglements;
+        if (nouveauTtc < couvert)
+            throw new RegleMetierException($"Le nouveau total ({nouveauTtc:N2} DA) est inférieur à ce qui est déjà couvert par des avoirs et des règlements ({couvert:N2} DA) : la facture ne peut pas être corrigée ainsi.");
     }
 
     /// <summary>État affiché d'une facture rejetée : « soldée » dès qu'elle est payée en entier (le rejet reste dans son historique).</summary>

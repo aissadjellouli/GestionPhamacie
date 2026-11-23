@@ -101,7 +101,9 @@ Invoke-Principal {
     $script111b = Join-Path $dossierMigration "111b_roles_integrite.sql"
     if (-not $scriptFuseau) { throw "Script 083 (fuseau horaire) introuvable dans $dossierMigration" }
     if (-not $SansSeparationRoles -and -not (Test-Path -LiteralPath $script111b)) { throw "Script introuvable : $script111b" }
-    $dernier = ((Get-ScriptsNumerotes $dossierMigration)[-1].Name).Substring(0, 3)
+    $scriptsOfficine = Get-ScriptsNumerotes $dossierMigration
+    Test-SuiteSansTrou $scriptsOfficine
+    $dernier = ($scriptsOfficine[-1].Name).Substring(0, 3)
     Test-EnteteInit -Fichier $schema -Dernier $dernier
     Test-EnteteInit -Fichier $seed -Dernier $dernier
     Write-Ok "L'init (schema.sql, seed_referentiel.sql) couvre les scripts 001 à $dernier : il est à jour."

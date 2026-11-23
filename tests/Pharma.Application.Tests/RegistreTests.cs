@@ -69,7 +69,7 @@ public class RegistreTests
         Assert.Equal(2, b.Count);
         // Le solde d'ouverture est un solde reporté, pas une entrée
         Assert.Equal((10, 13, 0, 1, (int?)12), (b[0].Mois, b[0].SoldeReporte, b[0].Entrees, b[0].Sorties, b[0].SoldeFin));
-        Assert.Equal((11, 0, 5, 0, (int?)17), (b[1].Mois, b[1].SoldeReporte, b[1].Entrees, b[1].Sorties, b[1].SoldeFin));
+        Assert.Equal((11, 12, 5, 0, (int?)17), (b[1].Mois, b[1].SoldeReporte, b[1].Entrees, b[1].Sorties, b[1].SoldeFin));
     }
 
     [Fact]
@@ -85,8 +85,9 @@ public class RegistreTests
         var b = ConsulterRegistre.Balance(lignes);
         Assert.Equal(2, b.Count);   // septembre, sans ligne après l'ouverture, n'apparaît pas
         Assert.Equal((10, 13, 0, 1, (int?)12), (b[0].Mois, b[0].SoldeReporte, b[0].Entrees, b[0].Sorties, b[0].SoldeFin));
-        // Solde reporté + entrées − sorties = solde de fin de mois
-        Assert.All(b, m => Assert.Equal(m.SoldeFin, (b.TakeWhile(x => x != m).LastOrDefault()?.SoldeFin ?? 0) + m.SoldeReporte + m.Entrees - m.Sorties));
+        // Solde reporté (fin du mois précédent) + entrées − sorties = solde de fin de mois
+        Assert.All(b, m => Assert.Equal(m.SoldeFin, m.SoldeReporte + m.Entrees - m.Sorties));
+        Assert.Equal(b[0].SoldeFin, b[1].SoldeReporte);   // reporté = solde de fin du mois précédent
     }
 
     [Fact]

@@ -143,14 +143,38 @@ public sealed class ConsulterRegistre(IRegistrePsychotropes registre, IPermissio
     /// entrée ; les lignes antérieures à l'ouverture (solde du produit non calculé) sont exclues de la balance.
     /// </summary>
     public static IReadOnlyList<BalanceMensuelle> Balance(IReadOnlyList<LigneRegistre> lignes) =>
-        lignes.Where(l => l.SoldeProduit is not null)
+        Chainer(lignes.Where(l => l.SoldeProduit is not null)
               .GroupBy(l => (l.ProduitId, l.Produit, l.Date.ToLocalTime().Year, l.Date.ToLocalTime().Month))
               .Select(g => new BalanceMensuelle(g.Key.ProduitId, g.Key.Produit, g.Key.Year, g.Key.Month,
                   g.Where(l => l.Type != "ouverture").Sum(l => l.Entree ?? 0), g.Sum(l => l.Sortie ?? 0),
                   g.OrderBy(l => l.Numero).Last().SoldeProduit,
                   g.Where(l => l.Type == "ouverture").Sum(l => l.Entree ?? 0)))
               .OrderBy(b => b.Produit).ThenBy(b => b.Annee).ThenBy(b => b.Mois)
-              .ToList();
+              .ToList());
+
+    /// <summary>
+    /// Enchaîne les mois de chaque produit : le solde reporté est le solde de fin du mois précédent, pour que reporté + entrées − sorties
+    /// = solde de fin tienne tous les mois. Premier mois : lignes d'ouverture du mois ; sans ouverture (période commencée en cours
+    /// d'historique), solde de fin − entrées + sorties, qui est le solde avant la première ligne du mois.
+    /// </summary>
+    public static IReadOnlyList<BalanceMensuelle> Chainer(IEnumerable<BalanceMensuelle> mois)
+    {
+        var resultat = new List<BalanceMensuelle>();
+        foreach (var produit in mois.GroupBy(b => b.ProduitId))
+        {
+            int? precedent = null;
+            var premier = true;
+            foreach (var b in produit.OrderBy(b => b.Annee).ThenBy(b => b.Mois))
+            {
+                var reporte = !premier ? precedent ?? b.SoldeReporte
+                    : b.SoldeReporte != 0 || b.SoldeFin is null ? b.SoldeReporte
+                    : b.SoldeFin.Value - b.Entrees + b.Sorties;
+                resultat.Add(b with { SoldeReporte = reporte });
+                (precedent, premier) = (b.SoldeFin, false);
+            }
+        }
+        return resultat.OrderBy(b => b.Produit).ThenBy(b => b.ProduitId).ThenBy(b => b.Annee).ThenBy(b => b.Mois).ToList();
+    }
 
     /// <summary>« Benali Karim » → « B. K. »</summary>
     public static string? Initiales(string? nom) => string.IsNullOrWhiteSpace(nom) ? nom
@@ -253,7 +277,7 @@ public static class RegistreCsv
         foreach (var l in r.Lignes) L(Cellules(r, l));
         L();
         L("Balance mensuelle", "Mois", "Solde reporté", "Entrées", "Sorties", "Solde fin de mois");
-        foreach (var b in r.Balance) L(b.Produit, $"{b.Mois:00}/{b.Annee}", b.SoldeReporte == 0 ? null : b.SoldeReporte, b.Entrees, b.Sorties, b.SoldeFin);
+        foreach (var b in r.Balance) L(b.Produit, $"{b.Mois:00}/{b.Annee}", b.SoldeReporte, b.Entrees, b.Sorties, b.SoldeFin);
         return [.. Encoding.UTF8.GetPreamble(), .. Encoding.UTF8.GetBytes(sb.ToString())];
     }
 
@@ -264,7 +288,7 @@ public static class RegistreCsv
         registre.AddRange(r.Lignes.Select(l => (IReadOnlyList<object?>)Cellules(r, l)));
         var balance = new List<IReadOnlyList<object?>> { new object?[] { "Produit", "Mois", "Solde reporté", "Entrées", "Sorties", "Solde fin de mois" } };
         balance.AddRange(r.Balance.Select(b => (IReadOnlyList<object?>)new object?[]
-            { b.Produit, $"{b.Mois:00}/{b.Annee}", b.SoldeReporte == 0 ? null : b.SoldeReporte, b.Entrees, b.Sorties, b.SoldeFin }));
+            { b.Produit, $"{b.Mois:00}/{b.Annee}", b.SoldeReporte, b.Entrees, b.Sorties, b.SoldeFin }));
         var sceau = new List<IReadOnlyList<object?>>
         {
             new object?[] { "Registre des psychotropes et stupéfiants" }, new object?[] { Entete(r) },
@@ -278,7 +302,7 @@ public static class RegistreCsv
     {
         var s = v switch { null => "", IFormattable f => f.ToString(null, Fr), _ => v.ToString() ?? "" };
         // Une cellule qui commence par = + - @ serait lue comme une formule par Excel
-        if (s.Length > 0 && "=+-@".Contains(s[0]) && v is string) s = "'" + s;
-        return s.Contains(';') || s.Contains('"') || s.Contains('\n') ? $"\"{s.Replace("\"", "\"\"")}\"" : s;
+        if (v is string) s = Pharma.Domain.Commun.ProtectionTableur.Neutraliser(s);
+        return s.Contains(';') || s.Contains('"') || s.Contains('\n') || s.Contains('\r') ? $"\"{s.Replace("\"", "\"\"")}\"" : s;
     }
 }

@@ -22,7 +22,7 @@ public static class SuperAdminEndpoints
             var journal = journaux.CreateLogger("Pharma.SuperAdmin");
             if (connecter.Executer(req.Identifiant, req.MotDePasse) is not { } compte)
             {
-                journal.LogWarning("Super admin : connexion refusée ({Identifiant})", req.Identifiant);
+                journal.LogWarning("Super admin : connexion refusée");   // jamais la saisie brute : un mot de passe tapé dans le champ identifiant finirait au journal
                 return Results.Json(new ErreurDto("Identifiant ou mot de passe incorrect."), statusCode: StatusCodes.Status401Unauthorized);
             }
             journal.LogWarning("Super admin {Identifiant} connecté", compte.Identifiant);

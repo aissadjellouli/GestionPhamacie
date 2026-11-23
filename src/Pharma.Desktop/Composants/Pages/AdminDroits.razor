@@ -190,6 +190,8 @@
     </div>
 </div>
 
+<FenetreMotDePasseTitulaire Demande="demandeMdp" Fermee="() => demandeMdp = null" />
+
 @code {
     /// <summary>Sous-rubrique dans l'adresse (admin/droits?rubrique=…) : une partie à la fois, l'écran reste fixe.</summary>
     [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
@@ -334,16 +336,22 @@
         await ChargerAsync();
     }
 
-    private async Task EnregistrerDroitsAsync()
+    private FenetreMotDePasseTitulaire.DemandeMotDePasse? demandeMdp;
+
+    // Matrice des droits : action très sensible, le mot de passe est ressaisi (vérifié par le serveur) ; la matrice à l'écran reste intacte en cas de refus
+    private Task EnregistrerDroitsAsync()
     {
-        if (etat is null) return;
-        enCours = true;
-        message = null;
-        erreur = await Api.EnregistrerDroitsAsync(etat.Roles.Where(r => !r.Systeme)
-            .Select(r => new DroitsRoleDto(r.Id, droits[r.Id].Where(c => etat.Permissions.Any(p => p.Code == c && !p.ParPersonne)).ToList())).ToList());
-        enCours = false;
-        if (erreur is not null) return;
-        message = "Droits enregistrés. Ils s’appliquent dès la prochaine action de chaque utilisateur.";
-        await ChargerAsync();
+        if (etat is null) return Task.CompletedTask;
+        (message, erreur) = (null, null);
+        demandeMdp = new("Enregistrer les droits", "Modifier les droits des rôles est une action très sensible : confirmez votre identité.", async mdp =>
+        {
+            var e = await Api.EnregistrerDroitsAsync(etat.Roles.Where(r => !r.Systeme)
+                .Select(r => new DroitsRoleDto(r.Id, droits[r.Id].Where(c => etat.Permissions.Any(p => p.Code == c && !p.ParPersonne)).ToList())).ToList(), mdp);
+            if (e is not null) return e;
+            message = "Droits enregistrés. Ils s’appliquent dès la prochaine action de chaque utilisateur.";
+            await ChargerAsync();
+            return null;
+        }, "Votre mot de passe");
+        return Task.CompletedTask;
     }
 }

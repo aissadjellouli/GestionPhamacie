@@ -30,6 +30,22 @@ public sealed class JetonService(IConfiguration config) : IGenerateurJeton
                 + $"avec une clé aléatoire d'au moins {LongueurMinCle} caractères, propre à la pharmacie (docs/mise-en-production.md).");
     }
 
+    /// <summary>
+    /// Poste de développement : la clé d'exemple reste tolérée (l'API démarre avec les réglages par défaut, qui écoutent sur toutes les
+    /// interfaces), mais si l'API est joignable depuis le réseau, n'importe qui peut signer un jeton de titulaire : message d'avertissement
+    /// à journaliser au démarrage. Null : rien à signaler.
+    /// </summary>
+    public static string? AvertissementCleExemple(IConfiguration config, bool developpement)
+    {
+        if (!developpement) return null;
+        var cle = config["Jwt:Cle"];
+        if (!string.IsNullOrWhiteSpace(cle) && !cle.StartsWith(PrefixeCleExemple, StringComparison.OrdinalIgnoreCase) && cle.Length >= LongueurMinCle) return null;
+        return ReseauSecurise.EcouteAilleursQueLocalhost(config)
+            ? "Jwt:Cle absente, trop courte ou restée à la valeur d'exemple, et l'API n'écoute pas seulement sur localhost : toute personne qui joint cette API "
+              + "peut fabriquer un jeton de titulaire. Définissez la variable d'environnement Jwt__Cle (64 caractères aléatoires au moins) ou limitez l'écoute à localhost."
+            : null;
+    }
+
     /// <summary>Durée de la session du super admin : courte, chaque action demande en plus un code.</summary>
     public static readonly TimeSpan DureeSuperAdmin = TimeSpan.FromHours(1);
 
@@ -38,7 +54,8 @@ public sealed class JetonService(IConfiguration config) : IGenerateurJeton
         Signer([new(ClaimTypes.NameIdentifier, "0"), new(ClaimTypes.Name, $"Super admin ({identifiant})"), new(SuperAdminSecurite.Revendication, identifiant)],
             DateTime.UtcNow.Add(DureeSuperAdmin));
 
-    public (string Jeton, DateTime ExpireLe) Creer(long utilisateurId, string nomComplet, bool comptoir = false, bool motDePasseAChanger = false)
+    public (string Jeton, DateTime ExpireLe) Creer(long utilisateurId, string nomComplet, bool comptoir = false, bool motDePasseAChanger = false,
+        string? poste = null)
     {
         var expire = DateTime.UtcNow.AddHours(config.GetValue("Jwt:DureeHeures", 12));
         var revendications = new List<Claim>
@@ -50,6 +67,8 @@ public sealed class JetonService(IConfiguration config) : IGenerateurJeton
         if (comptoir) revendications.Add(new Claim(CodeComptoir.Revendication, CodeComptoir.Portee));
         // Mot de passe provisoire : aucun droit tant qu'il n'est pas changé (PermissionsComptoir, PermissionFilter)
         if (motDePasseAChanger) revendications.Add(new Claim(RegleMotDePasse.Revendication, RegleMotDePasse.AChanger));
+        // Poste de la connexion : lié au jeton (PorteeConnexion.Poste, PosteDuJeton)
+        if (!string.IsNullOrWhiteSpace(poste)) revendications.Add(new Claim(PorteeConnexion.RevendicationPoste, poste.Trim()));
         return Signer(revendications, expire);
     }
 

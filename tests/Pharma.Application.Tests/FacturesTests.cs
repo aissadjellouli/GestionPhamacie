@@ -33,6 +33,9 @@ internal sealed class FacturesEnMemoire : IFactures
         Remplacee = remplaceId;
         return Task.FromResult((100L + Emises.Count, $"F-2026-{Emises.Count:0000}"));
     }
+    public List<FactureResume> AEncaisser { get; } = [];
+    public Task<IReadOnlyList<FactureResume>> AEncaisserParIdsAsync(IReadOnlyCollection<long> ids, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<FactureResume>>(AEncaisser.Where(f => ids.Contains(f.Id)).ToList());
     public Task<ListeFactures> PageAsync(FiltreFactures f, Pharma.Application.Commun.DemandePage p, CancellationToken ct = default) =>
         Task.FromResult(new ListeFactures(new Pharma.Application.Commun.Page<FactureResume>([], 0, p.Page, p.Taille), 0, 0));
     public Task<IReadOnlyList<FactureResume>> ListerAsync(FiltreFactures f, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<FactureResume>>([]);

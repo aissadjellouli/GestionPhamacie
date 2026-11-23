@@ -19,8 +19,12 @@ public sealed record VenteEnAttente(long Id, string Libelle, int Lignes, decimal
 public interface IVentesEnAttente
 {
     Task<IReadOnlyList<VenteEnAttente>> ListerAsync(string poste, CancellationToken ct = default);
+    /// <summary>
+    /// Mise en attente. maxParPoste : borne garantie par le serveur de données (verrou par poste : deux envois simultanés ne dépassent jamais
+    /// la borne) ; refus si le poste en a déjà autant.
+    /// </summary>
     Task<long> EnregistrerAsync(string poste, long utilisateurId, string libelle, int lignes, decimal total, string contenu, MotifAttente? motif,
-        CancellationToken ct = default);
+        CancellationToken ct = default, int maxParPoste = int.MaxValue);
     /// <summary>Contenu du panier, retiré de l'attente ; null s'il n'existe pas sur ce poste (déjà repris).</summary>
     Task<string?> ReprendreAsync(long id, string poste, CancellationToken ct = default);
     /// <summary>Abandon : total du panier supprimé, ou null s'il n'existe plus sur ce poste.</summary>
@@ -32,6 +36,7 @@ public sealed class GererVentesEnAttente(IVentesEnAttente attente, Surveillance.
     Referentiels.MotifsActifs? motifs = null)
 {
     public const int MaxParPoste = 20;
+    public static readonly string MessageTropDAttente = $"Déjà {MaxParPoste} ventes en attente sur ce poste : reprenez-en ou supprimez-en une.";
     public const int TailleMax = 200_000;
     public const int MaxProduitsDus = 50;
 
@@ -49,10 +54,10 @@ public sealed class GererVentesEnAttente(IVentesEnAttente attente, Surveillance.
         if (lignes <= 0 || string.IsNullOrWhiteSpace(contenu)) throw new RegleMetierException("Panier vide : rien à mettre en attente.");
         if (contenu.Length > TailleMax) throw new RegleMetierException("Panier trop volumineux pour être mis en attente.");
         var motif = await MotifAsync(motifCode, motifTexte, produitsDus, ct);
-        if ((await attente.ListerAsync(p, ct)).Count >= MaxParPoste)
-            throw new RegleMetierException($"Déjà {MaxParPoste} ventes en attente sur ce poste : reprenez-en ou supprimez-en une.");
+        // Contrôle rapide ; la borne est garantie par le serveur de données, sous verrou du poste (EnregistrerAsync)
+        if ((await attente.ListerAsync(p, ct)).Count >= MaxParPoste) throw new RegleMetierException(MessageTropDAttente);
         var nom = string.IsNullOrWhiteSpace(libelle) ? "Vente en attente" : libelle.Trim();
-        return await attente.EnregistrerAsync(p, utilisateurId, nom.Length > 80 ? nom[..80] : nom, lignes, total, contenu, motif, ct);
+        return await attente.EnregistrerAsync(p, utilisateurId, nom.Length > 80 ? nom[..80] : nom, lignes, total, contenu, motif, ct, MaxParPoste);
     }
 
     private async Task<MotifAttente?> MotifAsync(string? code, string? texte, IReadOnlyList<ProduitDu>? dus, CancellationToken ct)

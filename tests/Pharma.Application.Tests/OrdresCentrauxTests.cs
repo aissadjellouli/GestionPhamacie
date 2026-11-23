@@ -9,6 +9,20 @@ namespace Pharma.Application.Tests;
 /// <summary>Lots S5.1 et S5.5 : ordres du serveur central (application, confirmation, refus, expiration, résumé).</summary>
 public class OrdresCentrauxTests
 {
+    [Fact]
+    public async Task Verrou_des_ordres_attente_bornee_du_titulaire_message_reessayez()
+    {
+        // Revue du 2026-11-23 : confirmation et refus attendaient le verrou sans limite (écran bloqué tant qu'un ordre s'applique)
+        var verrou = new VerrouOrdresCentraux();
+        using (await verrou.PrendreAsync())
+        {
+            var e = await Assert.ThrowsAsync<RegleMetierException>(() => verrou.PrendreAsync(TimeSpan.FromMilliseconds(50)));
+            Assert.Contains("réessayez", e.Message);
+        }
+        using var _ = await verrou.PrendreAsync(TimeSpan.FromMilliseconds(50));   // libre : obtenu
+        Assert.True(VerrouOrdresCentraux.DelaiTitulaire > TimeSpan.Zero);
+    }
+
     private static readonly DateTime Maintenant = new(2026, 11, 18, 10, 0, 0, DateTimeKind.Utc);
 
     private sealed class Horloge(DateTime utc) : IHorloge
@@ -866,9 +880,11 @@ public class OrdresCentrauxTests
     {
         var m = Monter();
         var long201 = Ordre(TypesOrdre.Message, donnees: Message(new string('é', 201), Maintenant.AddDays(1)));
-        var echu = Ordre(TypesOrdre.Message, donnees: Message("Déjà passé", Maintenant.AddMinutes(-10)));
+        // Créé il y a 3 jours : sa durée (1 à 7 jours) est valable, mais la fin est déjà passée à la réception
+        var echu = Ordre(TypesOrdre.Message, donnees: Message("Déjà passé", Maintenant.AddMinutes(-10))) with { CreeLeUtc = Maintenant.AddDays(-3) };
+        var tropCourt = Ordre(TypesOrdre.Message, donnees: Message("Trop court", Maintenant.AddHours(2)));   // créé il y a 1 h : moins d'un jour
         var juste200 = Ordre(TypesOrdre.Message, donnees: Message(new string('é', 200), Maintenant.AddDays(1)));
-        m.Depot.Ordres.AddRange([long201, echu, juste200]);
+        m.Depot.Ordres.AddRange([long201, echu, juste200, tropCourt]);
         await m.Auto.ExecuterAsync();
         Assert.Equal(StatutsOrdre.Refuse, m.Depot.Statut(long201.Id));
         Assert.Equal(StatutsOrdre.Refuse, m.Depot.Statut(echu.Id));

@@ -1,9 +1,9 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 160 appliqués dans l'ordre (vérifié :
--- même structure). Pour une base déjà installée, appliquer seulement les
--- nouveaux scripts 0xx_*.sql, jamais ce fichier.
+-- Équivaut aux scripts database/migration/001 à 162 appliqués dans l'ordre (vérifié :
+-- même structure). Pour une base déjà installée, rejouer TOUTE la suite
+-- database/migration depuis le script 001 (mettre_a_jour_base_officine.ps1), jamais ce fichier ni un script isolé.
 --
 -- Base vide uniquement (créée vide, ou après clean.sql). S'arrête sans rien
 -- faire si la base contient déjà le schéma.
@@ -12,12 +12,12 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 160 ; à régénérer à chaque nouveau script 0xx.
+-- par les scripts 001 à 162 ; à régénérer à chaque nouveau script.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
 \if :schema_deja_present
-    \echo 'La base contient déjà le schéma : rien n''est fait. Base existante : appliquer seulement les nouveaux scripts 0xx_*.sql.'
+    \echo 'La base contient déjà le schéma : rien n''est fait. Base existante : rejouer toute la suite database/migration depuis 001.'
     \quit
 \endif
 --
@@ -9102,7 +9102,7 @@ CREATE TABLE public.parametre_caisse (
     comptage_aveugle boolean DEFAULT true NOT NULL,
     fond_caisse_defaut numeric(12,2) DEFAULT 5000 NOT NULL,
     seuil_ecart numeric(12,2) DEFAULT 500 NOT NULL,
-    deconnexion_minutes integer DEFAULT 0 NOT NULL,
+    deconnexion_minutes integer DEFAULT 15 NOT NULL,
     versement_cloture text DEFAULT 'manuel'::text NOT NULL,
     delai_alerte_dette_jours integer DEFAULT 30 NOT NULL,
     plafond_credit_defaut numeric(12,2) DEFAULT 0 NOT NULL,
@@ -19901,6 +19901,62 @@ ALTER TABLE ONLY public.zone_psychotrope_wilaya
 
 ALTER TABLE ONLY public.zone_psychotrope_wilaya
     ADD CONSTRAINT zone_psychotrope_wilaya_wilaya_fkey FOREIGN KEY (wilaya) REFERENCES public.wilaya(code);
+
+
+--
+-- Name: ix_ligne_commande_commande; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ligne_commande_commande ON public.ligne_commande USING btree (commande_id);
+
+
+--
+-- Name: ix_produit_dci; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_produit_dci ON public.produit USING btree (dci_id);
+
+
+--
+-- Name: ix_facture_client_patient; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_facture_client_patient ON public.facture_client USING btree (patient_id);
+
+
+--
+-- Name: ix_commande_fournisseur_fournisseur; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_commande_fournisseur_fournisseur ON public.commande_fournisseur USING btree (fournisseur_id);
+
+
+--
+-- Name: ix_journal_vente_session_caisse; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_journal_vente_session_caisse ON public.journal_vente USING btree (session_caisse_id);
+
+
+--
+-- Name: ix_evenement_caisse_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_evenement_caisse_session ON public.evenement_caisse USING btree (session_caisse_id);
+
+
+--
+-- Name: ix_ligne_retour_fournisseur_retour; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ligne_retour_fournisseur_retour ON public.ligne_retour_fournisseur USING btree (retour_id);
+
+
+--
+-- Name: ix_sync_ordre_recu_message_ferme_par; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_sync_ordre_recu_message_ferme_par ON public.sync_ordre_recu USING btree (message_ferme_par) WHERE (message_ferme_par IS NOT NULL);
 
 
 --

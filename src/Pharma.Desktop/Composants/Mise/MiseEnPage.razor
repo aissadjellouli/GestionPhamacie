@@ -310,21 +310,39 @@
     private async void SurNavigation(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
         // Changer d'écran efface l'erreur affichée par le précédent et ferme les menus déroulants
-        garde?.Recover();
-        menuOuvert = null;
-        var refuse = !VerifierAcces();
-        if (!refuse) { if (Chemin == redirectionAcces) redirectionAcces = null; else messageAcces = null; }
-        await CompterUrgentesAsync();
-        await InvokeAsync(StateHasChanged);
+        // Gestionnaire d'événement « async void » : une exception non rattrapée ferait planter l'application ; elle est journalisée
+        // (journal local du poste) et l'écran reste affiché
+        try
+        {
+            garde?.Recover();
+            menuOuvert = null;
+            var refuse = !VerifierAcces();
+            if (!refuse) { if (Chemin == redirectionAcces) redirectionAcces = null; else messageAcces = null; }
+            await CompterUrgentesAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Pharma.Desktop.App.NoterErreur(ex);
+        }
     }
 
     private async void SurSession()
     {
-        if (!Session.EstConnecte) bandeauMasque = false;   // le prochain employé connecté voit les tâches laissées
-        // Documents de l'ancien dossier du poste (ou restés au poste, serveur injoignable) : envoyés à la GED du serveur
-        if (Session.EstConnecte && !Session.DoitChangerMotDePasse && !Session.SuperAdmin) _ = Documents.MigrerAsync(Api);
-        await CompterUrgentesAsync();
-        await InvokeAsync(async () => { await AppliquerAffichageAsync(); StateHasChanged(); });
+        // Gestionnaire d'événement « async void » : une exception non rattrapée ferait planter l'application ; elle est journalisée
+        // (journal local du poste) et l'écran reste affiché
+        try
+        {
+            if (!Session.EstConnecte) bandeauMasque = false;   // le prochain employé connecté voit les tâches laissées
+            // Documents de l'ancien dossier du poste (ou restés au poste, serveur injoignable) : envoyés à la GED du serveur
+            if (Session.EstConnecte && !Session.DoitChangerMotDePasse && !Session.SuperAdmin) _ = Documents.MigrerAsync(Api);
+            await CompterUrgentesAsync();
+            await InvokeAsync(async () => { await AppliquerAffichageAsync(); StateHasChanged(); });
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            Pharma.Desktop.App.NoterErreur(ex);
+        }
     }
 
     // ---- Affichage clair, sombre ou automatique (choix de l'employé) ----

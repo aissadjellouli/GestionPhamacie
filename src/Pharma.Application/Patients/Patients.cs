@@ -252,6 +252,8 @@ public interface IMedecins
     /// <summary>Médecins sans wilaya (à renseigner), filtrés par nom si <paramref name="texte"/> est donné (script 118).</summary>
     Task<IReadOnlyList<Medecin>> SansWilayaAsync(string? texte, int limite, CancellationToken ct = default) =>
         Task.FromResult<IReadOnlyList<Medecin>>([]);
+    /// <summary>Fiche d'un médecin par son identifiant ; null si elle n'existe pas.</summary>
+    Task<Medecin?> LireAsync(long id, CancellationToken ct = default) => Task.FromResult<Medecin?>(null);
     /// <summary>Crée le médecin (son Id est ignoré) et renvoie son identifiant.</summary>
     Task<long> CreerAsync(Medecin medecin, CancellationToken ct = default);
     /// <summary>Remplace le nom, la spécialité et les coordonnées ; faux si le médecin n'existe pas.</summary>
@@ -358,6 +360,9 @@ public sealed class RechercherMedecins(IMedecins medecins)
         var t = texte?.Trim() ?? "";
         return t.Length < 2 ? Task.FromResult<IReadOnlyList<Medecin>>([]) : medecins.RechercherAsync(t, 20, ct);
     }
+
+    /// <summary>Fiche d'un médecin par son identifiant ; null si elle n'existe pas.</summary>
+    public Task<Medecin?> LireAsync(long id, CancellationToken ct = default) => medecins.LireAsync(id, ct);
 
     /// <summary>Filtre « sans wilaya » de l'écran des médecins : 50 au plus, par nom.</summary>
     public const int LimiteSansWilaya = 50;

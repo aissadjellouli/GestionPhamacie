@@ -101,7 +101,14 @@ public static class RegleRetour
             : Math.Round(Montant(montantPatientLigne, quantiteVendue, quantiteRendue) * Math.Min(partPatient / brutPatient, 1m), 2, MidpointRounding.AwayFromZero);
 
     /// <summary>
-    /// Total à rendre pour ce retour : au plus ce qui reste de la part payée. Si tout est désormais rendu, le solde exact
+    /// Part payée par le patient pour les seules lignes produit : la part patient de la vente moins celle de ses prestations. Une
+    /// prestation ne se rend jamais (D-12) : elle ne compte ni dans le solde exact du dernier retour ni dans la dette réduite.
+    /// </summary>
+    public static decimal PartPatientProduits(decimal partPatient, decimal partPatientPrestations) =>
+        Math.Max(partPatient - Math.Max(partPatientPrestations, 0), 0);
+
+    /// <summary>
+    /// Total à rendre pour ce retour : au plus ce qui reste de la part payée des lignes produit (voir PartPatientProduits). Si tout est désormais rendu, le solde exact
     /// (les arrondis des retours successifs ne font ni perdre ni gagner un centime).
     /// </summary>
     public static decimal TotalARendre(decimal calcule, decimal partPatient, decimal dejaRendu, bool toutRendu)

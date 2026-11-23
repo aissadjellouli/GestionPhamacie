@@ -86,7 +86,7 @@ public class SauvegardeDisqueTests
     {
         var depot = new SauvegardesEnMemoire();
         var journal = new JournalEspion();
-        var modifier = new ModifierReglagesSauvegarde(depot, journal);
+        var modifier = new ModifierReglagesSauvegarde(depot, journal, new DroitsFactices { Titulaire = true });
         await Assert.ThrowsAsync<RegleMetierException>(() =>
             modifier.ExecuterAsync(true, @"E:\Sauvegardes", new TimeOnly(22, 0), 2, 1, default, null, null, 0));
         await Assert.ThrowsAsync<RegleMetierException>(() =>

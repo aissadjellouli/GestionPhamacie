@@ -26,7 +26,9 @@ public sealed record OrganismeRetour(decimal PartRetenue, decimal DejaRetiree, s
     public static readonly OrganismeRetour Aucun = new(0, 0, "logiciel");
 }
 
-public sealed record VenteRetournable(VenteAnnulable Vente, IReadOnlyList<LigneRetournable> Lignes, OrganismeRetour? Organisme = null);
+/// <summary>PartPatientPrestations : part payée par le patient pour les prestations de la vente (une prestation ne se rend pas, D-12).</summary>
+public sealed record VenteRetournable(VenteAnnulable Vente, IReadOnlyList<LigneRetournable> Lignes, OrganismeRetour? Organisme = null,
+    decimal PartPatientPrestations = 0);
 
 /// <summary>Produit rendu : quantité, destination choisie, boîtes identifiées rendues (si la ligne en a).</summary>
 public sealed record LigneRetourDemandee(long LigneVenteId, int Quantite, string? Destination, IReadOnlyList<long>? Boites);
@@ -51,7 +53,8 @@ public sealed record LigneRetourAEcrire(long LigneVenteId, long LotId, int Quant
 public sealed record RetourAEcrire(long VenteId, string Numero, string Motif, long UtilisateurId, long ValidePar, string? Mode, decimal Montant,
     long? SessionCaisseId, string Poste, IReadOnlyList<LigneRetourAEcrire> Lignes, decimal ReductionDette = 0, long? PatientDetteId = null,
     bool AccordClient = false, string? MotifCode = null, string? MotifTexte = null, decimal AvoirRecredite = 0, long? PatientAvoirId = null,
-    decimal ReductionRegularisation = 0, decimal ImputationDettes = 0, decimal DetteAvoirRetenu = 0)
+    decimal ReductionRegularisation = 0, decimal ImputationDettes = 0, decimal DetteAvoirRetenu = 0, LectureDette? Lecture = null,
+    IReadOnlyList<JournalAEcrire>? Journaux = null)
 {
     /// <summary>Argent rendu par le tiroir (ou la carte, le chèque) : le reste, une fois l'avoir et les dettes servis.</summary>
     public decimal Rendu => Montant - ReductionDette - ReductionRegularisation - ImputationDettes - AvoirRecredite;
@@ -94,7 +97,7 @@ public sealed class LireVenteRetournable(IRetoursClient retours)
 /// Taux 100 % : rien n'est rendu au patient (stock et créance seulement), motif et validation du droit « caisse.retour_especes » exigés.
 /// </summary>
 public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCaisse sessions, IPermissionService droits,
-    VerificationCodeComptoir codes, IJournal journal, Patients.IPatients? patients = null, Securite.AutorisationCourante? autorisation = null,
+    VerificationCodeComptoir codes, Patients.IPatients? patients = null, Securite.AutorisationCourante? autorisation = null,
     Referentiels.MotifsActifs? motifs = null)
 {
     public async Task<ResultatRetour> ExecuterAsync(long venteId, string? motif, IReadOnlyList<LigneRetourDemandee> demandees, long utilisateurId,
@@ -193,7 +196,9 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
         var avoirRetenu = lignes.Sum(l => l.MontantAvoirRetenu);
         // Total au plus ce qui reste de la part payée ; dernier retour : le solde exact (arrondis)
         var toutRendu = vr.Lignes.All(l => l.DejaRendue + (lignes.FirstOrDefault(x => x.LigneVenteId == l.LigneVenteId)?.Quantite ?? 0) >= l.QuantiteVendue);
-        var total = RegleRetour.TotalARendre(lignes.Sum(l => l.Montant), v.PartPatient, v.DejaRendu, toutRendu);
+        // Le solde exact porte sur la part payée des seules lignes produit : une prestation ne se rend jamais (D-12)
+        var partPatientProduits = RegleRetour.PartPatientProduits(v.PartPatient, vr.PartPatientPrestations);
+        var total = RegleRetour.TotalARendre(lignes.Sum(l => l.Montant), partPatientProduits, v.DejaRendu, toutRendu);
         if (total != lignes.Sum(l => l.Montant) && lignes.Count > 0)
         {
             // Écart d'arrondi porté sur la dernière ligne, pour que le détail corresponde au total rendu
@@ -220,7 +225,7 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
         }
         // Vente à crédit : la dette baisse au plus de ce qui reste impayé sur la vente ; seul ce qui a vraiment été payé est rendu
         var (reductionDette, renduPartPatient) = v.Mode == "credit"
-            ? RegleAnnulation.RemboursementCredit(resteAutreMode, Math.Max(v.PartPatient - v.PayeParAvoir - (v.DejaRendu - v.AvoirRecrediteParRetours), 0), v.PayeSurVente, dette)
+            ? RegleAnnulation.RemboursementCredit(resteAutreMode, Math.Max(partPatientProduits - v.PayeParAvoir - (v.DejaRendu - v.AvoirRecrediteParRetours), 0), v.PayeSurVente, dette)
             : patientDette is not null ? (Math.Min(Math.Max(dette, 0), resteAutreMode), resteAutreMode - Math.Min(Math.Max(dette, 0), resteAutreMode)) : (0m, resteAutreMode);
         var deduitAuChoix = patientDette is not null && reductionDette > 0;
 
@@ -268,40 +273,52 @@ public sealed class EnregistrerRetourClient(IRetoursClient retours, ISessionsCai
             throw new RegleMetierException("Ouvrez la caisse du poste : l’argent rendu au patient doit en sortir.");
 
         var detteDiminuee = rem.DetteVenteDiminuee + rem.RegularisationDiminuee + rem.ImputeSurDettes;
-        await retours.EnregistrerAsync(new RetourAEcrire(v.Id, v.Numero, texte, utilisateurId, validePar, v.Mode, montant, session?.Id, nomPoste, lignes,
-            rem.DetteVenteDiminuee, rem.DetteVenteDiminuee > 0 ? patientDette : null, deduitAuChoix || rem.ImputeSurDettes > 0, code, precision, avoirRecredite,
-            avoirRecredite > 0 ? v.PatientId : null, rem.RegularisationDiminuee, rem.ImputeSurDettes, retenue.Dette), ct);
-        await journal.EcrireAsync(utilisateurId, "retour_client", "vente", v.Id,
-            new Dictionary<string, object?>
-            {
-                ["ticket"] = v.Numero, ["motif"] = texte, ["motif_code"] = code, ["montant"] = montant, ["mode"] = v.Mode,
-                ["dette_diminuee"] = detteDiminuee, ["rendu"] = aRendre, ["dette_soldee_au_choix"] = deduitAuChoix || rem.ImputeSurDettes > 0,
-                ["patient_dette"] = rem.DetteVenteDiminuee > 0 ? patientDette : null, ["accord_client"] = deduitAuChoix || rem.ImputeSurDettes > 0 ? true : null,
-                ["avoir_recredite"] = avoirRecredite > 0 ? avoirRecredite : null,
-                ["part_organisme_retiree"] = partOrganismeRetiree > 0 ? partOrganismeRetiree : null,
-                ["canal_organisme"] = partOrganismeRetiree > 0 ? organisme.Canal : null,
-                // Script 158 : part de la régularisation à la charge du patient rendue, sa part impayée retirée de la dette, choix du vendeur
-                ["part_regularisation"] = partRegularisation > 0 ? partRegularisation : null,
-                ["regularisation_dette_diminuee"] = rem.RegularisationDiminuee > 0 ? rem.RegularisationDiminuee : null,
-                ["choix_dettes"] = rem.ChoixExige ? choix : null,
-                ["dette_patient"] = rem.ChoixExige ? rem.DetteRestante : null,
-                ["impute_sur_dettes"] = rem.ImputeSurDettes > 0 ? rem.ImputeSurDettes : null,
-                // Script 159 : part de la régularisation « rendu au patient » retenue, dont la part ajoutée à sa dette
-                ["avoir_retenu"] = avoirRetenu > 0 ? avoirRetenu : null,
-                ["avoir_retenu_sur_remboursement"] = avoirRetenu > 0 ? retenue.SurArgent + retenue.SurAvoir : null,
-                ["dette_avoir_retenu"] = retenue.Dette > 0 ? retenue.Dette : null,
-                ["remis_en_stock"] = lignes.Where(l => l.Destination == DestinationRetour.Stock).Sum(l => l.Quantite),
-                ["a_detruire"] = lignes.Where(l => l.Destination == DestinationRetour.Destruction).Sum(l => l.Quantite),
-                ["valide_par"] = validePar
-            }, Permissions.CaisseRetourEspeces, ct);
+        // Journaux obligatoires : écrits dans la transaction du retour (jamais après, avec un jeton annulable)
+        var autorisePar = autorisation?.AutoriseParId;
+        var journaux = new List<JournalAEcrire>
+        {
+            JournalAEcrire.Fixe(utilisateurId, "retour_client", "vente", v.Id,
+                new Dictionary<string, object?>
+                {
+                    ["ticket"] = v.Numero, ["motif"] = texte, ["motif_code"] = code, ["montant"] = montant, ["mode"] = v.Mode,
+                    ["dette_diminuee"] = detteDiminuee, ["rendu"] = aRendre, ["dette_soldee_au_choix"] = deduitAuChoix || rem.ImputeSurDettes > 0,
+                    ["patient_dette"] = rem.DetteVenteDiminuee > 0 ? patientDette : null, ["accord_client"] = deduitAuChoix || rem.ImputeSurDettes > 0 ? true : null,
+                    ["avoir_recredite"] = avoirRecredite > 0 ? avoirRecredite : null,
+                    ["part_organisme_retiree"] = partOrganismeRetiree > 0 ? partOrganismeRetiree : null,
+                    ["canal_organisme"] = partOrganismeRetiree > 0 ? organisme.Canal : null,
+                    // Script 158 : part de la régularisation à la charge du patient rendue, sa part impayée retirée de la dette, choix du vendeur
+                    ["part_regularisation"] = partRegularisation > 0 ? partRegularisation : null,
+                    ["regularisation_dette_diminuee"] = rem.RegularisationDiminuee > 0 ? rem.RegularisationDiminuee : null,
+                    ["choix_dettes"] = rem.ChoixExige ? choix : null,
+                    ["dette_patient"] = rem.ChoixExige ? rem.DetteRestante : null,
+                    ["impute_sur_dettes"] = rem.ImputeSurDettes > 0 ? rem.ImputeSurDettes : null,
+                    // Script 159 : part de la régularisation « rendu au patient » retenue, dont la part ajoutée à sa dette
+                    ["avoir_retenu"] = avoirRetenu > 0 ? avoirRetenu : null,
+                    ["avoir_retenu_sur_remboursement"] = avoirRetenu > 0 ? retenue.SurArgent + retenue.SurAvoir : null,
+                    ["dette_avoir_retenu"] = retenue.Dette > 0 ? retenue.Dette : null,
+                    ["remis_en_stock"] = lignes.Where(l => l.Destination == DestinationRetour.Stock).Sum(l => l.Quantite),
+                    ["a_detruire"] = lignes.Where(l => l.Destination == DestinationRetour.Destruction).Sum(l => l.Quantite),
+                    ["valide_par"] = validePar
+                }, Permissions.CaisseRetourEspeces, autorisePar)
+        };
         // Imputation sur les dettes : inscrite au journal comme un encaissement de dette (sans argent, origine : le retour)
         if (rem.ImputeSurDettes > 0)
-            await journal.EcrireAsync(utilisateurId, "reglement_credit", "patient", v.PatientId,
+            journaux.Add(JournalAEcrire.Fixe(utilisateurId, "reglement_credit", "patient", v.PatientId,
                 new Dictionary<string, object?>
                 {
                     ["montant"] = rem.ImputeSurDettes, ["mode"] = "retour_client", ["reste_du"] = rem.DetteRestante - rem.ImputeSurDettes,
                     ["origine"] = "retour_client", ["ticket"] = v.Numero
-                }, null, ct);
+                }, null, autorisePar));
+
+        // Dette et part payée relues sous verrou du patient à l'écriture : refus si elles ont changé depuis l'affichage. Seule la dette
+        // réellement utilisée par le retour est surveillée
+        var patientLu = patientDette ?? v.PatientId;
+        var detteUtilisee = v.Mode == "credit" || patientDette is not null || rem.ChoixExige || detteDiminuee > 0 || retenue.Dette > 0;
+        var lecture = patientLu is { } pl && detteUtilisee ? new LectureDette(pl, dette, v.Mode == "credit" ? v.PayeSurVente : null) : null;
+
+        await retours.EnregistrerAsync(new RetourAEcrire(v.Id, v.Numero, texte, utilisateurId, validePar, v.Mode, montant, session?.Id, nomPoste, lignes,
+            rem.DetteVenteDiminuee, rem.DetteVenteDiminuee > 0 ? patientDette : null, deduitAuChoix || rem.ImputeSurDettes > 0, code, precision, avoirRecredite,
+            avoirRecredite > 0 ? v.PatientId : null, rem.RegularisationDiminuee, rem.ImputeSurDettes, retenue.Dette, lecture, journaux), ct);
         return new ResultatRetour(v.Numero, aRendre, aRendre > 0 ? modeRendu : v.Mode,
             lignes.Where(l => l.Destination == DestinationRetour.Stock).Sum(l => l.Quantite),
             lignes.Where(l => l.Destination == DestinationRetour.Destruction).Sum(l => l.Quantite), nomValidateur, detteDiminuee, avoirRecredite,

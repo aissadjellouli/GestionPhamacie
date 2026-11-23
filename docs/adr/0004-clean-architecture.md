@@ -14,3 +14,5 @@
 - `Pharma.Architecture.Tests` fait échouer le build de tests si une dépendance va dans le mauvais sens.
 
 **Conséquences** : un peu plus de code de conversion ; chaque nouvelle fonctionnalité suit le même chemin (cas d’usage → port → adaptateur → point d’accès). Quand une règle existe en C# et en SQL, les tests d’intégration sur `pharmacie_test` (à venir) devront vérifier que les deux sont d’accord.
+
+**Complément du 2026-11-23 (décision du titulaire)** : EF Core est retiré. Toutes les lectures et écritures passent en SQL direct par Npgsql (requêtes paramétrées, verrous explicites dans `Pharma.Infrastructure`). Le modèle EF (`PharmaDbContext`) n'était plus utilisé par aucune requête et ne correspondait plus aux tables ; il est supprimé avec son test, et le paquet `Npgsql.EntityFrameworkCore.PostgreSQL` est remplacé par `Npgsql`. Les points de cette décision qui parlent d'EF Core sont remplacés par ce complément.

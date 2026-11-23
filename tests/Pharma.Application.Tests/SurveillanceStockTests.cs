@@ -24,7 +24,7 @@ public class SurveillanceStockTests
     public async Task Echantillon_nominatif_jamais_pour_un_psychotrope_et_surveille()
     {
         var (sorties, surveillance) = (new SortiesEnMemoire(), new SurveillanceEnMemoire());
-        var cas = new DeclarerSortieStock(sorties, new DroitsFactices("stock.donner"), new JournalEspion(), new Surveiller(surveillance));
+        var cas = new DeclarerSortieStock(sorties, new DroitsFactices("stock.donner"), new Surveiller(surveillance));
 
         var ex = await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(9, 1, "echantillon", null, 3));
         Assert.Equal("commentaire_sortie", ex.Champ);
@@ -41,11 +41,11 @@ public class SurveillanceStockTests
     public async Task Don_reserve_au_droit_special_et_peremption_a_son_droit()
     {
         var sorties = new SortiesEnMemoire();
-        var declarant = new DeclarerSortieStock(sorties, new DroitsFactices("stock.declarer_perime"), new JournalEspion());
+        var declarant = new DeclarerSortieStock(sorties, new DroitsFactices("stock.declarer_perime"));
         var ex = await Assert.ThrowsAsync<DroitRefuseException>(() => declarant.ExecuterAsync(9, 1, "echantillon", "Personne dans le besoin", 3));
         Assert.Equal("stock.donner", ex.Permission);
 
-        var donneur = new DeclarerSortieStock(sorties, new DroitsFactices("stock.donner"), new JournalEspion());
+        var donneur = new DeclarerSortieStock(sorties, new DroitsFactices("stock.donner"));
         await Assert.ThrowsAsync<DroitRefuseException>(() => donneur.ExecuterAsync(9, 1, "perime", null, 3));
         await donneur.ExecuterAsync(9, 1, "echantillon", "Personne dans le besoin", 3);
         Assert.Equal("echantillon", sorties.Ecrite!.Motif);
@@ -55,7 +55,7 @@ public class SurveillanceStockTests
     public async Task Peremption_declaree_sans_calcul_de_surveillance()
     {
         var (sorties, surveillance) = (new SortiesEnMemoire(), new SurveillanceEnMemoire());
-        await new DeclarerSortieStock(sorties, new DroitsFactices("stock.declarer_perime"), new JournalEspion(), new Surveiller(surveillance))
+        await new DeclarerSortieStock(sorties, new DroitsFactices("stock.declarer_perime"), new Surveiller(surveillance))
             .ExecuterAsync(9, 1, "perime", null, 3);
         Assert.Empty(surveillance.Calculs);
     }

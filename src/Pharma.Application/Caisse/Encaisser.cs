@@ -117,7 +117,8 @@ public sealed record VenteAEnregistrer(
     IReadOnlySet<long> ProduitsSousRegistre, bool CreditAccorde, IReadOnlyDictionary<long, IReadOnlyList<long>>? BoitesParLot = null,
     Pharma.Domain.Ventes.QrChifa? VoletChifa = null, Guid? CleEncaissement = null, bool PeutDepasserPlafond = false,
     string CanalOrganisme = Caisse.CanalOrganisme.Logiciel, string? FactureChifa = null,
-    PersonneVente? RemisA = null, PersonneVente? Pour = null, string? MotifSansVoletCode = null, string? MotifSansVoletTexte = null);
+    PersonneVente? RemisA = null, PersonneVente? Pour = null, string? MotifSansVoletCode = null, string? MotifSansVoletTexte = null,
+    IReadOnlyList<JournalAEcrire>? Journaux = null);
 
 /// <summary>
 /// Plafond de crédit revérifié dans la transaction d'encaissement (patient verrouillé, solde relu) : deux ventes à crédit simultanées
@@ -492,6 +493,36 @@ public sealed class Encaisser(
             throw new RegleMetierException("L’avoir ne se combine pas avec le crédit : utilisez-le avec espèces, carte ou chèque.", "avoir");
 
         vente.Valider();
+
+        // Journal obligatoire de la vente : écrit dans la transaction de l'enregistrement (jamais après, avec un jeton annulable)
+        var journaux = new List<JournalAEcrire>();
+        var autorisePar = autorisation?.AutoriseParId;
+        if (validePar is { } vp && journal is not null)
+            journaux.Add(new JournalAEcrire(utilisateurId, "vente_produit_bloque", "vente", null,
+                c => new Dictionary<string, object?> { ["ticket"] = c.Numero, ["produits"] = bloques, ["valide_par"] = vp.Id, ["validateur"] = vp.NomComplet },
+                Permissions.ProduitsBloquer, autorisePar));
+        if (sansOrdonnance.Count > 0 && journal is not null)
+            journaux.Add(new JournalAEcrire(utilisateurId, "vente_sans_ordonnance", "vente", null,
+                c => new Dictionary<string, object?> { ["ticket"] = c.Numero, ["produits"] = sansOrdonnance }, Permissions.CaisseVendreSansOrdonnance, autorisePar));
+        // Écarts de prix du volet Chifa : produit, prix Chifa, notre prix, prix appliqué, choix, vendeur et valideur éventuel (code comptoir)
+        if (ecartsChifa.Count > 0 && journal is not null)
+            journaux.Add(new JournalAEcrire(utilisateurId, "ecart_prix_chifa", "vente", null,
+                c => new Dictionary<string, object?>
+                {
+                    ["ticket"] = c.Numero, ["volet"] = volet?.NumeroFacture,
+                    ["lignes"] = ecartsChifa.Select(e => new { produit = e.Produit, prix_chifa = e.PrixChifa, notre_prix = e.NotrePrix, prix_applique = e.PrixApplique, choix = e.Choix }).ToList(),
+                    ["ecart_patient"] = vente.EcartChifaPatient,
+                    ["vendeur"] = utilisateurId,
+                    ["valide_par"] = autorisation?.AutoriseParId,
+                    ["valideur"] = autorisation?.AutoriseParNom
+                },
+                ecartsChifa.Any(e => e.Choix is EcartPrixChifa.Aligne or EcartPrixChifa.Garde) ? Permissions.PrixModifier : Permissions.CaisseVendre, autorisePar));
+        // Reste à charge saisi à la main sur une vente avec volet (décision du titulaire, 2026-11-15) : permis, mais journalisé
+        // (n° du volet, part de l'organisme calculée sur le prix Chifa, valeur saisie, écart, vendeur et valideur éventuel)
+        if (volet is not null && vente.ResteSaisi is { } resteSaisi && journal is not null)
+            journaux.Add(new JournalAEcrire(utilisateurId, ResteChargeManuelVolet, "vente", null,
+                c => DetailResteManuelVolet(c.Numero, volet.NumeroFacture, vente, resteSaisi, autorisation?.AutoriseParNom), Permissions.CaisseVendre, autorisePar));
+
         var sousRegistre = produits.Values.Where(p => p.EstSousRegistre).Select(p => p.Id).ToHashSet();
         long id;
         string numero;
@@ -499,7 +530,7 @@ public sealed class Encaisser(
         {
             (id, numero) = await ventes.EnregistrerAsync(
                 new VenteAEnregistrer(vente, reglement, commande.Ordonnance, sousRegistre, credit, BoitesParLot(commande), volet,
-                    commande.CleEncaissement, peutDepasser, canal, factureChifa, remisA, pour, motifSansVolet?.Code, motifSansVolet?.Texte), ct);
+                    commande.CleEncaissement, peutDepasser, canal, factureChifa, remisA, pour, motifSansVolet?.Code, motifSansVolet?.Texte, journaux), ct);
         }
         catch (EncaissementDejaEnregistreException e)
         {
@@ -507,36 +538,6 @@ public sealed class Encaisser(
             return await DejaEncaisseeAsync(e.Cle, commande, ct)
                    ?? throw new RegleMetierException("Ce panier vient d’être encaissé par un autre envoi : vérifiez les dernières ventes avant de réessayer.");
         }
-
-        if (validePar is { } vp && journal is not null)
-            await journal.EcrireAsync(utilisateurId, "vente_produit_bloque", "vente", id,
-                new Dictionary<string, object?> { ["ticket"] = numero, ["produits"] = bloques, ["valide_par"] = vp.Id, ["validateur"] = vp.NomComplet },
-                Permissions.ProduitsBloquer, ct);
-
-        if (sansOrdonnance.Count > 0 && journal is not null)
-            await journal.EcrireAsync(utilisateurId, "vente_sans_ordonnance", "vente", id,
-                new Dictionary<string, object?> { ["ticket"] = numero, ["produits"] = sansOrdonnance },
-                Permissions.CaisseVendreSansOrdonnance, ct);
-
-        // Écarts de prix du volet Chifa : produit, prix Chifa, notre prix, prix appliqué, choix, vendeur et valideur éventuel (code comptoir)
-        if (ecartsChifa.Count > 0 && journal is not null)
-            await journal.EcrireAsync(utilisateurId, "ecart_prix_chifa", "vente", id,
-                new Dictionary<string, object?>
-                {
-                    ["ticket"] = numero, ["volet"] = volet?.NumeroFacture,
-                    ["lignes"] = ecartsChifa.Select(e => new { produit = e.Produit, prix_chifa = e.PrixChifa, notre_prix = e.NotrePrix, prix_applique = e.PrixApplique, choix = e.Choix }).ToList(),
-                    ["ecart_patient"] = vente.EcartChifaPatient,
-                    ["vendeur"] = utilisateurId,
-                    ["valide_par"] = autorisation?.AutoriseParId,
-                    ["valideur"] = autorisation?.AutoriseParNom
-                },
-                ecartsChifa.Any(e => e.Choix is EcartPrixChifa.Aligne or EcartPrixChifa.Garde) ? Permissions.PrixModifier : Permissions.CaisseVendre, ct);
-
-        // Reste à charge saisi à la main sur une vente avec volet (décision du titulaire, 2026-11-15) : permis, mais journalisé
-        // (n° du volet, part de l'organisme calculée sur le prix Chifa, valeur saisie, écart, vendeur et valideur éventuel)
-        if (volet is not null && vente.ResteSaisi is { } resteSaisi && journal is not null)
-            await journal.EcrireAsync(utilisateurId, ResteChargeManuelVolet, "vente", id,
-                DetailResteManuelVolet(numero, volet.NumeroFacture, vente, resteSaisi, autorisation?.AutoriseParNom), Permissions.CaisseVendre, ct);
 
         // Droits Chifa expirés (script 102, D-4) : avertissement journalisé seulement, la vente n'est jamais bloquée
         await DroitsChifa.JournaliserSiExpiresAsync(patients, journal, commande.PatientId,

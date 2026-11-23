@@ -103,7 +103,7 @@ public class SurveillanceTests
     {
         var depot = new SurveillanceEnMemoire();
         await Assert.ThrowsAsync<DroitRefuseException>(() => new ListerSurveillance(depot, new DroitsFactices("admin.parametres")).ExecuterAsync(false, 5));
-        await Assert.ThrowsAsync<DroitRefuseException>(() => new TraiterSurveillance(depot, new DroitsFactices()).ExecuterAsync(1, null, 5));
+        await Assert.ThrowsAsync<DroitRefuseException>(() => new TraiterSurveillance(depot, new DroitsFactices(), MotDePasseTitulaireFactice.Verification()).ExecuterAsync(1, null, 5));
 
         var regler = new ReglerSurveillance(depot, new DroitsFactices { Titulaire = true }, new JournalEspion());
         await Assert.ThrowsAsync<RegleMetierException>(() => regler.EnregistrerAsync(depot.Parametres with { HeureOuverture = new TimeOnly(8, 0) }, 1));

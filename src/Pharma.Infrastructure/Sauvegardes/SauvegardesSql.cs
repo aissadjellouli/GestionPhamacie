@@ -126,9 +126,11 @@ public sealed class StockagePgDump(string chaineConnexion, string? cheminPgDump)
     {
         var racine = Path.GetPathRoot(dossier);
         if (string.IsNullOrEmpty(racine)) return false;
+        // Jamais le réseau (partage UNC ou lecteur réseau), même si un tel dossier était déjà réglé avant ce contrôle
+        if (Pharma.Application.Sauvegardes.DossierSauvegarde.EstReseau(dossier)) return false;
         try
         {
-            if (!new DriveInfo(racine).IsReady && !racine.StartsWith(@"\\", StringComparison.Ordinal)) return false;
+            if (!new DriveInfo(racine).IsReady) return false;
             Directory.CreateDirectory(dossier);
             return true;
         }

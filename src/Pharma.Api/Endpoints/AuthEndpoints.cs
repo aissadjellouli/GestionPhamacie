@@ -17,23 +17,14 @@ internal static class AuthEndpoints
                 : Results.Json(new ErreurDto("Identifiant ou mot de passe incorrect."), statusCode: 401));
 
         // L'employé connecté change son mot de passe (obligatoire avec un mot de passe provisoire) : nouveau jeton, droits du rôle
-        app.MapPost("/api/auth/mot-de-passe", async (ChangementMotDePasseRequete req, ChangerMonMotDePasse changer, ClaimsPrincipal user, CancellationToken ct) =>
-                Results.Ok((await changer.ExecuterAsync(user.UtilisateurId(), req.Actuel, req.Nouveau, req.Confirmation, ct)).VersDto()))
+        app.MapPost("/api/auth/mot-de-passe", async (ChangementMotDePasseRequete req, ChangerMonMotDePasse changer, ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>
+                Results.Ok((await changer.ExecuterAsync(user.UtilisateurId(), req.Actuel, req.Nouveau, req.Confirmation, ct, requete.Poste())).VersDto()))
            .ExigerConnexion(motDePasseProvisoire: true)
            .GererErreursMetier();
 
         // Changement d'utilisateur au comptoir : seulement sur un poste dont la caisse est ouverte ; jeton limité au comptoir
         app.MapPost("/api/auth/connexion-code", async (ConnexionCodeRequete req, SeConnecterParCode seConnecter, HttpRequest requete, CancellationToken ct) =>
             Results.Ok((await seConnecter.ExecuterAsync(req.Identifiant, req.Code, requete.Poste(), ct)).VersDto()));
-
-        // Écran de connexion : la caisse du poste est-elle ouverte (onglet « Code comptoir ») ? Aucun nom ni identifiant
-        // n'est donné sans connexion : l'employé tape son identifiant.
-        app.MapGet("/api/auth/comptoir", async (ISessionsCaisse sessions, HttpRequest requete, CancellationToken ct) =>
-            {
-                var poste = requete.Poste();
-                var ouverte = !string.IsNullOrWhiteSpace(poste) && await sessions.SessionDuPosteAsync(poste.Trim(), ct) is not null;
-                return Results.Ok(new ComptoirDto(ouverte));
-            });
 
         // Droits de l'employé connecté : le poste s'en sert pour griser ce qui est refusé (le serveur revérifie toujours)
         app.MapGet("/api/auth/permissions", async (ListerMesPermissions lister, ClaimsPrincipal user, CancellationToken ct) =>

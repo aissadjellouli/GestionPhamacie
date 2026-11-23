@@ -89,7 +89,7 @@ public partial class App : Application
     /// Journal local des erreurs imprévues du poste : %LOCALAPPDATA%\PharmaOfficine\erreurs.log.
     /// Message et pile masqués (téléphones, e-mails, n° d'assuré) : aucune donnée personnelle au journal.
     /// </summary>
-    private static void NoterErreur(Exception ex)
+    internal static void NoterErreur(Exception ex)
     {
         try
         {

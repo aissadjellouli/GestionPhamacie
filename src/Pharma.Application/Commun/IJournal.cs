@@ -7,6 +7,13 @@ public interface IJournal
         IReadOnlyDictionary<string, object?> details, string? permissionCode, CancellationToken ct = default);
 }
 
+/// <summary>
+/// Entrée du journal des actions sensibles à écrire dans la transaction de l'opération elle-même (tout ou rien : pas d'action
+/// sensible sans trace, pas de trace sans action).
+/// </summary>
+public sealed record JournalDansTransaction(string Action, string? TableCible, long? EnregistrementId,
+    IReadOnlyDictionary<string, object?> Details, string? PermissionCode);
+
 public sealed record EntreeJournal(
     DateTime Date, string Employe, string Action, string? DetailsJson, string? AutorisePar, string? Permission, long? EmployeId = null, long? AutoriseParId = null);
 
@@ -22,7 +29,7 @@ public static class CategoriesJournal
         [
             "prix_modifie", "produit_modifie", "produit_cree", "patient_cree", "patient_modifie", "coordonnees_modifiees", "utilisateur_cree",
             "utilisateur_modifie", "droits_modifies", "code_comptoir", "pharmacie_modifiee", "parametres_caisse", "seuils_alerte", "seuil_stock",
-            "seuils_inventaire", "tva_sorties", "delai_alerte_dettes", "reglages_surveillance", "reglages_notification", "reglages_sauvegarde",
+            "seuils_inventaire", "tva_sorties", "delai_alerte_dettes", "reglages_surveillance", "reglages_notification", "reglages_sauvegarde", "dossier_sauvegarde_change",
             "destinataire_notification", "produit_bloque", "produit_debloque", "produit_sensible", "produit_non_sensible", "emplacement", "produit_range",
             "taches_laissees_poste"
         ],

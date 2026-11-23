@@ -98,7 +98,8 @@ public interface IGenerateurJeton
 {
     /// <param name="comptoir">Connexion par code comptoir : jeton limité aux droits du comptoir.</param>
     /// <param name="motDePasseAChanger">Mot de passe provisoire : jeton sans aucun droit, sauf changer son mot de passe.</param>
-    (string Jeton, DateTime ExpireLe) Creer(long utilisateurId, string nomComplet, bool comptoir = false, bool motDePasseAChanger = false);
+    /// <param name="poste">Nom du poste où l'employé se connecte : lié au jeton, une requête qui annonce un autre poste est refusée.</param>
+    (string Jeton, DateTime ExpireLe) Creer(long utilisateurId, string nomComplet, bool comptoir = false, bool motDePasseAChanger = false, string? poste = null);
 }
 
 /// <summary>Employés actifs qui détiennent un droit (pour dire au comptoir qui peut prendre le relais).</summary>

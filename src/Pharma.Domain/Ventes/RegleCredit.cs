@@ -9,6 +9,7 @@ public static class RegleReglementCredit
     {
         if (mode is not ("especes" or "carte" or "cheque" or RegleAvoir.Mode)) throw new RegleMetierException("Mode de règlement : espèces, carte, chèque ou avoir.");
         if (montant <= 0) throw new RegleMetierException("Le montant réglé doit être supérieur à 0.", "montant");
+        if (montant != Arrondi.Centime(montant)) throw new RegleMetierException("Le montant réglé ne peut pas avoir plus de 2 décimales (centimes).", "montant");
         if (soldeCredit <= 0) throw new RegleMetierException("Ce patient n’a pas de crédit à rembourser.");
         if (montant > soldeCredit) throw new RegleMetierException($"Le patient ne doit que {soldeCredit:N2} DA.", "montant");
     }

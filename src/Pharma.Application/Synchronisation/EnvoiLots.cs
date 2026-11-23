@@ -25,9 +25,10 @@ public sealed record ChangementDescendantSync(string Table, string Cle, long Ver
 
 /// <summary>
 /// Éléments descendants reçus et version maximale annoncée par le serveur central. Ecartes : éléments reçus mais écartés à la lecture
-/// (mal formés ou trop gros) : jamais appliqués ni redonnés, signalés dans la note du passage.
+/// (mal formés ou trop gros) : jamais appliqués ni redonnés, signalés dans la note du passage. VersionEcarteeMax : plus grande version
+/// parmi eux (0 : aucun), acquittée comme les autres pour qu'ils ne soient pas redonnés.
 /// </summary>
-public sealed record DescendantsRecus(IReadOnlyList<ChangementDescendantSync> Changements, long VersionMax, int Ecartes = 0)
+public sealed record DescendantsRecus(IReadOnlyList<ChangementDescendantSync> Changements, long VersionMax, int Ecartes = 0, long VersionEcarteeMax = 0)
 {
     public static readonly DescendantsRecus Aucun = new([], 0);
 }
@@ -416,14 +417,16 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
     {
         if (d.Ecartes > 0)
             erreurDescendante = $"{d.Ecartes} élément(s) descendant(s) écarté(s) à la réception (mal formés ou trop gros) : non appliqués, voir le journal du serveur.";
-        if (d.Changements.Count == 0) return;
-        descendantsAAppliquer = true;
+        if (d.Changements.Count == 0 && d.VersionEcarteeMax <= 0) return;
+        descendantsAAppliquer = d.Changements.Count > 0;
         try
         {
-            var statuts = await depot.AppliquerDescendantsAsync(d.Changements, d.VersionMax, ct);
+            var statuts = d.Changements.Count > 0 ? await depot.AppliquerDescendantsAsync(d.Changements, d.VersionMax, ct) : [];
             var bloquants = d.Changements.Zip(statuts).Where(x => x.Second is StatutsDescendant.TableInconnue or StatutsDescendant.Refuse)
                 .Select(x => x.First.Version).ToList();
-            var version = bloquants.Count > 0 ? bloquants.Min() - 1 : d.Changements.Max(c => c.Version);
+            // Les éléments écartés comptent comme reçus (ils ne redeviendront jamais valables) ; seul un bloquant retient l'acquittement
+            var recues = Math.Max(d.Changements.Count > 0 ? d.Changements.Max(c => c.Version) : 0, d.VersionEcarteeMax);
+            var version = bloquants.Count > 0 ? bloquants.Min() - 1 : recues;
             if (version > versionDescendante) await depot.NoterVersionDescendanteAsync(version, ct);
             var p = await depot.ParametresAsync(ct);
             (versionDescendante, interdites) = (p.DescendantVersion, p.ColonnesInterdites ?? []);
@@ -433,7 +436,8 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
         }
         catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
         {
-            erreurDescendante = $"Réglages du serveur central non appliqués ({e.GetType().Name}) : envoi poursuivi avec le dernier réglage appliqué.";
+            erreurDescendante = (erreurDescendante is null ? "" : erreurDescendante + " ")
+                + $"Réglages du serveur central non appliqués ({e.GetType().Name}) : envoi poursuivi avec le dernier réglage appliqué.";
         }
     }
 
@@ -445,7 +449,8 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
         try { await reglages.ExecuterAsync(ct); }
         catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
         {
-            erreurDescendante = $"Réglages mutualisés non appliqués ({e.GetType().Name}) : repris au prochain passage.";
+            erreurDescendante = (erreurDescendante is null ? "" : erreurDescendante + " ")
+                + $"Réglages mutualisés non appliqués ({e.GetType().Name}) : repris au prochain passage.";
         }
     }
 

@@ -29,7 +29,7 @@ flowchart TB
         API["Pharma.Api<br/>ASP.NET Core, service Windows"]
         APP["Application<br/>cas d'usage"]
         DOM["Domain<br/>règles métier"]
-        INF["Infrastructure<br/>EF Core + Npgsql"]
+        INF["Infrastructure<br/>Npgsql (SQL direct)"]
         PG[("PostgreSQL")]
     end
     CHIFA["Chifa_Officine<br/>(CNAS)"]
@@ -51,7 +51,7 @@ Clean Architecture : les dépendances pointent vers le domaine, jamais l’inver
 | --- | --- | --- |
 | Pharma.Domain | Entités, statuts typés, règles métier pures (FEFO, péremption, crédit, EAN-13, Data Matrix) | — |
 | Pharma.Application | Cas d’usage par fonctionnalité, ports (interfaces) qu’ils utilisent, modèles de résultat | Domain |
-| Pharma.Infrastructure | Adaptateurs des ports : PostgreSQL (lecture Npgsql, écriture EF Core), sécurité, horloge, impression, Chifa | Application |
+| Pharma.Infrastructure | Adaptateurs des ports : PostgreSQL (lecture et écriture en SQL direct, Npgsql), sécurité, horloge, impression, Chifa | Application |
 | Pharma.Api | Hôte : points d’accès HTTP, conversion vers les DTO, JWT, contrôle des droits, tâche des alertes | Application, Infrastructure, Shared |
 | Pharma.Shared | Contrat HTTP (DTO) entre l’API et les postes | — |
 | Pharma.Desktop | Interface des postes (Blazor dans une fenêtre WPF) | Shared |
@@ -67,7 +67,6 @@ Pharma.Application/
   Chifa/ Reprise/ Commun/   connecteurs et horloge
 Pharma.Infrastructure/
   Lecture/       requêtes SQL qui alimentent les ports de lecture
-  Persistence/   PharmaDbContext (écritures, sans migrations)
   Alertes/ Securite/ Systeme/ Impression/ Chifa/
 Pharma.Api/
   Endpoints/     un fichier par fonctionnalité + ConversionsDto
@@ -82,7 +81,7 @@ Un cas d’usage est une classe injectée avec une méthode `ExecuterAsync`, san
 | --- | --- |
 | `Pharma.Domain.Tests` | Règles métier du domaine |
 | `Pharma.Application.Tests` | Cas d’usage, avec des doublures des ports |
-| `Pharma.Architecture.Tests` | Sens des dépendances entre couches, mapping EF (sans base) |
+| `Pharma.Architecture.Tests` | Sens des dépendances entre couches, scripts SQL et init |
 
 ## Principes
 

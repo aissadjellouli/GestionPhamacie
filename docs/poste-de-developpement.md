@@ -316,6 +316,17 @@ dotnet run --project src\Pharma.Desktop
 
 Le dossier contient deux solutions (`.sln` et `.slnx`) : toujours préciser le fichier dans les commandes `dotnet build` et `dotnet test`.
 
+### Tests d'intégration SQL
+
+Le projet `tests/Pharma.Infrastructure.Sql.Tests` appelle les classes `*Sql` de `Pharma.Infrastructure` sur des **bases jetables** `pharmacie_jetable_sql_*`
+(jamais `pharmacie_dev`, `pharmacie_test` ni `pharmacie_cloud_dev` : le code refuse tout autre nom). Ils tournent à chaque `dotnet test` ;
+pour les lancer seuls : `dotnet test tests\Pharma.Infrastructure.Sql.Tests`, pour les exclure : `--filter "Categorie!=Sql"`.
+
+- **Connexion** : variable `PHARMA_TEST_CNX` (base `postgres`, compte avec `CREATEDB`, par exemple `pharma_app`), sinon la chaîne de `appsettings.Development.json` de l'API (la base y est ignorée). Le mot de passe n'est jamais écrit dans un fichier.
+- **Sans PostgreSQL** (psql introuvable, serveur coupé, compte sans `CREATEDB`) : les tests sont **ignorés avec la raison**. `PHARMA_EXIGER_BASE=1` les fait **échouer** à la place (à poser avant une livraison).
+- **Fonctionnement** : une base modèle est construite à chaque exécution depuis `database/init` (`schema.sql`, script 083, `seed_referentiel.sql`), puis une copie par classe de test (`CREATE DATABASE ... TEMPLATE`). Les copies et le modèle sont supprimés à la fin.
+- **Nettoyage** : au démarrage, les bases `pharmacie_jetable_sql_*` laissées par un arrêt brutal sont supprimées si leur horodatage a plus de 15 minutes de plus que la suite en cours et si personne n'y est connecté. Purge manuelle : `SELECT datname FROM pg_database WHERE datname LIKE 'pharmacie\_jetable\_sql\_%';` puis `DROP DATABASE "nom" WITH (FORCE);` sur ces seuls noms.
+
 **Essayer l'officine et le serveur central ensemble** : `scripts\dev\essai_cloud_officine.ps1 -Demarrer` lance une officine d'essai et un serveur central d'essai reliés entre eux, sur des bases jetables (vos bases de démonstration ne sont pas modifiées). Guide pas à pas : [essai-cloud-officine.md](essai-cloud-officine.md).
 
 **Vidéos : jamais dans git.** Les vidéos (`.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`, `.3gp`…), y compris celles des exemples

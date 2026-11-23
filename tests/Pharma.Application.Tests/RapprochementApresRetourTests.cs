@@ -105,6 +105,6 @@ public class RapprochementApresRetourTests
         var droits = new DroitsParEmploye(new() { [8] = ["caisse.vendre", "caisse.retour_especes"] });
         var journal = new JournalEspion();
         return (new EnregistrerRetourClient(stock, new SessionsEnMemoire(), droits,
-            new VerificationCodeComptoir(codes, new VerificateurFactice(), new HorlogeFixe(new DateOnly(2026, 11, 9)), journal), journal), stock);
+            new VerificationCodeComptoir(codes, new VerificateurFactice(), new HorlogeFixe(new DateOnly(2026, 11, 9)), journal)), stock);
     }
 }

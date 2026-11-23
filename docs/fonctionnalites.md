@@ -2,7 +2,16 @@
 
 Inventaire complet des fonctionnalités du logiciel, mis à jour à chaque modification.
 
-Mis à jour le 2026-11-21.
+Mis à jour le 2026-11-23.
+
+**Mise à jour du 2026-11-23** (revue complète, non commitée) : écran de connexion avec les deux onglets toujours proposés
+(dernier choix retenu sur le poste) ; ressaisie du mot de passe pour l'export de la clé de scellement, les notifications,
+les anomalies traitées et la matrice des droits ; déconnexion après 15 minutes par défaut pour une installation neuve ;
+don d'un lot bloqué ou périmé refusé ; balance mensuelle du registre avec le solde reporté du mois précédent ; facture
+corrigée gardée dans l'année de son numéro ; dossier de sauvegarde limité aux disques du poste ; GED contrôlée à l'entrée.
+Ce sont des corrections et des règles de fonctions déjà comptées : le résumé ci-dessous ne change pas. Détail :
+[regles-metier.md](regles-metier.md), section « Corrections de la revue complète (2026-11-23) ».
+
 
 Légende des états :
 - **Fait** : codé, disponible à l’écran ou par l’API. « Fait (à essayer…) » : codé, jamais essayé sur le vrai matériel ou en réel.

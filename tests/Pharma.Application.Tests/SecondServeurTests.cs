@@ -18,7 +18,7 @@ public class SecondServeurTests
     public async Task Export_puis_import_redonne_la_meme_cle_sur_le_2e_serveur()
     {
         var principal = new CleMemoire(RandomNumberGenerator.GetBytes(32));
-        var f = await new ExporterCleScellement(principal, new JournalEspion(), new Horloge()).ExecuterAsync(MotDePasse, MotDePasse, 1);
+        var f = await new ExporterCleScellement(principal, new JournalEspion(), new Horloge(), MotDePasseTitulaireFactice.Verification()).ExecuterAsync(MotDePasse, MotDePasse, 1, default, MotDePasseTitulaireFactice.Mot);
         var second = new CleMemoire(null);
 
         var r = new ImporterCleScellement(second).Executer(f.Contenu, MotDePasse, remplacer: false);
@@ -34,7 +34,7 @@ public class SecondServeurTests
     public async Task Mauvais_mot_de_passe_refuse_et_rien_n_est_ecrit()
     {
         var principal = new CleMemoire(RandomNumberGenerator.GetBytes(32));
-        var f = await new ExporterCleScellement(principal, new JournalEspion(), new Horloge()).ExecuterAsync(MotDePasse, MotDePasse, 1);
+        var f = await new ExporterCleScellement(principal, new JournalEspion(), new Horloge(), MotDePasseTitulaireFactice.Verification()).ExecuterAsync(MotDePasse, MotDePasse, 1, default, MotDePasseTitulaireFactice.Mot);
         var second = new CleMemoire(null);
 
         var ex = Assert.Throws<RegleMetierException>(() => new ImporterCleScellement(second).Executer(f.Contenu, "Mauvais-mot-de-passe", false));
@@ -60,7 +60,7 @@ public class SecondServeurTests
     {
         var journal = new JournalEspion();
         await Assert.ThrowsAsync<RegleMetierException>(() =>
-            new ExporterCleScellement(new CleMemoire(RandomNumberGenerator.GetBytes(32)), journal, new Horloge()).ExecuterAsync(motDePasse, confirmation, 1));
+            new ExporterCleScellement(new CleMemoire(RandomNumberGenerator.GetBytes(32)), journal, new Horloge(), MotDePasseTitulaireFactice.Verification()).ExecuterAsync(motDePasse, confirmation, 1, default, MotDePasseTitulaireFactice.Mot));
         Assert.Empty(journal.Entrees);
     }
 
@@ -69,7 +69,7 @@ public class SecondServeurTests
     {
         var principal = new CleMemoire(RandomNumberGenerator.GetBytes(32));
         var journal = new JournalEspion();
-        var f = await new ExporterCleScellement(principal, journal, new Horloge()).ExecuterAsync(MotDePasse, MotDePasse, 7);
+        var f = await new ExporterCleScellement(principal, journal, new Horloge(), MotDePasseTitulaireFactice.Verification()).ExecuterAsync(MotDePasse, MotDePasse, 7, default, MotDePasseTitulaireFactice.Mot);
         var import = new ImporterCleScellement(new CleMemoire(null)).Executer(f.Contenu, MotDePasse, false);
 
         var (action, details) = Assert.Single(journal.Entrees);
@@ -87,8 +87,8 @@ public class SecondServeurTests
     [Fact]
     public async Task Une_autre_cle_presente_n_est_remplacee_que_sur_demande()
     {
-        var f = await new ExporterCleScellement(new CleMemoire(RandomNumberGenerator.GetBytes(32)), new JournalEspion(), new Horloge())
-            .ExecuterAsync(MotDePasse, MotDePasse, 1);
+        var f = await new ExporterCleScellement(new CleMemoire(RandomNumberGenerator.GetBytes(32)), new JournalEspion(), new Horloge(), MotDePasseTitulaireFactice.Verification())
+            .ExecuterAsync(MotDePasse, MotDePasse, 1, default, MotDePasseTitulaireFactice.Mot);
         var ancienne = RandomNumberGenerator.GetBytes(32);
         var second = new CleMemoire((byte[])ancienne.Clone());
 
@@ -222,7 +222,7 @@ public class SecondServeurTests
 
         await new ModifierServeurOfficine(depot, journal).ExecuterAsync("SRV-1", new ModificationServeur(null, null, true, true, true, true), 1);
         await new ModifierSeuilsReplication(depot, journal).ExecuterAsync(120, 32, 1);
-        await new ExporterCleScellement(new CleMemoire(RandomNumberGenerator.GetBytes(32)), journal, new Horloge()).ExecuterAsync(MotDePasse, MotDePasse, 1);
+        await new ExporterCleScellement(new CleMemoire(RandomNumberGenerator.GetBytes(32)), journal, new Horloge(), MotDePasseTitulaireFactice.Verification()).ExecuterAsync(MotDePasse, MotDePasse, 1, default, MotDePasseTitulaireFactice.Mot);
 
         Assert.Equal([ModifierServeurOfficine.Action, "seuils_replication", ExporterCleScellement.Action], journal.Entrees.Select(e => e.Action));
         Assert.All(journal.Codes, Assert.Null);

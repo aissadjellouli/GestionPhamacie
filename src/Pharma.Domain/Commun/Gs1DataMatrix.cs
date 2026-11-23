@@ -1,3 +1,4 @@
+using System.Globalization;
 namespace Pharma.Domain.Commun;
 
 /// <summary>Donnée d'une boîte portée par un identifiant d'application GS1.</summary>
@@ -70,7 +71,7 @@ public sealed record Gs1DataMatrix(string Gtin, DateOnly? Peremption, string? Lo
         DateOnly? peremption = null;
         var i = 0;
 
-        while (i + 2 <= s.Length)
+        while (i < s.Length)   // un caractère isolé en fin de code n'est pas un identifiant : code illisible
         {
             if (norme.Trouver(s, i) is not { } ai) return false; // identifiant d'application non géré
             i += ai.Code.Length;
@@ -89,7 +90,10 @@ public sealed record Gs1DataMatrix(string Gtin, DateOnly? Peremption, string? Lo
             switch (ai.Champ)
             {
                 case ChampGs1.Gtin: gtin = valeur; break;
-                case ChampGs1.Peremption: peremption = LireDate(valeur); break;
+                case ChampGs1.Peremption:
+                    peremption = LireDate(valeur);
+                    if (peremption is null) return false;   // date impossible (mois 13, jour 31 d'un mois de 30 jours, signe…) : code illisible
+                    break;
                 case ChampGs1.Lot: lot = valeur; break;
                 case ChampGs1.Serie: serie = valeur; break;
             }
@@ -112,10 +116,11 @@ public sealed record Gs1DataMatrix(string Gtin, DateOnly? Peremption, string? Lo
     // AAMMJJ ; un jour 00 signifie le dernier jour du mois
     private static DateOnly? LireDate(string aammjj)
     {
+        const NumberStyles chiffres = NumberStyles.None;   // ni signe ni espace : seuls les chiffres comptent
         if (aammjj.Length != 6 ||
-            !int.TryParse(aammjj[..2], out var aa) ||
-            !int.TryParse(aammjj[2..4], out var mm) ||
-            !int.TryParse(aammjj[4..6], out var jj) || mm is < 1 or > 12)
+            !int.TryParse(aammjj[..2], chiffres, CultureInfo.InvariantCulture, out var aa) ||
+            !int.TryParse(aammjj[2..4], chiffres, CultureInfo.InvariantCulture, out var mm) ||
+            !int.TryParse(aammjj[4..6], chiffres, CultureInfo.InvariantCulture, out var jj) || mm is < 1 or > 12)
             return null;
         var annee = 2000 + aa;
         var jour = jj == 0 ? DateTime.DaysInMonth(annee, mm) : jj;

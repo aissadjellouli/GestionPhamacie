@@ -154,6 +154,8 @@ builder.Services
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+if (JetonService.AvertissementCleExemple(builder.Configuration, builder.Environment.IsDevelopment()) is { } avertissementCle)
+    app.Logger.LogWarning("{Avertissement}", avertissementCle);
 
 // Démonstration sur une base sans marqueur (base réelle, ou marqueur illisible) : refus de démarrer, message clair.
 // Base de démonstration sans Demo:Actif, hors développement : avertissement seulement (le démarrage reste permis).
@@ -289,6 +291,17 @@ app.Use(async (ctx, suite) =>
 if (demo.Actif) app.Use(Pharma.Api.Demo.FonctionsCoupeesDemo.FiltrerAsync);
 
 app.UseAuthentication();
+// Le nom de poste est lié au jeton à la connexion : un en-tête X-Pharma-Poste différent est refusé
+app.Use(async (ctx, suite) =>
+{
+    if (Pharma.Api.Securite.PorteeConnexion.PosteDiffere(ctx))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+        await ctx.Response.WriteAsJsonAsync(new ErreurDto("Cette connexion a été ouverte sur un autre poste : reconnectez-vous sur ce poste."));
+        return;
+    }
+    await suite();
+});
 app.UseAuthorization();
 app.MapPharmaEndpoints();
 

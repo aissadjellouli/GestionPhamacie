@@ -27,6 +27,29 @@ public class DepotLotsCentralTests
     }
 
     [Fact]
+    public async Task Corps_annonce_plus_grand_que_le_maximum_refuse_avant_toute_allocation()
+    {
+        // Revue du 2026-11-23 : new byte[Content-Length] était fait avant tout contrôle. Le corps réel est vide : seul l'en-tête compte
+        var requete = Requete([], Pharma.Cloud.Api.Reception.ControleLot.TailleMax + 1L);
+        await Assert.ThrowsAsync<PointsEntree.CorpsTropGrosException>(() => PointsEntree.LireCorpsAsync(requete, CancellationToken.None));
+        await Assert.ThrowsAsync<PointsEntree.CorpsTropGrosException>(() => PointsEntree.LireCorpsAsync(Requete([], int.MaxValue), CancellationToken.None));
+        // Au maximum annoncé : non refusé pour sa taille (le corps trop court l'est pour une autre raison)
+        await Assert.ThrowsAsync<EndOfStreamException>(() => PointsEntree.LireCorpsAsync(Requete([1], 16), CancellationToken.None, maximum: 16));
+        await Assert.ThrowsAsync<PointsEntree.CorpsTropGrosException>(() => PointsEntree.LireCorpsAsync(Requete([1], 17), CancellationToken.None, maximum: 16));
+    }
+
+    [Fact]
+    public void Lot_illisible_le_message_de_l_exception_json_n_est_jamais_ecrit()
+    {
+        // Revue du 2026-11-23 : e.Message d'une JsonException peut citer des données du lot (journal de sécurité, journal applicatif)
+        var c = Pharma.Cloud.Api.Reception.ControleLot.Controler("{\"secret-donnee-patient\": ,}"u8, Guid.NewGuid());
+        Assert.False(c.Valide);
+        Assert.Equal(400, c.CodeHttp);
+        Assert.DoesNotContain("secret-donnee-patient", c.Refus);
+        Assert.StartsWith("Lot illisible ou non conforme au contrat", c.Refus);
+    }
+
+    [Fact]
     public async Task Corps_plus_court_que_l_annonce_refuse()
     {
         await Assert.ThrowsAsync<EndOfStreamException>(() => PointsEntree.LireCorpsAsync(Requete([1, 2, 3], 10), CancellationToken.None));
@@ -48,6 +71,14 @@ public class DepotLotsCentralTests
         var points = Source("PointsEntree.cs");
         Assert.Contains("ctx.Items[Program.CertificatVerifie] is X509Certificate2 v && ReferenceEquals(v, c)", points);
         Assert.Contains("catch (ReponseCentraleVideException v)", points);
+        // Revue du 2026-11-23 : plus aucune lecture d'une ligne unique sans contrôle dans les accès du poste, ni dans les départs
+        foreach (var fichier in new[] { new[] { "Comptes", "RattachementPoste.cs" }, ["Comptes", "AccesDistantsPoste.cs"], ["Depart", "DepartOfficine.cs"], ["Comptes", "ComptesDistantsAdministration.cs"] })
+        {
+            var code = Source(fichier);
+            Assert.DoesNotContain("await r.ReadAsync(ct);", code);
+            Assert.Contains("LigneAttendueAsync(r, ", code);
+        }
+        Assert.Equal(4, System.Text.RegularExpressions.Regex.Matches(points, @"catch \(ReponseCentraleVideException v\) \{ return AnomalieBase").Count);   // rattachement, liste, droits, retrait
         Assert.DoesNotContain("flux.ToArray();\n            var c = ControleLot", points.Replace("\r\n", "\n"));
         Assert.Contains("GetRequiredService<TimeProvider>().GetUtcNow()", Source("Program.cs"));
     }

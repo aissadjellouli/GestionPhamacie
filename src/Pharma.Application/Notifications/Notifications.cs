@@ -646,14 +646,18 @@ public sealed class ObtenirReglagesNotification(INotificationsDepot depot, IPerm
 }
 
 public sealed partial class ModifierReglagesNotification(INotificationsDepot depot, IProtectionSecret secrets, IJournal journal, IPermissionService droits,
-    SuperAdmin.EnvoiCodeSuperAdmin? copieSuperAdmin = null)
+    Securite.VerificationMotDePasseActuel verification, SuperAdmin.EnvoiCodeSuperAdmin? copieSuperAdmin = null)
 {
+    public const string ChampMotDePasseTitulaire = "mot_de_passe_titulaire";
+
     [System.Text.RegularExpressions.GeneratedRegex(@"^COM\d{1,3}$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
     private static partial System.Text.RegularExpressions.Regex FormatPort();
 
-    public async Task ExecuterAsync(ModificationReglagesNotification m, long utilisateurId, CancellationToken ct = default)
+    /// <param name="motDePasseTitulaire">Mot de passe du titulaire, ressaisi (les réglages portent le serveur e-mail et son mot de passe).</param>
+    public async Task ExecuterAsync(ModificationReglagesNotification m, long utilisateurId, CancellationToken ct = default, string? motDePasseTitulaire = null)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "modifier les réglages des notifications", ct);
+        await verification.VerifierAsync(utilisateurId, motDePasseTitulaire, "reglages_notification", ChampMotDePasseTitulaire, ct);
         static string? Net(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
         var r = m with
         {

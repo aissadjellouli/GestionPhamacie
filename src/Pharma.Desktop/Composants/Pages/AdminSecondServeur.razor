@@ -142,6 +142,8 @@
     </div>
 </div>
 
+<FenetreMotDePasseTitulaire Demande="demandeMdp" Fermee="() => demandeMdp = null" />
+
 @code {
     [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
     private string rubrique => NavAdmin.RubriqueCourante("admin/second-serveur", Rubrique);
@@ -227,20 +229,31 @@
         return null;
     });
 
-    private Task ExporterCleAsync() => Executer(async () =>
+    private FenetreMotDePasseTitulaire.DemandeMotDePasse? demandeMdp;
+
+    // Action très sensible : le titulaire ressaisit son mot de passe de connexion (le serveur le vérifie) ; les champs de l'écran restent saisis
+    private Task ExporterCleAsync()
     {
+        (erreur, message) = (null, null);
         var dossier = dossierCle?.Trim();
         if (string.IsNullOrEmpty(dossier) || !Path.IsPathFullyQualified(dossier) || !Directory.Exists(dossier))
-            return "Indiquez un dossier existant sur ce poste, par exemple E:\\ (clé USB branchée).";
-        var (f, e) = await Api.ExporterCleScellementAsync(motDePasse, confirmation);
-        if (f is null) return e;
-        var chemin = Path.Combine(dossier, f.NomFichier);
-        try { await File.WriteAllBytesAsync(chemin, Convert.FromBase64String(f.ContenuBase64)); }
-        catch (Exception x) when (x is IOException or UnauthorizedAccessException) { return $"Fichier non écrit dans {dossier} : {x.Message}"; }
-        (motDePasse, confirmation) = ("", "");
-        message = $"Clé exportée (empreinte {f.Empreinte}) : {chemin}. Rangez ce fichier hors du PC et le mot de passe à part.";
-        return null;
-    });
+        {
+            erreur = "Indiquez un dossier existant sur ce poste, par exemple E:\\ (clé USB branchée).";
+            return Task.CompletedTask;
+        }
+        demandeMdp = new("Exporter la clé de scellement", "Confirmez votre identité : l’export de la clé est une action très sensible, inscrite au journal.", async mdp =>
+        {
+            var (f, e) = await Api.ExporterCleScellementAsync(motDePasse, confirmation, mdp);
+            if (f is null) return e;
+            var chemin = Path.Combine(dossier, f.NomFichier);
+            try { await File.WriteAllBytesAsync(chemin, Convert.FromBase64String(f.ContenuBase64)); }
+            catch (Exception x) when (x is IOException or UnauthorizedAccessException) { return $"Fichier non écrit dans {dossier} : {x.Message}"; }
+            (motDePasse, confirmation) = ("", "");
+            message = $"Clé exportée (empreinte {f.Empreinte}) : {chemin}. Rangez ce fichier hors du PC et le mot de passe à part.";
+            return null;
+        });
+        return Task.CompletedTask;
+    }
 
     private async Task Executer(Func<Task<string?>> action)
     {

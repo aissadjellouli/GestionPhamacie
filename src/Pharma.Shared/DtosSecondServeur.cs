@@ -23,7 +23,8 @@ public sealed record SeuilsReplicationDto(int SeuilSecondes, int SeuilMo);
 /// <summary>Copie de la GED vers le 2e serveur : toutes les N minutes (1 à 60, 5 par défaut ; décision du titulaire du 2026-11-17).</summary>
 public sealed record CopieGedDto(int Minutes);
 
-public sealed record ExportCleDto(string MotDePasse, string Confirmation);
+/// <summary>MotDePasse : chiffre le fichier exporté ; MotDePasseTitulaire : mot de passe de connexion du titulaire, ressaisi.</summary>
+public sealed record ExportCleDto(string MotDePasse, string Confirmation, string? MotDePasseTitulaire = null);
 
 /// <summary>Fichier d'export de la clé de scellement (chiffré par le mot de passe du titulaire), en base 64.</summary>
 public sealed record FichierCleDto(string NomFichier, string ContenuBase64, string Empreinte);

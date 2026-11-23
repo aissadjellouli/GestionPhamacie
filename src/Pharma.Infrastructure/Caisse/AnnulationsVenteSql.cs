@@ -24,18 +24,7 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                v.utilisateur_id, v.patient_id,
                -- Vente à crédit : remboursements réellement versés (ni correction ni abandon de dette) imputés à cette vente, les plus
                -- anciennes dettes d'abord (ouverture et reprise, puis ventes à crédit nettes de leurs retours et annulations)
-               COALESCE((
-                   WITH m AS (SELECT * FROM credit_mouvement WHERE patient_id = v.patient_id),
-                   dettes AS (
-                       SELECT 0 AS rang, min(cree_le) AS le, NULL::bigint AS vente_id, sum(montant) AS net FROM m WHERE type IN ('ouverture', 'reprise')
-                       UNION ALL
-                       SELECT 1, min(cree_le), vente_id, sum(montant) FROM m
-                       WHERE vente_id IS NOT NULL AND type IN ('vente_credit', 'retour', 'annulation') GROUP BY vente_id),
-                   cumul AS (SELECT vente_id, GREATEST(net, 0) AS net,
-                                    COALESCE(sum(GREATEST(net, 0)) OVER (ORDER BY rang, le, vente_id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS avant
-                             FROM dettes WHERE net IS NOT NULL)
-                   SELECT LEAST(GREATEST((SELECT COALESCE(-sum(montant), 0) FROM m WHERE type = 'remboursement') - c.avant, 0), c.net)
-                   FROM cumul c WHERE c.vente_id = v.id), 0),
+               {PayeSurVenteSql},
                -- « Remis à » / « Pour » (script 091)
                {RemiseVenteSql.RemisA}, {RemiseVenteSql.Pour},
                -- Régularisation de part organisme active (097, 098) ; à la charge du patient : part déjà payée, la part à crédit de la
@@ -61,6 +50,25 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
         LEFT JOIN session_caisse s ON s.id = v.session_caisse_id
         LEFT JOIN regularisation_part_organisme g ON g.vente_id = v.id AND g.statut = 'active'
         CROSS JOIN LATERAL (SELECT {RegularisationRendue} AS rendu) rr
+        """;
+
+    /// <summary>
+    /// Vente à crédit : remboursements réellement versés (ni correction ni abandon de dette) imputés à la vente v, les plus anciennes dettes
+    /// d'abord (ouverture et reprise, puis ventes à crédit nettes de leurs retours et annulations).
+    /// </summary>
+    internal const string PayeSurVenteSql = """
+        COALESCE((
+            WITH m AS (SELECT * FROM credit_mouvement WHERE patient_id = v.patient_id),
+            dettes AS (
+                SELECT 0 AS rang, min(cree_le) AS le, NULL::bigint AS vente_id, sum(montant) AS net FROM m WHERE type IN ('ouverture', 'reprise')
+                UNION ALL
+                SELECT 1, min(cree_le), vente_id, sum(montant) FROM m
+                WHERE vente_id IS NOT NULL AND type IN ('vente_credit', 'retour', 'annulation') GROUP BY vente_id),
+            cumul AS (SELECT vente_id, GREATEST(net, 0) AS net,
+                             COALESCE(sum(GREATEST(net, 0)) OVER (ORDER BY rang, le, vente_id ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS avant
+                      FROM dettes WHERE net IS NOT NULL)
+            SELECT LEAST(GREATEST((SELECT COALESCE(-sum(montant), 0) FROM m WHERE type = 'remboursement') - c.avant, 0), c.net)
+            FROM cumul c WHERE c.vente_id = v.id), 0)
         """;
 
     /// <summary>Part de la régularisation à la charge du patient rendue par les retours de la vente v (script 158).</summary>
@@ -242,10 +250,19 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
                 if ((decimal)(await cmd.ExecuteScalarAsync(ct))! != lu)
                     throw new RegleMetierException("Un retour vient d’être enregistré sur cette vente : rechargez-la avant de l’annuler.");
             }
+        await VerifierLectureAsync(cx, tx, a.VenteId, a.Lecture, ct);
         var reference = $"Annulation {numero}";
 
         // 2. Stock remis sur le même lot, sauf les boîtes déjà rendues par un retour client (déjà remises en stock ou détruites) ;
         //    le mouvement « retour_client » inscrit les psychotropes au registre (024)
+        await using (var cmd = new NpgsqlCommand($"""
+            SELECT l.id FROM lot l WHERE l.id IN (SELECT lot_id FROM ({RestantParLot}) verrou) ORDER BY l.id FOR UPDATE
+            """, cx, tx))
+        {
+            cmd.Parameters.AddWithValue(a.VenteId);
+            await using var verrous = await cmd.ExecuteReaderAsync(ct);
+            while (await verrous.ReadAsync(ct)) { }
+        }
         await using (var cmd = new NpgsqlCommand($"""
             WITH lignes AS ({RestantParLot}),
                  maj AS (UPDATE lot l SET quantite_disponible = l.quantite_disponible + lignes.q FROM lignes WHERE l.id = lignes.lot_id RETURNING l.id)
@@ -333,8 +350,30 @@ public sealed class AnnulationsVenteSql(NpgsqlDataSource db) : IAnnulationsVente
             cmd.Parameters.AddWithValue(a.Poste);
             await cmd.ExecuteNonQueryAsync(ct);
         }
+        await Securite.JournalSql.EcrireEntreesAsync(cx, tx, a.Journaux, new Pharma.Application.Commun.ContexteJournal(a.VenteId, numero, bon?.Numero), ct);
         await tx.CommitAsync(ct);
         return bon;
+    }
+
+    /// <summary>
+    /// Patient verrouillé (FOR UPDATE) puis dette et part payée de la vente relues dans la transaction : refus si elles diffèrent de ce que
+    /// le caissier a vu (un règlement, une autre vente à crédit ou un autre retour est passé entre-temps). Le verrou garde ces valeurs
+    /// jusqu'à la fin de la transaction.
+    /// </summary>
+    internal static async Task VerifierLectureAsync(NpgsqlConnection cx, NpgsqlTransaction tx, long venteId, LectureDette? lecture, CancellationToken ct)
+    {
+        if (lecture is null) return;
+        await using (var cmd = new NpgsqlCommand("SELECT solde_credit FROM patient WHERE id = $1 FOR UPDATE", cx, tx))
+        {
+            cmd.Parameters.AddWithValue(lecture.PatientId);
+            if (await cmd.ExecuteScalarAsync(ct) is not decimal solde || solde != lecture.Solde)
+                throw new RegleMetierException("La dette du patient a changé depuis l’affichage de la vente : rechargez-la avant de continuer.");
+        }
+        if (lecture.PayeSurVente is not { } lu) return;
+        await using var paye = new NpgsqlCommand($"SELECT {PayeSurVenteSql} FROM vente v WHERE v.id = $1", cx, tx);
+        paye.Parameters.AddWithValue(venteId);
+        if (await paye.ExecuteScalarAsync(ct) is not decimal actuel || actuel != lu)
+            throw new RegleMetierException("Ce que le patient a déjà payé sur cette vente a changé depuis l’affichage : rechargez la vente avant de continuer.");
     }
 
     public async Task<IReadOnlyDictionary<long, decimal>> AutresDettesAsync(long patientId, long venteId, CancellationToken ct = default)

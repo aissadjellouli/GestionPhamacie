@@ -41,11 +41,14 @@ internal static class ManquantsReception
             if (n != boites)
                 throw new Pharma.Domain.Commun.RegleMetierException(
                     $"BL {numeroBl} : {boites} boîte(s) manquante(s) à sortir, seulement {n} boîte(s) sans Data Matrix dans la livraison. Réception annulée.");
-            await using (var cmd = new NpgsqlCommand("UPDATE lot SET quantite_disponible = quantite_disponible - $2 WHERE id = $1", cnx, tx))
+            await using (var cmd = new NpgsqlCommand(
+                "UPDATE lot SET quantite_disponible = quantite_disponible - $2 WHERE id = $1 AND quantite_disponible >= $2", cnx, tx))
             {
                 cmd.Parameters.AddWithValue(lotId);
                 cmd.Parameters.AddWithValue(n);
-                await cmd.ExecuteNonQueryAsync(ct);
+                if (await cmd.ExecuteNonQueryAsync(ct) == 0)
+                    throw new Pharma.Domain.Commun.RegleMetierException(
+                        $"BL {numeroBl} : le stock du lot est inférieur aux {n} boîte(s) manquante(s) à sortir (déjà vendues ou sorties). Réception annulée.");
             }
             await using (var cmd = new NpgsqlCommand("""
                 INSERT INTO mouvement_stock (lot_id, type, quantite, reference, utilisateur_id, reception_id, prix_achat_ht)

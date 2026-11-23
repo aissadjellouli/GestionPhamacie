@@ -35,7 +35,8 @@ public static class ControleLot
         try { lot = SerialisationSyncV1.Lire(contenu); }
         catch (Exception e) when (e is System.Text.Json.JsonException or ArgumentException or FormatException or KeyNotFoundException or InvalidOperationException)
         {
-            return new(null, 400, "Lot illisible ou non conforme au contrat : " + e.Message);
+            // Le message de l'exception peut citer des données du lot : ni journal de sécurité ni journal applicatif (type seulement)
+            return new(null, 400, "Lot illisible ou non conforme au contrat (" + e.GetType().Name + ").");
         }
         if (!VersionsAcceptees.Contains(lot.EnTete.VersionContrat)) return new(null, 422, $"Version de contrat {lot.EnTete.VersionContrat} non prise en charge.");
         if (lot.EnTete.OfficineId != officineDuCertificat) return new(null, 403, "Lot d'une autre officine que celle du certificat.");

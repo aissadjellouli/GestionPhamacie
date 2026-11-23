@@ -32,6 +32,8 @@ public sealed class ConsulterParcoursBoite(ITracabiliteLecture tracabilite, IPer
         if (p?.Patient is null) return p;
         if (await droits.EstTitulaireAsync(utilisateurId, ct)) return p;
         var droit = p.SousRegistre ? Permissions.PsychotropesRegistre : Permissions.StockDeclarerPerime;
-        return await droits.APermissionAsync(utilisateurId, droit, ct) ? p : p with { Patient = null };
+        if (await droits.APermissionAsync(utilisateurId, droit, ct)) return p;
+        // Le commentaire d'une étape peut citer le patient : masqué avec lui
+        return p with { Patient = null, Etapes = p.Etapes.Select(e => e with { Commentaire = null }).ToList() };
     }
 }

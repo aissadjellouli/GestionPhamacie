@@ -12,16 +12,13 @@ public sealed record EtatDemoDto(bool Actif, string? Libelle);
 /// <summary>Changement d'utilisateur au comptoir : code personnel de 4 à 6 chiffres.</summary>
 public sealed record ConnexionCodeRequete(string Identifiant, string Code);
 
-public sealed record VendeurComptoirDto(string Identifiant, string NomComplet);
+public sealed record VendeurComptoirDto(string Reference, string NomComplet);
 
 /// <summary>
 /// Employé proposé pour « Faire autoriser » : son nom et une référence opaque (« #numéro ») à renvoyer dans X-Pharma-Autorise-Par,
 /// jamais son identifiant de connexion.
 /// </summary>
 public sealed record ValideurDto(string Reference, string NomComplet);
-
-/// <summary>Écran de connexion : la caisse du poste est ouverte, la reprise par code comptoir est possible.</summary>
-public sealed record ComptoirDto(bool CaisseOuverte);
 
 public sealed record CodeComptoirRequete(string Code);
 
@@ -84,6 +81,9 @@ public sealed record EtatEtiquetageDto(int BoitesIdentifiees, int BoitesEnStock,
 
 public sealed record ReporterAlerteRequete(DateOnly JusquAu);
 public sealed record TraiterAlerteRequete(string? ActionPrise);
+
+/// <summary>Anomalie du contrôle interne marquée traitée : le titulaire ressaisit son mot de passe.</summary>
+public sealed record TraiterSurveillanceRequete(string? ActionPrise, string? MotDePasseTitulaire);
 
 public sealed record RappelLotRequete(long ProduitId, string NumeroLot, string Motif);
 public sealed record VenteARappelerDto(string Patient, string? Telephone, DateTime DateVente, string Ticket, int Boites, bool Anonyme);
@@ -208,7 +208,8 @@ public sealed record ClotureRequete(IReadOnlyDictionary<string, decimal> Saisies
 
 public sealed record ClotureDto(
     long SessionId, decimal Compte, decimal? FondCaisse, decimal? VentesEspeces, decimal? Attendu,
-    decimal? Ecart, bool? AuDelaDuSeuil, decimal? SeuilEcart, decimal VerseAuCoffre = 0, List<LigneTiroirDto>? LignesTiroir = null);
+    decimal? Ecart, bool? AuDelaDuSeuil, decimal? SeuilEcart, decimal VerseAuCoffre = 0, List<LigneTiroirDto>? LignesTiroir = null,
+    string? AvertissementVersement = null);
 /// <summary>Ligne du récapitulatif : sortie (par motif) ou entrée du tiroir de la session (script 096), comprise dans l'attendu.</summary>
 public sealed record LigneTiroirDto(string Motif, string Sens, decimal Montant);
 
@@ -312,6 +313,9 @@ public sealed record NouvelUtilisateurDto(string NomComplet, string Identifiant,
 /// <summary>MotDePasse vide : inchangé.</summary>
 public sealed record ModificationUtilisateurDto(string NomComplet, long RoleId, bool Actif, string? MotDePasse, string? Telephone = null, string? Email = null);
 public sealed record DroitsRoleDto(long RoleId, IReadOnlyList<string> Permissions);
+
+/// <summary>Enregistrement de la matrice des droits : l'employé connecté ressaisit son mot de passe.</summary>
+public sealed record EnregistrementDroitsDto(IReadOnlyList<DroitsRoleDto> Roles, string? MotDePasse);
 
 // ---- Administration : pharmacie ----------------------------------------------------
 
@@ -437,10 +441,11 @@ public sealed record ReglagesNotificationDto(
     string? ModemPort, TimeOnly HeureRapport, DateOnly? DernierRapport, decimal? SmsSeuilEcart, bool SmsLotBloque, bool SmsSauvegarde,
     bool SignalerSansDestinataire = true);
 
-/// <summary>NouveauMotDePasse : null = inchangé, chaîne vide = effacé.</summary>
+/// <summary>NouveauMotDePasse : null = inchangé, chaîne vide = effacé. MotDePasseTitulaire : mot de passe de connexion du titulaire, ressaisi.</summary>
 public sealed record ModificationReglagesNotificationDto(
     string? SmtpServeur, int SmtpPort, bool SmtpTls, string? SmtpExpediteur, string? SmtpIdentifiant, string? NouveauMotDePasse,
-    string? ModemPort, TimeOnly HeureRapport, decimal? SmsSeuilEcart, bool SmsLotBloque, bool SmsSauvegarde, bool SignalerSansDestinataire = true);
+    string? ModemPort, TimeOnly HeureRapport, decimal? SmsSeuilEcart, bool SmsLotBloque, bool SmsSauvegarde, bool SignalerSansDestinataire = true,
+    string? MotDePasseTitulaire = null);
 
 /// <summary>Types : rapport_quotidien, ecart_caisse, lot_bloque, sauvegarde.</summary>
 public sealed record DestinataireDto(

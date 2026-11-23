@@ -1,0 +1,73 @@
+@* Action très sensible : le mot de passe de l'employé connecté est ressaisi (le serveur le vérifie : mot de passe faux compté avec les
+   essais de connexion, blocage après 5 refus). Refus : la fenêtre reste ouverte, seul le mot de passe est à ressaisir ; la saisie de la
+   page qui l'a ouverte reste intacte. *@
+@if (Demande is { } d)
+{
+    <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-mdp-titulaire">
+        <section class="panneau" style="max-width: 520px; width: 100%">
+            <h2 id="t-mdp-titulaire">@d.Titre</h2>
+            <p class="detail" style="margin: 0">@d.Explication</p>
+            <div class="champ">
+                <label for="mdp-titulaire" class="requis">@d.Etiquette</label>
+                <input id="mdp-titulaire" data-champ="mot_de_passe_confirmation" type="password" autocomplete="current-password" @ref="champ"
+                       @bind="motDePasse" @bind:event="oninput" @onkeydown="ToucheAsync" />
+            </div>
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            <div class="filtres">
+                <button type="button" class="btn btn-principal" disabled="@(enCours || string.IsNullOrEmpty(motDePasse))" @onclick="ConfirmerAsync">Confirmer</button>
+                <button type="button" class="btn" disabled="@enCours" @onclick="FermerAsync">Annuler</button>
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    /// <summary>Action à confirmer : titre, explication, étiquette du champ, et l'action à lancer avec le mot de passe saisi (renvoie l'erreur, ou null si réussie).</summary>
+    public sealed record DemandeMotDePasse(string Titre, string Explication, Func<string, Task<string?>> Lancer,
+        string Etiquette = "Votre mot de passe (titulaire)");
+
+    [Parameter] public DemandeMotDePasse? Demande { get; set; }
+    /// <summary>Fenêtre fermée (annulée, ou action réussie).</summary>
+    [Parameter] public EventCallback Fermee { get; set; }
+
+    private string? motDePasse, erreur;
+    private bool enCours, aFocaliser;
+    private ElementReference champ;
+    private DemandeMotDePasse? affichee;
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(Demande, affichee)) return;
+        (affichee, motDePasse, erreur, aFocaliser) = (Demande, null, null, Demande is not null);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool premier)
+    {
+        if (!aFocaliser) return;
+        aFocaliser = false;
+        try { await champ.FocusAsync(); } catch (InvalidOperationException) { }
+    }
+
+    private async Task ConfirmerAsync()
+    {
+        if (Demande is null || string.IsNullOrEmpty(motDePasse) || enCours) return;
+        (enCours, erreur) = (true, null);
+        try
+        {
+            var saisi = motDePasse;
+            motDePasse = null;   // jamais gardé
+            var e = await Demande.Lancer(saisi);
+            if (e is null) { await FermerAsync(); return; }
+            erreur = e;
+        }
+        finally { enCours = false; }
+    }
+
+    private async Task FermerAsync()
+    {
+        (motDePasse, erreur) = (null, null);
+        await Fermee.InvokeAsync();
+    }
+
+    private async Task ToucheAsync(KeyboardEventArgs e) { if (e.Key == "Enter") await ConfirmerAsync(); }
+}

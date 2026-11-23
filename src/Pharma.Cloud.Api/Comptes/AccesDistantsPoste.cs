@@ -54,9 +54,16 @@ public static class AccesDistantsPoste
             cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)(compte is { Length: <= 200 } ? compte : null) ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
             if (supplement is not null) cmd.Parameters.Add(supplement);
             await using var r = await cmd.ExecuteReaderAsync(ct);
-            await r.ReadAsync(ct);
+            await Reception.DepotCentral.LigneAttendueAsync(r, FonctionDe(sql), ct);
             return (r.GetString(0), r.GetInt32(1));
         }, ct);
+
+    /// <summary>Nom de la fonction appelée par « SELECT … FROM fonction(…) » (pour la note d'une réponse vide).</summary>
+    private static string FonctionDe(string sql)
+    {
+        var debut = sql.IndexOf("FROM ", StringComparison.Ordinal) + 5;
+        return sql[debut..sql.IndexOf('(', debut)];
+    }
 
     /// <summary>Transaction où l'officine du certificat est posée (la base la revérifie avec le certificat présenté).</summary>
     private static async Task<T> DansOfficineAsync<T>(NpgsqlDataSource db, Guid officine, Func<NpgsqlConnection, NpgsqlTransaction, Task<T>> travail, CancellationToken ct)

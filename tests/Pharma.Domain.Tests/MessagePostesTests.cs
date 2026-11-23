@@ -61,6 +61,11 @@ public class MessagePostesTests
         Assert.Null(MessagePostes.Lire(Json("x", "2026-11-24T11:00:00+01:00"), Cree).Code);           // décalage explicite
         Assert.Equal("duree", MessagePostes.Lire(Json("x", "2026-11-28T10:00:01Z"), Cree).Code);
         Assert.Equal("duree", MessagePostes.Lire(Json("x", "2026-11-21T10:00:00Z"), Cree).Code);
+        // Durée minimale d'un jour (revue du 2026-11-23) : tolérance de 2 s (fin tronquée à la seconde par le central)
+        Assert.Null(MessagePostes.Lire(Json("x", "2026-11-22T10:00:00Z"), Cree).Code);                // 1 jour tout juste
+        Assert.Null(MessagePostes.Lire(Json("x", "2026-11-22T09:59:59Z"), Cree).Code);                // 1 jour moins 1 s : tolérance
+        Assert.Equal("duree", MessagePostes.Lire(Json("x", "2026-11-22T09:59:57Z"), Cree).Code);      // 1 jour moins 3 s
+        Assert.Equal("duree", MessagePostes.Lire(Json("x", "2026-11-21T20:00:00Z"), Cree).Code);      // 10 heures
         Assert.Equal("format", MessagePostes.Lire(Json("x", "2026-11-24 10:00:00"), Cree).Code);      // heure ambiguë
         Assert.Equal("format", MessagePostes.Lire(Json("x", "2026-13-24T10:00:00Z"), Cree).Code);
         Assert.Equal("format", MessagePostes.Lire(Json("x", "2026-11-24T10:00:00Z", "message-v2"), Cree).Code);

@@ -66,10 +66,21 @@ LANGUAGE sql STABLE SET search_path = public, pg_temp AS $$
 $$;
 
 -- Échéance d'un mot de passe provisoire : dernier changement (remise à zéro) ou, à défaut, création, plus la durée — interne
+-- Garde de rejeu (script 041) : la définition est remplacée par le script 041 (colonne provisoire_controle_depuis) ; rejouer ce
+-- script après 041 ne la ramène pas en arrière.
+DO $rejeu$ BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'parametre_envoi_codes'
+               AND column_name = 'provisoire_controle_depuis') THEN
+        RAISE NOTICE 'cloud_compte_provisoire_echeance : définition plus récente (script 041) gardée';
+    ELSE
+        EXECUTE $def$
 CREATE OR REPLACE FUNCTION cloud_compte_provisoire_echeance(p_change_le timestamptz, p_cree_le timestamptz) RETURNS timestamptz
 LANGUAGE sql STABLE SET search_path = public, pg_temp AS $$
     SELECT coalesce(p_change_le, p_cree_le) + cloud_duree_provisoire()
 $$;
+$def$;
+    END IF;
+END $rejeu$;
 
 -- Connexion, 2e partie (corps du script 030 repris À L'IDENTIQUE ; seul ajout : le bloc « Script 040 » après la vérification réussie).
 -- Statuts : code_attendu, refuse, verrouille, provisoire_expire (mot de passe juste mais provisoire non utilisé dans sa durée de vie :

@@ -7,7 +7,7 @@ namespace Pharma.Application.Tests;
 
 internal sealed class SortiesEnMemoire : ISortiesStock
 {
-    public LotEnStock Lot { get; set; } = new(9, 1, "Vitamine D3", "VD3", new DateOnly(2026, 1, 1), 10, false, false);
+    public LotEnStock Lot { get; set; } = new(9, 1, "Vitamine D3", "VD3", new DateOnly(2099, 1, 1), 10, false, false);
     public SortieStockAEcrire? Ecrite { get; private set; }
     public Task<IReadOnlyList<LotEnStock>> LotsAsync(long produitId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<LotEnStock>>([Lot]);
     public Task<LotEnStock?> LotAsync(long lotId, CancellationToken ct = default) => Task.FromResult<LotEnStock?>(lotId == Lot.LotId ? Lot : null);
@@ -52,14 +52,15 @@ public class RecetteCorrectionsTests
     {
         var s = new SortiesEnMemoire();
         var journal = new JournalEspion();
-        var cas = new DeclarerSortieStock(s, new DroitsFactices("stock.declarer_perime"), journal);
+        var cas = new DeclarerSortieStock(s, new DroitsFactices("stock.declarer_perime"));
         Assert.Equal(3, await cas.ExecuterAsync(9, 3, "perime", null, 1));
         Assert.Equal((3, "perime", "Périmé"), (s.Ecrite!.Quantite, s.Ecrite.Motif, s.Ecrite.Reference));
-        Assert.Equal(["sortie_stock"], journal.Actions);
+        Assert.Equal("sortie_stock", s.Ecrite.Journal!(3).Action);   // écrit dans la transaction de la sortie
+        Assert.Empty(journal.Actions);
         Assert.Equal("quantite_sortie", (await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(9, 11, "perime", null, 1))).Champ);
         Assert.Equal("commentaire_sortie", (await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(9, 1, "casse", " ", 1))).Champ);
         Assert.Equal("motif_sortie", (await Assert.ThrowsAsync<RegleMetierException>(() => cas.ExecuterAsync(9, 1, "vol", null, 1))).Champ);
-        await Assert.ThrowsAnyAsync<Exception>(() => new DeclarerSortieStock(s, new DroitsFactices("caisse.vendre"), journal).ExecuterAsync(9, 1, "perime", null, 1));
+        await Assert.ThrowsAnyAsync<Exception>(() => new DeclarerSortieStock(s, new DroitsFactices("caisse.vendre")).ExecuterAsync(9, 1, "perime", null, 1));
     }
 
     [Fact]

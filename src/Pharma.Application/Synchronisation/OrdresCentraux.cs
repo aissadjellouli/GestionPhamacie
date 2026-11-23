@@ -571,7 +571,7 @@ public sealed class ConfirmerOrdreCentral(IOrdresCentrauxDepot depot, ExecuterOr
     {
         await droits.ExigerTitulaireAsync(titulaireId, "confirmer un ordre du serveur central", ct);
         // Double clic, deux postes, ou tâche de fond en même temps : un seul traitement, état relu sous le verrou (revue du 2026-11-22)
-        using var _ = await verrou.PrendreAsync(ct);
+        using var _ = await verrou.PrendreAsync(VerrouOrdresCentraux.DelaiTitulaire, ct);
         var o = await depot.LireAsync(id, ct) ?? throw new RegleMetierException("Ordre introuvable.");
         if (o.Statut != StatutsOrdre.AConfirmer) throw new RegleMetierException("Cet ordre n’attend plus de confirmation.");
         if (TypesOrdre.MotDePasseTitulaireRequis(o.Type))
@@ -613,7 +613,7 @@ public sealed class RefuserOrdreCentral(IOrdresCentrauxDepot depot, IPermissionS
         var m = (motif ?? "").Trim();
         if (m.Length is < 3 or > 300) throw new RegleMetierException("Motif du refus : 3 à 300 caractères.", "motif");
         // Jamais pendant que la tâche de fond applique cet ordre : il serait affiché « refusé » alors qu'appliqué (revue du 2026-11-22)
-        using var _ = await verrou.PrendreAsync(ct);
+        using var _ = await verrou.PrendreAsync(VerrouOrdresCentraux.DelaiTitulaire, ct);
         var o = await depot.LireAsync(id, ct) ?? throw new RegleMetierException("Ordre introuvable.");
         if (o.Statut is not (StatutsOrdre.AConfirmer or StatutsOrdre.AAppliquer)) throw new RegleMetierException("Cet ordre est déjà traité.");
         if (TypesOrdre.MotDePasseTitulaireRequis(o.Type))
@@ -634,9 +634,21 @@ public sealed class VerrouOrdresCentraux
 
     private readonly SemaphoreSlim semaphore = new(1, 1);
 
+    /// <summary>Attente maximale du titulaire (confirmation, refus) : au-delà, « réessayez » plutôt qu'un écran qui attend sans fin.</summary>
+    public static readonly TimeSpan DelaiTitulaire = TimeSpan.FromSeconds(30);
+
+    /// <summary>Tâche de fond : attend son tour sans limite (elle ne porte aucun écran).</summary>
     public async Task<IDisposable> PrendreAsync(CancellationToken ct = default)
     {
         await semaphore.WaitAsync(ct);
+        return new Liberation(semaphore);
+    }
+
+    /// <summary>Titulaire à l'écran : attente bornée ; verrou pas obtenu à temps = <see cref="RegleMetierException"/> « réessayez ».</summary>
+    public async Task<IDisposable> PrendreAsync(TimeSpan delai, CancellationToken ct = default)
+    {
+        if (!await semaphore.WaitAsync(delai, ct))
+            throw new RegleMetierException("Un autre traitement d’ordre est en cours sur ce poste : réessayez dans un instant.");
         return new Liberation(semaphore);
     }
 

@@ -24,8 +24,14 @@ internal sealed class EntreesStockEnMemoire : IEntreesStock
         Task.FromResult(Autres.Contains((produitId, fournisseurId, numeroLot, peremption)));
     public Task<IReadOnlyList<CorrectionLot>> CorrectionsAsync(long lotId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<CorrectionLot>>(Journal);
 
+    public List<(long Produit, string Numero)> Rappeles { get; } = [];
+    public CorrectionAEcrire? Ecrite { get; private set; }
+    public Task<bool> NumeroRappeleAsync(long lotId, long produitId, string numeroLot, CancellationToken ct = default) =>
+        Task.FromResult(Rappeles.Contains((produitId, numeroLot)));
+
     public Task CorrigerAsync(CorrectionAEcrire c, CancellationToken ct = default)
     {
+        Ecrite = c;
         if (c.QuantiteAvant != Lot.Quantite) throw new RegleMetierException("Le stock de ce lot vient de changer.");
         if (c.Quantite is { } q) Mouvements.Add(q - c.QuantiteAvant);   // ajustement : écart signé
         foreach (var champ in c.Champs)
@@ -48,7 +54,7 @@ public class StockShpCorrectionFactureTests
     {
         var depot = new EntreesStockEnMemoire();
         var journal = new JournalEspion();
-        return (new CorrigerEntreeStock(depot, new DroitsFactices(droits), journal), depot, journal);
+        return (new CorrigerEntreeStock(depot, new DroitsFactices(droits)), depot, journal);
     }
 
     private static DemandeCorrectionLot Demande(decimal? ppa = null, string? numero = null, DateOnly? peremption = null, decimal? shp = null,
@@ -143,7 +149,8 @@ public class StockShpCorrectionFactureTests
         Assert.Contains(depot.Journal, c => c is { Champ: "date_peremption", AncienneValeur: "31/03/2027", NouvelleValeur: "30/04/2027" });
         Assert.Contains(depot.Journal, c => c is { Champ: "shp", AncienneValeur: "2.50", NouvelleValeur: "1.50" });
         Assert.Empty(depot.Mouvements);   // sans quantité, aucun mouvement de stock
-        Assert.Contains("correction_entree_stock", journal.Actions);
+        Assert.Equal("correction_entree_stock", depot.Ecrite!.Journal!.Action);   // écrit dans la transaction de la correction
+        Assert.Empty(journal.Actions);
     }
 
     [Fact]

@@ -76,6 +76,20 @@ public class JournalFiscalTests
     }
 
     [Fact]
+    public void Export_csv_neutralise_aussi_tabulation_retour_arobase_et_moins()
+    {
+        var p = new ParametresFiscaux(6, "csv-v1", ";", "Africa/Algiers");
+        var motifs = new[] { "@SOMME(A1)", "-2+3", "\tcmd", "=HYPERLINK(1)" };
+        var lignes = motifs.Select((m, i) => new LigneJournalFiscal(i + 2, i + 2, "vente", "T-00000" + i, Maintenant, "CAISSE-1", "Ali", 119, 100, 19, 119, 0,
+            "especes:119.00", 0, m, "ab12")).ToArray();
+        var texte = Encoding.UTF8.GetString(ExportFiscalCsv.Construire(p, new(2026, 11, 1), new(2026, 11, 30), lignes, [], [], "hex"));
+        Assert.Contains("'@SOMME(A1)", texte);
+        Assert.Contains("'-2+3", texte);
+        Assert.Contains("\t" + "cmd", texte);   // apostrophe devant la tabulation
+        Assert.Contains("'=HYPERLINK(1)", texte);
+    }
+
+    [Fact]
     public void Export_csv_contient_lignes_tva_et_sceaux_et_neutralise_les_formules()
     {
         var p = new ParametresFiscaux(6, "csv-v1", ";", "Africa/Algiers");
