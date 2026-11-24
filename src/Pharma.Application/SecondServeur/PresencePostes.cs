@@ -11,6 +11,8 @@ namespace Pharma.Application.SecondServeur;
 public interface IPresenceDepot
 {
     Task NoterAsync(string poste, CancellationToken ct = default);
+    /// <summary>Liste des postes autorisés (script 167) : présence d'un poste prouvé, rattachée à son identifiant (poste_id).</summary>
+    Task NoterAsync(string poste, long? posteId, CancellationToken ct = default) => NoterAsync(poste, ct);
 }
 
 /// <summary>
@@ -109,21 +111,24 @@ public sealed class PresencePostes(RegistrePostesVus registre, IPresenceDepot de
     /// <summary>Dernière écriture lancée (pour les tests).</summary>
     public Task Derniere => derniere;
 
-    public void Noter(string? nomPoste)
+    public void Noter(string? nomPoste) => Noter(nomPoste, null);
+
+    /// <summary>Note un poste ; <paramref name="posteId"/> : poste prouvé (liste des postes autorisés), gardé en base avec la présence.</summary>
+    public void Noter(string? nomPoste, long? posteId)
     {
         if (veille.EstVeille || !releves.AutreServeurRegle) return;
         if (NomPoste.Clair(nomPoste) is not { } poste) return;
         if (!registre.Noter(poste, horloge.MaintenantUtc)) return;
         if (ecart.Ecart is not null) return;   // lecture seule : rien ne s'écrit en base
-        derniere = Task.Run(() => EcrireAsync(poste));
+        derniere = Task.Run(() => EcrireAsync(poste, posteId));
     }
 
-    private async Task EcrireAsync(string poste)
+    private async Task EcrireAsync(string poste, long? posteId)
     {
         try
         {
             using var delai = new CancellationTokenSource(DelaiEcriture);
-            await depot.NoterAsync(poste, delai.Token);
+            await depot.NoterAsync(poste, posteId, delai.Token);
         }
         catch (Exception e)
         {

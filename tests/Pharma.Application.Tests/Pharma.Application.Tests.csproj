@@ -30,5 +30,6 @@
     <Compile Include="..\..\src\Pharma.Desktop\Services\BasculeSecours.cs" Link="Poste\BasculeSecours.cs" />
     <Compile Include="..\..\src\Pharma.Desktop\Services\PanierBascule.cs" Link="Poste\PanierBascule.cs" />
     <Compile Include="..\..\src\Pharma.Desktop\Services\VigiePoste.cs" Link="Poste\VigiePoste.cs" />
+    <Compile Include="..\..\src\Pharma.Desktop\Services\CreationCleAdministrateur.cs" Link="Poste\CreationCleAdministrateur.cs" />
   </ItemGroup>
 </Project>

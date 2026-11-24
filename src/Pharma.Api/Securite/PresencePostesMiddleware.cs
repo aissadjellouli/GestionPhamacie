@@ -19,7 +19,14 @@ public sealed class PresencePostesMiddleware(RequestDelegate suite)
 
     public Task InvokeAsync(HttpContext ctx)
     {
-        if (PosteAuthentifie(ctx) is { } poste)
+        // Liste des postes autorisés (modes « transition » et « exige ») : seul compte un poste PROUVÉ par sa signature (même sans employé connecté),
+        // sous son nom de la table ; un poste non prouvé n'est jamais vu (contrat des postes autorisés § 8). Mode « inactif » : règle d'avant (jeton).
+        if (PreuvePosteMiddleware.Mode(ctx) != Pharma.Shared.PreuvePoste.ModeInactif)
+        {
+            if (ctx.PosteProuve() is { } prouve)
+                ctx.RequestServices.GetRequiredService<PresencePostes>().Noter(prouve.Nom, prouve.Id);
+        }
+        else if (PosteAuthentifie(ctx) is { } poste)
             ctx.RequestServices.GetRequiredService<PresencePostes>().Noter(poste);
         return suite(ctx);
     }

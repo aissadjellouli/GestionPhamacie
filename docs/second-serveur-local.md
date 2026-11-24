@@ -290,3 +290,9 @@ ou une vente perdue au scénario 7.
 - Les routes `/api/inter-serveurs/*` n'existent que si `SecondServeur:AutreServeur` est réglé (sinon 404). L'appel doit venir de l'adresse déclarée de l'autre serveur (réseau privé) et être signé (HMAC dérivé de `Jwt__Cle`). L'API de l'autre serveur est jointe en `https://<AutreServeur>:5443` ; réglage `SecondServeur:AutreServeurApi` (URL https) pour une autre adresse ou un autre port.
 - Fenêtre d'horloge : `SecondServeur:Bascule:FenetreSignatureSecondes` (60 par défaut, 30 à 300). Deux PC dont les horloges diffèrent de plus d'une minute ne se reconnaissent pas : synchroniser l'heure Windows.
 - Sur un seul PC, l'essai de la signature se fait en réglant `SecondServeur:AutreServeur` sur `127.0.0.1` (adresse de boucle locale admise) : attention, l'API verrait alors sa propre base comme « l'autre principal » (voir plus haut) ; l'essai complet reste réservé à la vague 2 (lot V2-8).
+
+## 14. Liste des postes autorisés (2026-11-24)
+
+En modes « transition » et « exigé » (script 167), la présence, les postes connus et les votes ne comptent que les **postes prouvés** (signature
+vérifiée avec la clé publique de la copie répliquée). Tant qu'aucun poste n'est autorisé, aucun poste n'est connu : pas de promotion
+automatique. Essai réel avec deux PostgreSQL (coupure, votes prouvés, relais) : **non fait** (2e serveur local retiré, § 11), à jouer avec V2-8.

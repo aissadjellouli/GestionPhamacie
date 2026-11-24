@@ -77,14 +77,29 @@ public static class PorteeConnexion
     private static string? PosteAnnonce(HttpRequest requete) =>
         requete.Headers[EnTetePoste].FirstOrDefault() is { Length: > 0 } brut && Uri.UnescapeDataString(brut).Trim() is { Length: > 0 } poste ? poste : null;
 
+    /// <summary>Revendication du jeton : identifiant du poste prouvé à la connexion (liste des postes autorisés, script 167).</summary>
+    public const string RevendicationPosteId = "poste_id";
+
+    /// <summary>Clé de HttpContext.Items : poste prouvé par la signature de la requête (posé par PreuvePosteMiddleware).</summary>
+    public const string ItemPosteProuve = "Pharma.PosteProuve";
+
+    /// <summary>Poste prouvé par la signature de la requête (liste des postes autorisés), sinon null.</summary>
+    public static Pharma.Application.Postes.PosteProuve? PosteProuve(this HttpContext http) =>
+        http.Items.TryGetValue(ItemPosteProuve, out var p) ? p as Pharma.Application.Postes.PosteProuve : null;
+
     /// <summary>
-    /// Poste de la requête. Avec une connexion, c'est le poste lié au jeton (jamais l'en-tête, que n'importe quel client peut écrire) ;
-    /// un jeton sans poste n'en a aucun. Sans connexion (écran de connexion), c'est l'en-tête.
+    /// Poste de la requête. Poste prouvé par sa signature d'abord (liste des postes autorisés : son nom actuel, jamais celui d'un en-tête ou d'un jeton).
+    /// Sinon, avec une connexion, c'est le poste lié au jeton (jamais l'en-tête, que n'importe quel client peut écrire) ; un jeton sans poste n'en a aucun.
+    /// Sans connexion (écran de connexion), c'est l'en-tête.
     /// </summary>
     public static string? Poste(this HttpRequest requete) =>
-        requete.HttpContext.User.Identity?.IsAuthenticated == true
+        requete.HttpContext.PosteProuve() is { } prouve ? prouve.Nom
+        : requete.HttpContext.User.Identity?.IsAuthenticated == true
             ? (requete.HttpContext.User.FindFirstValue(RevendicationPoste) is { Length: > 0 } lie ? lie : null)
             : PosteAnnonce(requete);
+
+    /// <summary>Nom annoncé par l'en-tête X-Pharma-Poste (forme décodée), sinon null.</summary>
+    public static string? PosteAnnonceParEnTete(HttpRequest requete) => PosteAnnonce(requete);
 
     /// <summary>Vrai si le jeton est lié à un poste et que l'en-tête en annonce un autre.</summary>
     public static bool PosteDiffere(HttpContext http) =>

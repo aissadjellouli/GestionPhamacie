@@ -2739,4 +2739,25 @@ Revue complète de la branche `develop` (caisse, stock, factures, sécurité, se
 - **Après une coupure, le serveur principal fige sa liste de postes connus** dès le premier passage où la copie est perdue (référence : dernière présence écrite, jamais l'heure courante, y compris après un redémarrage) et ne compte les postes vus que parmi eux : un poste qui s'allume après la coupure ne compte ni dans les connus ni dans les vus. — `SurveillerIsolement` (`src/Pharma.Application/SecondServeur/PresencePostes.cs`)
 - **Les délais garantissent que le serveur principal s'isole avant toute promotion** : poste vu (45 s) + isolement (20 s) + passage de surveillance (5 s) + marge (5 s) doivent rester inférieurs au délai minimum de promotion, relevé sinon au minimum sûr (76 s avec les valeurs par défaut) et journalisé. Les deux serveurs comparent leurs réglages effectifs ; s'ils diffèrent, le titulaire est alerté. — `src/Pharma.Application/SecondServeur/ReglagesBascule.cs`
 - **Relais** : un relais saturé refuse la requête (503 `relais_indisponible`) au lieu de la transmettre sans marquage ; seuls les rapports authentifiés font passer un poste en relais (un poste sans employé connecté n'est pas relayé).
-- **Risque connu, en attente de la liste des postes autorisés** : le nom de poste du jeton vient encore de ce que le poste annonce à la connexion ; un employé connecté pourrait donc compter pour plusieurs postes. Plan : `docs/taches/2026-11-24-postes-autorises/plan.md`.
+- **Risque levé le 2026-11-24 (liste des postes autorisés, section en fin de document)** ; avant : le nom de poste du jeton venait encore de ce que le poste annonce à la connexion ; un employé connecté pourrait donc compter pour plusieurs postes. Plan : `docs/taches/2026-11-24-postes-autorises/plan.md`.
+
+## Liste des postes autorisés (2026-11-24, script 167)
+
+- Seul le titulaire gère la liste (Administration › Postes autorisés) : autoriser un poste (nom unique sans tenir compte des majuscules parmi
+  les postes non révoqués, 20 postes au plus par défaut, réglable de 1 à 200), donner un nouveau code à un poste en attente, renommer,
+  remplacer le PC d'un poste actif (même poste, même nom, génération + 1, ancienne clé refusée aussitôt), révoquer avec un motif (5 à 200
+  caractères ; le nom redevient libre).
+- Code d'autorisation : 8 caractères sans caractères ambigus (`XXXX-XXXX`), à usage unique, valable 15 minutes par défaut (5 à 60), affiché
+  une seule fois ; 5 codes faux invalident les codes en attente et alertent le titulaire.
+- Renommer un poste est refusé (409 `poste_occupe`) tant que sa caisse est ouverte ou qu'il reste des ventes ou réceptions en attente sous son
+  nom : ces tables gardent le nom du poste en texte ; l'historique garde l'ancien nom.
+- Le nom d'un poste prouvé est celui de la liste (prioritaire sur `PHARMA_POSTE`), pour la caisse, le tiroir, les tickets et les rapports.
+- Mode après la mise à jour : **transition** (un poste non autorisé fonctionne, avec un bandeau sur l'écran de connexion, mais ne compte pas
+  pour la bascule ; il ne peut pas prendre le nom d'un poste autorisé ; une preuve fausse ou inconnue vaut absence de preuve). Le titulaire passe
+  en **exigé** quand tous les postes sont autorisés (confirmation qui liste les noms vus ces 30 derniers jours sans preuve) : un poste non
+  autorisé est alors refusé. Poste révoqué ou horloge décalée de plus de 2 minutes : toujours refusés.
+- **Bascule du 2e serveur** (modes transition et exigé) : seuls les postes prouvés et actifs sont « vus », « connus » et votent ; tant
+  qu'aucun poste n'est autorisé, aucun poste n'est connu : le serveur principal garde la main et le 2e serveur ne se promeut jamais seul.
+  Le relais transmet les en-têtes de preuve tels quels (cible brute) ; en mode exigé, une requête sans preuve n'est jamais relayée.
+- Révocation : effet immédiat sur le serveur qui révoque, dans les 30 secondes sur l'autre (cache des clés) ; pendant une coupure, visible
+  du 2e serveur seulement si elle a été répliquée (risque accepté, plan § 7).

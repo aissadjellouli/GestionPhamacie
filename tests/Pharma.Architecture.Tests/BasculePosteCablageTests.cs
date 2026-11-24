@@ -12,7 +12,8 @@ public class BasculePosteCablageTests
     public void Client_http_adresse_courante_changeable_et_503_confies_a_la_vigie()
     {
         var app = Lire("App.xaml.cs");
-        Assert.Contains("new RelaisAdresse(adresseCourante, new SuiviAppels(appels))", app);
+        // Liste des postes autorisés : chaque requête est signée par le poste, juste avant l'envoi (après la réécriture de l'adresse)
+        Assert.Contains("new RelaisAdresse(adresseCourante, new SignaturePoste(identite, horlogeServeur, new SuiviAppels(appels)))", app);
         Assert.Contains("new SurveillanceEcart(vigie,", app);
         Assert.Contains("vigie.Demarrer();", app);
         var api = Lire("Services", "ApiClient.cs");

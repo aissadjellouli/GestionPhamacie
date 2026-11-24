@@ -11,19 +11,34 @@ namespace Pharma.Infrastructure.SecondServeur;
 /// </summary>
 public sealed class PresencePostesSql(NpgsqlDataSource db) : IPostesConnusDepot, IPresenceDepot
 {
-    public async Task NoterAsync(string poste, CancellationToken ct = default)
+    public Task NoterAsync(string poste, CancellationToken ct = default) => NoterAsync(poste, null, ct);
+
+    /// <summary>Présence d'un poste ; poste_id : poste prouvé (liste des postes autorisés, script 167), null en mode « inactif ».</summary>
+    public async Task NoterAsync(string poste, long? posteId, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("INSERT INTO presence_poste (poste, vu_le) VALUES (@poste, now()) ON CONFLICT (poste) DO UPDATE SET vu_le = now()");
+        await using var cmd = db.CreateCommand(
+            "INSERT INTO presence_poste (poste, vu_le, poste_id) VALUES (@poste, now(), @id) ON CONFLICT (poste) DO UPDATE SET vu_le = now(), poste_id = EXCLUDED.poste_id");
         cmd.Parameters.AddWithValue("poste", poste);
+        cmd.Parameters.Add(new NpgsqlParameter("id", NpgsqlTypes.NpgsqlDbType.Bigint) { Value = (object?)posteId ?? DBNull.Value });
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
     public async Task<PostesConnusLus> LireAsync(CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            WITH ref AS (SELECT CASE WHEN pg_is_in_recovery() THEN pg_last_xact_replay_timestamp() ELSE now() END AS t)
-            SELECT ref.t, p.poste, p.vu_le
-            FROM ref LEFT JOIN presence_poste p ON p.vu_le > ref.t - interval '1 day'
+            WITH ref AS (SELECT CASE WHEN pg_is_in_recovery() THEN pg_last_xact_replay_timestamp() ELSE now() END AS t),
+                 m AS (SELECT coalesce((SELECT mode FROM parametre_postes WHERE id = 1), 'inactif') AS mode)
+            SELECT ref.t, x.poste, x.vu_le
+            FROM ref CROSS JOIN m
+            LEFT JOIN LATERAL (
+                -- Mode « inactif » : présence par nom, comme avant la liste des postes autorisés
+                SELECT p.poste, p.vu_le FROM presence_poste p WHERE m.mode = 'inactif' AND p.vu_le > ref.t - interval '1 day'
+                UNION ALL
+                -- Sinon (script 167) : postes PROUVÉS et encore actifs seulement, sous leur nom actuel, une ligne par poste
+                SELECT a.nom, max(p.vu_le) FROM presence_poste p JOIN poste_autorise a ON a.id = p.poste_id AND a.statut = 'actif'
+                WHERE m.mode <> 'inactif' AND p.vu_le > ref.t - interval '1 day'
+                GROUP BY a.id, a.nom
+            ) x ON true
             """);
         DateTime? reference = null;
         var postes = new List<PosteVuEnBase>();

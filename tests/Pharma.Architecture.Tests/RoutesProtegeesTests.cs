@@ -9,11 +9,12 @@ namespace Pharma.Architecture.Tests;
 /// </summary>
 public class RoutesProtegeesTests
 {
-    /// <summary>Routes ouvertes sans jeton, voulues : connexion, état du serveur, mode démonstration.</summary>
+    /// <summary>Routes ouvertes sans jeton, voulues : connexion, état du serveur, mode démonstration, état et enrôlement d'un poste (liste des postes autorisés).</summary>
     private static readonly HashSet<string> Publiques =
     [
         "POST /api/auth/connexion", "POST /api/auth/connexion-code",
         "GET /api/healthcheck", "POST /api/vigie/rapport", "GET /api/demo", "POST /api/super-admin/connexion",
+        "GET /api/postes/etat", "POST /api/postes/enrolement",
     ];
 
     private static readonly Regex Registration = new(@"^\s*(?:var\s+(?<var>\w+)\s*=\s*)?(?<cible>\w+)\.Map(?<verbe>Get|Post|Put|Delete|Patch|Group|Methods)\(""(?<route>[^""]*)""",

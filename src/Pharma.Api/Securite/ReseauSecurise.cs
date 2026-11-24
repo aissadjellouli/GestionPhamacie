@@ -17,7 +17,7 @@ public static class ReseauSecurise
 
     /// <summary>Routes de connexion limitées en débit par adresse IP (mots de passe, codes comptoir, super admin).</summary>
     public static readonly IReadOnlyList<string> RoutesConnexion =
-        ["/api/auth/connexion", "/api/auth/connexion-code", "/api/super-admin/connexion", "/api/auth/mot-de-passe"];
+        ["/api/auth/connexion", "/api/auth/connexion-code", "/api/super-admin/connexion", "/api/auth/mot-de-passe", "/api/postes/enrolement"];
 
     private static readonly string[] HotesLocaux = ["localhost", "127.0.0.1", "[::1]", "::1"];
 

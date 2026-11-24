@@ -21,7 +21,7 @@
 - **Sous code** : la valeur (identifiant de patient) est remplacée par un code aléatoire stable `P-` + 24 caractères hexadécimaux ; pour la table `patient`, la clé elle-même devient le code. Les porteurs du registre reçoivent un code `R-…` (colonne ajoutée `porteur_code`) ; leur nom, adresse et pièce sont retirés.
 - La correspondance personne ↔ code est dans `sync_pseudonyme` (classée **jamais**) ; pour un porteur, la clé locale est l'empreinte SHA-256 du nom et de la pièce normalisés (le nom n'y est pas recopié). Aucun chiffrement (lot 9 non lancé).
 
-**Récapitulatif** : 158 tables — 84 montantes, 22 bidirectionnelles, 16 descendantes, 36 jamais envoyées (`bascule_decision`, jamais, par le script 166 ; `presence_poste`, jamais, par le script 165 ; `bascule_promotion` et `bascule_saut`, jamais, par le script 164 ; `serveur_ecarte`, jamais, par le script 163 ; `integrite_prise_acte`, montante, `compteur_ticket_saut` et `sync_declaration_epoque`, jamais, par le script 151, lot S6.5.4 ; `chifa_code_produit` et `produit_indication` passées de descendantes à montantes par le script 147 ; `commande_ordre_central`, jamais, par le script 146, lot S5.4 ; `sync_ordre_resultat`, montante, et `sync_ordre_recu`, jamais, par le script 145, lots S5.1 et S5.5 ; `compteur_ticket` passée de jamais à montante par le script 144, lot S4 ; `reglage_mutualise`, montante, par le script 141 ; `sync_journal_descendant` par le script 136 ; `sync_chargement` ajoutée par le script 129, lot S6 ; `sync_famille_colonne` par le script 130 ; `reglage_central`, descendante, par le script 131).
+**Récapitulatif** : 160 tables — 84 montantes, 22 bidirectionnelles, 16 descendantes, 38 jamais envoyées (`poste_autorise` et `parametre_postes`, jamais, par le script 167 ; `bascule_decision`, jamais, par le script 166 ; `presence_poste`, jamais, par le script 165 ; `bascule_promotion` et `bascule_saut`, jamais, par le script 164 ; `serveur_ecarte`, jamais, par le script 163 ; `integrite_prise_acte`, montante, `compteur_ticket_saut` et `sync_declaration_epoque`, jamais, par le script 151, lot S6.5.4 ; `chifa_code_produit` et `produit_indication` passées de descendantes à montantes par le script 147 ; `commande_ordre_central`, jamais, par le script 146, lot S5.4 ; `sync_ordre_resultat`, montante, et `sync_ordre_recu`, jamais, par le script 145, lots S5.1 et S5.5 ; `compteur_ticket` passée de jamais à montante par le script 144, lot S4 ; `reglage_mutualise`, montante, par le script 141 ; `sync_journal_descendant` par le script 136 ; `sync_chargement` ajoutée par le script 129, lot S6 ; `sync_famille_colonne` par le script 130 ; `reglage_central`, descendante, par le script 131).
 
 ## Ce que reçoit le serveur central : vue d'ensemble (2026-11-17)
 
@@ -220,6 +220,8 @@ Décision du titulaire (2026-11-16, « ok proposition familles ») : `parametre_
 | `panier_attente` | jamais | id | - | - | Transitoire |
 | `parametre_integrite` | jamais | id | - | - | Technique, local |
 | `permission` | jamais | code | - | - | Livrée par les scripts du logiciel |
+| `parametre_postes` | jamais | id | - | - | Réglage local de la liste des postes autorisés, script 167 |
+| `poste_autorise` | jamais | id | - | - | Postes autorisés de l'officine (enrôlement, clés publiques), script 167 |
 | `presence_poste` | jamais | poste | - | - | Présence des postes vue par le serveur principal (règle de majorité du 2e serveur), script 165 |
 | `profil_catalogue_grossiste` | jamais | fournisseur_id | - | - | Réglage d'import local |
 | `reception_attente` | jamais | id | - | - | Transitoire |

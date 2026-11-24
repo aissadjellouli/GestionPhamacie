@@ -1064,7 +1064,9 @@ public class RelaisVeilleTests
     {
         var revus = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "ReseauSecurise.cs", "InterServeurs.cs", "VigieEndpoints.cs", "RelaisOrigineMiddleware.cs", "RelaisVeille.cs", "ProxysInverses.cs", "Program.cs"
+            "ReseauSecurise.cs", "InterServeurs.cs", "VigieEndpoints.cs", "RelaisOrigineMiddleware.cs", "RelaisVeille.cs", "ProxysInverses.cs", "Program.cs",
+            // Liste des postes autorisés : l'adresse ne sert qu'au journal des preuves refusées et au texte de l'alerte, jamais à un privilège
+            "PreuvePosteMiddleware.cs"
         };
         var dossier = Path.Combine(Racine(), "src", "Pharma.Api");
         var motif = new Regex(@"RemoteIpAddress|IsLoopback|LocalIpAddress|IPAddress\.Loopback", RegexOptions.Compiled);

@@ -25,15 +25,15 @@ Légende des états :
 
 | État | Nombre de fonctions |
 | --- | --- |
-| Fait | 215 |
+| Fait | 217 |
 | En cours | 1 |
 | En attente | 47 |
 | Bloqué | 9 |
 | Non proposé | 1 |
 | À vérifier | 0 |
-| **Total** | **273** |
+| **Total** | **275** |
 
-Recompté le 2026-11-24 à partir des lignes ci-dessous (273 lignes ; « Fait en local » compté dans « Fait ») ; « En cours » : démonstration cloud (Docker absent du poste).
+Recompté le 2026-11-24 à partir des lignes ci-dessous (275 lignes ; « Fait en local » compté dans « Fait ») ; « En cours » : démonstration cloud (Docker absent du poste).
 
 ## Caisse et ventes
 
@@ -315,6 +315,8 @@ Recompté le 2026-11-24 à partir des lignes ci-dessous (273 lignes ; « Fait en
 | Compte super admin hors de la base (fichier chiffré du PC serveur, au moins un canal vérifié SMS ou e-mail), réservé à la reprise et à la restauration : chaque action sensible validée par mot de passe ressaisi et code à 6 chiffres, 3 codes faux = 15 minutes de blocage | Fait | Administration › Reprise, Restauration |
 | HTTPS sur le réseau de l’officine (HTTP limité au PC serveur), autorité unique par pharmacie | Fait (à essayer en réel) | scripts/certificat_https.ps1 ; mise-en-production.md |
 | Journaux du serveur et du poste sans données personnelles | Fait | securite-et-droits.md |
+| Liste des postes autorisés : autorisation par code à usage unique, clé non exportable du poste, preuve signée à chaque requête, jeton lié au poste, renommer, remplacer le PC, révoquer, modes transition et exigé | Fait (2026-11-24, script 167 ; compte Windows standard : création de la clé par la demande d'élévation de Windows, D4 option 1, à vérifier sur un vrai poste) | Administration › Postes autorisés ; securite-et-droits.md ; regles-metier.md |
+| Bascule du 2e serveur : présence, postes connus, votes et relais limités aux postes prouvés | Fait (à essayer en réel avec V2-8) | second-serveur-local.md § 14 ; regles-metier.md |
 | Port 5432 de la base fermé aux autres postes (écoute sur 127.0.0.1 seulement, contrôle à l'installation) | Fait (procédure écrite, à dérouler sur le vrai PC serveur) | mise-en-production.md, étapes 2.4 et 4 bis |
 
 ## Administration et réglages

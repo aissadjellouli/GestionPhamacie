@@ -416,6 +416,11 @@ public static class DependencyInjection
         services.AddScoped<SecondServeur.ExporterCleScellement>();
         services.AddScoped<SecondServeur.ImporterCleScellement>();
         services.AddScoped<Sauvegardes.TesterRestaurationCopie>();
+        // Liste des postes autorisés (2026-11-24, script 167) : caches (mode, clés, noms réservés) et dernières preuves en singleton, gestion par le titulaire
+        services.AddSingleton<Postes.RegistrePostesAutorises>();
+        services.AddSingleton<Postes.DernieresPreuvesPostes>();
+        services.AddSingleton<Postes.AlertesPostes>();
+        services.AddScoped<Postes.GererPostesAutorises>();
         return services;
     }
 }

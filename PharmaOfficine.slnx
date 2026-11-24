@@ -273,8 +273,10 @@
     <File Path="database/migration/retour/164_bascule_saut_compteurs_promotion_retour.sql" />
     <File Path="database/migration/165_presence_postes.sql" />
     <File Path="database/migration/166_bascule_retrait_decision.sql" />
+    <File Path="database/migration/167_postes_autorises.sql" />
     <File Path="database/migration/retour/165_presence_postes_retour.sql" />
     <File Path="database/migration/retour/166_bascule_retrait_decision_retour.sql" />
+    <File Path="database/migration/retour/167_postes_autorises_retour.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
@@ -321,6 +323,7 @@
     <File Path="database/tests/164_bascule_saut_compteurs_promotion_tests.sql" />
     <File Path="database/tests/165_presence_postes_tests.sql" />
     <File Path="database/tests/166_bascule_retrait_decision_tests.sql" />
+    <File Path="database/tests/167_postes_autorises_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
     <File Path="database/tests/101b_suppression_num_facture_chifa_tests.sql" />
     <File Path="database/tests/rejeu_complet.ps1" />

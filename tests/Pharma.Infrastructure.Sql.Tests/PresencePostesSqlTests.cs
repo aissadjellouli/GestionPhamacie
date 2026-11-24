@@ -21,10 +21,42 @@ public sealed class PresencePostesSqlTests(CopieSql copie) : IClassFixture<Copie
 
     private string Cnx() => new NpgsqlConnectionStringBuilder(OutilsPostgres.ChaineConnexion()) { Database = copie.Nom }.ConnectionString;
 
-    private async Task ViderAsync()
+    /// <summary>Vide la présence ; mode de la liste des postes autorisés (script 167) : « inactif » = présence par nom, comme avant la liste.</summary>
+    private async Task ViderAsync(string mode = "inactif")
     {
-        await using var cmd = copie.Verif.CreateCommand("DELETE FROM presence_poste");
+        await using var cmd = copie.Verif.CreateCommand("DELETE FROM presence_poste; DELETE FROM poste_autorise; UPDATE parametre_postes SET mode = @mode");
+        cmd.Parameters.AddWithValue("mode", mode);
         await cmd.ExecuteNonQueryAsync();
+    }
+
+    private async Task<long> PosteActifAsync(string nom, string statut = "actif")
+    {
+        await using var cmd = copie.Verif.CreateCommand("""
+            INSERT INTO poste_autorise (nom, statut, cle_publique, empreinte_cle, enrole_le, revoque_le)
+            VALUES (@nom, @statut, '\x3059', '0123456789ABCDEF', now(), CASE WHEN @statut = 'revoque' THEN now() END) RETURNING id
+            """);
+        cmd.Parameters.AddWithValue("nom", nom);
+        cmd.Parameters.AddWithValue("statut", statut);
+        return (long)(await cmd.ExecuteScalarAsync())!;
+    }
+
+    [FactSql]
+    public async Task Mode_transition_seuls_les_postes_prouves_et_actifs_sont_connus_sous_leur_nom_actuel()
+    {
+        await ViderAsync("transition");
+        var a = await PosteActifAsync("CAISSE-A");
+        var r = await PosteActifAsync("CAISSE-R", "revoque");
+        var sql = new PresencePostesSql(copie.Source);
+        await sql.NoterAsync("CAISSE-A", a);
+        await sql.NoterAsync("ANCIEN-NOM-A", a);   // même poste noté sous un ancien nom (renommé) : une seule ligne connue, nom actuel
+        await sql.NoterAsync("CAISSE-R", r);       // poste révoqué : jamais connu
+        await sql.NoterAsync("NON-PROUVE");        // poste non prouvé : jamais connu
+        var lus = await sql.LireAsync();
+        Assert.Equal(["CAISSE-A"], lus.Postes.Select(p => p.Poste).ToArray());
+
+        await ViderAsync("inactif");
+        await sql.NoterAsync("NON-PROUVE");
+        Assert.Equal(["NON-PROUVE"], (await sql.LireAsync()).Postes.Select(p => p.Poste).ToArray());
     }
 
     private async Task InsererAsync(string poste, string ilYa)

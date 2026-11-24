@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 166 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 167 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, rejouer TOUTE la suite
 -- database/migration depuis le script 001 (mettre_a_jour_base_officine.ps1), jamais ce fichier ni un script isolé.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 166 ; à régénérer à chaque nouveau script.
+-- par les scripts 001 à 167 ; à régénérer à chaque nouveau script.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -24,7 +24,7 @@ SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gse
 -- PostgreSQL database dump
 --
 
-\restrict wam9EwkWt27C8UivU4E4M5LAfAslp8eS26EsW29KL9ccRnw6s1SBtTrsrVlPTIm
+\restrict bYJAwJgfijFwLe244M93hWc8IXyQJ3Sqz9zg8n98StjZOpakXtshPD3oqhUvNQz
 
 -- Dumped from database version 18.6
 -- Dumped by pg_dump version 18.6
@@ -932,6 +932,18 @@ CREATE FUNCTION public.avoir_mouvement_immuable() RETURNS trigger
     AS $$
 BEGIN
     RAISE EXCEPTION 'Un mouvement d''avoir ne se modifie pas et ne se supprime pas.';
+END $$;
+
+
+--
+-- Name: bascule_decision_proteger(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.bascule_decision_proteger() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'bascule_decision : ajout seul';
 END $$;
 
 
@@ -2520,138 +2532,6 @@ $$;
 
 
 --
--- Name: verifier_regularisation_rendue_avant(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.verifier_regularisation_rendue_avant() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE v_rendu numeric;
-BEGIN
-    SELECT COALESCE(sum(rl.montant_organisme), 0) INTO v_rendu
-    FROM retour_client_ligne rl JOIN ligne_vente l ON l.id = rl.ligne_vente_id
-    WHERE l.vente_id = NEW.vente_id;
-    IF NEW.part_organisme_rendue_avant IS DISTINCT FROM v_rendu THEN
-        RAISE EXCEPTION 'Un retour vient d''être enregistré sur cette vente : rescannez le volet.' USING ERRCODE = 'P0001';
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-
---
--- Name: FUNCTION verifier_regularisation_rendue_avant(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.verifier_regularisation_rendue_avant() IS 'Refuse une régularisation dont la part rendue avant le rattachement ne correspond pas aux retours de la vente (script 157)';
-
-
---
--- Name: verifier_retour_avoir_retenu(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.verifier_retour_avoir_retenu() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-    v_vente   bigint;
-    v_montant numeric;
-    v_retenu  numeric;
-BEGIN
-    IF NEW.montant_avoir_retenu = 0 OR (TG_OP = 'UPDATE' AND NEW.montant_avoir_retenu <= OLD.montant_avoir_retenu) THEN
-        RETURN NEW;
-    END IF;
-    SELECT l.vente_id INTO v_vente FROM ligne_vente l WHERE l.id = NEW.ligne_vente_id;
-    SELECT g.montant_patient INTO v_montant FROM regularisation_part_organisme g
-    WHERE g.vente_id = v_vente AND g.statut = 'active' AND g.sort = 'avoir_patient';
-    IF v_montant IS NULL THEN
-        RAISE EXCEPTION 'Cette vente n''a pas de régularisation « rendu au patient » : rien à retenir à ce titre.' USING ERRCODE = 'P0001';
-    END IF;
-    SELECT COALESCE(sum(rl.montant_avoir_retenu), 0) INTO v_retenu
-    FROM retour_client_ligne rl JOIN ligne_vente l ON l.id = rl.ligne_vente_id
-    WHERE l.vente_id = v_vente AND rl.id IS DISTINCT FROM NEW.id;
-    IF v_retenu + NEW.montant_avoir_retenu > v_montant THEN
-        RAISE EXCEPTION 'La régularisation de part organisme de cette vente vient de changer : rechargez la vente.' USING ERRCODE = 'P0001';
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-
---
--- Name: FUNCTION verifier_retour_avoir_retenu(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.verifier_retour_avoir_retenu() IS 'Refuse une retenue sans régularisation « rendu au patient » active, ou au-delà de son montant (script 159)';
-
-
---
--- Name: verifier_retour_dette_avoir(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.verifier_retour_dette_avoir() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    IF NEW.dette_avoir_retenu = 0 OR (TG_OP = 'UPDATE' AND NEW.dette_avoir_retenu <= OLD.dette_avoir_retenu) THEN
-        RETURN NEW;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM vente v JOIN regularisation_part_organisme g ON g.vente_id = v.id AND g.statut = 'active' AND g.sort = 'avoir_patient'
-                   WHERE v.id = NEW.vente_id AND v.patient_id IS NOT NULL) THEN
-        RAISE EXCEPTION 'Vente sans patient ou sans régularisation « rendu au patient » : aucune dette ne peut être ajoutée par ce retour.' USING ERRCODE = 'P0001';
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-
---
--- Name: FUNCTION verifier_retour_dette_avoir(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.verifier_retour_dette_avoir() IS 'Refuse une dette ajoutée par un retour sans patient ou sans régularisation « rendu au patient » active (script 159)';
-
-
---
--- Name: verifier_retour_regularisation(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.verifier_retour_regularisation() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-    v_vente   bigint;
-    v_montant numeric;
-    v_rendu   numeric;
-BEGIN
-    IF NEW.montant_regularisation = 0 OR (TG_OP = 'UPDATE' AND NEW.montant_regularisation <= OLD.montant_regularisation) THEN
-        RETURN NEW;
-    END IF;
-    SELECT l.vente_id INTO v_vente FROM ligne_vente l WHERE l.id = NEW.ligne_vente_id;
-    SELECT g.montant_patient INTO v_montant FROM regularisation_part_organisme g
-    WHERE g.vente_id = v_vente AND g.statut = 'active' AND g.sort = 'charge_patient';
-    IF v_montant IS NULL THEN
-        RAISE EXCEPTION 'Cette vente n''a pas de régularisation à la charge du patient : rien à lui rendre à ce titre.' USING ERRCODE = 'P0001';
-    END IF;
-    SELECT COALESCE(sum(rl.montant_regularisation), 0) INTO v_rendu
-    FROM retour_client_ligne rl JOIN ligne_vente l ON l.id = rl.ligne_vente_id
-    WHERE l.vente_id = v_vente AND rl.id IS DISTINCT FROM NEW.id;
-    IF v_rendu + NEW.montant_regularisation > v_montant THEN
-        RAISE EXCEPTION 'La régularisation de part organisme de cette vente vient de changer : rechargez la vente.' USING ERRCODE = 'P0001';
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-
---
--- Name: FUNCTION verifier_retour_regularisation(); Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON FUNCTION public.verifier_retour_regularisation() IS 'Refuse une part de régularisation rendue sans régularisation « à la charge du patient » active, ou au-delà de son montant (script 158)';
-
-
---
 -- Name: proteger_regularisation_part_organisme(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3166,17 +3046,6 @@ CREATE FUNCTION public.sans_accent(t text) RETURNS text
 
 
 --
--- Name: bascule_decision_proteger(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.bascule_decision_proteger() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RAISE EXCEPTION 'bascule_decision : ajout seul';
-END $$;
-
---
 -- Name: serveur_ecarte_proteger(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3191,6 +3060,7 @@ BEGIN
     END IF;
     RAISE EXCEPTION 'serveur_ecarte : ajout seul (seule la levée d''un écart actif est permise)';
 END $$;
+
 
 --
 -- Name: situation_lot(bigint); Type: FUNCTION; Schema: public; Owner: -
@@ -5513,6 +5383,72 @@ $$;
 
 
 --
+-- Name: verifier_regularisation_rendue_avant(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.verifier_regularisation_rendue_avant() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE v_rendu numeric;
+BEGIN
+    SELECT COALESCE(sum(rl.montant_organisme), 0) INTO v_rendu
+    FROM retour_client_ligne rl JOIN ligne_vente l ON l.id = rl.ligne_vente_id
+    WHERE l.vente_id = NEW.vente_id;
+    IF NEW.part_organisme_rendue_avant IS DISTINCT FROM v_rendu THEN
+        RAISE EXCEPTION 'Un retour vient d''être enregistré sur cette vente : rescannez le volet.' USING ERRCODE = 'P0001';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION verifier_regularisation_rendue_avant(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.verifier_regularisation_rendue_avant() IS 'Refuse une régularisation dont la part rendue avant le rattachement ne correspond pas aux retours de la vente (script 157)';
+
+
+--
+-- Name: verifier_retour_avoir_retenu(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.verifier_retour_avoir_retenu() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_vente   bigint;
+    v_montant numeric;
+    v_retenu  numeric;
+BEGIN
+    IF NEW.montant_avoir_retenu = 0 OR (TG_OP = 'UPDATE' AND NEW.montant_avoir_retenu <= OLD.montant_avoir_retenu) THEN
+        RETURN NEW;
+    END IF;
+    SELECT l.vente_id INTO v_vente FROM ligne_vente l WHERE l.id = NEW.ligne_vente_id;
+    SELECT g.montant_patient INTO v_montant FROM regularisation_part_organisme g
+    WHERE g.vente_id = v_vente AND g.statut = 'active' AND g.sort = 'avoir_patient';
+    IF v_montant IS NULL THEN
+        RAISE EXCEPTION 'Cette vente n''a pas de régularisation « rendu au patient » : rien à retenir à ce titre.' USING ERRCODE = 'P0001';
+    END IF;
+    SELECT COALESCE(sum(rl.montant_avoir_retenu), 0) INTO v_retenu
+    FROM retour_client_ligne rl JOIN ligne_vente l ON l.id = rl.ligne_vente_id
+    WHERE l.vente_id = v_vente AND rl.id IS DISTINCT FROM NEW.id;
+    IF v_retenu + NEW.montant_avoir_retenu > v_montant THEN
+        RAISE EXCEPTION 'La régularisation de part organisme de cette vente vient de changer : rechargez la vente.' USING ERRCODE = 'P0001';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION verifier_retour_avoir_retenu(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.verifier_retour_avoir_retenu() IS 'Refuse une retenue sans régularisation « rendu au patient » active, ou au-delà de son montant (script 159)';
+
+
+--
 -- Name: verifier_retour_bon_fournisseur(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -5531,6 +5467,72 @@ BEGIN
     RETURN NEW;
 END;
 $$;
+
+
+--
+-- Name: verifier_retour_dette_avoir(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.verifier_retour_dette_avoir() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    IF NEW.dette_avoir_retenu = 0 OR (TG_OP = 'UPDATE' AND NEW.dette_avoir_retenu <= OLD.dette_avoir_retenu) THEN
+        RETURN NEW;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM vente v JOIN regularisation_part_organisme g ON g.vente_id = v.id AND g.statut = 'active' AND g.sort = 'avoir_patient'
+                   WHERE v.id = NEW.vente_id AND v.patient_id IS NOT NULL) THEN
+        RAISE EXCEPTION 'Vente sans patient ou sans régularisation « rendu au patient » : aucune dette ne peut être ajoutée par ce retour.' USING ERRCODE = 'P0001';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION verifier_retour_dette_avoir(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.verifier_retour_dette_avoir() IS 'Refuse une dette ajoutée par un retour sans patient ou sans régularisation « rendu au patient » active (script 159)';
+
+
+--
+-- Name: verifier_retour_regularisation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.verifier_retour_regularisation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    v_vente   bigint;
+    v_montant numeric;
+    v_rendu   numeric;
+BEGIN
+    IF NEW.montant_regularisation = 0 OR (TG_OP = 'UPDATE' AND NEW.montant_regularisation <= OLD.montant_regularisation) THEN
+        RETURN NEW;
+    END IF;
+    SELECT l.vente_id INTO v_vente FROM ligne_vente l WHERE l.id = NEW.ligne_vente_id;
+    SELECT g.montant_patient INTO v_montant FROM regularisation_part_organisme g
+    WHERE g.vente_id = v_vente AND g.statut = 'active' AND g.sort = 'charge_patient';
+    IF v_montant IS NULL THEN
+        RAISE EXCEPTION 'Cette vente n''a pas de régularisation à la charge du patient : rien à lui rendre à ce titre.' USING ERRCODE = 'P0001';
+    END IF;
+    SELECT COALESCE(sum(rl.montant_regularisation), 0) INTO v_rendu
+    FROM retour_client_ligne rl JOIN ligne_vente l ON l.id = rl.ligne_vente_id
+    WHERE l.vente_id = v_vente AND rl.id IS DISTINCT FROM NEW.id;
+    IF v_rendu + NEW.montant_regularisation > v_montant THEN
+        RAISE EXCEPTION 'La régularisation de part organisme de cette vente vient de changer : rechargez la vente.' USING ERRCODE = 'P0001';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: FUNCTION verifier_retour_regularisation(); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.verifier_retour_regularisation() IS 'Refuse une part de régularisation rendue sans régularisation « à la charge du patient » active, ou au-delà de son montant (script 158)';
 
 
 --
@@ -6159,6 +6161,47 @@ COMMENT ON TABLE public.avoir_mouvement IS 'Avoir du patient (argent dû par la 
 
 ALTER TABLE public.avoir_mouvement ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.avoir_mouvement_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: bascule_decision; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bascule_decision (
+    id bigint NOT NULL,
+    decidee_le timestamp with time zone NOT NULL,
+    cas character varying(30) NOT NULL,
+    timeline_avant integer,
+    timeline_apres integer,
+    lsn_final character varying(40),
+    derniere_donnee_recue timestamp with time zone,
+    rapports jsonb DEFAULT '[]'::jsonb NOT NULL,
+    sondes jsonb DEFAULT '{}'::jsonb NOT NULL,
+    motif character varying(500) NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bascule_decision_cas CHECK (((cas)::text = ANY (ARRAY['promotion'::text, 'retrait_promotion'::text])))
+);
+
+
+--
+-- Name: TABLE bascule_decision; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.bascule_decision IS 'Promotions automatiques du 2e serveur (cas, timelines, LSN, dernière transaction reçue, rapports des postes et sondes ; noms de postes seulement) ; ajout seul ; jamais envoyée au central (script 166).';
+
+
+--
+-- Name: bascule_decision_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.bascule_decision ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.bascule_decision_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -9567,6 +9610,29 @@ COMMENT ON COLUMN public.parametre_notification.signaler_sans_destinataire IS 'A
 
 
 --
+-- Name: parametre_postes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.parametre_postes (
+    id integer DEFAULT 1 NOT NULL,
+    mode text DEFAULT 'transition'::text NOT NULL,
+    maximum_postes integer DEFAULT 20 NOT NULL,
+    duree_code_minutes integer DEFAULT 15 NOT NULL,
+    CONSTRAINT ck_parametre_postes_duree CHECK (((duree_code_minutes >= 5) AND (duree_code_minutes <= 60))),
+    CONSTRAINT ck_parametre_postes_maximum CHECK (((maximum_postes >= 1) AND (maximum_postes <= 200))),
+    CONSTRAINT ck_parametre_postes_mode CHECK ((mode = ANY (ARRAY['inactif'::text, 'transition'::text, 'exige'::text]))),
+    CONSTRAINT parametre_postes_id_check CHECK ((id = 1))
+);
+
+
+--
+-- Name: TABLE parametre_postes; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.parametre_postes IS 'Réglage de la liste des postes autorisés (mode inactif / transition / exige, maximum, durée du code) ; jamais envoyée au central (script 167).';
+
+
+--
 -- Name: parametre_rapport; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -9908,20 +9974,76 @@ CREATE TABLE public.pharmacie (
 
 
 --
+-- Name: poste_autorise; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.poste_autorise (
+    id bigint NOT NULL,
+    nom character varying(100) NOT NULL,
+    statut text DEFAULT 'en_attente'::text NOT NULL,
+    cle_publique bytea,
+    empreinte_cle character(16),
+    generation integer DEFAULT 1 NOT NULL,
+    code_hache bytea,
+    code_expire_le timestamp with time zone,
+    code_essais smallint DEFAULT 0 NOT NULL,
+    ordinateur character varying(100),
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    cree_par bigint,
+    enrole_le timestamp with time zone,
+    derniere_preuve_le timestamp with time zone,
+    revoque_le timestamp with time zone,
+    revoque_par bigint,
+    motif_revocation character varying(200),
+    CONSTRAINT ck_poste_autorise_actif_cle CHECK (((statut <> 'actif'::text) OR ((cle_publique IS NOT NULL) AND (empreinte_cle IS NOT NULL) AND (enrole_le IS NOT NULL)))),
+    CONSTRAINT ck_poste_autorise_attente_code CHECK (((statut <> 'en_attente'::text) OR ((code_hache IS NOT NULL) AND (code_expire_le IS NOT NULL)))),
+    CONSTRAINT ck_poste_autorise_essais CHECK ((code_essais >= 0)),
+    CONSTRAINT ck_poste_autorise_generation CHECK ((generation >= 1)),
+    CONSTRAINT ck_poste_autorise_nom CHECK ((length(btrim((nom)::text)) > 0)),
+    CONSTRAINT ck_poste_autorise_revocation CHECK (((statut = 'revoque'::text) = (revoque_le IS NOT NULL))),
+    CONSTRAINT ck_poste_autorise_statut CHECK ((statut = ANY (ARRAY['en_attente'::text, 'actif'::text, 'revoque'::text])))
+);
+
+
+--
+-- Name: TABLE poste_autorise; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.poste_autorise IS 'Postes autorisés par le titulaire : enrôlement par code à usage unique, clé publique ECDSA P-256 du poste (la clé privée reste sur le poste), révocation ; jamais envoyée au central (script 167).';
+
+
+--
+-- Name: poste_autorise_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.poste_autorise ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.poste_autorise_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: presence_poste; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.presence_poste (
     poste character varying(100) NOT NULL,
     vu_le timestamp with time zone DEFAULT now() NOT NULL,
+    poste_id bigint,
     CONSTRAINT ck_presence_poste_nom CHECK ((length(btrim((poste)::text)) > 0))
 );
+
 
 --
 -- Name: TABLE presence_poste; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.presence_poste IS 'Présence des postes : dernier instant où le serveur principal a vu chaque poste (en-tête X-Pharma-Poste), recopiée sur le 2e serveur pour la règle de majorité ; jamais envoyée au central (script 165).';
+
 
 --
 -- Name: pret_bancaire; Type: TABLE; Schema: public; Owner: -
@@ -10616,8 +10738,8 @@ CREATE TABLE public.regularisation_part_organisme (
     part_organisme_rendue_avant numeric(12,2) DEFAULT 0 NOT NULL,
     CONSTRAINT ck_regularisation_annulation_montants CHECK (((annulation_dette_annulee >= (0)::numeric) AND (annulation_trop_paye_impute >= (0)::numeric) AND (annulation_rembourse >= (0)::numeric) AND (((annulation_dette_annulee + annulation_trop_paye_impute) + annulation_rembourse) <= montant_patient))),
     CONSTRAINT ck_regularisation_avoir CHECK (((sort <> 'avoir_patient'::text) OR ((montant_patient > (0)::numeric) AND (montant_patient = (montant_dette_diminuee + montant_a_rendre))))),
-    CONSTRAINT ck_regularisation_rendue_avant CHECK ((part_organisme_rendue_avant >= (0)::numeric)),
     CONSTRAINT ck_regularisation_patient CHECK (((sort <> 'charge_patient'::text) OR ((montant_patient = ecart) AND (credit_mouvement_id IS NOT NULL)))),
+    CONSTRAINT ck_regularisation_rendue_avant CHECK ((part_organisme_rendue_avant >= (0)::numeric)),
     CONSTRAINT ck_regularisation_sens CHECK ((((ecart > (0)::numeric) AND (sort = ANY (ARRAY['charge_patient'::text, 'perte_pharmacie'::text]))) OR ((ecart < (0)::numeric) AND (sort = ANY (ARRAY['avoir_patient'::text, 'gain_organisme'::text]))))),
     CONSTRAINT ck_regularisation_statut CHECK ((((statut = 'active'::text) AND (annulee_le IS NULL) AND (annulee_par IS NULL)) OR ((statut = 'annulee'::text) AND (annulee_le IS NOT NULL) AND (annulee_par IS NOT NULL)))),
     CONSTRAINT regularisation_part_organisme_ecart_check CHECK ((ecart <> (0)::numeric)),
@@ -10637,20 +10759,17 @@ COMMENT ON TABLE public.regularisation_part_organisme IS 'Écart de part organis
 
 
 --
--- Name: COLUMN regularisation_part_organisme.ecart; Type: COMMENT; Schema: public; Owner: -
+-- Name: COLUMN regularisation_part_organisme.part_organisme_chifa; Type: COMMENT; Schema: public; Owner: -
 --
-
-COMMENT ON COLUMN public.regularisation_part_organisme.ecart IS 'Part organisme enregistrée à la caisse moins part calculée sur le prix Chifa : > 0 la caisse paiera moins, < 0 elle paiera plus';
-
 
 COMMENT ON COLUMN public.regularisation_part_organisme.part_organisme_chifa IS 'Part calculée sur le prix Chifa (hors majoration) des boîtes servies encore chez le patient au rattachement (nettes des retours, script 157)';
 
 
 --
--- Name: COLUMN regularisation_part_organisme.part_organisme_rendue_avant; Type: COMMENT; Schema: public; Owner: -
+-- Name: COLUMN regularisation_part_organisme.ecart; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.regularisation_part_organisme.part_organisme_rendue_avant IS 'Part de l''organisme déjà retirée par des retours avant le rattachement du volet (script 157) ; part_organisme_chifa porte alors sur les seules boîtes encore chez le patient';
+COMMENT ON COLUMN public.regularisation_part_organisme.ecart IS 'Part organisme enregistrée à la caisse moins part calculée sur le prix Chifa : > 0 la caisse paiera moins, < 0 elle paiera plus';
 
 
 --
@@ -10686,6 +10805,13 @@ COMMENT ON COLUMN public.regularisation_part_organisme.annulation_trop_paye_impu
 --
 
 COMMENT ON COLUMN public.regularisation_part_organisme.annulation_rembourse IS 'Trop-payé rendu par le tiroir (annulation_mouvement_tiroir_id)';
+
+
+--
+-- Name: COLUMN regularisation_part_organisme.part_organisme_rendue_avant; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.regularisation_part_organisme.part_organisme_rendue_avant IS 'Part de l''organisme déjà retirée par des retours avant le rattachement du volet (script 157) ; part_organisme_chifa porte alors sur les seules boîtes encore chez le patient';
 
 
 --
@@ -10929,13 +11055,6 @@ CREATE TABLE public.retour_client_ligne (
 
 
 --
--- Name: COLUMN retour_client_ligne.montant_avoir_retenu; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.retour_client_ligne.montant_avoir_retenu IS 'Part de la régularisation « rendu au patient » (rattachement du volet) des boîtes rendues, déjà rendue au patient et retenue sur ce que le retour lui rend (script 159)';
-
-
---
 -- Name: COLUMN retour_client_ligne.montant_organisme; Type: COMMENT; Schema: public; Owner: -
 --
 
@@ -10947,6 +11066,13 @@ COMMENT ON COLUMN public.retour_client_ligne.montant_organisme IS 'Part de l''or
 --
 
 COMMENT ON COLUMN public.retour_client_ligne.montant_regularisation IS 'Part de la régularisation « à la charge du patient » (rattachement du volet) des boîtes rendues, rendue au patient ; comprise dans retour_client.montant_rembourse (script 158)';
+
+
+--
+-- Name: COLUMN retour_client_ligne.montant_avoir_retenu; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.retour_client_ligne.montant_avoir_retenu IS 'Part de la régularisation « rendu au patient » (rattachement du volet) des boîtes rendues, déjà rendue au patient et retenue sur ce que le retour lui rend (script 159)';
 
 
 --
@@ -11266,25 +11392,6 @@ ALTER TABLE public.serialisation_reponse_factice ALTER COLUMN id ADD GENERATED A
 
 
 --
--- Name: bascule_decision; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.bascule_decision (
-    id bigint NOT NULL,
-    decidee_le timestamp with time zone NOT NULL,
-    cas character varying(30) NOT NULL,
-    timeline_avant integer,
-    timeline_apres integer,
-    lsn_final character varying(40),
-    derniere_donnee_recue timestamp with time zone,
-    rapports jsonb DEFAULT '[]'::jsonb NOT NULL,
-    sondes jsonb DEFAULT '{}'::jsonb NOT NULL,
-    motif character varying(500) NOT NULL,
-    cree_le timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT ck_bascule_decision_cas CHECK (((cas)::text = ANY (ARRAY['promotion'::text, 'retrait_promotion'::text])))
-);
-
---
 -- Name: serveur_ecarte; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -11307,11 +11414,6 @@ CREATE TABLE public.serveur_ecarte (
     CONSTRAINT serveur_ecarte_timeline_locale_check CHECK ((timeline_locale >= 1))
 );
 
---
--- Name: TABLE bascule_decision; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON TABLE public.bascule_decision IS 'Promotions automatiques du 2e serveur (cas, timelines, LSN, dernière transaction reçue, rapports des postes et sondes ; noms de postes seulement) ; ajout seul ; jamais envoyée au central (script 166).';
 
 --
 -- Name: TABLE serveur_ecarte; Type: COMMENT; Schema: public; Owner: -
@@ -11319,24 +11421,13 @@ COMMENT ON TABLE public.bascule_decision IS 'Promotions automatiques du 2e serve
 
 COMMENT ON TABLE public.serveur_ecarte IS 'État « serveur écarté » (lecture seule) après une bascule vers un autre serveur principal ; ajout seul, seule la levée modifie une ligne ; jamais envoyée au central (script 163).';
 
+
 --
 -- Name: COLUMN serveur_ecarte.nature; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON COLUMN public.serveur_ecarte.nature IS 'bascule : écart constaté après la promotion de l''autre serveur (163) ; retrait : mise hors jeu demandée par le 2e serveur avant sa promotion (166)';
 
---
--- Name: bascule_decision_id_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-ALTER TABLE public.bascule_decision ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
-    SEQUENCE NAME public.bascule_decision_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1
-);
 
 --
 -- Name: serveur_ecarte_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -11350,6 +11441,7 @@ ALTER TABLE public.serveur_ecarte ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTI
     NO MAXVALUE
     CACHE 1
 );
+
 
 --
 -- Name: serveur_officine; Type: TABLE; Schema: public; Owner: -
@@ -13991,6 +14083,14 @@ ALTER TABLE ONLY public.avoir_mouvement
 
 
 --
+-- Name: bascule_decision bascule_decision_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bascule_decision
+    ADD CONSTRAINT bascule_decision_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: bascule_promotion bascule_promotion_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -14823,6 +14923,14 @@ ALTER TABLE ONLY public.parametre_notification
 
 
 --
+-- Name: parametre_postes parametre_postes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.parametre_postes
+    ADD CONSTRAINT parametre_postes_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: parametre_rapport parametre_rapport_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -14892,6 +15000,14 @@ ALTER TABLE ONLY public.permission
 
 ALTER TABLE ONLY public.pharmacie
     ADD CONSTRAINT pharmacie_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: poste_autorise poste_autorise_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.poste_autorise
+    ADD CONSTRAINT poste_autorise_pkey PRIMARY KEY (id);
 
 
 --
@@ -15191,18 +15307,12 @@ ALTER TABLE ONLY public.serialisation_reponse_factice
 
 
 --
--- Name: bascule_decision bascule_decision_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.bascule_decision
-    ADD CONSTRAINT bascule_decision_pkey PRIMARY KEY (id);
-
---
 -- Name: serveur_ecarte serveur_ecarte_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.serveur_ecarte
     ADD CONSTRAINT serveur_ecarte_pkey PRIMARY KEY (id);
+
 
 --
 -- Name: serveur_officine serveur_officine_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -16279,10 +16389,24 @@ CREATE INDEX idx_versement_bordereau_bordereau ON public.versement_bordereau USI
 
 
 --
+-- Name: ix_bascule_decision_decidee_le; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_bascule_decision_decidee_le ON public.bascule_decision USING btree (decidee_le);
+
+
+--
 -- Name: ix_bascule_saut_promotion; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_bascule_saut_promotion ON public.bascule_saut USING btree (promotion_id);
+
+
+--
+-- Name: ix_commande_fournisseur_fournisseur; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_commande_fournisseur_fournisseur ON public.commande_fournisseur USING btree (fournisseur_id);
 
 
 --
@@ -16335,6 +16459,20 @@ CREATE INDEX ix_evenement_caisse_employe ON public.evenement_caisse USING btree 
 
 
 --
+-- Name: ix_evenement_caisse_session; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_evenement_caisse_session ON public.evenement_caisse USING btree (session_caisse_id);
+
+
+--
+-- Name: ix_facture_client_patient; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_facture_client_patient ON public.facture_client USING btree (patient_id);
+
+
+--
 -- Name: ix_historique_chifa_assure; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -16353,6 +16491,27 @@ CREATE INDEX ix_historique_chifa_date ON public.historique_chifa USING btree (da
 --
 
 CREATE INDEX ix_historique_chifa_organisme ON public.historique_chifa USING btree (organisme, date_facture DESC);
+
+
+--
+-- Name: ix_journal_vente_session_caisse; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_journal_vente_session_caisse ON public.journal_vente USING btree (session_caisse_id);
+
+
+--
+-- Name: ix_ligne_commande_commande; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ligne_commande_commande ON public.ligne_commande USING btree (commande_id);
+
+
+--
+-- Name: ix_ligne_retour_fournisseur_retour; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ligne_retour_fournisseur_retour ON public.ligne_retour_fournisseur USING btree (retour_id);
 
 
 --
@@ -16447,10 +16606,38 @@ CREATE INDEX ix_patient_prenom_minuscule ON public.patient USING btree (lower(pr
 
 
 --
+-- Name: ix_poste_autorise_cree_par; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_poste_autorise_cree_par ON public.poste_autorise USING btree (cree_par);
+
+
+--
+-- Name: ix_poste_autorise_revoque_par; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_poste_autorise_revoque_par ON public.poste_autorise USING btree (revoque_par);
+
+
+--
+-- Name: ix_presence_poste_poste_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_presence_poste_poste_id ON public.presence_poste USING btree (poste_id);
+
+
+--
 -- Name: ix_presence_poste_vu_le; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_presence_poste_vu_le ON public.presence_poste USING btree (vu_le);
+
+
+--
+-- Name: ix_produit_dci; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_produit_dci ON public.produit USING btree (dci_id);
 
 
 --
@@ -16468,16 +16655,11 @@ CREATE INDEX ix_remise_auto_produit ON public.remise_automatique USING btree (pr
 
 
 --
--- Name: ix_bascule_decision_decidee_le; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_bascule_decision_decidee_le ON public.bascule_decision USING btree (decidee_le);
-
---
 -- Name: ix_serveur_ecarte_ecarte_le; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_serveur_ecarte_ecarte_le ON public.serveur_ecarte USING btree (ecarte_le);
+
 
 --
 -- Name: ix_sync_famille_colonne_table; Type: INDEX; Schema: public; Owner: -
@@ -16491,6 +16673,13 @@ CREATE INDEX ix_sync_famille_colonne_table ON public.sync_famille_colonne USING 
 --
 
 CREATE INDEX ix_sync_ordre_recu_message ON public.sync_ordre_recu USING btree (cree_le DESC) WHERE ((type = 'message'::text) AND (statut = 'applique'::text) AND (message_ferme_le IS NULL));
+
+
+--
+-- Name: ix_sync_ordre_recu_message_ferme_par; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_sync_ordre_recu_message_ferme_par ON public.sync_ordre_recu USING btree (message_ferme_par) WHERE (message_ferme_par IS NOT NULL);
 
 
 --
@@ -16774,6 +16963,20 @@ CREATE UNIQUE INDEX ux_patient_num_assure ON public.patient USING btree (regexp_
 
 
 --
+-- Name: ux_poste_autorise_code; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_poste_autorise_code ON public.poste_autorise USING btree (code_hache) WHERE (statut = 'en_attente'::text);
+
+
+--
+-- Name: ux_poste_autorise_nom_actif; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX ux_poste_autorise_nom_actif ON public.poste_autorise USING btree (lower((nom)::text)) WHERE (statut <> 'revoque'::text);
+
+
+--
 -- Name: ux_pret_bancaire_preteur_reference; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -16813,6 +17016,7 @@ CREATE UNIQUE INDEX ux_scan_reception_serie ON public.scan_reception USING btree
 --
 
 CREATE UNIQUE INDEX ux_serveur_ecarte_active ON public.serveur_ecarte USING btree ((true)) WHERE (leve_le IS NULL);
+
 
 --
 -- Name: ux_session_poste_ouverte; Type: INDEX; Schema: public; Owner: -
@@ -17031,6 +17235,20 @@ CREATE TRIGGER trg_annulation_registre_immuable BEFORE DELETE OR UPDATE ON publi
 --
 
 CREATE TRIGGER trg_annulation_registre_non_vidable BEFORE TRUNCATE ON public.annulation_registre FOR EACH STATEMENT EXECUTE FUNCTION public.ajout_seul_refuser();
+
+
+--
+-- Name: bascule_decision trg_bascule_decision_ajout_seul; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bascule_decision_ajout_seul BEFORE DELETE OR UPDATE ON public.bascule_decision FOR EACH ROW EXECUTE FUNCTION public.bascule_decision_proteger();
+
+
+--
+-- Name: bascule_decision trg_bascule_decision_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bascule_decision_non_vidable BEFORE TRUNCATE ON public.bascule_decision FOR EACH STATEMENT EXECUTE FUNCTION public.bascule_decision_proteger();
 
 
 --
@@ -17517,13 +17735,6 @@ CREATE TRIGGER trg_registre_sans_doublon BEFORE INSERT ON public.registre_psycho
 
 
 --
--- Name: regularisation_part_organisme trg_regularisation_rendue_avant; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER trg_regularisation_rendue_avant BEFORE INSERT ON public.regularisation_part_organisme FOR EACH ROW EXECUTE FUNCTION public.verifier_regularisation_rendue_avant();
-
-
---
 -- Name: regularisation_part_organisme trg_regularisation_part_organisme_immuable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -17531,17 +17742,17 @@ CREATE TRIGGER trg_regularisation_part_organisme_immuable BEFORE DELETE OR UPDAT
 
 
 --
+-- Name: regularisation_part_organisme trg_regularisation_rendue_avant; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_regularisation_rendue_avant BEFORE INSERT ON public.regularisation_part_organisme FOR EACH ROW EXECUTE FUNCTION public.verifier_regularisation_rendue_avant();
+
+
+--
 -- Name: ligne_retour_fournisseur trg_retour_bon_fournisseur; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_retour_bon_fournisseur BEFORE INSERT OR UPDATE ON public.ligne_retour_fournisseur FOR EACH ROW EXECUTE FUNCTION public.verifier_retour_bon_fournisseur();
-
-
---
--- Name: retour_client_ligne trg_retour_client_ligne_prestation; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER trg_retour_client_ligne_prestation BEFORE INSERT ON public.retour_client_ligne FOR EACH ROW EXECUTE FUNCTION public.refuser_retour_prestation();
 
 
 --
@@ -17563,6 +17774,13 @@ CREATE TRIGGER trg_retour_client_ligne_avoir_retenu BEFORE INSERT OR UPDATE OF m
 --
 
 CREATE TRIGGER trg_retour_client_ligne_organisme_depose BEFORE INSERT OR UPDATE OF montant_organisme ON public.retour_client_ligne FOR EACH ROW EXECUTE FUNCTION public.refuser_retour_organisme_depose();
+
+
+--
+-- Name: retour_client_ligne trg_retour_client_ligne_prestation; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_retour_client_ligne_prestation BEFORE INSERT ON public.retour_client_ligne FOR EACH ROW EXECUTE FUNCTION public.refuser_retour_prestation();
 
 
 --
@@ -17601,28 +17819,18 @@ CREATE TRIGGER trg_sceau_integrite_non_vidable BEFORE TRUNCATE ON public.sceau_i
 
 
 --
--- Name: bascule_decision trg_bascule_decision_ajout_seul; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER trg_bascule_decision_ajout_seul BEFORE DELETE OR UPDATE ON public.bascule_decision FOR EACH ROW EXECUTE FUNCTION public.bascule_decision_proteger();
-
---
--- Name: bascule_decision trg_bascule_decision_non_vidable; Type: TRIGGER; Schema: public; Owner: -
---
-
-CREATE TRIGGER trg_bascule_decision_non_vidable BEFORE TRUNCATE ON public.bascule_decision FOR EACH STATEMENT EXECUTE FUNCTION public.bascule_decision_proteger();
-
---
 -- Name: serveur_ecarte trg_serveur_ecarte_ajout_seul; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_serveur_ecarte_ajout_seul BEFORE DELETE OR UPDATE ON public.serveur_ecarte FOR EACH ROW EXECUTE FUNCTION public.serveur_ecarte_proteger();
+
 
 --
 -- Name: serveur_ecarte trg_serveur_ecarte_non_vidable; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trg_serveur_ecarte_non_vidable BEFORE TRUNCATE ON public.serveur_ecarte FOR EACH STATEMENT EXECUTE FUNCTION public.serveur_ecarte_proteger();
+
 
 --
 -- Name: session_caisse trg_session_fermee; Type: TRIGGER; Schema: public; Owner: -
@@ -18775,11 +18983,27 @@ ALTER TABLE ONLY public.patient
 
 
 --
+-- Name: presence_poste fk_presence_poste_poste_autorise; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.presence_poste
+    ADD CONSTRAINT fk_presence_poste_poste_autorise FOREIGN KEY (poste_id) REFERENCES public.poste_autorise(id) ON DELETE SET NULL;
+
+
+--
 -- Name: produit fk_produit_categorie; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.produit
     ADD CONSTRAINT fk_produit_categorie FOREIGN KEY (categorie) REFERENCES public.categorie_produit(code);
+
+
+--
+-- Name: retour_client fk_retour_client_chifa_corrige_par; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.retour_client
+    ADD CONSTRAINT fk_retour_client_chifa_corrige_par FOREIGN KEY (chifa_corrige_par) REFERENCES public.utilisateur(id);
 
 
 --
@@ -19495,6 +19719,22 @@ ALTER TABLE ONLY public.patient
 
 
 --
+-- Name: poste_autorise poste_autorise_cree_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.poste_autorise
+    ADD CONSTRAINT poste_autorise_cree_par_fkey FOREIGN KEY (cree_par) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: poste_autorise poste_autorise_revoque_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.poste_autorise
+    ADD CONSTRAINT poste_autorise_revoque_par_fkey FOREIGN KEY (revoque_par) REFERENCES public.utilisateur(id);
+
+
+--
 -- Name: pret_bancaire pret_bancaire_compte_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -19951,14 +20191,6 @@ ALTER TABLE ONLY public.retour_client_ligne
 
 
 --
--- Name: retour_client fk_retour_client_chifa_corrige_par; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.retour_client
-    ADD CONSTRAINT fk_retour_client_chifa_corrige_par FOREIGN KEY (chifa_corrige_par) REFERENCES public.utilisateur(id);
-
-
---
 -- Name: retour_client_ligne retour_client_ligne_retour_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -20375,64 +20607,8 @@ ALTER TABLE ONLY public.zone_psychotrope_wilaya
 
 
 --
--- Name: ix_ligne_commande_commande; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_ligne_commande_commande ON public.ligne_commande USING btree (commande_id);
-
-
---
--- Name: ix_produit_dci; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_produit_dci ON public.produit USING btree (dci_id);
-
-
---
--- Name: ix_facture_client_patient; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_facture_client_patient ON public.facture_client USING btree (patient_id);
-
-
---
--- Name: ix_commande_fournisseur_fournisseur; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_commande_fournisseur_fournisseur ON public.commande_fournisseur USING btree (fournisseur_id);
-
-
---
--- Name: ix_journal_vente_session_caisse; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_journal_vente_session_caisse ON public.journal_vente USING btree (session_caisse_id);
-
-
---
--- Name: ix_evenement_caisse_session; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_evenement_caisse_session ON public.evenement_caisse USING btree (session_caisse_id);
-
-
---
--- Name: ix_ligne_retour_fournisseur_retour; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_ligne_retour_fournisseur_retour ON public.ligne_retour_fournisseur USING btree (retour_id);
-
-
---
--- Name: ix_sync_ordre_recu_message_ferme_par; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_sync_ordre_recu_message_ferme_par ON public.sync_ordre_recu USING btree (message_ferme_par) WHERE (message_ferme_par IS NOT NULL);
-
-
---
 -- PostgreSQL database dump complete
 --
 
-\unrestrict wam9EwkWt27C8UivU4E4M5LAfAslp8eS26EsW29KL9ccRnw6s1SBtTrsrVlPTIm
+\unrestrict bYJAwJgfijFwLe244M93hWc8IXyQJ3Sqz9zg8n98StjZOpakXtshPD3oqhUvNQz
 

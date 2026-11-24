@@ -132,7 +132,7 @@ public sealed record ReponseLotFefo(LotFefoDto? Lot, IReadOnlyList<LotEcarteDto>
 
 /// <summary>Appels à l'API locale. Chaque méthode renvoie le résultat ou un message d'erreur lisible.</summary>
 public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAutorisation? autorisations = null, TachesLaissees? tachesLaissees = null,
-    AdresseApiCourante? adresseCourante = null, IBasculePoste? bascule = null)
+    AdresseApiCourante? adresseCourante = null, IBasculePoste? bascule = null, IdentitePoste? identite = null, HorlogePoste? horlogeServeur = null)
 {
     private const string Injoignable = "Serveur de la pharmacie injoignable : vérifiez que le PC serveur est allumé.";
 
@@ -1642,6 +1642,77 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
             return (null, null, MessageEchec(ex));
         }
     }
+
+    // ---- Liste des postes autorisés (contrat-api.md § 4 et § 5) -------------------------------------------------------------------------
+
+    /// <summary>État du poste face à la liste (mode, preuve acceptée ou refusée) ; null si le serveur ne répond pas ou ne connaît pas la liste.</summary>
+    public async Task<EtatPosteAutoriseDto?> EtatAutorisationPosteAsync()
+    {
+        try
+        {
+            using var rep = await http.GetAsync("api/postes/etat");
+            return rep.IsSuccessStatusCode ? await rep.Content.ReadFromJsonAsync<EtatPosteAutoriseDto>() : null;
+        }
+        catch (Exception ex) when (EstEchecAppel(ex)) { return null; }
+    }
+
+    /// <summary>
+    /// Autorise ce poste avec le code donné par le titulaire : nouvelle clé non exportable, preuve de possession, envoi au serveur. Accepté : la clé devient
+    /// celle du poste (l'ancienne est supprimée) ; refusé : la nouvelle clé est supprimée. Rend null si accepté, sinon le message à afficher.
+    /// </summary>
+    public async Task<string?> AutoriserCePosteAsync(string code)
+    {
+        if (identite is null || horlogeServeur is null) return "Autorisation du poste indisponible sur ce poste.";
+        (byte[] Spki, System.Security.Cryptography.ECDsa Cle, string Nom, string Fournisseur) nouvelle;
+        // Hors du fil de l'interface : sur un compte standard, la demande d'élévation de Windows attend la réponse de l'utilisateur
+        try { nouvelle = await Task.Run(identite.PreparerCle); }
+        catch (InvalidOperationException e) { App.NoterErreur(e); return e.Message; }
+        try
+        {
+            // Heure du serveur d'abord (la preuve de possession est horodatée) : l'état du poste porte l'en-tête Date
+            await EtatAutorisationPosteAsync();
+            var horodatage = horlogeServeur.Unix;
+            var preuve = PreuvePoste.Signer(nouvelle.Cle, PreuvePoste.ChaineEnrolement(code, horodatage, nouvelle.Spki));
+            using var rep = await http.PostAsJsonAsync("api/postes/enrolement",
+                new EnrolementPosteRequete(code, Convert.ToBase64String(nouvelle.Spki), Environment.MachineName, horodatage, preuve));
+            if (!rep.IsSuccessStatusCode)
+            {
+                identite.Abandonner(nouvelle.Nom, nouvelle.Cle);
+                return await MessageAsync(rep);
+            }
+            var r = (await rep.Content.ReadFromJsonAsync<EnrolementPosteReponse>())!;
+            identite.Valider(r.PosteId, r.Nom, nouvelle.Nom, nouvelle.Cle, nouvelle.Fournisseur);
+            return null;
+        }
+        catch (Exception ex) when (EstEchecAppel(ex) || ex is IOException or UnauthorizedAccessException)
+        {
+            identite.Abandonner(nouvelle.Nom, nouvelle.Cle);
+            App.NoterErreur(ex);
+            return ex is UnauthorizedAccessException or IOException
+                ? "Identité du poste non enregistrée (dossier ProgramData › PharmaOfficine non accessible) : lancez Tracodex Officine une fois en administrateur."
+                : MessageEchec(ex);
+        }
+    }
+
+    public Task<(PageDto<PosteAutoriseDto>?, string?)> PostesAutorisesAsync(string? statut, string? recherche, int page, int taille) =>
+        GetAsync<PageDto<PosteAutoriseDto>?>("api/admin/postes?" + Requete(("statut", statut), ("recherche", recherche), ("page", page), ("taille", taille)), null);
+
+    public Task<(ReglagesPostesDto?, string?)> ReglagesPostesAsync() => GetAsync<ReglagesPostesDto?>("api/admin/postes/reglages", null);
+
+    public async Task<string?> ModifierReglagesPostesAsync(ReglagesPostesDto reglages) =>
+        (await EnvoyerCorpsAsync<ReglagesPostesDto, object>(HttpMethod.Put, "api/admin/postes/reglages", reglages with { NomsSansPreuve = null })).Item2;
+
+    public Task<(CodeEnrolementDto?, string?)> AutoriserPosteAsync(string nom) => PostAsync<NomPosteRequete, CodeEnrolementDto>("api/admin/postes", new(nom));
+
+    public Task<(CodeEnrolementDto?, string?)> NouveauCodePosteAsync(long id) => PostAsync<object, CodeEnrolementDto>($"api/admin/postes/{id}/code", new { });
+
+    public Task<(CodeEnrolementDto?, string?)> RemplacerPostePcAsync(long id) => PostAsync<object, CodeEnrolementDto>($"api/admin/postes/{id}/remplacer", new { });
+
+    public async Task<string?> RenommerPosteAsync(long id, string nom) =>
+        (await EnvoyerCorpsAsync<NomPosteRequete, object>(HttpMethod.Put, $"api/admin/postes/{id}/nom", new(nom))).Item2;
+
+    public async Task<string?> RevoquerPosteAsync(long id, string motif) =>
+        (await PostAsync<RevocationPosteRequete, object>($"api/admin/postes/{id}/revoquer", new(motif))).Item2;
 
     private async Task<(T, string?)> GetAsync<T>(string url, T defaut)
     {

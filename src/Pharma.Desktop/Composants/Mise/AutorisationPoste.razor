@@ -1,0 +1,82 @@
+@inject ApiClient Api
+@inject IdentitePoste Identite
+@implements IDisposable
+
+@* Liste des postes autorisés (2026-11-24) : sur l'écran de connexion, un poste non autorisé (mode « transition ») voit un bandeau et peut saisir le code donné
+   par le titulaire ; en mode « exigé », ou si le poste a été révoqué ou remplacé, la saisie du code est ouverte d'emblée (la connexion serait refusée).
+   Saisie gardée après un refus (le code reste dans le champ). *@
+@if (etat is not null && etat.Mode != "inactif" && !etat.Prouve)
+{
+    @if (!ouvert)
+    {
+        <div class="@(Bloquant ? "bandeau-attention" : "info-bandeau")" role="status">
+            @Texte
+            <button type="button" class="lien-bouton" @onclick="() => ouvert = true">Autoriser ce poste</button>
+        </div>
+    }
+    else
+    {
+        <form class="carte autorisation-poste" @onsubmit="ValiderAsync" aria-labelledby="t-autoriser-poste">
+            <h2 id="t-autoriser-poste" style="margin: 0">Autoriser ce poste</h2>
+            <p class="detail" style="margin: 0">@Texte Le titulaire crée le code dans Administration › Postes autorisés.</p>
+            <div class="champ">
+                <label for="ap-code" class="requis">Code du poste</label>
+                <input id="ap-code" type="text" autocomplete="off" maxlength="9" placeholder="XXXX-XXXX" autofocus @bind="code" @bind:event="oninput"
+                       class="@Obligatoire.Classe(controle && string.IsNullOrWhiteSpace(code))" aria-invalid="@Obligatoire.Aria(controle && string.IsNullOrWhiteSpace(code))" />
+            </div>
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+            <div class="actions-fenetre" style="margin-top: 0">
+                <button class="btn btn-principal" type="submit" disabled="@enCours">Autoriser</button>
+                @if (!Bloquant) { <button type="button" class="btn" @onclick="() => ouvert = false">Plus tard</button> }
+            </div>
+        </form>
+    }
+}
+@if (autorise is not null) { <div class="succes" role="status">Poste autorisé : « @autorise ». Le nom s’affichera dans la barre au prochain démarrage.</div> }
+
+@code {
+    private EtatPosteAutoriseDto? etat;
+    private bool ouvert, enCours, controle;
+    private string code = "";
+    private string? erreur, autorise;
+
+    /// <summary>La connexion serait refusée : mode « exigé », ou poste révoqué / remplacé / refusé par le serveur.</summary>
+    private bool Bloquant => etat?.Mode == "exige" || etat?.Refus is "poste_revoque" or "poste_non_autorise"
+                             || Identite.DernierRefus is "poste_revoque" or "poste_non_autorise";
+
+    private string Texte => (etat?.Refus ?? Identite.DernierRefus) switch
+    {
+        "poste_revoque" => "Ce poste a été révoqué ou remplacé par le titulaire : il doit être autorisé de nouveau.",
+        "preuve_horloge" => "L’heure de ce PC est trop éloignée de celle du serveur : réglez l’horloge du PC, puis relancez le logiciel.",
+        "poste_non_prouve" when Identite.Enrole => "Ce poste n’a pas pu prouver son identité : faites-le autoriser de nouveau.",
+        _ when etat?.Mode == "exige" => "Ce poste n’est pas autorisé : la connexion est refusée tant que le titulaire ne l’a pas autorisé.",
+        _ => "Ce poste n’est pas encore autorisé : demandez le code au titulaire."
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        Identite.Changee += Relire;
+        etat = await Api.EtatAutorisationPosteAsync();
+        ouvert = Bloquant && etat is { Prouve: false } && etat.Mode != "inactif";
+    }
+
+    private void Relire() => InvokeAsync(async () => { etat = await Api.EtatAutorisationPosteAsync(); StateHasChanged(); });
+
+    private async Task ValiderAsync()
+    {
+        controle = true;
+        if (string.IsNullOrWhiteSpace(code)) { erreur = "Tapez le code donné par le titulaire."; return; }
+        (enCours, erreur) = (true, null);
+        try
+        {
+            erreur = await Api.AutoriserCePosteAsync(code.Trim());
+            if (erreur is not null) return;
+            autorise = Identite.Nom;
+            (code, controle, ouvert) = ("", false, false);
+            etat = await Api.EtatAutorisationPosteAsync();
+        }
+        finally { enCours = false; }
+    }
+
+    public void Dispose() => Identite.Changee -= Relire;
+}

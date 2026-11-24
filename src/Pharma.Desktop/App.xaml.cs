@@ -10,6 +10,9 @@ public partial class App : Application
 {
     protected override void OnStartup(StartupEventArgs e)
     {
+        // Relancé en administrateur pour créer la clé du poste (« --creer-cle-poste <nom> », D4) : rien d'autre, aucune fenêtre
+        if (CreationCleAdministrateur.Traiter(e.Args, CleMachineCng.CreerEnAdministrateur) is int codeCle) Environment.Exit(codeCle);
+
         // Dates et montants à la française (« 52 900 DA », « dimanche 8 novembre 2026 »)
         var fr = CultureInfo.GetCultureInfo("fr-FR");
         CultureInfo.DefaultThreadCurrentCulture = fr;
@@ -26,8 +29,11 @@ public partial class App : Application
         // Adresse réglée dans poste.json (AdresseApi : bascule du poste sur le PC de secours) prioritaire sur PHARMA_API
         var reglages = new ReglagesPoste();
         var api = ReglagesPoste.AdresseApiDemarrage(reglages.Actuelles, Environment.GetEnvironmentVariable("PHARMA_API"));
-        // Chaque appel nomme le poste : il identifie la caisse (le tiroir) partagée par les employés du poste
-        var poste = new ConfigurationPoste();
+        // Liste des postes autorisés : identité du poste enrôlé (clé privée non exportable de Windows) et heure du serveur ; chaque requête est signée
+        var identite = new IdentitePoste();
+        var horlogeServeur = new HorlogePoste();
+        // Chaque appel nomme le poste : il identifie la caisse (le tiroir) partagée par les employés du poste (nom donné par le titulaire si le poste est enrôlé)
+        var poste = new ConfigurationPoste(identite.Nom);
         // Chaque appel est compté : la barre de chargement du haut de la fenêtre s'affiche pendant les appels
         var appels = new AppelsEnCours();
         services.AddSingleton(appels);
@@ -38,13 +44,17 @@ public partial class App : Application
         var panier = new PanierBascule();
         var adresseCourante = new AdresseApiCourante(new Uri(api));
         var version = typeof(App).Assembly.GetName().Version is { } v ? $"{v.Major}.{v.Minor:00}" : "?";
-        vigie = new VigiePoste(reglages, session, adresseCourante, new ReseauVigieHttp(poste.Poste, null, () => session.EstConnecte ? session.Jeton : null), panier, poste.Poste,
+        vigie = new VigiePoste(reglages, session, adresseCourante, new ReseauVigieHttp(poste.Poste,
+            new HttpClient(new SignaturePoste(identite, horlogeServeur, new HttpClientHandler())) { Timeout = TimeSpan.FromSeconds(4) },
+            () => session.EstConnecte ? session.Jeton : null), panier, poste.Poste,
             Environment.GetEnvironmentVariable("PHARMA_API"), version, journal: NoterErreur);
-        var chaine = new SurveillanceEcart(vigie, new RelaisAdresse(adresseCourante, new SuiviAppels(appels)));
+        var chaine = new SurveillanceEcart(vigie, new RelaisAdresse(adresseCourante, new SignaturePoste(identite, horlogeServeur, new SuiviAppels(appels))));
         var client = new HttpClient(chaine) { BaseAddress = new Uri(api), Timeout = Timeout.InfiniteTimeSpan };
         client.DefaultRequestHeaders.Add("X-Pharma-Poste", Uri.EscapeDataString(poste.Poste));
         services.AddSingleton(client);
         services.AddSingleton(poste);
+        services.AddSingleton(identite);
+        services.AddSingleton(horlogeServeur);
         services.AddSingleton(reglages);
         services.AddSingleton(session);
         services.AddSingleton(panier);

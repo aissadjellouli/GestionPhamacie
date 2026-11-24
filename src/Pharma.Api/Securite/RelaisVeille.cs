@@ -71,6 +71,22 @@ public sealed class RelaisVeille(IHttpClientFactory fabrique, SignatureInterServ
         // En-tête X-Pharma-Poste : nom encodé URL par le poste, décodé ici en forme canonique (NomPoste) ; signé sous sa forme ASCII encodée
         if (!req.Headers.TryGetValue(PresencePostesMiddleware.EnTete, out var valeur) || valeur.Count != 1
             || NomPoste.DepuisEnTete(valeur[0]) is not { } poste) return false;
+        // Liste des postes autorisés (modes « transition » et « exige ») : nom du poste PROUVÉ par sa signature (clé publique de la copie répliquée) ;
+        // preuve fausse : jamais relayée ; sans preuve : relayée seulement en mode « transition », sous le nom annoncé (le serveur 1 revérifie tout)
+        if (ctx.RequestServices.GetService<Pharma.Application.Postes.RegistrePostesAutorises>() is { } registre
+            && await registre.ModeAsync(ct) is var mode && mode != Pharma.Shared.PreuvePoste.ModeInactif)
+        {
+            var entetes = PreuvePosteMiddleware.EnTetes(req.Headers);
+            if (entetes.Presents)
+            {
+                var r = await ctx.RequestServices.GetRequiredService<VerificateurPreuvePoste>().VerifierAsync(entetes, req.Method, InterServeursMiddleware.CibleBrute(ctx),
+                    req.Headers.Authorization.FirstOrDefault(), ct);
+                if (r.Poste is { } prouve) poste = prouve.Nom;
+                // Preuve fausse ou inconnue : relayée seulement en mode « transition », comme un poste sans preuve ; révoqué, horloge : jamais
+                else if (mode != Pharma.Shared.PreuvePoste.ModeTransition || r.Issue != IssuePreuve.NonProuve) return false;
+            }
+            else if (mode == Pharma.Shared.PreuvePoste.ModeExige) return false;
+        }
         var posteSigne = NomPoste.VersEnTete(poste);
         if (OrigineRelais.Texte(ctx.Connection.RemoteIpAddress) is not { } origine) return false;
         if (situation.Evaluer(poste) is { } refus)
@@ -87,7 +103,8 @@ public sealed class RelaisVeille(IHttpClientFactory fabrique, SignatureInterServ
             return true;
         }
         situation.Relayee(poste);
-        var cible = req.Path.ToUriComponent() + req.QueryString.ToUriComponent();
+        // Cible brute (telle que reçue) : la signature du poste porte sur elle, le serveur 1 la vérifie à l'identique
+        var cible = InterServeursMiddleware.CibleBrute(ctx);
         using var message = new HttpRequestMessage(new HttpMethod(req.Method), new Uri(@base, cible));
         if (CorpsPresent(ctx))
         {

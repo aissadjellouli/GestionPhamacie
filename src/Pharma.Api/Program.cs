@@ -119,6 +119,9 @@ builder.Services.AddInfrastructure(new InfrastructureOptions(
     demo.Actif));
 builder.Services.AddSingleton<JetonService>();
 builder.Services.AddSingleton<IGenerateurJeton>(sp => sp.GetRequiredService<JetonService>());
+// Liste des postes autorisés (script 167) : vérification des preuves (nonces en mémoire de ce serveur) et enrôlement par code
+builder.Services.AddSingleton<Pharma.Api.Securite.VerificateurPreuvePoste>();
+builder.Services.AddScoped<Pharma.Api.Securite.EnrolerPoste>();
 // Connexion par code comptoir : droits limités au comptoir (enveloppe le service de droits)
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<Pharma.Infrastructure.Securite.PermissionService>();
@@ -216,7 +219,7 @@ if (demo.Actif)
     app.Logger.LogWarning("Mode démonstration actif : données fictives ; SMS, e-mails, synchronisation, sauvegardes, super admin, 2e serveur, "
                           + "reprise ODBC et export Chifa coupés");
     // Le compte super admin ne se crée pas en démonstration (super admin coupé)
-    if (args.Contains(ConsoleSuperAdmin.Argument) || ConsoleCleScellement.Concerne(args) || ConsoleLeverEcart.Concerne(args))
+    if (args.Contains(ConsoleSuperAdmin.Argument) || ConsoleCleScellement.Concerne(args) || ConsoleLeverEcart.Concerne(args) || ConsoleAutoriserPoste.Concerne(args))
     {
         Console.Error.WriteLine(Pharma.Application.Demo.ModeDemo.Indisponible("commandes du super admin et de la clé de scellement"));
         return 3;
@@ -234,6 +237,10 @@ if (ConsoleCleScellement.Concerne(args))
 // Empreinte de la clé des jetons de ce PC (comparée à celle de l'autre serveur) : Pharma.Api.exe --empreinte-jeton (le serveur ne démarre pas)
 if (ConsoleEmpreinteJeton.Concerne(args))
     return ConsoleEmpreinteJeton.Executer(app.Configuration);
+
+// Autorisation d'un poste au démarrage (aucun titulaire encore connecté sur un poste enrôlé) : Pharma.Api.exe --autoriser-poste "<nom>" (le serveur ne démarre pas)
+if (ConsoleAutoriserPoste.Concerne(args))
+    return await ConsoleAutoriserPoste.ExecuterAsync(app.Services, args);
 
 // Levée d'un faux positif « serveur écarté » : Pharma.Api.exe --lever-ecart [--identifiant X] [--motif "texte"] (compte titulaire ; le serveur ne démarre pas)
 if (ConsoleLeverEcart.Concerne(args))
@@ -424,20 +431,14 @@ app.Use(BarrageServeurVeille.Filtrer);
 // Démonstration : fonctions coupées refusées (422 « Indisponible en démonstration : … »), avant toute authentification
 if (demo.Actif) app.Use(Pharma.Api.Demo.FonctionsCoupeesDemo.FiltrerAsync);
 
+// Liste des postes autorisés (script 167) : preuve de poste vérifiée avant l'authentification (poste prouvé, ou refus selon le mode)
+app.UseMiddleware<Pharma.Api.Securite.PreuvePosteMiddleware>();
 app.UseAuthentication();
 // Présence des postes (V2-1b) : seule une requête authentifiée compte (healthcheck compris, le poste y joint son jeton) ; nom pris dans le claim « poste » du jeton
 app.UseMiddleware<Pharma.Api.Securite.PresencePostesMiddleware>();
-// Le nom de poste est lié au jeton à la connexion : un en-tête X-Pharma-Poste différent est refusé
-app.Use(async (ctx, suite) =>
-{
-    if (Pharma.Api.Securite.PorteeConnexion.PosteDiffere(ctx))
-    {
-        ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
-        await ctx.Response.WriteAsJsonAsync(new ErreurDto("Cette connexion a été ouverte sur un autre poste : reconnectez-vous sur ce poste."));
-        return;
-    }
-    await suite();
-});
+// Le poste est lié au jeton à la connexion : mode « inactif », un en-tête X-Pharma-Poste différent est refusé (comme avant) ; sinon le claim
+// « poste_id » doit être le poste prouvé par la signature de la requête (ControlePosteJeton, contrat des postes autorisés § 3)
+app.Use((ctx, suite) => Pharma.Api.Securite.ControlePosteJeton.FiltrerAsync(ctx, suite));
 app.UseAuthorization();
 app.MapPharmaEndpoints();
 

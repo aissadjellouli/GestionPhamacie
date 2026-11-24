@@ -103,6 +103,7 @@ vendeur)** : `/`, `/accueil`, `/caisse`, `/caisse/etat`, `/cloture`, `/stock`, `
 édition du profil dans une fenêtre `.voile` qui défile dans son cadre ; `/admin/historique-chifa` remesuré par la campagne du
 2026-11-20 ci-dessous ; reprise et profils de reprise à 1 366 × 768 : non mesurés, voir plus bas),
 `/admin/restauration`, `/admin/sauvegardes`, `/admin/seuils`, `/guide`, `/mon-code`, `/mot-de-passe`.
+**`/admin/postes` mesuré le 2026-11-24** (titulaire, clair et sombre, 1 536 × 890 et 1 366 × 768) : 0 px de défilement vertical et horizontal ; liste paginée et filtrée (statut, nom ou ordinateur), seul le tableau défile ; autorisation, code, renommage, révocation et passage en « exigé » dans une fenêtre `.voile`. Code d'autorisation affiché en 32 px (`.code-enrolement`, voulu pour être recopié sans erreur). Écran de connexion : bandeau `.info-bandeau` (transition) ou `.bandeau-attention` (exigé, révoqué), carte « Autoriser ce poste » ; 0 px.
 **`/admin/seuils?rubrique=produits` corrigé le 2026-11-18** (l'écran défilait de 75 px à 1 366 × 768, défaut déjà présent avant
 le filtre avec propositions : le tableau restait à son minimum de 240 px sous le choix du produit) : deux colonnes dans le panneau
 (`.colonnes` : « Produit à régler » et la carte du produit à gauche, 340 px ; filtres, tableau et pagination à droite). Mesuré

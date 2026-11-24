@@ -1106,3 +1106,11 @@ fieldset.panneau:disabled { opacity: 0.85; }
 .avant-apres .valeur-proposee { color: var(--accent-texte); font-weight: 600; }
 .decision-proposition { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 2fr) auto; gap: 12px; align-items: end; }
 .decision-proposition > .actions { flex-wrap: nowrap; }
+
+/* Postes autorisés (2026-11-24, docs/charte-graphique.md « Postes autorisés ») : boutons d'une fenêtre, actions d'une ligne, code d'enrôlement */
+.actions-fenetre { display: flex; gap: 8px; margin-top: 12px; }
+.actions-ligne { white-space: nowrap; }
+.actions-ligne .lien-bouton + .lien-bouton { margin-left: 12px; }
+.postes-reglage { padding: 12px 20px; }
+.code-enrolement { margin: 8px 0; text-align: center; font-size: 32px; font-weight: 600; letter-spacing: 4px; color: var(--accent-texte); }
+.autorisation-poste { display: flex; flex-direction: column; gap: 12px; }

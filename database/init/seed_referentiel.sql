@@ -27,7 +27,7 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 166 (166 : classement sync_table de bascule_decision (jamais) ; 165 : classement sync_table de presence_poste (jamais) ; 164 : classement sync_table de bascule_promotion et bascule_saut (jamais) ; 163 : classement sync_table de serveur_ecarte (jamais) ; 162 : déconnexion après inactivité : défaut de colonne 15 minutes, posé par INSERT … DEFAULT VALUES ; 161 : aucune valeur de référentiel, index des clés étrangères ; 160 : aucune valeur de référentiel, message du titulaire à distance affiché sur les postes ; 159 : aucune valeur de référentiel, retour d'une vente régularisée « rendu au patient » ; 158 : aucune valeur de référentiel, retour d'une vente régularisée à la charge du patient et dettes du patient ; 157 : aucune valeur de référentiel, rapprochement d'un volet après un retour ; 156 : aucune valeur de référentiel, réglage des tâches laissées au poste : défaut de colonne « chiffre », posé par INSERT … DEFAULT VALUES ; 155 : aucune valeur de référentiel, retour partiel en tiers payant ; 154 : catégorie « parapharmacie » « Parapharmacie (à préciser) » ; 153 : règle d'alerte « traitement_en_cours » ; valeurs de départ
+-- Valeurs identiques à celles posées par les scripts 001 à 167 (167 : réglage parametre_postes (une ligne, défauts du schéma) et classement sync_table de poste_autorise et parametre_postes (jamais) ; 166 : classement sync_table de bascule_decision (jamais) ; 165 : classement sync_table de presence_poste (jamais) ; 164 : classement sync_table de bascule_promotion et bascule_saut (jamais) ; 163 : classement sync_table de serveur_ecarte (jamais) ; 162 : déconnexion après inactivité : défaut de colonne 15 minutes, posé par INSERT … DEFAULT VALUES ; 161 : aucune valeur de référentiel, index des clés étrangères ; 160 : aucune valeur de référentiel, message du titulaire à distance affiché sur les postes ; 159 : aucune valeur de référentiel, retour d'une vente régularisée « rendu au patient » ; 158 : aucune valeur de référentiel, retour d'une vente régularisée à la charge du patient et dettes du patient ; 157 : aucune valeur de référentiel, rapprochement d'un volet après un retour ; 156 : aucune valeur de référentiel, réglage des tâches laissées au poste : défaut de colonne « chiffre », posé par INSERT … DEFAULT VALUES ; 155 : aucune valeur de référentiel, retour partiel en tiers payant ; 154 : catégorie « parapharmacie » « Parapharmacie (à préciser) » ; 153 : règle d'alerte « traitement_en_cours » ; valeurs de départ
 -- des autres règles changées seulement sur une base où elles existent et n'ont jamais été modifiées, l'init n'en sème pas ;
 -- 152 n'ajoute aucune donnée de référence ; 151 : classement sync_table de integrite_prise_acte (montante), compteur_ticket_saut et sync_declaration_epoque (jamais) ; 095, 098, 099, 132, 134, 137, 138, 139, 142, 143, 148, 149 et 150 n'ajoutent aucune donnée de référence ; 141 : les 11 lignes de reglage_mutualise (mode local, aucun modèle) et le classement sync_table de reglage_mutualise ; 144 : classement sync_table de compteur_ticket (montante) ; 145 : classement de sync_ordre_recu (jamais) et sync_ordre_resultat (montante) ; 146 : classement de commande_ordre_central (jamais) ; 147 : chifa_code_produit et produit_indication passées montantes ; 140 : droit « sync.suivre » (titulaire) ; 096 : motifs du tiroir avec effet
 -- et détail, « Dépôt ou retrait d'espèces » désactivé ; 097 : motifs de la liste
@@ -50,6 +50,8 @@ INSERT INTO parametre_sauvegarde DEFAULT VALUES ON CONFLICT (id) DO NOTHING;
 INSERT INTO parametre_inventaire DEFAULT VALUES ON CONFLICT (id) DO NOTHING;
 INSERT INTO parametre_surveillance DEFAULT VALUES ON CONFLICT (id) DO NOTHING;
 INSERT INTO parametre_rapport DEFAULT VALUES ON CONFLICT (id) DO NOTHING;
+-- Liste des postes autorisés (167) : mode « transition », 20 postes au plus, code valable 15 minutes
+INSERT INTO parametre_postes DEFAULT VALUES ON CONFLICT (id) DO NOTHING;
 
 -- ---------------------------------------------------------------------
 -- 2. Organismes payeurs CNAS, CASNOS et MDN (les autres s'ajoutent dans Administration › Pharmacie)
@@ -474,6 +476,7 @@ INSERT INTO sync_table (nom_table, sens, cle_colonnes, colonnes_exclues, colonne
     ('parametre_integrite', 'jamais', '{id}', '{}', '{}', '{}', false, 'Technique, local'),
     ('parametre_inventaire', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, NULL),
     ('parametre_notification', 'bidirectionnelle', '{id}', '{smtp_identifiant,smtp_mot_de_passe}', '{}', '{}', false, 'Jamais le compte de messagerie'),
+    ('parametre_postes', 'jamais', '{id}', '{}', '{}', '{}', false, 'Réglage local de la liste des postes autorisés, script 167'),
     ('parametre_rapport', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, NULL),
     ('parametre_sauvegarde', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, NULL),
     ('parametre_serialisation', 'bidirectionnelle', '{id}', '{}', '{}', '{}', false, NULL),
@@ -483,6 +486,7 @@ INSERT INTO sync_table (nom_table, sens, cle_colonnes, colonnes_exclues, colonne
     ('patient', 'montante', '{id}', '{nom,prenom,date_naissance,telephone,num_assure,email}', '{id,assure_principal_id}', '{lien}', false, 'Pseudonyme : le code remplace l''identifiant'),
     ('permission', 'jamais', '{code}', '{}', '{}', '{}', false, 'Livrée par les scripts du logiciel'),
     ('pharmacie', 'montante', '{id}', '{}', '{}', '{}', false, NULL),
+    ('poste_autorise', 'jamais', '{id}', '{}', '{}', '{}', false, 'Postes autorisés de l''officine (enrôlement, clés publiques), script 167'),
     ('presence_poste', 'jamais', '{poste}', '{}', '{}', '{}', false, 'Présence des postes vue par le serveur principal (règle de majorité du 2e serveur), script 165'),
     ('pret_bancaire', 'montante', '{id}', '{}', '{}', '{objet}', false, NULL),
     ('produit', 'bidirectionnelle', '{id}', '{}', '{}', '{motif_blocage}', false, 'Prix et marges'),

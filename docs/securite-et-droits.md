@@ -184,5 +184,32 @@ Détail : [ecrans-central.md](ecrans-central.md) § 5. En local seulement à ce 
 - Présence des postes et votes : **authentifiés seulement** (revue de sécurité du 2026-11-24). Le serveur principal ne compte un poste que pour une requête authentifiée, nom pris dans le jeton (jamais dans l'en-tête `X-Pharma-Poste`) ; seuls les rapports authentifiés votent, en cas 1 comme en cas 2 ; un rapport anonyme ne remplace jamais un rapport authentifié récent. Un tiers sans jeton ne peut donc ni créer de poste connu, ni voter, ni bloquer une majorité authentifiée. Relais : limite de débit par poste et par adresse d'origine, anti-rejeu séparé ; alertes « problème réseau » plafonnées.
 - Mise hors jeu du serveur 1 (`POST /api/inter-serveurs/retrait`) et alertes du 2e serveur (`POST /api/inter-serveurs/alerte`) : routes signées seulement ; la promotion automatique exige trois preuves (cas 2), la même lignée des deux côtés et le droit du script `166b` ; une seule promotion par processus.
 - Relais (cas 3) : le serveur principal ne reprend l'adresse d'origine annoncée par le 2e serveur que si l'appel vient de l'adresse déclarée du 2e serveur ET si les en-têtes `X-Pharma-Relais-*` sont signés, non rejoués et dans la fenêtre (sinon ils sont ignorés, sans erreur) ; une adresse locale n'est jamais reprise ; aucune requête relayée ne reçoit de privilège « PC serveur » ; le 2e serveur retire les en-têtes de saut à saut, `Host`, `Forwarded`, `X-Forwarded-*`, `X-Real-IP` et tout `X-Pharma-Relais-*` venu du poste ; ni jeton ni corps n'est journalisé.
-- **Risque connu (2026-11-24), en attente de la liste des postes autorisés** : à la connexion, le nom de poste du jeton est recopié de l'en-tête `X-Pharma-Poste` sans contrôle ; un employé connecté peut donc se présenter sous plusieurs noms et voter plusieurs fois dans la règle de majorité. Correction décidée par le titulaire : enrôlement des postes (plan `docs/taches/2026-11-24-postes-autorises/plan.md`).
+- **Risque levé le 2026-11-24 par la liste des postes autorisés (section ci-dessous)**, en modes `transition` et `exige` ; avant : à la connexion, le nom de poste du jeton est recopié de l'en-tête `X-Pharma-Poste` sans contrôle ; un employé connecté peut donc se présenter sous plusieurs noms et voter plusieurs fois dans la règle de majorité. Correction décidée par le titulaire : enrôlement des postes (plan `docs/taches/2026-11-24-postes-autorises/plan.md`).
 - Officine à un seul serveur : tout ce mécanisme est inactif.
+
+## Liste des postes autorisés (2026-11-24, script 167)
+
+Plan : `docs/taches/2026-11-24-postes-autorises/plan.md` ; contrat : `contrat-api.md` (même dossier). Décisions D1 à D8 et Q1 à Q9 du titulaire.
+
+- **Preuve du poste à chaque requête** : à l'enrôlement, le poste crée une paire de clés ECDSA P-256 dans le magasin de clés de Windows (clé
+  **machine**, **non exportable** ; TPM si présent, sinon fournisseur logiciel) ; le serveur ne garde que la clé publique (`poste_autorise`).
+  Chaque requête porte quatre en-têtes signés (`X-Pharma-Poste-Id`, `-Horodatage`, `-Nonce`, `-Preuve`) sur la méthode, le chemin et la requête,
+  l'heure (± 120 s), un nonce jamais rejoué (5 min) et l'empreinte du jeton. Le nom du poste vient de la table, jamais d'un en-tête.
+- **Jeton lié au poste prouvé** : le jeton reçoit le claim `poste_id` ; il n'est accepté que sur ce poste (401 `poste_non_prouve` sinon). Un jeton
+  recopié sur un autre PC est inutilisable.
+- **Enrôlement** : code de 8 caractères à usage unique, valable 15 min (réglable), seul son hachage est gardé ; même réponse pour tout code faux ;
+  5 échecs invalident tous les codes en attente et alertent le titulaire ; limite de débit des routes de connexion. Démarrage : commande
+  `Pharma.Api.exe --autoriser-poste "<nom>"` sur le serveur (titulaire, mot de passe contrôlé).
+- **Gestion réservée au titulaire** (Administration › Postes autorisés) : autoriser, nouveau code, renommer, remplacer le PC, révoquer (motif
+  obligatoire), réglage du mode. Tout est inscrit au journal des actions, sans donnée personnelle. Un poste révoqué qui se présente alerte le titulaire.
+- **Modes** : `inactif` (comme avant), `transition` (après la mise à jour : un poste non autorisé fonctionne, avec un bandeau, mais ne compte jamais
+  pour la bascule ; un nom réservé à un poste autorisé est refusé sans preuve ; une preuve fausse ou inconnue vaut absence de preuve), `exige`
+  (tout poste qui s'annonce sans preuve valide est refusé). Poste révoqué et horloge décalée : toujours refusés. Page mobile et super admin
+  (aucun poste) : inchangés.
+- **Constaté à l'essai réel du 2026-11-24** : un compte Windows **standard** ne peut pas créer la clé machine (« Accès refusé »). **Décision D4,
+  option 1 (titulaire, 2026-11-24)** : sur un compte standard, « Autoriser ce poste » relance le logiciel par la demande d'élévation de Windows
+  (`Pharma.Desktop.exe --creer-cle-poste <nom>`, nom de clé de forme fixe contrôlé, aucune fenêtre) ; ce processus crée la clé avec son descripteur
+  (lecture pour les utilisateurs authentifiés, toujours posé) et ouvre `%ProgramData%\PharmaOfficine` en modification aux utilisateurs authentifiés,
+  puis s'arrête ; le compte standard ouvre ensuite la clé et termine l'autorisation. Demande d'élévation refusée : message, rien n'est enregistré.
+  L'usage courant reste en compte standard. **Non vérifié** (demande d'élévation à accepter par une personne) : utilisation par le compte standard
+  de la clé ainsi créée.

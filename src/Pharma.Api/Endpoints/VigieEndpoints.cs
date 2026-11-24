@@ -86,7 +86,17 @@ public static class VigieEndpoints
                     type: "urn:pharmaofficine:erreur:rapport_invalide", extensions: new Dictionary<string, object?> { ["code"] = "rapport_invalide" });
             var poste = NomPoste.Clair(d!.Poste)!;   // forme canonique, la même que celle de l'en-tête décodé et du claim du jeton
             var authentifie = false;
-            if (http.Request.Headers.ContainsKey("Authorization"))
+            // Liste des postes autorisés (modes « transition » et « exige ») : seul vote un rapport PROUVÉ par la signature du poste (clé publique de la copie
+            // répliquée), sous le nom de la table (celui du corps est ignoré) ; sans preuve, rapport anonyme (ne vote jamais). Mode « inactif » : jeton, comme avant.
+            if (PreuvePosteMiddleware.Mode(http) != PreuvePoste.ModeInactif)
+            {
+                if (http.PosteProuve() is { } prouve)
+                {
+                    poste = prouve.Nom;
+                    authentifie = true;
+                }
+            }
+            else if (http.Request.Headers.ContainsKey("Authorization"))
             {
                 var r = await http.AuthenticateAsync(JwtBearerDefaults.AuthenticationScheme);
                 authentifie = r.Succeeded && string.Equals(r.Principal?.FindFirst(PorteeConnexion.RevendicationPoste)?.Value, poste, StringComparison.Ordinal);

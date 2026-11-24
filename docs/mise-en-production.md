@@ -1620,3 +1620,19 @@ Cocher tout avant le jour J.
 - [ ] Si 2e serveur : `verifier-second-serveur.ps1` lancé sur le 2e serveur, versions identiques
 - [ ] Si .NET a reçu un correctif de sécurité : republier l'API et les postes avec le SDK à jour
 - [ ] Journal du serveur relu : aucune erreur au démarrage
+
+## Postes autorisés : autoriser chaque poste (depuis la version du 2026-11-24, script 167)
+
+Après la mise à jour, la liste est en mode **transition** : tout continue de fonctionner, avec un bandeau « Ce poste n'est pas encore
+autorisé » sur l'écran de connexion des postes.
+
+1. Premier poste (aucun titulaire connecté sur un poste autorisé) : sur le PC serveur, `Pharma.Api.exe --autoriser-poste "CAISSE-1"`
+   (identifiant et mot de passe du titulaire) affiche un code ; sinon, Administration › Postes autorisés › « Autoriser un poste ».
+2. Sur le poste, avec le compte Windows habituel : écran de connexion, « Autoriser ce poste », taper le code. Sur un compte standard, Windows
+   demande **une fois** l'accord d'un administrateur du PC (création de la clé du poste) : saisir l'identifiant et le mot de passe d'un
+   administrateur du PC. Refus : « Autorisation annulée », recommencer. **[À VÉRIFIER]** au premier poste réel : la connexion avec le compte
+   standard fonctionne ensuite (preuve acceptée).
+3. Une fois tous les postes autorisés (la fenêtre de confirmation liste ceux encore vus sans preuve) : Administration › Postes autorisés ›
+   « Preuve des postes » = « Exigée pour tous ».
+4. PC remplacé : « Remplacer le PC » (nouveau code) ; PC volé ou perdu : « Révoquer ». L'heure de chaque PC doit rester à moins de
+   2 minutes de celle du serveur.

@@ -8,7 +8,8 @@ using Pharma.Domain.Securite;
 namespace Pharma.Api.Securite;
 
 /// <summary>Jetons JWT signés avec la clé de configuration Jwt:Cle.</summary>
-public sealed class JetonService(IConfiguration config) : IGenerateurJeton
+/// <remarks>Liste des postes autorisés : avec un poste prouvé par la requête de connexion (même nom), le jeton reçoit aussi le claim « poste_id ».</remarks>
+public sealed class JetonService(IConfiguration config, IHttpContextAccessor? requeteCourante = null) : IGenerateurJeton
 {
     public static SymmetricSecurityKey Cle(IConfiguration config) =>
         new(Encoding.UTF8.GetBytes(config["Jwt:Cle"] ?? throw new InvalidOperationException("Jwt:Cle manquante")));
@@ -68,7 +69,13 @@ public sealed class JetonService(IConfiguration config) : IGenerateurJeton
         // Mot de passe provisoire : aucun droit tant qu'il n'est pas changé (PermissionsComptoir, PermissionFilter)
         if (motDePasseAChanger) revendications.Add(new Claim(RegleMotDePasse.Revendication, RegleMotDePasse.AChanger));
         // Poste de la connexion : lié au jeton (PorteeConnexion.Poste, PosteDuJeton)
-        if (!string.IsNullOrWhiteSpace(poste)) revendications.Add(new Claim(PorteeConnexion.RevendicationPoste, poste.Trim()));
+        if (!string.IsNullOrWhiteSpace(poste))
+        {
+            revendications.Add(new Claim(PorteeConnexion.RevendicationPoste, poste.Trim()));
+            // Poste prouvé (signature de la requête de connexion) : identifiant lié au jeton, exigé à chaque requête (PreuvePosteMiddleware)
+            if (requeteCourante?.HttpContext?.PosteProuve() is { } prouve && string.Equals(prouve.Nom, poste.Trim(), StringComparison.Ordinal))
+                revendications.Add(new Claim(PorteeConnexion.RevendicationPosteId, prouve.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        }
         return Signer(revendications, expire);
     }
 
