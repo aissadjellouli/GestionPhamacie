@@ -183,7 +183,7 @@ public static class InterServeursEndpoints
         });
 
         app.MapGet(InterServeursMiddleware.Prefixe + "/etat", async (CeServeur ce, SignatureInterServeurs signature, IServeurEcarteDetecte ecart,
-            IVeilleServeur veille, IReleveServeurs releves, CancellationToken ct) =>
+            IVeilleServeur veille, IReleveServeurs releves, ReglagesBascule reglages, CancellationToken ct) =>
         {
             var local = await releves.LocalAsync(ct);
             // Base illisible : rien n'est affirmé (un faux « principal » ou « en recovery » fausserait une décision de bascule)
@@ -194,7 +194,7 @@ public static class InterServeursEndpoints
             // Même fonction que le healthcheck (écarté, sinon veille, sinon principal) : les deux routes ne peuvent pas se contredire
             var role = BarrageServeurVeille.Role(ecart.Ecart is not null, veille.EstVeille);
             int? timeline = local.Timeline is { } t and >= 0 and <= int.MaxValue ? (int)t : null;
-            return Results.Ok(new EtatInterServeursDto(ce.Nom, role, timeline, local.EnRecovery, ce.VersionApi, signature.EmpreinteJeton));
+            return Results.Ok(new EtatInterServeursDto(ce.Nom, role, timeline, local.EnRecovery, ce.VersionApi, signature.EmpreinteJeton, reglages.Empreinte()));
         });
     }
 }
@@ -361,6 +361,7 @@ public sealed class SurveillanceInterServeurs(IServiceProvider services, IConfig
         suivi.Mettre(verdict);
         if (verdict != avant)
             journal.LogWarning("Clé des jetons entre les deux serveurs : {Verdict} (sonde : {Issue})", verdict, etat.Issue);
+        await ControlerReglagesAsync(etat, scope, ct);
         if (verdict != VerdictCleJetons.Different) return;
 
         // Seul le serveur qui écrit alerte (l'alerte est une écriture en base) ; le 2e serveur et un serveur écarté : journal seulement
@@ -371,6 +372,27 @@ public sealed class SurveillanceInterServeurs(IServiceProvider services, IConfig
         await AlerteNonEnvoyeeSignalee.SansBlocageAsync(
             () => scope.ServiceProvider.GetRequiredService<IAlertesTitulaire>().SecondServeurAsync(Objet, Detail, Sms, ct), "clés des jetons différentes", scope.ServiceProvider.GetService<Pharma.Application.Commun.ITraceErreurs>());
     }
+
+    /// <summary>Réglages de la règle de majorité (délais) différents entre les deux serveurs : journal, et alerte au titulaire (au plus une par heure) par le serveur qui écrit.</summary>
+    private async Task ControlerReglagesAsync(EtatAutreServeur etat, IServiceScope scope, CancellationToken ct)
+    {
+        if (etat.Etat?.Reglages is not { Length: > 0 } autres || services.GetService<ReglagesBascule>() is not { } locaux) return;   // autre serveur plus ancien ou illisible : rien à comparer
+        var difference = !string.Equals(autres, locaux.Empreinte(), StringComparison.Ordinal);
+        var avant = suivi.ReglagesDifferents;
+        suivi.MettreReglages(difference);
+        if (!difference) return;
+        if (!avant) journal.LogWarning("Réglages SecondServeur:Bascule différents entre les deux serveurs (délais de la règle de majorité)");
+        if (services.GetRequiredService<IServeurEcarteDetecte>().Ecart is not null) return;
+        var local = await scope.ServiceProvider.GetRequiredService<IReleveServeurs>().LocalAsync(ct);
+        if (local is not { EnRecovery: false } || !suivi.AlerteReglagesDue()) return;
+        await AlerteNonEnvoyeeSignalee.SansBlocageAsync(
+            () => scope.ServiceProvider.GetRequiredService<IAlertesTitulaire>().SecondServeurAsync(ObjetReglages, DetailReglages, SmsReglages, ct), "réglages de bascule différents", scope.ServiceProvider.GetService<Pharma.Application.Commun.ITraceErreurs>());
+    }
+
+    public const string ObjetReglages = "Réglages de bascule différents entre les deux serveurs";
+    public const string DetailReglages = "Les délais de la règle de majorité (SecondServeur:Bascule : PosteVuSecondes, IsolementSecondes, SondeSecondes, PromotionMinimumSecondes…) ne sont pas les mêmes sur les deux serveurs. "
+        + "Avec des délais différents, le 2e serveur pourrait se promouvoir avant que le serveur principal se soit écarté. Mettez les mêmes réglages sur les deux serveurs puis redémarrez leurs API.";
+    public const string SmsReglages = "Les 2 serveurs n'ont pas les memes delais de bascule : mettez les memes reglages.";
 
     /// <summary>
     /// Différent : l'autre serveur nous refuse (401/403), sa réponse ne se vérifie pas avec notre clé, ou son empreinte est autre ; ou plusieurs de ses appels

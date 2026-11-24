@@ -63,6 +63,9 @@ public static class DecisionPromotion
         var authentifies = votants.Where(x => x.Authentifie).ToList();
         // Prudence : un poste qui joint le serveur 1 compte comme « joignant », connu ou non (jamais de retrait ni de promotion alors).
         var joignent = recents.Count(x => x.Serveur1Joint);
+        // Revue de sécurité : seuls les rapports AUTHENTIFIÉS (jeton valide, poste lié) peuvent faire promouvoir OU bloquer une promotion ; un rapport anonyme
+        // (route ouverte à tout appelant du réseau) ne peut que mener à « attendre » ou « relais » pour son propre poste.
+        var joignentAuth = recents.Count(x => x.Authentifie && x.Serveur1Joint);
         int votes = votants.Count, votesAuth = authentifies.Count;
 
         ResultatDecision Res(VerdictPromotion v, string raison, string? alerte = null) => new(v, raison, c, votes, votesAuth, joignent, alerte);
@@ -80,24 +83,25 @@ public static class DecisionPromotion
                 ? Res(VerdictPromotion.ApiServeur1Muette, "base_vivante_api_muette", ConstantesVigie.AlerteApiServeur1Arretee)
                 : Res(VerdictPromotion.Attendre, "api_muette_depuis_peu");
 
-        // Cas 1 : base ET API muettes
+        // Cas 1 : base ET API muettes (majorité de rapports authentifiés, aucun rapport authentifié « joint ») (majorité de rapports authentifiés, aucun rapport authentifié « joint »)
         if (!s.BaseJointe && !s.ApiJointe)
         {
             if (s.BaseMuetteDepuisUtc is not { } bm || s.ApiMuetteDepuisUtc is not { } am) return Res(VerdictPromotion.Attendre, "muet_depuis_inconnu");
             var depuis = bm > am ? bm : am;   // la perte est complète depuis le plus récent des deux silences
             if (e.MaintenantUtc - depuis < injoignable) return Res(VerdictPromotion.Attendre, "injoignable_depuis_peu");
-            if (votes * 2 == c) return Res(VerdictPromotion.Egalite, "votes_egaux_moitie", ConstantesVigie.AlerteEgaliteMajorite);
-            if (votes * 2 < c) return Res(VerdictPromotion.Attendre, "majorite_non_atteinte");
+            if (joignentAuth > 0) return Res(VerdictPromotion.Attendre, "poste_authentifie_joint_serveur1");
+            if (votesAuth * 2 == c) return Res(VerdictPromotion.Egalite, "votes_egaux_moitie", ConstantesVigie.AlerteEgaliteMajorite);
+            if (votesAuth * 2 < c) return Res(VerdictPromotion.Attendre, "majorite_non_atteinte");
             if (e.MaintenantUtc - depuis < dureeTotale) return Res(VerdictPromotion.Attendre, "delai_total_non_atteint");
             if (demarrage) return Res(VerdictPromotion.Attendre, "demarrage_veille");
             return Res(VerdictPromotion.Promotion, "cas_1_injoignable_majorite");
         }
 
         // Le 2e serveur joint le serveur 1 (son API répond)
-        if (votes == 0) return Res(VerdictPromotion.Rester, "serveur1_joint_aucun_vote");
+        if (votesAuth == 0) return Res(VerdictPromotion.Rester, "serveur1_joint_aucun_vote_authentifie");
 
         // Cas 2 : aucun poste ne joint le serveur 1 et MAJORITÉ de rapports authentifiés (Q23 : employé connecté)
-        if (joignent == 0 && votesAuth * 2 > c)
+        if (joignentAuth == 0 && votesAuth * 2 > c)
         {
             // Durée : depuis que la majorité authentifiée perd le serveur 1 (instant où le dernier poste nécessaire à la majorité l'a perdu)
             var instants = authentifies.Select(x => x.PerteDepuisUtc ?? x.RecuLeUtc).OrderBy(x => x).ToList();
@@ -107,7 +111,7 @@ public static class DecisionPromotion
             return Res(VerdictPromotion.RetraitPuisPromotion, "cas_2_serveur1_joint_aucun_poste");
         }
 
-        // Cas 3 : quelques postes seulement (ou rapports non authentifiés) -> relais, jamais de promotion
+        // Cas 3 : quelques postes seulement -> relais, jamais de promotion (le passage de « rester » à « relais » ne repose que sur des rapports authentifiés)
         return Res(VerdictPromotion.Relais, "cas_3_quelques_postes");
     }
 }

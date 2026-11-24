@@ -40,8 +40,10 @@ public class IsolementPostesTests
     {
         public List<string> Connus { get; } = [];
         public bool Vide { get; set; }
+        /// <summary>Présences écrites à des instants précis (sinon : chaque connu vu il y a 10 s). La référence de lecture est toujours l'heure courante, comme sur le serveur 1.</summary>
+        public List<PosteVuEnBase>? Ecrites { get; set; }
         public Task<PostesConnusLus> LireAsync(CancellationToken ct = default) =>
-            Task.FromResult(new PostesConnusLus(horloge.MaintenantUtc, Vide ? [] : Connus.Select(p => new PosteVuEnBase(p, horloge.MaintenantUtc.AddSeconds(-10))).ToList()));
+            Task.FromResult(new PostesConnusLus(horloge.MaintenantUtc, Vide ? [] : Ecrites ?? Connus.Select(p => new PosteVuEnBase(p, horloge.MaintenantUtc.AddSeconds(-10))).ToList()));
     }
 
     private sealed class Autre : ILecteurEtatAutreServeur
@@ -102,6 +104,60 @@ public class IsolementPostesTests
     }
 
     private static readonly string[] Quatre = ["P1", "P2", "P3", "P4"];
+
+    // ---- Postes connus figés à l'instant de la perte de la copie (revue de sécurité) ----
+
+    [Fact]
+    public async Task Connus_figes_a_la_perte_des_postes_qui_s_allument_apres_la_coupure_ne_comptent_ni_connus_ni_vus()
+    {
+        var b = new Banc().Scenario(Quatre, ["P1", "P2", "P3"]);   // majorité vue au début de la coupure
+        Assert.Equal(IssueIsolement.Normal, await b.Passage(0));
+        // P2 et P3 disparaissent ; deux postes nouveaux s'allument et sont aussi inscrits en base côté serveur 1 : 3 vus sur 6 serait une majorité
+        b.EnLigne.Clear();
+        b.EnLigne.AddRange(["P1", "N1", "N2"]);
+        b.Depot.Connus.AddRange(["N1", "N2"]);
+        IssueIsolement issue = IssueIsolement.Normal;
+        for (var i = 0; i < 30 && issue != IssueIsolement.Isole; i++) issue = await b.Passage(5);
+        Assert.Equal(IssueIsolement.Isole, issue);   // 1 vu (P1) sur les 4 connus à la perte
+        Assert.NotNull(b.Suivi.Ecart);
+    }
+
+    [Fact]
+    public async Task Connus_figes_une_coupure_de_10_minutes_sans_isolement_possible_au_debut_ne_fait_pas_fondre_les_connus()
+    {
+        var b = new Banc();
+        var t0 = b.H.MaintenantUtc;
+        b.Depot.Ecrites = Quatre.Select(p => new PosteVuEnBase(p, t0)).ToList();   // dernières présences écrites à la perte ; plus rien ensuite
+        b.EnLigne.AddRange(["P1", "P2", "P3"]);
+        Assert.Equal(IssueIsolement.Normal, await b.Passage(0));
+        for (var i = 0; i < 20; i++) Assert.Equal(IssueIsolement.Normal, await b.Passage(30));   // 10 minutes de coupure, majorité toujours vue
+        // Avec l'heure courante comme référence, les présences de t0 (10 minutes plus tôt) auraient fondu à zéro : plus jamais d'isolement. Figés : P2 et P3 partent, minorité
+        b.EnLigne.Clear();
+        b.EnLigne.Add("P1");
+        IssueIsolement issue = IssueIsolement.Normal;
+        for (var i = 0; i < 40 && issue != IssueIsolement.Isole; i++) issue = await b.Passage(5);
+        Assert.Equal(IssueIsolement.Isole, issue);
+    }
+
+    [Fact]
+    public async Task Connus_recalcules_a_la_derniere_presence_ecrite_apres_un_redemarrage_pendant_la_coupure()
+    {
+        var b = new Banc();
+        var t0 = b.H.MaintenantUtc;
+        b.Depot.Ecrites = Quatre.Select(p => new PosteVuEnBase(p, t0)).ToList();
+        b.H.Avancer(600);   // 10 minutes de coupure : l'API redémarre (mémoire vide), la copie est toujours perdue
+        var vus = new RegistrePostesVus();
+        var redemarre = new SurveillerIsolement(b.Releves, b.Copie, b.Depot, vus, b.Autre, new SuiviServeurEcarte(), new VeilleServeur(false), b.H, b.Reglages);
+        b.H.Avancer(SurveillerIsolement.GraceDemarrage.TotalSeconds + 1);   // règle non appliquée pendant 2 minutes après le démarrage
+        IssueIsolement issue = IssueIsolement.Normal;
+        for (var i = 0; i < 30 && issue != IssueIsolement.Isole; i++)
+        {
+            b.H.Avancer(5);
+            vus.Noter("P1", b.H.MaintenantUtc);   // seul P1 est revenu : 1 vu sur 4 connus (et non 0 connu, ce que donnerait l'heure courante)
+            issue = await redemarre.ExecuterAsync(b.Alertes);
+        }
+        Assert.Equal(IssueIsolement.Isole, issue);
+    }
 
     // ---- Isolement : décompte de 20 s ----
 
@@ -425,6 +481,78 @@ public class IsolementPostesTests
     private static PresencePostes Presence(Horloge h, DepotPresence depot, SuiviServeurEcarte suivi, bool veille = false, bool declare = true, Trace? trace = null, RegistrePostesVus? registre = null) =>
         new(registre ?? new RegistrePostesVus(), depot, suivi, new VeilleServeur(veille), new Releves { Regle = declare }, h, trace);
 
+    // ---- Forme canonique du nom de poste (en clair, décodé de l'en-tête encodé URL, rogné) ----
+
+    [Theory]
+    [InlineData("Caisse%20%C3%89t%C3%A9%201", "Caisse Été 1")]     // espace et accents encodés
+    [InlineData("Caisse Été 1", "Caisse Été 1")]                   // en-tête déjà en clair
+    [InlineData("  %20Caisse%20  ", "Caisse")]                     // espaces de début et de fin, encodés ou non
+    [InlineData("Caisse%2F1%26%23%25", "Caisse/1&#%")]             // caractères spéciaux
+    [InlineData("P%C3%A8re%20No%C3%ABl", "Père Noël")]
+    [InlineData("100%", "100%")]                                   // pourcentage isolé : non décodable, gardé tel quel
+    public void Le_nom_de_poste_de_l_en_tete_est_decode_et_rogne(string entete, string attendu) =>
+        Assert.Equal(attendu, NomPoste.DepuisEnTete(entete));
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("%20%20")]            // que des espaces
+    [InlineData("P1%0D%0AX")]         // caractère de contrôle encodé
+    [InlineData("P%00")]
+    [InlineData("%E0%A4%A")]          // séquence mal formée : jamais d'exception
+    [InlineData("%ZZ%GG")]
+    public void En_tete_de_poste_inutilisable_refuse_proprement(string? entete)
+    {
+        var resultat = Record.Exception(() => NomPoste.DepuisEnTete(entete));
+        Assert.Null(resultat);
+        var nom = NomPoste.DepuisEnTete(entete);
+        Assert.True(nom is null || nom.All(c => !char.IsControl(c)));
+        if (entete is null or "" or "   " or "%20%20" or "P1%0D%0AX" or "P%00") Assert.Null(nom);
+    }
+
+    [Fact]
+    public void Nom_de_poste_trop_long_refuse_en_clair_et_encode()
+    {
+        Assert.NotNull(NomPoste.DepuisEnTete(new string('x', 100)));
+        Assert.Null(NomPoste.DepuisEnTete(new string('x', 101)));
+        Assert.Null(NomPoste.DepuisEnTete(string.Concat(Enumerable.Repeat("%C3%A9", 400))));   // en-tête démesuré
+        Assert.Null(NomPoste.Clair(new string('x', 101)));
+        Assert.Equal("100%", NomPoste.Clair(" 100% "));   // un nom déjà en clair n'est jamais décodé
+        Assert.Equal("Caisse%20%C3%89t%C3%A9%201", NomPoste.VersEnTete("Caisse Été 1"));
+        Assert.Equal("Caisse Été 1", NomPoste.DepuisEnTete(NomPoste.VersEnTete("Caisse Été 1")));
+    }
+
+    [Fact]
+    public async Task Un_poste_Caisse_Ete_1_compte_comme_poste_connu_et_comme_vote()
+    {
+        var h = new Horloge();
+        var depot = new DepotPresence();
+        var presence = Presence(h, depot, new SuiviServeurEcarte());
+        // Le poste envoie son nom encodé URL dans X-Pharma-Poste ; son rapport de vigie porte le nom en clair
+        presence.Noter(NomPoste.DepuisEnTete("Caisse%20%C3%89t%C3%A9%201"));   // le nom vient du claim du jeton (décodé et rogné à la connexion)
+        await presence.Derniere;
+        Assert.Equal(["Caisse Été 1"], depot.Ecrits);
+
+        var t = h.MaintenantUtc;
+        var connus = PostesConnus.Calculer([new PosteVuEnBase(depot.Ecrits[0], t)], t.AddSeconds(30), TimeSpan.FromMinutes(3))!;
+        Assert.Contains("Caisse Été 1", connus);
+        var maintenant = t.AddSeconds(330);
+        var registre = new RegistreRapportsPostes(new ReglagesBascule().Borner());
+        var nom = NomPoste.Clair("  Caisse Été 1 ")!;
+        Assert.Equal(IssueRapport.Accepte, registre.Enregistrer(new RapportPoste(nom, false, maintenant.AddSeconds(-40), "1.0", "https://10.0.0.1:5443"), "10.0.0.5", true, maintenant.AddSeconds(-40)));
+        Assert.Equal(IssueRapport.Accepte, registre.Enregistrer(new RapportPoste(nom, false, maintenant.AddSeconds(-40), "1.0", "https://10.0.0.1:5443"), "10.0.0.5", true, maintenant.AddSeconds(-5)));
+        var r = DecisionPromotion.Evaluer(new EntreeDecision(maintenant, true, connus, registre.Rapports(),
+            new Serveur1Vu(false, false, maintenant.AddSeconds(-300), maintenant.AddSeconds(-300)), maintenant.AddHours(-1), new ReglagesBascule().Borner()));
+        Assert.Equal(1, r.Connus);
+        Assert.Equal(1, r.Votes);
+
+        // Même poste vu par le serveur 1 : le numérateur de la règle de majorité le reconnaît sous la même forme
+        var vus = new RegistrePostesVus();
+        vus.Noter(NomPoste.DepuisEnTete("Caisse%20%C3%89t%C3%A9%201")!, t);
+        Assert.Contains("Caisse Été 1", vus.Vus(t.AddSeconds(10), TimeSpan.FromSeconds(45)).Intersect(connus, StringComparer.OrdinalIgnoreCase));
+    }
+
     [Fact]
     public async Task La_presence_s_ecrit_en_base_une_fois_par_minute_et_note_la_memoire_a_chaque_requete()
     {
@@ -520,7 +648,7 @@ public class IsolementPostesTests
     private static bool Promotion(string[] connus, string[] votants)
     {
         var t = new DateTime(2026, 11, 23, 12, 0, 0, DateTimeKind.Utc);
-        var rapports = votants.Select(p => new RapportRetenu(p, false, t.AddSeconds(-5), t.AddSeconds(-300), false)).ToList();
+        var rapports = votants.Select(p => new RapportRetenu(p, false, t.AddSeconds(-5), t.AddSeconds(-300), true)).ToList();
         var entree = new EntreeDecision(t, true, connus.ToHashSet(StringComparer.OrdinalIgnoreCase), rapports,
             new Serveur1Vu(false, false, t.AddSeconds(-300), t.AddSeconds(-300)), t.AddHours(-1), new ReglagesBascule().Borner());
         return DecisionPromotion.Evaluer(entree).Verdict == VerdictPromotion.Promotion;

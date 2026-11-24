@@ -84,21 +84,22 @@ public static class VigieEndpoints
             if (Invalide(d) is { } motif)
                 return Results.Problem(title: "Rapport invalide", detail: motif, statusCode: StatusCodes.Status400BadRequest,
                     type: "urn:pharmaofficine:erreur:rapport_invalide", extensions: new Dictionary<string, object?> { ["code"] = "rapport_invalide" });
+            var poste = NomPoste.Clair(d!.Poste)!;   // forme canonique, la même que celle de l'en-tête décodé et du claim du jeton
             var authentifie = false;
             if (http.Request.Headers.ContainsKey("Authorization"))
             {
                 var r = await http.AuthenticateAsync(JwtBearerDefaults.AuthenticationScheme);
-                authentifie = r.Succeeded && string.Equals(r.Principal?.FindFirst(PorteeConnexion.RevendicationPoste)?.Value, d!.Poste, StringComparison.Ordinal);
+                authentifie = r.Succeeded && string.Equals(r.Principal?.FindFirst(PorteeConnexion.RevendicationPoste)?.Value, poste, StringComparison.Ordinal);
             }
             var adresse = http.Connection.RemoteIpAddress?.ToString() ?? "inconnue";
-            var reponse = await vigie.TraiterRapportAsync(new RapportPoste(d!.Poste, d.Serveur1Joint, d.EchecDepuisUtc, d.VersionPoste ?? "", d.AdresseServeur1 ?? ""), adresse, authentifie, ct);
+            var reponse = await vigie.TraiterRapportAsync(new RapportPoste(poste, d.Serveur1Joint, d.EchecDepuisUtc, d.VersionPoste ?? "", d.AdresseServeur1 ?? ""), adresse, authentifie, ct);
             switch (reponse.Statut)
             {
                 case StatutRapport.TropRapide:
                     return Results.Problem(title: "Trop de rapports", detail: "Plus d'un rapport par seconde depuis cette adresse.", statusCode: StatusCodes.Status429TooManyRequests,
                         type: "urn:pharmaofficine:erreur:trop_de_rapports", extensions: new Dictionary<string, object?> { ["code"] = "trop_de_rapports" });
                 case StatutRapport.Ignore:
-                    log.LogWarning("Nom de poste {Poste} annoncé par deux adresses différentes : rapport ignoré", d!.Poste);
+                    log.LogWarning("Rapport ignoré pour le poste {Poste} : nom déjà tenu par une autre adresse ou par un rapport authentifié récent", poste);
                     break;
             }
             var c = reponse.Consigne!;
@@ -109,7 +110,7 @@ public static class VigieEndpoints
     private static string? Invalide(RapportPosteDto? d)
     {
         if (d is null) return "Corps absent.";
-        if (string.IsNullOrWhiteSpace(d.Poste) || d.Poste.Length > 100) return "Le nom du poste est obligatoire (1 à 100 caractères).";
+        if (NomPoste.Clair(d.Poste) is null) return "Le nom du poste est obligatoire (1 à 100 caractères).";
         if ((d.VersionPoste?.Length ?? 0) > 50 || (d.AdresseServeur1?.Length ?? 0) > 300) return "Version ou adresse trop longue.";
         return null;
     }

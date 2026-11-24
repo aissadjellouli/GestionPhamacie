@@ -14,9 +14,38 @@ public interface IPresenceDepot
 }
 
 /// <summary>
-/// Postes vus par CE serveur (en mémoire) : nom d'après l'en-tête X-Pharma-Poste. Sert de numérateur à la règle de majorité (vus depuis moins de
-/// <c>PosteVuSecondes</c>) et décide quand écrire en base (au plus une fois par minute et par poste). L'en-tête n'est pas authentifié (contrat § 3.7) :
-/// nom limité à 100 caractères, sans caractère de contrôle, et au plus <see cref="PostesMax"/> postes distincts (mémoire et table bornées).
+/// UNE forme canonique du nom de poste, utilisée partout (présence en base, postes vus, rapports de la vigie, votes, postes connus, relais, lien avec le jeton) :
+/// le nom EN CLAIR, décodé de l'en-tête X-Pharma-Poste (encodé URL par le poste), sans espaces de début ou de fin, 1 à 100 caractères, sans caractère de contrôle.
+/// Le claim « poste » du jeton est écrit sous cette même forme (décodé et rogné à la connexion). Ne lève jamais : une valeur inutilisable donne null.
+/// </summary>
+public static class NomPoste
+{
+    public const int Max = 100;
+    private const int EnTeteMax = 1000;   // 100 caractères encodés = 900 octets au plus (9 par caractère)
+
+    /// <summary>Nom déjà en clair (rapport de la vigie, jeton) : rogné et contrôlé ; aucun décodage (un « % » y est un caractère du nom).</summary>
+    public static string? Clair(string? nom)
+    {
+        var n = nom?.Trim();
+        return string.IsNullOrEmpty(n) || n.Length > Max || n.Any(char.IsControl) ? null : n;
+    }
+
+    /// <summary>Valeur de l'en-tête X-Pharma-Poste (encodée URL, ou déjà en clair) vers le nom canonique ; mal formée ou trop longue : null.</summary>
+    public static string? DepuisEnTete(string? entete)
+    {
+        if (string.IsNullOrWhiteSpace(entete) || entete.Length > EnTeteMax) return null;
+        try { return Clair(Uri.UnescapeDataString(entete)); }
+        catch (Exception e) when (e is ArgumentException or UriFormatException or FormatException) { return null; }
+    }
+
+    /// <summary>Forme ASCII d'un nom canonique (celle que le poste envoie dans l'en-tête).</summary>
+    public static string VersEnTete(string poste) => Uri.EscapeDataString(poste);
+}
+
+/// <summary>
+/// Postes vus par CE serveur (en mémoire) : nom canonique (<see cref="NomPoste"/>) pris dans le claim « poste » d'un jeton valide, jamais dans l'en-tête X-Pharma-Poste
+/// (contrat § 3.7). Sert de numérateur à la règle de majorité (vus depuis moins de <c>PosteVuSecondes</c>) et décide quand écrire en base (au plus une fois par minute
+/// et par poste). Au plus <see cref="PostesMax"/> postes distincts (mémoire et table bornées).
 /// </summary>
 public sealed class RegistrePostesVus
 {
@@ -29,12 +58,8 @@ public sealed class RegistrePostesVus
     private readonly ConcurrentDictionary<string, Entree> postes = new(StringComparer.OrdinalIgnoreCase);
     private readonly object verrou = new();
 
-    /// <summary>Nom utilisable (rogné, 1 à 100 caractères, sans caractère de contrôle), sinon null.</summary>
-    public static string? Normaliser(string? brut)
-    {
-        var nom = brut?.Trim();
-        return string.IsNullOrEmpty(nom) || nom.Length > NomMaxCaracteres || nom.Any(char.IsControl) ? null : nom;
-    }
+    /// <summary>Nom utilisable (nom en clair, forme canonique), sinon null : voir <see cref="NomPoste.Clair"/>.</summary>
+    public static string? Normaliser(string? brut) => NomPoste.Clair(brut);
 
     /// <summary>Note le poste vu à <paramref name="maintenantUtc"/>. Vrai si une écriture en base est due (jamais écrit, ou écrit il y a une minute ou plus).</summary>
     public bool Noter(string poste, DateTime maintenantUtc)
@@ -70,7 +95,7 @@ public sealed class RegistrePostesVus
 }
 
 /// <summary>
-/// Présence des postes, côté serveur 1 (principal) : appelée à CHAQUE requête portant X-Pharma-Poste (healthcheck compris). Mémoire toujours ; base au
+/// Présence des postes, côté serveur 1 (principal) : appelée pour CHAQUE requête authentifiée (jeton valide, healthcheck compris), avec le poste du jeton. Mémoire toujours ; base au
 /// plus une fois par minute et par poste, en tâche détachée : jamais bloquant, erreur journalisée sans faire échouer la requête, sans nom de poste.
 /// Inactive sur un serveur en veille (aucune écriture) et sans 2e serveur déclaré. Serveur écarté (lecture seule) : mémoire seulement (la levée
 /// automatique de l'isolement a besoin de voir revenir les postes), aucune écriture en base.
@@ -84,10 +109,10 @@ public sealed class PresencePostes(RegistrePostesVus registre, IPresenceDepot de
     /// <summary>Dernière écriture lancée (pour les tests).</summary>
     public Task Derniere => derniere;
 
-    public void Noter(string? enTetePoste)
+    public void Noter(string? nomPoste)
     {
         if (veille.EstVeille || !releves.AutreServeurRegle) return;
-        if (RegistrePostesVus.Normaliser(enTetePoste) is not { } poste) return;
+        if (NomPoste.Clair(nomPoste) is not { } poste) return;
         if (!registre.Noter(poste, horloge.MaintenantUtc)) return;
         if (ecart.Ecart is not null) return;   // lecture seule : rien ne s'écrit en base
         derniere = Task.Run(() => EcrireAsync(poste));
@@ -146,8 +171,10 @@ public enum IssueIsolement
 /// (mémoire, moins de <c>PosteVuSecondes</c>, parmi les postes connus de la base) strictement moins de la moitié des postes connus, sans interruption pendant
 /// <c>IsolementSecondes</c>. Égalité : le serveur 1 garde la main. Levée automatique : copie revenue OU vus &gt;= connus/2, seulement si le 2e serveur ne s'est
 /// pas promu (états signé : role différent de principal et base en recovery ; injoignable : seulement si la copie est revenue).
-/// Les « connus » sont FIGÉS à la mise à l'écart : une fois les écritures coupées, la table de présence ne bouge plus et la fenêtre de 3 minutes
-/// ferait fondre le dénominateur à zéro (levée à tort).
+/// Les « connus » sont FIGÉS dès le PREMIER passage où la copie est perdue (instant de la perte), et les « vus » ne se comptent que parmi eux : un poste qui
+/// s'allume après la coupure ne compte ni dans les connus ni dans les vus ; la liste ne fond pas non plus pendant une longue coupure. Référence du calcul : la
+/// dernière présence écrite (jamais l'heure courante), ce qui donne le même résultat après un redémarrage de l'API pendant la coupure. Ils sont oubliés
+/// quand la copie revient (ou à la levée de l'isolement).
 /// </summary>
 public sealed class SurveillerIsolement(IReleveServeurs releves, ICopieConnectee copie, IPostesConnusDepot postes, RegistrePostesVus vus,
     ILecteurEtatAutreServeur autre, SuiviServeurEcarte suivi, IVeilleServeur veille, IHorloge horloge, ReglagesBascule reglages,
@@ -188,16 +215,21 @@ public sealed class SurveillerIsolement(IReleveServeurs releves, ICopieConnectee
     private async Task<IssueIsolement> SurveillerAsync(bool connectee, DateTime maintenant, IAlertesTitulaire alertes, CancellationToken ct)
     {
         definitif = false;
-        if (connectee) { debut = null; return IssueIsolement.Normal; }
-        PostesConnusLus lus;
-        try { lus = await postes.LireAsync(ct); }
-        catch (Exception e) when (e is not OperationCanceledException) { trace?.Erreur("Isolement : postes connus illisibles", e); return IssueIsolement.Inactif; }
-        var connus = PostesConnus.Calculer(lus.Postes, lus.DerniereDonneeRecueUtc, TimeSpan.FromMinutes(reglages.PosteActifMinutes));
-        if (connus is null || connus.Count == 0 || Majorite(connus, maintenant)) { debut = null; return IssueIsolement.Normal; }
+        if (connectee) { debut = null; connusFiges = null; return IssueIsolement.Normal; }
+        if (connusFiges is null)
+        {
+            PostesConnusLus lus;
+            try { lus = await postes.LireAsync(ct); }
+            catch (Exception e) when (e is not OperationCanceledException) { trace?.Erreur("Isolement : postes connus illisibles", e); return IssueIsolement.Inactif; }
+            // Référence = dernière présence écrite (pas l'heure courante) ; aucune présence : aucun poste connu, rien à protéger
+            DateTime? reference = lus.Postes.Count == 0 ? null : lus.Postes.Max(p => p.VuLeUtc);
+            connusFiges = PostesConnus.Calculer(lus.Postes, reference, TimeSpan.FromMinutes(reglages.PosteActifMinutes)) ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+        var connus = connusFiges;
+        if (connus.Count == 0 || Majorite(connus, maintenant)) { debut = null; return IssueIsolement.Normal; }
 
         debut ??= maintenant;
         if (maintenant - debut < TimeSpan.FromSeconds(reglages.IsolementSecondes)) return IssueIsolement.EnAttente;
-        connusFiges = connus;
         var vusAu = VusParmi(connus, maintenant);
         if (!suivi.Ecarter(new EcartDetecte(maintenant, null, 0, 0, Isole: true))) return IssueIsolement.Inactif;
         debut = null;

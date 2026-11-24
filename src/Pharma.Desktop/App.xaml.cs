@@ -38,7 +38,7 @@ public partial class App : Application
         var panier = new PanierBascule();
         var adresseCourante = new AdresseApiCourante(new Uri(api));
         var version = typeof(App).Assembly.GetName().Version is { } v ? $"{v.Major}.{v.Minor:00}" : "?";
-        vigie = new VigiePoste(reglages, session, adresseCourante, new ReseauVigieHttp(poste.Poste), panier, poste.Poste,
+        vigie = new VigiePoste(reglages, session, adresseCourante, new ReseauVigieHttp(poste.Poste, null, () => session.EstConnecte ? session.Jeton : null), panier, poste.Poste,
             Environment.GetEnvironmentVariable("PHARMA_API"), version, journal: NoterErreur);
         var chaine = new SurveillanceEcart(vigie, new RelaisAdresse(adresseCourante, new SuiviAppels(appels)));
         var client = new HttpClient(chaine) { BaseAddress = new Uri(api), Timeout = Timeout.InfiniteTimeSpan };

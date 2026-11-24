@@ -1271,7 +1271,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
         // Requête bornée à 30 s en arrière-plan (jamais attendue au-delà de 4 s) ; issue relevée sans relancer d'exception
         var borne = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        var requete = http.GetAsync("api/healthcheck", HttpCompletionOption.ResponseHeadersRead, borne.Token);
+        // Jeton joint quand un employé est connecté : le serveur ne compte un poste « vu » que sur un jeton valide (sans employé, rien ne change)
+        var message = new HttpRequestMessage(HttpMethod.Get, "api/healthcheck");
+        if (session.EstConnecte && session.Jeton is { Length: > 0 } jeton) message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", jeton);
+        var requete = http.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, borne.Token);
         _ = requete.ContinueWith(t =>
         {
             if (t.IsCompletedSuccessfully) t.Result.Dispose();

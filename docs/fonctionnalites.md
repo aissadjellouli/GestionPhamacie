@@ -25,15 +25,15 @@ Légende des états :
 
 | État | Nombre de fonctions |
 | --- | --- |
-| Fait | 214 |
+| Fait | 215 |
 | En cours | 1 |
 | En attente | 47 |
 | Bloqué | 9 |
 | Non proposé | 1 |
 | À vérifier | 0 |
-| **Total** | **272** |
+| **Total** | **273** |
 
-Recompté le 2026-11-24 à partir des lignes ci-dessous (272 lignes ; « Fait en local » compté dans « Fait ») ; « En cours » : démonstration cloud (Docker absent du poste).
+Recompté le 2026-11-24 à partir des lignes ci-dessous (273 lignes ; « Fait en local » compté dans « Fait ») ; « En cours » : démonstration cloud (Docker absent du poste).
 
 ## Caisse et ventes
 
@@ -302,7 +302,8 @@ Recompté le 2026-11-24 à partir des lignes ci-dessous (272 lignes ; « Fait en
 | Réplication synchrone choisie par transaction (ventes, factures, registre), au plus 2 s | Fait (2026-11-24, réglage `synchronous_standby_names` à poser par le titulaire) | regles-metier.md « Bascule du 2e serveur, vague 2 » |
 | Mise hors jeu du serveur 1 et promotion automatique du 2e serveur (3 preuves, retrait rejouable, scripts 166 et 166b) | Fait (2026-11-24, à essayer en réel ; droit 166b à poser par le titulaire) | docs/taches/2026-11-23-bascule-2e-serveur/plan-vague-2.md |
 | Scripts de mise en production tous dans `database/init`, livrés avec l'API (schéma, référentiel, fuseau, scripts d'administrateur) | Fait (2026-11-24) | scripts-base-de-donnees.md § 2 |
-| Relais par le 2e serveur pour les postes qui ne joignent plus le serveur 1 | En attente (lot V2-5) | docs/taches/2026-11-23-bascule-2e-serveur/plan-vague-2.md |
+| Relais par le 2e serveur pour les postes qui ne joignent plus le serveur 1 (adresse d'origine signée, aucun privilège local, retour à la voie directe sans coupure) | Fait (2026-11-24, à essayer en réel) | docs/taches/2026-11-23-bascule-2e-serveur/plan-vague-2.md |
+| Liste des postes autorisés (enrôlement par le titulaire, preuve d'identité du poste à la connexion) | En attente (plan à valider) | docs/taches/2026-11-24-postes-autorises/plan.md |
 | Essai réel de la bascule sur deux PostgreSQL (cas 1, 2, 3, isolement, un seul serveur) | En attente (lot V2-8) | docs/taches/2026-11-23-bascule-2e-serveur/plan-vague-2.md |
 
 ## Sécurité et droits

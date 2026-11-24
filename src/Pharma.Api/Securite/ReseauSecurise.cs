@@ -111,9 +111,9 @@ public static class ReseauSecurise
     public static bool EstCertificatAutorite(PathString chemin) =>
         string.Equals(chemin.Value, CheminCertificatAutorite, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Le certificat de l'autorité n'est servi qu'à une requête venue du poste local.</summary>
-    public static bool CertificatAutoriteRefuse(PathString chemin, IPAddress? origine) =>
-        EstCertificatAutorite(chemin) && (origine is null || !IPAddress.IsLoopback(origine));
+    /// <summary>Le certificat de l'autorité n'est servi qu'à une requête venue du poste local, jamais à une requête relayée par le 2e serveur (aucun privilège local par relais).</summary>
+    public static bool CertificatAutoriteRefuse(PathString chemin, IPAddress? origine, bool viaRelais = false) =>
+        EstCertificatAutorite(chemin) && (viaRelais || origine is null || !IPAddress.IsLoopback(origine));
 
     /// <summary>
     /// L'officine est en Algérie (UTC+1 toute l'année, sans heure d'été) : avertissement si le fuseau de Windows en diffère

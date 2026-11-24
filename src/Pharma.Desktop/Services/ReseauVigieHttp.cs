@@ -11,7 +11,7 @@ namespace Pharma.Desktop.Services;
 /// Accès réseau réel de la vigie : client HTTP à part (4 secondes par appel, certificat toujours vérifié par Windows), qui ne passe
 /// pas par le relais d'adresse du poste : il vise toujours l'adresse précise qu'on lui donne.
 /// </summary>
-public sealed class ReseauVigieHttp(string nomPoste, HttpClient? client = null) : IReseauVigie, IDisposable
+public sealed class ReseauVigieHttp(string nomPoste, HttpClient? client = null, Func<string?>? jeton = null) : IReseauVigie, IDisposable
 {
     private readonly HttpClient http = client ?? new HttpClient { Timeout = TimeSpan.FromSeconds(4) };
 
@@ -30,6 +30,8 @@ public sealed class ReseauVigieHttp(string nomPoste, HttpClient? client = null) 
         try
         {
             using var requete = Requete(HttpMethod.Get, new Uri(adresse, "api/healthcheck"));
+            // Le serveur ne compte un poste « vu » que sur un jeton valide : jeton joint dès qu'un employé est connecté (rien n'est joint sinon)
+            if (jeton?.Invoke() is { Length: > 0 } courant) requete.Headers.Authorization = new AuthenticationHeaderValue("Bearer", courant);
             using var rep = await http.SendAsync(requete, ct);
             if (!rep.IsSuccessStatusCode) return new(false, false, null);
             try

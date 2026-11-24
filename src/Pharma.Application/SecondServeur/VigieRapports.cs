@@ -38,7 +38,7 @@ public static class PostesConnus
 /// <summary>Corps de POST /api/vigie/rapport côté Application (le DTO de fil est Pharma.Shared.RapportPosteDto).</summary>
 public sealed record RapportPoste(string Poste, bool Serveur1Joint, DateTime? EchecDepuisUtc, string VersionPoste, string AdresseServeur1);
 
-public enum IssueRapport { Accepte, TropRapide, PosteDeuxAdresses }
+public enum IssueRapport { Accepte, TropRapide, PosteDeuxAdresses, AuthentifieRecent, RegistrePlein }
 
 /// <summary>
 /// Mémoire (veille : aucune écriture en base) des derniers rapports. Nom de poste annoncé par deux adresses différentes à moins de
@@ -49,6 +49,8 @@ public sealed class RegistreRapportsPostes(ReglagesBascule reglages)
     private sealed record Entree(string Adresse, bool Serveur1Joint, DateTime RecuLeUtc, DateTime? PerteDepuisUtc, bool Authentifie, string Version, string AdresseServeur1);
 
     private static readonly TimeSpan IntervalleMinimum = TimeSpan.FromSeconds(1);
+    /// <summary>Bornes de mémoire : postes distincts et adresses distinctes (un appelant du réseau peut inventer des noms et des adresses).</summary>
+    public const int PostesMax = 500, AdressesMax = 2000;
     private readonly ConcurrentDictionary<string, Entree> postes = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, DateTime> parAdresse = new();
     private readonly object verrou = new();
@@ -58,11 +60,19 @@ public sealed class RegistreRapportsPostes(ReglagesBascule reglages)
         lock (verrou)
         {
             if (parAdresse.TryGetValue(adresse, out var dernier) && maintenantUtc - dernier < IntervalleMinimum) return IssueRapport.TropRapide;
+            if (!parAdresse.ContainsKey(adresse) && parAdresse.Count >= AdressesMax) EvincerAdresses();
             parAdresse[adresse] = maintenantUtc;
             var vu = TimeSpan.FromSeconds(reglages.PosteVuSecondes);
             postes.TryGetValue(rapport.Poste, out var avant);
-            if (avant is not null && avant.Adresse != adresse && maintenantUtc - avant.RecuLeUtc < vu) return IssueRapport.PosteDeuxAdresses;
+            if (avant is not null && maintenantUtc - avant.RecuLeUtc < vu)
+            {
+                // Un rapport authentifié (jeton valide, poste lié) remplace un rapport anonyme du même nom venu d'une autre adresse ; l'inverse n'arrive jamais :
+                // un rapport anonyme ne remplace pas un rapport authentifié récent (aucun tiers ne peut prendre la place d'un vrai poste)
+                if (avant.Adresse != adresse && !(authentifie && !avant.Authentifie)) return IssueRapport.PosteDeuxAdresses;
+                if (avant.Authentifie && !authentifie) return IssueRapport.AuthentifieRecent;
+            }
             var perte = rapport.Serveur1Joint ? (DateTime?)null : avant is { Serveur1Joint: false, PerteDepuisUtc: { } p } ? p : maintenantUtc;
+            if (!postes.ContainsKey(rapport.Poste) && postes.Count >= PostesMax && !FairePlace(authentifie)) return IssueRapport.RegistrePlein;
             postes[rapport.Poste] = new Entree(adresse, rapport.Serveur1Joint, maintenantUtc, perte, authentifie, rapport.VersionPoste, rapport.AdresseServeur1);
             Purger(maintenantUtc);
             return IssueRapport.Accepte;
@@ -75,6 +85,22 @@ public sealed class RegistreRapportsPostes(ReglagesBascule reglages)
 
     public RapportRetenu? Dernier(string poste) =>
         postes.TryGetValue(poste, out var e) ? new RapportRetenu(poste, e.Serveur1Joint, e.RecuLeUtc, e.PerteDepuisUtc, e.Authentifie) : null;
+
+    // Registre plein : on évince d'abord les rapports anonymes les plus anciens (un flot de faux noms ne chasse jamais un poste authentifié) ; un rapport anonyme
+    // est refusé s'il n'y a que des rapports authentifiés
+    private bool FairePlace(bool authentifie)
+    {
+        var ancien = postes.Where(kv => !kv.Value.Authentifie).OrderBy(kv => kv.Value.RecuLeUtc).Select(kv => kv.Key).FirstOrDefault();
+        if (ancien is null && !authentifie) return false;
+        ancien ??= postes.OrderBy(kv => kv.Value.RecuLeUtc).Select(kv => kv.Key).First();
+        postes.TryRemove(ancien, out _);
+        return true;
+    }
+
+    private void EvincerAdresses()
+    {
+        foreach (var kv in parAdresse.OrderBy(kv => kv.Value).Take(Math.Max(1, AdressesMax / 10)).ToList()) parAdresse.TryRemove(kv.Key, out _);
+    }
 
     // Oublie ce qui est vieux de plus de 10 minutes (un poste éteint, une adresse disparue) : mémoire bornée
     private void Purger(DateTime maintenantUtc)

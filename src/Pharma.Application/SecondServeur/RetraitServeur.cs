@@ -164,6 +164,9 @@ public sealed class RecevoirAlerteInterServeurs(IAlertesTitulaire alertes, Limit
         if ((poste?.Length ?? 0) > 100) return IssueAlerteRecue.MessageInvalide;
         var cle = type == TypesAlerteInterServeurs.ReseauPoste ? type + "|" + poste!.Trim() : type!;
         if (!limite.Autoriser("recue|" + cle)) return IssueAlerteRecue.Limitee;
+        // Plafond global des alertes « reseau_poste » (AlerteRelaisPoste.PlafondParHeure par heure, tous postes confondus)
+        if (type == TypesAlerteInterServeurs.ReseauPoste
+            && !Enumerable.Range(0, AlerteRelaisPoste.PlafondParHeure).Any(i => limite.Autoriser("recue|reseau_poste|global|" + i))) return IssueAlerteRecue.Limitee;
         var (objet, sms) = TypesAlerteInterServeurs.Textes(type!);
         var detail = string.IsNullOrWhiteSpace(message) ? objet : message.Trim();
         if (type == TypesAlerteInterServeurs.ReseauPoste) detail = $"Poste {poste!.Trim()} : {detail}";

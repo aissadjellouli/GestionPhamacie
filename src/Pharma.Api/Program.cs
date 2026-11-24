@@ -176,6 +176,8 @@ builder.Services.AddProblemDetails();
 // Vigie du 2e serveur (V2-3) : rapports des postes, décision de promotion (verdict seulement). Mode veille = IVeilleServeur (lot V2-1)
 builder.Services.AjouterVigieSecondServeur(builder.Configuration, optionsJournal.Dossier);
 builder.Services.AddHostedService<Pharma.Api.Taches.VigieSecondServeurTache>();
+// Relais du 2e serveur en veille vers le serveur 1 (V2-5) : enregistré seulement si deux serveurs sont déclarés et la clé des jetons présente
+builder.Services.AjouterRelaisVeille(builder.Configuration);
 // Limite de débit par adresse IP sur les routes de connexion (mots de passe, codes comptoir, super admin)
 builder.Services.AjouterLimiteConnexions(builder.Configuration);
 
@@ -369,6 +371,10 @@ app.Use(async (ctx, suite) =>
     }
 });
 
+// Relais du 2e serveur (V2-5, serveur 1) : adresse d'origine d'une requête relayée, reprise seulement si l'appel et la signature sont authentiques ;
+// avant la redirection HTTPS et la limite de débit, qui voient ainsi l'adresse d'origine du poste
+app.UseMiddleware<Pharma.Api.Securite.RelaisOrigineMiddleware>();
+
 // HTTPS configuré : HSTS et redirection des requêtes HTTP du réseau (sauf HTTP gardé volontairement : AutoriserHttpReseau)
 app.UtiliserHttps();
 app.UseRateLimiter();
@@ -382,7 +388,7 @@ app.Use((ctx, suite) =>
 app.Use((ctx, suite) =>
 {
     // Certificat de l'autorité : plus distribué par le réseau (clé USB), seulement au PC serveur
-    if (ReseauSecurise.CertificatAutoriteRefuse(ctx.Request.Path, ctx.Connection.RemoteIpAddress))
+    if (ReseauSecurise.CertificatAutoriteRefuse(ctx.Request.Path, ctx.Connection.RemoteIpAddress, Pharma.Api.Securite.RelaisOrigineMiddleware.ViaRelais(ctx)))
     {
         ctx.Response.StatusCode = StatusCodes.Status404NotFound;
         return Task.CompletedTask;
@@ -411,8 +417,6 @@ app.Use(async (ctx, suite) =>
 });
 
 // Serveur écarté (bascule du 2e serveur, lot 3) : toute requête refusée (503 « serveur_ecarte », adresse du serveur retenu), sauf /api/healthcheck
-// Présence des postes (V2-1b) : en-tête X-Pharma-Poste noté avant les barrages, healthcheck compris
-app.UseMiddleware<Pharma.Api.Securite.PresencePostesMiddleware>();
 app.Use(BarrageServeurEcarte.Filtrer);
 // API en veille (vague 2, V2-1) : 503 « serveur_en_veille » sauf healthcheck, vigie, inter-serveurs (et relais du lot V2-5 si branché)
 app.Use(BarrageServeurVeille.Filtrer);
@@ -421,6 +425,8 @@ app.Use(BarrageServeurVeille.Filtrer);
 if (demo.Actif) app.Use(Pharma.Api.Demo.FonctionsCoupeesDemo.FiltrerAsync);
 
 app.UseAuthentication();
+// Présence des postes (V2-1b) : seule une requête authentifiée compte (healthcheck compris, le poste y joint son jeton) ; nom pris dans le claim « poste » du jeton
+app.UseMiddleware<Pharma.Api.Securite.PresencePostesMiddleware>();
 // Le nom de poste est lié au jeton à la connexion : un en-tête X-Pharma-Poste différent est refusé
 app.Use(async (ctx, suite) =>
 {

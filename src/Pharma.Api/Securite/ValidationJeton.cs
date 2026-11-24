@@ -20,7 +20,14 @@ public static class ValidationJeton
             ctx.Fail("Jeton sans employé.");
             return;
         }
-        var etat = await ctx.HttpContext.RequestServices.GetRequiredService<IEtatConnexions>().LireAsync(id, ctx.HttpContext.RequestAborted);
+        EtatConnexion? etat;
+        try { etat = await ctx.HttpContext.RequestServices.GetRequiredService<IEtatConnexions>().LireAsync(id, ctx.HttpContext.RequestAborted); }
+        // Base illisible : le healthcheck (route publique, sans base) répond comme avant ; le jeton est simplement tenu pour non valide (poste non compté « vu »)
+        catch (Exception e) when (e is not OperationCanceledException && ctx.HttpContext.Request.Path.StartsWithSegments("/api/healthcheck", StringComparison.OrdinalIgnoreCase))
+        {
+            ctx.Fail("État du compte illisible.");
+            return;
+        }
         if (ValidationConnexion.Refus(etat, ctx.SecurityToken.ValidFrom, user.MotDePasseAChanger()) is { } refus)
             ctx.Fail(refus);
     }

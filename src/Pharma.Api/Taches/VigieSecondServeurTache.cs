@@ -12,6 +12,9 @@ public sealed class VigieSecondServeurTache(VigieSecondServeur vigie, ExecutantP
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!mode.EstVeille || !releves.AutreServeurRegle) return;
+        if (reglages.PromotionMinimumRelevee)
+            logger.LogWarning("PromotionMinimumSecondes relevé de {Demande} s à {Effectif} s : PosteVuSecondes + IsolementSecondes + SondeSecondes + {Marge} s doivent rester inférieurs, pour que le serveur 1 se soit écarté avant toute promotion",
+                reglages.PromotionMinimumDemandee, reglages.PromotionMinimumSecondes, ReglagesBascule.MargeSecondes);
         string? derniere = null;
         while (!stoppingToken.IsCancellationRequested)
         {

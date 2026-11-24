@@ -4,8 +4,8 @@ using Pharma.Shared;
 namespace Pharma.Api.Securite;
 
 /// <summary>
-/// Point d'accroche du lot V2-5 (relais) : appelé en veille pour une route non permise ; renvoie vrai s'il a répondu lui-même
-/// (relais vers le serveur 1). Non enregistré tant que le lot V2-5 n'est pas livré : la requête reçoit alors le 503 « serveur_en_veille ».
+/// Point d'accroche du relais (lot V2-5, <see cref="RelaisVeille"/>) : appelé en veille pour une route non permise ; renvoie vrai s'il a répondu lui-même
+/// (relais vers le serveur 1). Non enregistré sans 2e serveur déclaré ou sans clé des jetons, ou s'il refuse : la requête reçoit alors le 503 « serveur_en_veille ».
 /// </summary>
 public interface IRelaisVeille
 {

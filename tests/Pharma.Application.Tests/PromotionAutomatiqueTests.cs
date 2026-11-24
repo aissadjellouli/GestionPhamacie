@@ -137,7 +137,7 @@ public class PromotionAutomatiqueTests
         b.Releves.Joint = false;
         b.Api.Joint = false;
         ResultatDecision r = null!;
-        for (var i = 0; i < 20; i++) r = await b.TourAsync(false, "P1", "P2", "P3");
+        for (var i = 0; i < 20; i++) r = await b.TourAsync(true, "P1", "P2", "P3");
         return r;
     }
 
@@ -186,7 +186,7 @@ public class PromotionAutomatiqueTests
         b.Api.Joint = false;
         ResultatDecision r = null!;
         // Dès que le verdict devient « Promotion » pour la première fois : une seule confirmation
-        for (var i = 0; i < 40 && r?.Verdict != VerdictPromotion.Promotion; i++) r = await b.TourAsync(false, "P1", "P2", "P3");
+        for (var i = 0; i < 40 && r?.Verdict != VerdictPromotion.Promotion; i++) r = await b.TourAsync(true, "P1", "P2", "P3");
         Assert.Equal(1, b.Vigie.Confirmations);
         Assert.Equal(IssuePromotion.Aucune, (await b.Executant.ApresEvaluationAsync(r)).Issue);
         Assert.Equal(0, b.Base.Promotions);
@@ -200,7 +200,7 @@ public class PromotionAutomatiqueTests
         Assert.Equal(IssuePromotion.Promue, (await b.Executant.ApresEvaluationAsync(r)).Issue);
         for (var i = 0; i < 3; i++)
         {
-            r = await b.TourAsync(false, "P1", "P2", "P3");
+            r = await b.TourAsync(true, "P1", "P2", "P3");
             Assert.Equal(IssuePromotion.Aucune, (await b.Executant.ApresEvaluationAsync(r)).Issue);
         }
         Assert.Equal(1, b.Base.Promotions);
@@ -214,7 +214,7 @@ public class PromotionAutomatiqueTests
         b.Base.Resultat = ResultatPromotionBase.NonPromue;
         var r = await VerdictCas1Async(b);
         Assert.Equal(IssuePromotion.NonPromue, (await b.Executant.ApresEvaluationAsync(r)).Issue);
-        r = await b.TourAsync(false, "P1", "P2", "P3");
+        r = await b.TourAsync(true, "P1", "P2", "P3");
         Assert.Equal(IssuePromotion.Aucune, (await b.Executant.ApresEvaluationAsync(r)).Issue);
         Assert.Equal(1, b.Base.Promotions);
         Assert.False(b.Veille.RedemarrageDemande);
@@ -255,7 +255,7 @@ public class PromotionAutomatiqueTests
         b.Releves.Joint = false;   // jamais joint depuis le démarrage de la veille : aucune lignée connue
         b.Api.Joint = false;
         ResultatDecision r = null!;
-        for (var i = 0; i < 20; i++) r = await b.TourAsync(false, "P1", "P2", "P3");
+        for (var i = 0; i < 20; i++) r = await b.TourAsync(true, "P1", "P2", "P3");
         Assert.Equal(VerdictPromotion.Promotion, r.Verdict);
         Assert.Equal("lignee_serveur1_inconnue", (await b.Executant.ApresEvaluationAsync(r)).Raison);
         Assert.Equal(0, b.Base.Promotions);
@@ -317,7 +317,7 @@ public class PromotionAutomatiqueTests
     public async Task Officine_a_un_seul_serveur_tout_est_inactif()
     {
         var b = new Banc(declare: false);
-        for (var i = 0; i < 20; i++) await b.TourAsync(false, "P1", "P2", "P3");
+        for (var i = 0; i < 20; i++) await b.TourAsync(true, "P1", "P2", "P3");
         Assert.Equal(VerdictPromotion.Inactif, b.Vigie.Dernier!.Verdict);
 
         var res = await b.Executant.ApresEvaluationAsync(b.Vigie.Dernier);
@@ -453,7 +453,7 @@ public class PromotionAutomatiqueTests
         ResultatDecision r = null!;
         for (var i = 0; i < 10; i++)
         {
-            r = await b.TourAsync(false, "P1");
+            r = await b.TourAsync(true, "P1");
             await b.Executant.ApresEvaluationAsync(r);
         }
         Assert.Equal(VerdictPromotion.ApiServeur1Muette, r.Verdict);
@@ -474,7 +474,7 @@ public class PromotionAutomatiqueTests
         b.Api.Joint = false;
         b.Alertes.Joignable = false;   // l'égalité se produit quand le serveur 1 est injoignable : l'alerte ne peut pas partir
         ResultatDecision r = null!;
-        for (var i = 0; i < 20; i++) r = await b.TourAsync(false, "P1", "P2");
+        for (var i = 0; i < 20; i++) r = await b.TourAsync(true, "P1", "P2");
         Assert.Equal(VerdictPromotion.Egalite, r.Verdict);
 
         await b.Executant.ApresEvaluationAsync(r);
@@ -651,6 +651,20 @@ public class PromotionAutomatiqueTests
         Assert.Equal(IssueAlerteRecue.TypeInconnu, await recevoir.ExecuterAsync("autre", null, "x"));
         Assert.Equal(IssueAlerteRecue.PosteManquant, await recevoir.ExecuterAsync("reseau_poste", null, "x"));
         Assert.Equal(IssueAlerteRecue.MessageInvalide, await recevoir.ExecuterAsync("egalite_majorite", null, new string('x', 501)));
+    }
+
+    [Fact]
+    public async Task Alertes_reseau_poste_recues_plafonnees_a_cinq_par_heure_tous_postes_confondus()
+    {
+        var h = new HorlogeSimulee(T);
+        var titulaire = new AlertesTitulaire();
+        var recevoir = new RecevoirAlerteInterServeurs(titulaire, new LimiteAlertesHoraire(h));
+        for (var i = 0; i < 12; i++) await recevoir.ExecuterAsync("reseau_poste", "P" + i, "réseau");
+        Assert.Equal(AlerteRelaisPoste.PlafondParHeure, titulaire.Objets.Count);
+        // Les autres types ne sont pas touchés par le plafond
+        Assert.Equal(IssueAlerteRecue.Acceptee, await recevoir.ExecuterAsync("cles_jetons_differentes", null, "x"));
+        h.Maintenant = h.Maintenant.AddMinutes(61);
+        Assert.Equal(IssueAlerteRecue.Acceptee, await recevoir.ExecuterAsync("reseau_poste", "P1", "réseau"));
     }
 
     // ---- Enregistrement des décisions au redémarrage en principal ----

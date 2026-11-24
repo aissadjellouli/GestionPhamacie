@@ -26,7 +26,9 @@ public enum RefusSignature
     /// <summary>Signature fausse : autre clé Jwt:Cle, message modifié, ou fabrication.</summary>
     SignatureFausse,
     /// <summary>Nonce déjà vu dans la durée de conservation (rejeu).</summary>
-    NonceRejoue
+    NonceRejoue,
+    /// <summary>Cache de nonces du relais plein : la vérification est impossible (jamais confondu avec un rejeu).</summary>
+    CapaciteAtteinte
 }
 
 /// <summary>Dérivations de clés à partir de Jwt:Cle (HKDF-SHA256, 32 octets, sans sel).</summary>
@@ -81,6 +83,8 @@ public sealed class CacheNonces(TimeSpan conservation, int capaciteMax = 200_000
     }
 
     public int Taille => _vus.Count;
+    /// <summary>Vrai si le cache a atteint sa capacité : tout nonce neuf est alors refusé.</summary>
+    public bool EstPlein => _vus.Count >= capaciteMax;
 
     private void Nettoyer(long t)
     {
@@ -105,6 +109,9 @@ public sealed class SignatureInterServeurs
     private readonly byte[] _cle;
     private readonly TimeProvider _temps;
     private readonly CacheNonces _nonces;
+    // Cache DISTINCT pour les annonces de relais : un flot de requêtes relayées ne peut jamais faire refuser un appel état / retrait / alerte
+    private readonly CacheNonces _noncesRelais;
+    public const int CapaciteNoncesRelais = 100_000;
 
     public string NomServeur { get; }
     public int FenetreSecondes { get; }
@@ -121,6 +128,7 @@ public sealed class SignatureInterServeurs
         _temps = temps ?? TimeProvider.System;
         // Un nonce doit rester retenu tant que son horodatage serait encore accepté (2 fenêtres), et au moins 5 min (contrat)
         _nonces = new CacheNonces(TimeSpan.FromSeconds(Math.Max(5 * 60, 2 * FenetreSecondes + 5)));
+        _noncesRelais = new CacheNonces(TimeSpan.FromSeconds(Math.Max(5 * 60, 2 * FenetreSecondes + 5)), CapaciteNoncesRelais);
     }
 
     // ---- Requêtes ----
@@ -158,6 +166,37 @@ public sealed class SignatureInterServeurs
         var attendu = Signer(ChaineReponse(statut, nonceRequete, e.Horodatage!, corps, e.Serveur!));
         return SignatureEgale(attendu, e.Signature!) ? null : RefusSignature.SignatureFausse;
     }
+
+    // ---- En-têtes de relais (lot V2-5) : même clé dérivée, même fenêtre, même cache de nonces ----
+    public const string PrefixeRelais = "PHARMA-RELAIS-V1";
+    public const int LongueurOrigineMax = 45;
+
+    /// <summary>Signe l'annonce « cette requête vient du poste P, d'adresse A » : liée à la méthode et à la cible (chemin + requête tels qu'envoyés).</summary>
+    public EnTetesRelaisSignes SignerRelais(string poste, string origine, string methode, string cheminEtRequete)
+    {
+        var horodatage = Maintenant().ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var nonce = Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(OctetsNonce));
+        return new EnTetesRelaisSignes(NomServeur, poste, origine, horodatage, nonce,
+            Signer(ChaineRelais(methode, cheminEtRequete, poste, origine, horodatage, nonce, NomServeur)));
+    }
+
+    /// <summary>Null = annonce authentique et neuve (son nonce est alors retenu). Même ordre que <see cref="VerifierRequete"/> : format, fenêtre, signature, puis cache.</summary>
+    public RefusSignature? VerifierRelais(string methode, string cheminEtRequete, EnTetesRelaisRecus e)
+    {
+        if (!NomValide(e.Poste) || string.IsNullOrEmpty(e.Origine) || e.Origine.Length > LongueurOrigineMax || e.Origine.Any(char.IsControl)
+            || !FormatValide(new EnTetesRecus(e.Serveur, e.Horodatage, e.Nonce, e.Signature), out var horodatage)) return RefusSignature.EnTetesInvalides;
+        if (!DansLaFenetre(horodatage)) return RefusSignature.HorodatageHorsFenetre;
+        var attendu = Signer(ChaineRelais(methode, cheminEtRequete, e.Poste!, e.Origine, e.Horodatage!, e.Nonce!, e.Serveur!));
+        if (!SignatureEgale(attendu, e.Signature!)) return RefusSignature.SignatureFausse;
+        if (_noncesRelais.TryEnregistrer(e.Nonce!, Maintenant())) return null;
+        return _noncesRelais.EstPlein ? RefusSignature.CapaciteAtteinte : RefusSignature.NonceRejoue;
+    }
+
+    /// <summary>Nonces retenus par le cache des appels état / retrait / alerte et par celui du relais (tests).</summary>
+    public (int Appels, int Relais) TaillesCachesNonces => (_nonces.Taille, _noncesRelais.Taille);
+
+    public static string ChaineRelais(string methode, string cheminEtRequete, string poste, string origine, string horodatage, string nonce, string serveur) =>
+        string.Join('\n', PrefixeRelais, methode.ToUpperInvariant(), cheminEtRequete, poste, origine, horodatage, nonce, serveur);
 
     // ---- Chaînes canoniques (contrat § 4) ----
     public static string ChaineRequete(string methode, string cheminEtRequete, string horodatage, string nonce, ReadOnlySpan<byte> corps, string serveur) =>
@@ -269,6 +308,25 @@ public sealed class SuiviCleJetons(TimeProvider? temps = null)
     private DateTimeOffset? _derniereAlerte;
 
     public VerdictCleJetons Verdict { get; private set; } = VerdictCleJetons.Inconnu;
+    public bool ReglagesDifferents { get; private set; }
+    private DateTimeOffset? _derniereAlerteReglages;
+
+    public void MettreReglages(bool differents)
+    {
+        lock (_verrou) ReglagesDifferents = differents;
+    }
+
+    /// <summary>Au plus une alerte « réglages différents » par heure.</summary>
+    public bool AlerteReglagesDue()
+    {
+        lock (_verrou)
+        {
+            var now = _temps.GetUtcNow();
+            if (_derniereAlerteReglages is { } d && now - d < IntervalleAlerte) return false;
+            _derniereAlerteReglages = now;
+            return true;
+        }
+    }
     public DateTime? VerifieLeUtc { get; private set; }
 
     public void Mettre(VerdictCleJetons verdict)

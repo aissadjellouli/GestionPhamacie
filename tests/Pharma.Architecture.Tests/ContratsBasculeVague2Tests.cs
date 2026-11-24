@@ -18,7 +18,7 @@ public class ContratsBasculeVague2Tests
         Assert.Equal(["poste", "serveur1Joint", "echecDepuisUtc", "versionPoste", "adresseServeur1"],
             Champs(new RapportPosteDto("P1", true, null, "1.0", "https://s1:5443")));
         Assert.Equal(["role", "consigne", "message"], Champs(new ConsigneVigieDto("veille", "rester", null)));
-        Assert.Equal(["serveur", "role", "timeline", "enRecovery", "versionApi", "empreinteJeton"],
+        Assert.Equal(["serveur", "role", "timeline", "enRecovery", "versionApi", "empreinteJeton", "reglages"],
             Champs(new EtatInterServeursDto("SRV-1", "principal", 3, false, "1.0", "ab12")));
         Assert.Equal(["ecarte", "lsnFinal"], Champs(new RetraitInterServeursDto(true, "0/16B3748")));
         Assert.Equal(["type", "poste", "message", "survenueUtc"], Champs(new AlerteInterServeursDto("reseau_poste", "P1", "m", maintenant)));

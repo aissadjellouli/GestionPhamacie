@@ -92,7 +92,7 @@ public sealed record RapportPosteDto(string Poste, bool Serveur1Joint, DateTime?
 public sealed record ConsigneVigieDto(string Role, string Consigne, string? Message);
 
 /// <summary>Réponse de GET /api/inter-serveurs/etat (signée). Timeline : null si inconnue (copie).</summary>
-public sealed record EtatInterServeursDto(string Serveur, string Role, int? Timeline, bool EnRecovery, string? VersionApi, string? EmpreinteJeton);
+public sealed record EtatInterServeursDto(string Serveur, string Role, int? Timeline, bool EnRecovery, string? VersionApi, string? EmpreinteJeton, string? Reglages = null);
 
 /// <summary>Réponse 200 de POST /api/inter-serveurs/retrait. LsnFinal au format PostgreSQL « 0/16B3748 ».</summary>
 public sealed record RetraitInterServeursDto(bool Ecarte, string LsnFinal);

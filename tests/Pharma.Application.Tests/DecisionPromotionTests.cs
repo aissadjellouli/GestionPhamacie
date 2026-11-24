@@ -20,8 +20,8 @@ public class DecisionPromotionTests
     private static Serveur1Vu ApiMuette(int depuisSecondes) => new(true, false, null, T.AddSeconds(-depuisSecondes));
 
     // Poste qui perd le serveur 1 depuis « depuis » s, rapport reçu il y a 5 s
-    private static RapportRetenu Perd(string poste, int depuis = 90, bool auth = false) => new(poste, false, T.AddSeconds(-5), T.AddSeconds(-depuis), auth);
-    private static RapportRetenu Joint_(string poste) => new(poste, true, T.AddSeconds(-5), null, false);
+    private static RapportRetenu Perd(string poste, int depuis = 90, bool auth = true) => new(poste, false, T.AddSeconds(-5), T.AddSeconds(-depuis), auth);
+    private static RapportRetenu Joint_(string poste, bool auth = true) => new(poste, true, T.AddSeconds(-5), null, auth);
 
     private static VerdictPromotion V(EntreeDecision e) => DecisionPromotion.Evaluer(e).Verdict;
 
@@ -35,7 +35,7 @@ public class DecisionPromotionTests
 
     // ---- Rester ----
     [Fact] public void Serveur1_joint_et_postes_qui_le_joignent_rester() =>
-        Assert.Equal(VerdictPromotion.Rester, V(Entree(s1: Joint, rapports: Quatre.Select(Joint_))));
+        Assert.Equal(VerdictPromotion.Rester, V(Entree(s1: Joint, rapports: Quatre.Select(p => Joint_(p)))));
 
     [Fact] public void Serveur1_joint_sans_rapport_rester() => Assert.Equal(VerdictPromotion.Rester, V(Entree(s1: Joint)));
 
@@ -43,8 +43,26 @@ public class DecisionPromotionTests
     [Fact] public void Cas1_majorite_60_s_promotion() =>
         Assert.Equal(VerdictPromotion.Promotion, V(Entree(s1: Muet(60), rapports: [Perd("P1"), Perd("P2"), Perd("P3")])));
 
-    [Fact] public void Cas1_majorite_avec_un_poste_qui_joint_encore_promotion_car_majorite_stricte() =>
-        Assert.Equal(VerdictPromotion.Promotion, V(Entree(s1: Muet(120), rapports: [Perd("P1"), Perd("P2"), Perd("P3"), Joint_("P4")])));
+    [Fact] public void Cas1_un_poste_authentifie_qui_joint_encore_le_serveur_1_bloque_la_promotion() =>
+        Assert.Equal("poste_authentifie_joint_serveur1", DecisionPromotion.Evaluer(Entree(s1: Muet(120), rapports: [Perd("P1"), Perd("P2"), Perd("P3"), Joint_("P4")])).Raison);
+
+    // ---- Revue de sécurité : seuls les rapports authentifiés comptent (promotion ET blocage) ----
+    [Fact] public void Cas1_rapports_anonymes_ne_font_jamais_promouvoir()
+    {
+        var anonymes = Quatre.Select(p => Perd(p, 300, false)).ToList();
+        var r = DecisionPromotion.Evaluer(Entree(s1: Muet(600), rapports: anonymes));
+        Assert.NotEqual(VerdictPromotion.Promotion, r.Verdict);
+        Assert.Equal(0, r.VotesAuthentifies);
+    }
+
+    [Fact] public void Cas1_un_faux_rapport_joint_anonyme_ne_bloque_pas_une_majorite_authentifiee() =>
+        Assert.Equal(VerdictPromotion.Promotion, V(Entree(s1: Muet(600), rapports: [Perd("P1"), Perd("P2"), Perd("P3"), Joint_("P4", auth: false), Joint_("X1", auth: false)])));
+
+    [Fact] public void Cas1_des_votes_anonymes_ne_completent_pas_une_majorite_authentifiee_insuffisante() =>
+        Assert.NotEqual(VerdictPromotion.Promotion, V(Entree(s1: Muet(600), rapports: [Perd("P1"), Perd("P2"), Perd("P3", 300, false), Perd("P4", 300, false)])));
+
+    [Fact] public void Cas2_un_faux_rapport_joint_anonyme_ne_bloque_pas_le_retrait() =>
+        Assert.Equal(VerdictPromotion.RetraitPuisPromotion, V(Entree(s1: Joint, rapports: [Perd("P1", 61), Perd("P2", 61), Perd("P3", 61), Joint_("P4", auth: false)])));
 
     [Fact] public void Cas1_un_seul_vote_sur_quatre_attendre() =>
         Assert.Equal(VerdictPromotion.Attendre, V(Entree(s1: Muet(600), rapports: [Perd("P1")])));
@@ -72,22 +90,89 @@ public class DecisionPromotionTests
         Assert.Equal(VerdictPromotion.Promotion, V(Entree(s1: Muet(300), rapports: [Perd("P1"), Perd("P2"), Perd("P3")], reglages: r)));
     }
 
+    // ---- Plafonds de mémoire et de journal ----
+    [Fact] public void Registre_borne_en_nombre_les_faux_noms_anonymes_n_evincent_jamais_un_poste_authentifie()
+    {
+        var reg = new RegistreRapportsPostes(new ReglagesBascule());
+        reg.Enregistrer(Rapport("VRAI", false), "poste", true, T);
+        for (var i = 0; i < RegistreRapportsPostes.PostesMax + 300; i++)
+            reg.Enregistrer(Rapport("FAUX-" + i, false), "tiers-" + i, false, T.AddSeconds(1 + i * 0.001));
+        Assert.True(reg.Rapports().Count <= RegistreRapportsPostes.PostesMax);
+        Assert.True(reg.Dernier("VRAI")!.Authentifie);
+        // Un nouveau rapport authentifié trouve toujours sa place
+        Assert.Equal(IssueRapport.Accepte, reg.Enregistrer(Rapport("AUTRE-VRAI", false), "poste2", true, T.AddSeconds(5)));
+        Assert.True(reg.Rapports().Count <= RegistreRapportsPostes.PostesMax);
+    }
+
+    [Fact] public async Task Journal_poste_deux_adresses_une_ligne_par_minute_et_par_poste_au_plus()
+    {
+        var (vigie, h, _, _, journal, _) = Monter(reference: T);
+        await vigie.TraiterRapportAsync(Rapport("P1", false), "vrai", true);
+        for (var i = 0; i < 6; i++)
+        {
+            h.Maintenant = h.Maintenant.AddSeconds(2);
+            await vigie.TraiterRapportAsync(Rapport("P1", false), "tiers", false);
+        }
+        Assert.Single(journal.Evenements, e => e == "poste_deux_adresses");
+        h.Maintenant = h.Maintenant.AddSeconds(61);
+        await vigie.TraiterRapportAsync(Rapport("P1", false), "vrai", true);   // le vrai poste se manifeste de nouveau
+        h.Maintenant = h.Maintenant.AddSeconds(2);
+        await vigie.TraiterRapportAsync(Rapport("P1", false), "tiers", false);
+        Assert.Equal(2, journal.Evenements.Count(e => e == "poste_deux_adresses"));
+    }
+
+    // ---- Contrainte de délais : PosteVu + Isolement + Sonde + marge < PromotionMinimum ----
+    [Fact] public void Contrainte_de_delais_aux_bornes_la_promotion_minimum_est_relevee_au_minimum_sur()
+    {
+        // Valeurs par défaut : 45 + 20 + 5 + 5 = 75 < 76
+        var d = new ReglagesBascule().Borner();
+        Assert.Equal(76, d.PromotionMinimumSur);
+        Assert.Equal(76, d.PromotionMinimumSecondes);
+        Assert.True(d.PromotionMinimumRelevee);
+        // Une valeur déjà sûre est gardée telle quelle
+        var sur = new ReglagesBascule { PromotionMinimumSecondes = 200 }.Borner();
+        Assert.Equal(200, sur.PromotionMinimumSecondes);
+        Assert.False(sur.PromotionMinimumRelevee);
+        // Exactement à la limite : 75 refusé (la contrainte est stricte), 76 accepté
+        var limite = new ReglagesBascule { PromotionMinimumSecondes = 75 }.Borner();
+        Assert.Equal(76, limite.PromotionMinimumSecondes);
+        var juste = new ReglagesBascule { PromotionMinimumSecondes = 76 }.Borner();
+        Assert.Equal(76, juste.PromotionMinimumSecondes);
+        Assert.False(juste.PromotionMinimumRelevee);
+        // Autres réglages aux bornes hautes : minimum sûr = 120 + 120 + 30 + 5 + 1, sous le plafond de 600
+        var haut = new ReglagesBascule { PosteVuSecondes = 999, IsolementSecondes = 999, SondeSecondes = 999, PromotionMinimumSecondes = 60 }.Borner();
+        Assert.Equal(276, haut.PromotionMinimumSecondes);
+        Assert.True(haut.PromotionMinimumSecondes < 600);
+        // Aux bornes basses : 30 + 10 + 2 + 5 + 1 = 48 < 60 : le plancher du contrat (60 s) reste le minimum
+        var bas = new ReglagesBascule { PosteVuSecondes = 1, IsolementSecondes = 1, SondeSecondes = 1, PromotionMinimumSecondes = 1 }.Borner();
+        Assert.Equal(60, bas.PromotionMinimumSecondes);
+        Assert.False(bas.PromotionMinimumRelevee);
+        // Idempotent
+        Assert.Equal(76, d.Borner().PromotionMinimumSecondes);
+        Assert.Equal(60, d.PromotionMinimumDemandee);
+        // Réglages effectifs publiés pour comparaison entre les deux serveurs
+        Assert.Equal(new ReglagesBascule().Borner().Empreinte(), d.Empreinte());
+        Assert.NotEqual(new ReglagesBascule { IsolementSecondes = 30 }.Borner().Empreinte(), d.Empreinte());
+    }
+
     [Fact] public void Seuils_regles_hors_bornes_ramenes_dans_15_s_a_5_min()
     {
         var bas = new ReglagesBascule { InjoignableServeur1Secondes = 1, PertePosteSecondes = 1, PromotionMinimumSecondes = 5 }.Borner();
         Assert.Equal(15, bas.InjoignableServeur1Secondes);
         Assert.Equal(15, bas.PertePosteSecondes);
-        Assert.Equal(60, bas.PromotionMinimumSecondes);
+        Assert.Equal(bas.PromotionMinimumSur, bas.PromotionMinimumSecondes);   // 60 s demandées < 45 + 20 + 5 + 5 : relevé au minimum sûr (76 s par défaut)
+        Assert.True(bas.PromotionMinimumRelevee);
+        Assert.Equal(60, bas.PromotionMinimumDemandee);
         var haut = new ReglagesBascule { InjoignableServeur1Secondes = 9999, PertePosteSecondes = 9999 }.Borner();
         Assert.Equal(300, haut.InjoignableServeur1Secondes);
         Assert.Equal(300, haut.PertePosteSecondes);
     }
 
     [Fact] public void Cas1_rapports_perimes_ne_votent_pas() =>
-        Assert.Equal(VerdictPromotion.Attendre, V(Entree(s1: Muet(600), rapports: Quatre.Select(p => new RapportRetenu(p, false, T.AddSeconds(-46), T.AddSeconds(-200), false)))));
+        Assert.Equal(VerdictPromotion.Attendre, V(Entree(s1: Muet(600), rapports: Quatre.Select(p => new RapportRetenu(p, false, T.AddSeconds(-46), T.AddSeconds(-200), true)))));
 
     [Fact] public void Cas1_rapport_a_44_s_vote_encore() =>
-        Assert.Equal(VerdictPromotion.Promotion, V(Entree(s1: Muet(600), rapports: new[] { "P1", "P2", "P3" }.Select(p => new RapportRetenu(p, false, T.AddSeconds(-44), T.AddSeconds(-200), false)))));
+        Assert.Equal(VerdictPromotion.Promotion, V(Entree(s1: Muet(600), rapports: new[] { "P1", "P2", "P3" }.Select(p => new RapportRetenu(p, false, T.AddSeconds(-44), T.AddSeconds(-200), true)))));
 
     [Fact] public void Cas1_poste_inconnu_ne_vote_pas() =>
         Assert.Equal(VerdictPromotion.Attendre, V(Entree(s1: Muet(600), rapports: [Perd("P1"), Perd("X1"), Perd("X2"), Perd("X3")])));
@@ -102,7 +187,7 @@ public class DecisionPromotionTests
     }
 
     [Fact] public void Cas1_base_muette_mais_api_repond_ce_n_est_pas_une_perte_complete() =>
-        Assert.Equal(VerdictPromotion.Relais, V(Entree(s1: new Serveur1Vu(false, true, T.AddSeconds(-600), null), rapports: [Perd("P1"), Perd("P2"), Perd("P3")])));
+        Assert.NotEqual(VerdictPromotion.Promotion, V(Entree(s1: new Serveur1Vu(false, true, T.AddSeconds(-600), null), rapports: [Perd("P1"), Perd("P2"), Perd("P3")])));
 
     // ---- Q22 : base vivante, API muette ----
     [Fact] public void Q22_base_vivante_api_muette_pas_de_promotion_alerte()
@@ -128,8 +213,8 @@ public class DecisionPromotionTests
         // 4 connus : il faut 3 postes ; les trois perdent depuis 200, 100 et 10 s : la majorité n'existe que depuis 10 s
         Assert.Equal(VerdictPromotion.Attendre, V(Entree(s1: Joint, rapports: [Perd("P1", 200, true), Perd("P2", 100, true), Perd("P3", 10, true)])));
 
-    [Fact] public void Cas2_q23_rapports_sans_employe_connecte_ne_comptent_pas_relais() =>
-        Assert.Equal(VerdictPromotion.Relais, V(Entree(s1: Joint, rapports: Quatre.Select(p => Perd(p, 300, false)))));
+    [Fact] public void Cas2_q23_rapports_sans_employe_connecte_ne_comptent_pas_rester() =>
+        Assert.Equal(VerdictPromotion.Rester, V(Entree(s1: Joint, rapports: Quatre.Select(p => Perd(p, 300, false)))));
 
     [Fact] public void Cas2_q23_deux_authentifies_sur_quatre_ne_suffisent_pas() =>
         Assert.Equal(VerdictPromotion.Relais, V(Entree(s1: Joint, rapports: [Perd("P1", 300, true), Perd("P2", 300, true), Perd("P3", 300, false), Perd("P4", 300, false)])));
@@ -227,6 +312,42 @@ public class DecisionPromotionTests
         Assert.Equal(IssueRapport.Accepte, reg.Enregistrer(Rapport("P1", true), "10.0.0.9", false, T.AddSeconds(50)));
     }
 
+    // ---- Revue de sécurité : un rapport authentifié remplace l'anonyme, jamais l'inverse ----
+    [Fact] public void Registre_un_rapport_authentifie_remplace_un_rapport_anonyme_du_meme_nom_venu_d_une_autre_adresse()
+    {
+        var reg = new RegistreRapportsPostes(new ReglagesBascule());
+        Assert.Equal(IssueRapport.Accepte, reg.Enregistrer(Rapport("P1", true), "tiers", false, T));
+        Assert.Equal(IssueRapport.PosteDeuxAdresses, reg.Enregistrer(Rapport("P1", false), "autre-tiers", false, T.AddSeconds(5)));
+        Assert.Equal(IssueRapport.Accepte, reg.Enregistrer(Rapport("P1", false), "vrai-poste", true, T.AddSeconds(10)));
+        var r = reg.Dernier("P1")!;
+        Assert.True(r.Authentifie);
+        Assert.False(r.Serveur1Joint);
+    }
+
+    [Fact] public void Registre_un_rapport_anonyme_ne_remplace_jamais_un_rapport_authentifie_recent()
+    {
+        var reg = new RegistreRapportsPostes(new ReglagesBascule());
+        reg.Enregistrer(Rapport("P1", false), "vrai-poste", true, T);
+        Assert.Equal(IssueRapport.PosteDeuxAdresses, reg.Enregistrer(Rapport("P1", true), "tiers", false, T.AddSeconds(5)));
+        Assert.Equal(IssueRapport.AuthentifieRecent, reg.Enregistrer(Rapport("P1", true), "vrai-poste", false, T.AddSeconds(10)));
+        Assert.False(reg.Dernier("P1")!.Serveur1Joint);
+        Assert.True(reg.Dernier("P1")!.Authentifie);
+        // Au-delà de la fenêtre de fraîcheur, le rapport anonyme est de nouveau accepté
+        Assert.Equal(IssueRapport.Accepte, reg.Enregistrer(Rapport("P1", true), "vrai-poste", false, T.AddSeconds(60)));
+    }
+
+    [Fact] public void Registre_un_tiers_qui_annonce_200_noms_de_postes_n_ajoute_aucun_vote_authentifie()
+    {
+        var reg = new RegistreRapportsPostes(new ReglagesBascule());
+        for (var i = 0; i < 200; i++) reg.Enregistrer(Rapport("FAUX-" + i, false), "tiers-" + i, false, T.AddSeconds(i * 0.01));
+        Assert.All(reg.Rapports(), r => Assert.False(r.Authentifie));
+        var connus = Quatre.ToHashSet(StringComparer.OrdinalIgnoreCase);   // les postes connus viennent de la base, jamais des rapports
+        var res = DecisionPromotion.Evaluer(new EntreeDecision(T.AddSeconds(5), true, connus, reg.Rapports(), Muet(600), T.AddHours(-1), new ReglagesBascule()));
+        Assert.NotEqual(VerdictPromotion.Promotion, res.Verdict);
+        Assert.NotEqual(VerdictPromotion.RetraitPuisPromotion, res.Verdict);
+        Assert.Equal(0, res.VotesAuthentifies);
+    }
+
     [Fact] public void Registre_la_perte_est_datee_par_le_serveur_et_remise_a_zero_quand_le_poste_rejoint()
     {
         var reg = new RegistreRapportsPostes(new ReglagesBascule());
@@ -234,9 +355,9 @@ public class DecisionPromotionTests
         reg.Enregistrer(Rapport("P1", false), "a", true, T.AddSeconds(10));
         Assert.Equal(T, reg.Dernier("P1")!.PerteDepuisUtc);
         Assert.True(reg.Dernier("P1")!.Authentifie);
-        reg.Enregistrer(Rapport("P1", true), "a", false, T.AddSeconds(20));
+        reg.Enregistrer(Rapport("P1", true), "a", true, T.AddSeconds(20));
         Assert.Null(reg.Dernier("P1")!.PerteDepuisUtc);
-        reg.Enregistrer(Rapport("P1", false), "a", false, T.AddSeconds(30));
+        reg.Enregistrer(Rapport("P1", false), "a", true, T.AddSeconds(30));
         Assert.Equal(T.AddSeconds(30), reg.Dernier("P1")!.PerteDepuisUtc);
     }
 
@@ -305,7 +426,7 @@ public class DecisionPromotionTests
         {
             h.Maintenant = h.Maintenant.AddSeconds(5);
             foreach (var (poste, adresse) in perdants)
-                await v.TraiterRapportAsync(Rapport(poste, false), adresse, false);
+                await v.TraiterRapportAsync(Rapport(poste, false), adresse, true);
             await v.EvaluerAsync();
         }
     }
@@ -371,12 +492,12 @@ public class DecisionPromotionTests
         Assert.Equal(ConsigneDuVerdict.MessageAttente, avant.Consigne.Message);
         // Serveur 1 joint par le 2e serveur, un seul poste le perd : relais pour lui seulement
         h.Maintenant = h.Maintenant.AddSeconds(5);
-        await vigie.TraiterRapportAsync(Rapport("P2", true), "b", false);
-        await vigie.TraiterRapportAsync(Rapport("P1", false), "a", false);
+        await vigie.TraiterRapportAsync(Rapport("P2", true), "b", true);
+        await vigie.TraiterRapportAsync(Rapport("P1", false), "a", true);   // « relais » ne repose que sur des rapports authentifiés
         await vigie.EvaluerAsync();
         Assert.Equal(VerdictPromotion.Relais, vigie.Dernier!.Verdict);
         h.Maintenant = h.Maintenant.AddSeconds(2);   // plus d'un rapport par seconde et par adresse serait refusé
-        Assert.Equal("relais", (await vigie.TraiterRapportAsync(Rapport("P1", false), "a", false)).Consigne!.Consigne);
+        Assert.Equal("relais", (await vigie.TraiterRapportAsync(Rapport("P1", false), "a", true)).Consigne!.Consigne);
         Assert.Equal("rester", (await vigie.TraiterRapportAsync(Rapport("P2", true), "b", false)).Consigne!.Consigne);
         Assert.NotNull(client);
     }

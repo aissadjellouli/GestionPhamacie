@@ -76,8 +76,26 @@ public sealed class VigieSecondServeur(
     private int confirmations;
 
     public ResultatDecision? Dernier => dernier;
+    private IReadOnlySet<string>? connusDernier;
+    /// <summary>Postes connus au dernier tour (copie répliquée) ; null tant qu'aucun tour n'a eu lieu ou si la copie n'a rien rejoué.</summary>
+    public IReadOnlySet<string>? Connus => connusDernier;
     public int Confirmations => confirmations;
     public DateTime DemarrageUtc => demarrage;
+
+    // Journal « poste_deux_adresses » : au plus une ligne par minute et par poste (un appelant du réseau ne peut pas noyer le journal) ; mémoire bornée
+    private readonly object verrouJournal = new();
+    private readonly Dictionary<string, DateTime> journalDeuxAdresses = new(StringComparer.OrdinalIgnoreCase);
+
+    private bool JournalDeuxAdressesDu(string poste, DateTime maintenant)
+    {
+        lock (verrouJournal)
+        {
+            if (journalDeuxAdresses.TryGetValue(poste, out var d) && maintenant - d < TimeSpan.FromMinutes(1)) return false;
+            if (journalDeuxAdresses.Count >= 200) journalDeuxAdresses.Clear();
+            journalDeuxAdresses[poste] = maintenant;
+            return true;
+        }
+    }
 
     /// <summary>Traite un rapport : mémorisé puis consigne d'après le verdict en cours (« attendre » tant qu'aucune évaluation n'existe).</summary>
     public async Task<ReponseRapport> TraiterRapportAsync(RapportPoste rapport, string adresse, bool authentifie, CancellationToken ct = default)
@@ -86,8 +104,11 @@ public sealed class VigieSecondServeur(
         switch (registre.Enregistrer(rapport, adresse, authentifie, maintenant))
         {
             case IssueRapport.TropRapide: return new ReponseRapport(StatutRapport.TropRapide, null);
+            case IssueRapport.RegistrePlein:
+            case IssueRapport.AuthentifieRecent:   // rapport anonyme d'un nom déjà tenu par un rapport authentifié récent : ignoré
+                return new ReponseRapport(StatutRapport.Ignore, new ConsigneRapport(ConstantesVigie.RoleVeille, ConstantesVigie.Rester, null));
             case IssueRapport.PosteDeuxAdresses:
-                await journal.EcrireAsync("poste_deux_adresses", new { poste = rapport.Poste }, ct);
+                if (JournalDeuxAdressesDu(rapport.Poste, maintenant)) await journal.EcrireAsync("poste_deux_adresses", new { poste = rapport.Poste }, ct);
                 return new ReponseRapport(StatutRapport.Ignore, new ConsigneRapport(ConstantesVigie.RoleVeille, ConstantesVigie.Rester, null));
         }
         var verdict = dernier?.Verdict ?? VerdictPromotion.Attendre;
@@ -103,6 +124,7 @@ public sealed class VigieSecondServeur(
         var s = await sonde.SonderAsync(maintenant, ct);
         var lus = await postes.LireAsync(ct);
         var connus = PostesConnus.Calculer(lus.Postes, lus.DerniereDonneeRecueUtc, TimeSpan.FromMinutes(reglages.PosteActifMinutes));
+        connusDernier = connus;
         var r = DecisionPromotion.Evaluer(new EntreeDecision(maintenant, releves.AutreServeurRegle, connus, registre.Rapports(), s, demarrage, reglages));
         var change = dernier is null || dernier.Verdict != r.Verdict;
         confirmations = change ? 1 : confirmations + 1;
