@@ -259,7 +259,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\109_retour_avoir.sql = database\migration\109_retour_avoir.sql
 		database\migration\110_bordereaux_chifa.sql = database\migration\110_bordereaux_chifa.sql
 		database\migration\111_integrite_hachage.sql = database\migration\111_integrite_hachage.sql
-		database\migration\111b_roles_integrite.sql = database\migration\111b_roles_integrite.sql
+		database\init\111b_roles_integrite.sql = database\init\111b_roles_integrite.sql
 		database\migration\114_profils_reprise.sql = database\migration\114_profils_reprise.sql
 		database\migration\115_multi_grossistes.sql = database\migration\115_multi_grossistes.sql
 		database\migration\116_ruptures_substitution.sql = database\migration\116_ruptures_substitution.sql
@@ -310,13 +310,17 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\162_deconnexion_inactivite_defaut_15_minutes.sql = database\migration\162_deconnexion_inactivite_defaut_15_minutes.sql
 		database\migration\retour\162_deconnexion_inactivite_defaut_15_minutes_retour.sql = database\migration\retour\162_deconnexion_inactivite_defaut_15_minutes_retour.sql
 		database\migration\163_serveur_ecarte_lecture_seule.sql = database\migration\163_serveur_ecarte_lecture_seule.sql
-		database\migration\163b_droit_identifiant_base.sql = database\migration\163b_droit_identifiant_base.sql
+		database\init\163b_droit_identifiant_base.sql = database\init\163b_droit_identifiant_base.sql
+		database\init\166b_droit_promotion_base.sql = database\init\166b_droit_promotion_base.sql
 		database\migration\retour\163_serveur_ecarte_lecture_seule_retour.sql = database\migration\retour\163_serveur_ecarte_lecture_seule_retour.sql
 		database\migration\retour\163b_droit_identifiant_base_retour.sql = database\migration\retour\163b_droit_identifiant_base_retour.sql
+		database\migration\retour\166b_droit_promotion_base_retour.sql = database\migration\retour\166b_droit_promotion_base_retour.sql
 		database\migration\164_bascule_saut_compteurs_promotion.sql = database\migration\164_bascule_saut_compteurs_promotion.sql
 		database\migration\retour\164_bascule_saut_compteurs_promotion_retour.sql = database\migration\retour\164_bascule_saut_compteurs_promotion_retour.sql
 		database\migration\165_presence_postes.sql = database\migration\165_presence_postes.sql
+		database\migration\166_bascule_retrait_decision.sql = database\migration\166_bascule_retrait_decision.sql
 		database\migration\retour\165_presence_postes_retour.sql = database\migration\retour\165_presence_postes_retour.sql
+		database\migration\retour\166_bascule_retrait_decision_retour.sql = database\migration\retour\166_bascule_retrait_decision_retour.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52-9A41-4B8E-A5F2-3C6D11B0E111}"
@@ -361,8 +365,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52
 		database\tests\162_deconnexion_inactivite_defaut_15_minutes_tests.sql = database\tests\162_deconnexion_inactivite_defaut_15_minutes_tests.sql
 		database\tests\163_serveur_ecarte_lecture_seule_tests.sql = database\tests\163_serveur_ecarte_lecture_seule_tests.sql
 		database\tests\163b_droit_identifiant_base_tests.sql = database\tests\163b_droit_identifiant_base_tests.sql
+		database\tests\166b_droit_promotion_base_tests.sql = database\tests\166b_droit_promotion_base_tests.sql
 		database\tests\164_bascule_saut_compteurs_promotion_tests.sql = database\tests\164_bascule_saut_compteurs_promotion_tests.sql
 		database\tests\165_presence_postes_tests.sql = database\tests\165_presence_postes_tests.sql
+		database\tests\166_bascule_retrait_decision_tests.sql = database\tests\166_bascule_retrait_decision_tests.sql
 		database\tests\117_registre_renforce_tests.sql = database\tests\117_registre_renforce_tests.sql
 		database\tests\101b_suppression_num_facture_chifa_tests.sql = database\tests\101b_suppression_num_facture_chifa_tests.sql
 		database\tests\rejeu_complet.ps1 = database\tests\rejeu_complet.ps1
@@ -371,6 +377,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "init", "init", "{260B10C5-14E0-4E71-ACF8-F97E022B21BE}"
 	ProjectSection(SolutionItems) = preProject
 		database\init\schema.sql = database\init\schema.sql
+		database\init\fuseau_horaire.sql = database\init\fuseau_horaire.sql
 		database\init\seed_referentiel.sql = database\init\seed_referentiel.sql
 		database\init\clean.sql = database\init\clean.sql
 	EndProjectSection

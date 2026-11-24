@@ -75,11 +75,15 @@
     Dossier des scripts (défaut : database\migration du dépôt). Pour une livraison : <livraison>\Api\database\migration.
 
 .PARAMETER Script163b
-    Chemin du script 163b (défaut : 163b_droit_identifiant_base.sql du dossier des scripts, sinon celui du dépôt). Lancé en fin de rejeu avec le superutilisateur (droit de lire l'identifiant de la base, bascule du 2e serveur).
+    Chemin du script 163b (défaut : 163b_droit_identifiant_base.sql du dossier init de la livraison (database\init), sinon celui du dépôt). Lancé en fin de rejeu avec le superutilisateur (droit de lire l'identifiant de la base, bascule du 2e serveur).
 .PARAMETER SansDroitIdentifiantBase
     Ne lance pas 163b : sans ce droit, la détection de lignée de l'API rend « inconnu » et n'écarte jamais un serveur.
+.PARAMETER Script166b
+    Chemin du script 166b (défaut : 166b_droit_promotion_base.sql du dossier init de la livraison (database\init), sinon celui du dépôt). Lancé en fin de rejeu avec le superutilisateur (droit de promouvoir la base : promotion automatique du 2e serveur).
+.PARAMETER SansDroitPromotion
+    Ne lance pas 166b : sans ce droit, aucune promotion automatique du 2e serveur (alerte « promotion manuelle nécessaire »).
 .PARAMETER Script111b
-    Chemin du script 111b (défaut : 111b_roles_integrite.sql du dossier des scripts, sinon celui du dépôt).
+    Chemin du script 111b (défaut : 111b_roles_integrite.sql du dossier init de la livraison (database\init), sinon celui du dépôt).
 
 .PARAMETER PgBin
     Dossier bin de PostgreSQL (défaut : version la plus récente de C:\Program Files\PostgreSQL).
@@ -116,6 +120,8 @@ param(
     [string]$Script111b = "",
     [string]$Script163b = "",
     [switch]$SansDroitIdentifiantBase,
+    [string]$Script166b = "",
+    [switch]$SansDroitPromotion,
     [string]$PgBin = "",
     [string]$DossierDepot = ""
 )
@@ -168,13 +174,18 @@ Invoke-Principal {
     Test-SuiteSansTrou $scripts
     Write-Ok "$($scripts.Count) scripts numérotés dans $DossierMigration (du $($scripts[0].Name.Substring(0,3)) au $($scripts[-1].Name.Substring(0,3)))."
     if (-not $Script111b) {
-        $Script111b = Join-Path $DossierMigration "111b_roles_integrite.sql"
-        if (-not (Test-Path -LiteralPath $Script111b)) { $Script111b = Join-Path $DossierDepot "database\migration\111b_roles_integrite.sql" }
+        $Script111b = Join-Path $DossierMigration "init\111b_roles_integrite.sql"
+        if (-not (Test-Path -LiteralPath $Script111b)) { $Script111b = Join-Path $DossierDepot "database\init\111b_roles_integrite.sql" }
     }
     if (-not $Script163b) {
-        $Script163b = Join-Path $DossierMigration "163b_droit_identifiant_base.sql"
-        if (-not (Test-Path -LiteralPath $Script163b)) { $Script163b = Join-Path $DossierDepot "database\migration\163b_droit_identifiant_base.sql" }
+        $Script163b = Join-Path $DossierMigration "init\163b_droit_identifiant_base.sql"
+        if (-not (Test-Path -LiteralPath $Script163b)) { $Script163b = Join-Path $DossierDepot "database\init\163b_droit_identifiant_base.sql" }
     }
+    if (-not $Script166b) {
+        $Script166b = Join-Path $DossierMigration "init\166b_droit_promotion_base.sql"
+        if (-not (Test-Path -LiteralPath $Script166b)) { $Script166b = Join-Path $DossierDepot "database\init\166b_droit_promotion_base.sql" }
+    }
+    if (-not $SansDroitPromotion -and -not (Test-Path -LiteralPath $Script166b)) { throw "Script 166b introuvable ($Script166b). Le copier depuis le dépôt (il n'est pas dans le dossier publié), préciser -Script166b ou donner -SansDroitPromotion." }
     if (-not $SansDroitIdentifiantBase -and -not (Test-Path -LiteralPath $Script163b)) { throw "Script 163b introuvable ($Script163b). Le copier depuis le dépôt (il n'est pas dans le dossier publié), préciser -Script163b ou donner -SansDroitIdentifiantBase." }
     if ($SeparerRoles -and -not (Test-Path -LiteralPath $Script111b)) { throw "-SeparerRoles : script 111b introuvable ($Script111b). Le copier depuis le dépôt (il n'est pas dans le dossier publié) ou préciser -Script111b." }
 
@@ -244,6 +255,7 @@ Invoke-Principal {
         }
         if ($SeparerRoles -and -not $fait111b) { Write-Simul "111b_roles_integrite.sql ($CompteSuperUtilisateur, superutilisateur)" }
         if (-not $SansDroitIdentifiantBase) { Write-Simul "163b_droit_identifiant_base.sql ($CompteSuperUtilisateur, superutilisateur), en fin de rejeu" }
+        if (-not $SansDroitPromotion) { Write-Simul "166b_droit_promotion_base.sql ($CompteSuperUtilisateur, superutilisateur), en fin de rejeu" }
         Write-Simul "Le script 101b n'est jamais lancé."
         return
     }
@@ -330,6 +342,14 @@ Invoke-Principal {
         $r = Invoke-Psql -Compte $CompteSuperUtilisateur -Base $Base -Arguments @("-f", $Script163b)
         $r.Lignes | Where-Object { $_ } | ForEach-Object { Write-Info "  $_" }
         Write-Ok "163b_droit_identifiant_base.sql : droit de lire l'identifiant de la base accordé à $RoleApp."
+    }
+
+    # 166b : droit de promouvoir la base (superutilisateur, rejouable) : promotion automatique du 2e serveur
+    if ($SansDroitPromotion) { Write-Avert "-SansDroitPromotion : 166b non lancé. Aucune promotion automatique du 2e serveur (promotion manuelle seulement)." }
+    else {
+        $r = Invoke-Psql -Compte $CompteSuperUtilisateur -Base $Base -Arguments @("-f", $Script166b)
+        $r.Lignes | Where-Object { $_ } | ForEach-Object { Write-Info "  $_" }
+        Write-Ok "166b_droit_promotion_base.sql : droit de promouvoir la base accordé à $RoleApp."
     }
 
     # Vérifications finales

@@ -35,7 +35,7 @@ Options communes : `-Hote` (défaut `localhost`), `-Port` (défaut 5432), `-PgBi
 2. Vérifie que PostgreSQL répond, que la base **n'existe pas** (si elle existe : refus, rien n'est supprimé), que le compte d'administration a les droits nécessaires.
 3. Crée le rôle `pharma_app` s'il manque (avec connexion et le droit `CREATEDB`, nécessaire à la restauration depuis l'application) ; demande alors le mot de passe à lui donner (12 caractères au moins, propre à cette pharmacie, noté au coffre). Ajoute `CREATEDB` s'il manque.
 4. Crée la base (propriétaire `pharma_app`, UTF8).
-5. Passe `init\schema.sql`, puis `083_fuseau_horaire.sql` (le fuseau horaire n'est pas repris dans `schema.sql`), puis `init\seed_referentiel.sql`.
+5. Passe `init\schema.sql`, puis `init\fuseau_horaire.sql` (copie du script 083 : le fuseau horaire n'est pas repris dans `schema.sql`), puis `init\seed_referentiel.sql`.
 6. Sauf `-SansSeparationRoles` : passe `111b_roles_integrite.sql` avec le superutilisateur (voir 3.1).
 6 bis. Passe `163b_droit_identifiant_base.sql` avec le superutilisateur, avec ou sans séparation des rôles (voir 3.9).
 7. Vérifie : fuseau `Africa/Algiers` ; comptages de référence (wilayas, rôles, utilisateurs, aucune vente) ; `pharma_app` lit et écrit (écriture d'essai annulée) ; avec `111b` : `objets_encore_a_pharma_app = 0`, propriétaire de la base `pharma_proprietaire`, `pharma_app` ne peut plus modifier `journal_audit`.
@@ -59,8 +59,8 @@ Options communes : `-Hote` (défaut `localhost`), `-Port` (défaut 5432), `-PgBi
 | `-ScriptDepart <NNN>` | Premier script à rejouer. Défaut : **001, toujours**. Réservé à la reprise après incident (voir ci-dessous) |
 | `-CompteSuperUtilisateur <compte>` | Défaut `postgres` ; demandé seulement si les rôles sont ou vont être séparés |
 | `-DossierMigration <dossier>` | Dossier des scripts (défaut : `database\migration` du dépôt). Pour une livraison : `<livraison>\Api\database\migration` |
-| `-Script111b <fichier>` | Chemin de `111b_roles_integrite.sql` (il n'est pas dans le dossier publié) |
-| `-Script163b <fichier>` | Chemin de `163b_droit_identifiant_base.sql` (il n'est pas dans le dossier publié) |
+| `-Script111b <fichier>` | Chemin de `111b_roles_integrite.sql` (défaut : `database\init` de la livraison, sinon du dépôt) |
+| `-Script163b <fichier>` | Chemin de `163b_droit_identifiant_base.sql` (défaut : `database\init` de la livraison, sinon du dépôt) |
 | `-SansDroitIdentifiantBase` | Ne lance pas `163b` (la détection de lignée de l'API rend alors « inconnu », voir 3.9) |
 | `-NomService <nom>` | Service de l'API (défaut `PharmaOfficine API`) |
 | `-SansControleService` | Ne contrôle pas le service. **Essais sur une copie seulement** |
@@ -114,8 +114,8 @@ Pour une mise à jour qui a échoué ou qu'on abandonne : la sauvegarde `.dump` 
 
 | Dossier | Rôle |
 | --- | --- |
-| `database\init\` | **Base neuve** d'officine : `schema.sql` (toute la structure) et `seed_referentiel.sql` (référentiel de départ) équivalent aux scripts 001 à NNN. À tenir à jour **à chaque nouveau script** : leur en-tête cite « 001 à NNN » et `creer_base_officine.ps1` refuse de créer une base si NNN n'est pas le dernier script. `clean.sql` remet une base à vierge (jamais en service) |
-| `database\migration\` | **Mise à jour** d'une base existante : scripts `NNN_nom.sql` rejoués dans l'ordre, idempotents. Les scripts « b » (`101b`, `111b`, `163b`) sont à part (3.1, 3.2, 3.9) |
+| `database\init\` | **Tous les scripts de mise en production** (décision du titulaire du 2026-11-24), livrés avec l'API dans `Api\database\init\` (sauf `clean.sql`) : `fuseau_horaire.sql` (copie du 083, identique : test `InitCompletMepTests`) et les scripts d'administrateur `111b`, `163b`, `166b` (3.1, 3.9, 3.10). **Base neuve** d'officine : `schema.sql` (toute la structure) et `seed_referentiel.sql` (référentiel de départ) équivalent aux scripts 001 à NNN. À tenir à jour **à chaque nouveau script** : leur en-tête cite « 001 à NNN » et `creer_base_officine.ps1` refuse de créer une base si NNN n'est pas le dernier script. `clean.sql` remet une base à vierge (jamais en service) |
+| `database\migration\` | **Mise à jour** d'une base existante : scripts `NNN_nom.sql` rejoués dans l'ordre, idempotents. Seul script « b » restant : `101b` (irréversible, jamais automatique, 3.2) |
 | `database\cloud\` | Base **centrale** : scripts `001` à `042` (`030` à `042` : écrans du central, lots S7.1 à S7.6 ; `041` : délai de grâce des mots de passe provisoires ; `042` : motif de la déconnexion après inactivité), jamais sur une base d'officine |
 | `database\tests\` | Tests SQL des scripts de `migration` (transaction annulée) ; `rejeu_complet.ps1` : rejeu de toute la suite sur une copie jetable (pas un test SQL) |
 | `database\cloud\tests\` | Tests SQL des scripts du central (lancés par `-AvecTests`) |
@@ -125,9 +125,9 @@ Pour une mise à jour qui a échoué ou qu'on abandonne : la sauvegarde `.dump` 
 
 ### 3.1 `111b` : séparation des rôles (journaux inaltérables)
 
-`database\migration\111b_roles_integrite.sql`, une fois par base, avec le **superutilisateur**. Il crée le rôle sans connexion `pharma_proprietaire`, lui donne la base et les objets, et retire à `pharma_app` la modification et la suppression des journaux. Sans lui, `pharma_app` peut désactiver les déclencheurs de protection : la vérification nocturne détecte la falsification mais ne l'empêche pas.
+`database\init\111b_roles_integrite.sql`, une fois par base, avec le **superutilisateur**. Il crée le rôle sans connexion `pharma_proprietaire`, lui donne la base et les objets, et retire à `pharma_app` la modification et la suppression des journaux. Sans lui, `pharma_app` peut désactiver les déclencheurs de protection : la vérification nocturne détecte la falsification mais ne l'empêche pas.
 - Base neuve : lancé par `creer_base_officine.ps1` (sauf `-SansSeparationRoles`).
-- Mise à jour : option `-SeparerRoles`, ou à la main avec `psql` et le compte `postgres` : `psql -h localhost -U postgres -d <base> -v ON_ERROR_STOP=1 -f database\migration\111b_roles_integrite.sql` (résultat attendu : `objets_encore_a_pharma_app` = 0).
+- Mise à jour : option `-SeparerRoles`, ou à la main avec `psql` et le compte `postgres` : `psql -h localhost -U postgres -d <base> -v ON_ERROR_STOP=1 -f database\init\111b_roles_integrite.sql` (résultat attendu : `objets_encore_a_pharma_app` = 0).
 - Ensuite, **tous** les scripts de mise à jour passent par le superutilisateur avec `SET ROLE pharma_proprietaire`, plus jamais par `pharma_app`.
 
 ### 3.2 `101b` : jamais automatique
@@ -160,12 +160,21 @@ Un ancien script rejoué seul peut ramener une **fonction ou une vue à une anci
 
 ### 3.9 `163b` : droit de lire l'identifiant de la base (bascule du 2e serveur)
 
-`database\migration\163b_droit_identifiant_base.sql`, par base, avec le **superutilisateur**, sur le modèle de `111b` (hors suite numérotée, jamais dans l'init). Il fait `GRANT EXECUTE ON FUNCTION pg_control_system() TO pharma_app` : **seul** droit accordé (« droit ciblé », décision du titulaire). L'API compare l'identifiant de la base (`pg_control_system()`) pour savoir si deux serveurs descendent de la même base ; sans ce droit (fonction réservée au superutilisateur) la détection rend « inconnu » et n'écarte jamais un serveur. Le compte de l'API est `pharma_app` **avec ou sans** la séparation des rôles (`111b`) : le script ne dépend donc pas de `111b`. Le droit est propre à chaque base : à refaire après une restauration sur une base neuve (fait par `basculer-pc-secours.ps1`).
+`database\init\163b_droit_identifiant_base.sql`, par base, avec le **superutilisateur**, sur le modèle de `111b` (hors suite numérotée, rangé dans `database\init` (scripts de mise en production, livrés avec l'API)). Il fait `GRANT EXECUTE ON FUNCTION pg_control_system() TO pharma_app` : **seul** droit accordé (« droit ciblé », décision du titulaire). L'API compare l'identifiant de la base (`pg_control_system()`) pour savoir si deux serveurs descendent de la même base ; sans ce droit (fonction réservée au superutilisateur) la détection rend « inconnu » et n'écarte jamais un serveur. Le compte de l'API est `pharma_app` **avec ou sans** la séparation des rôles (`111b`) : le script ne dépend donc pas de `111b`. Le droit est propre à chaque base : à refaire après une restauration sur une base neuve (fait par `basculer-pc-secours.ps1`).
 
-- Outils : lancé par `creer_base_officine.ps1` (après `111b`), `mettre_a_jour_base_officine.ps1` (en fin de rejeu ; `-SansDroitIdentifiantBase` pour l'omettre, `-Script163b` pour le chemin) et `basculer-pc-secours.ps1` (sur la base restaurée). À la main : `psql -h localhost -U postgres -d <base> -v ON_ERROR_STOP=1 -f database\migration\163b_droit_identifiant_base.sql` (résultat attendu : `t`).
+- Outils : lancé par `creer_base_officine.ps1` (après `111b`), `mettre_a_jour_base_officine.ps1` (en fin de rejeu ; `-SansDroitIdentifiantBase` pour l'omettre, `-Script163b` pour le chemin) et `basculer-pc-secours.ps1` (sur la base restaurée). À la main : `psql -h localhost -U postgres -d <base> -v ON_ERROR_STOP=1 -f database\init\163b_droit_identifiant_base.sql` (résultat attendu : `t`).
 - Rejouable sans erreur. Refus s'il n'est pas lancé par un superutilisateur.
 - Retour arrière (règle 11) : `database\migration\retour\163b_droit_identifiant_base_retour.sql` (`REVOKE`), superutilisateur, rejouable.
 - Test : `database\tests\163b_droit_identifiant_base_tests.sql` (aller, retour, aller, `has_function_privilege`) ; exige un superutilisateur sur une base jetable, **ignoré avec un message** sinon.
+
+### 3.10 `166b` : droit de promouvoir la base (promotion automatique du 2e serveur)
+
+`database\init\166b_droit_promotion_base.sql`, par base, avec le **superutilisateur**, sur le modèle de `163b` (hors suite numérotée, rangé dans `database\init` (scripts de mise en production, livrés avec l'API)). Il fait `GRANT EXECUTE ON FUNCTION pg_promote(boolean, integer) TO pharma_app` et rien d'autre. Sans ce droit, le 2e serveur ne peut pas se promouvoir automatiquement : alerte « promotion manuelle nécessaire », le script manuel reste. À passer sur le serveur **principal** : le droit est écrit dans le catalogue de la base et recopié sur le 2e serveur par la réplication.
+
+- Outils : lancé par `creer_base_officine.ps1` (après `163b`), `mettre_a_jour_base_officine.ps1` (en fin de rejeu ; `-SansDroitPromotion` pour l'omettre, `-Script166b` pour le chemin) et `basculer-pc-secours.ps1` (sur la base restaurée, `-Script166b`).
+- Rejouable sans erreur. Refus s'il n'est pas lancé par un superutilisateur.
+- Retour arrière (règle 11) : `database\migration\retour\166b_droit_promotion_base_retour.sql` (`REVOKE`), superutilisateur, rejouable.
+- Test : `database\tests\166b_droit_promotion_base_tests.sql` (aller, retour, aller, aucun autre droit) ; exige un superutilisateur sur une base jetable, **ignoré avec un message** sinon.
 
 ## 4. Règles pour écrire un nouveau script
 

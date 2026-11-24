@@ -92,7 +92,8 @@ public sealed class GardienServeurEcarte(IServeurEcarteDetecte suivi, IVerrouBas
     {
         try { verrou.Appliquer(ecart is not null); }   // d'abord le verrou (mémoire), puis la trace en base
         catch (Exception e) when (e is not OperationCanceledException) { trace?.Erreur("Serveur écarté : verrou des connexions non appliqué", e); }
-        if (ecart is { EnMemoireSeulement: false }) _derniere = Task.Run(() => PersisterAsync(ecart, CancellationToken.None));
+        // Retrait (cas 2) : la ligne est écrite par la route de retrait, APRÈS la fin des transactions de l'API (le gardien ne l'écrit qu'en reprise, à la synchronisation)
+        if (ecart is { EnMemoireSeulement: false, Retrait: false }) _derniere = Task.Run(() => PersisterAsync(ecart, CancellationToken.None));
     }
 
     private async Task PersisterAsync(EcartDetecte ecart, CancellationToken ct)
@@ -108,8 +109,9 @@ public sealed class GardienServeurEcarte(IServeurEcarteDetecte suivi, IVerrouBas
         }
     }
 
-    public static string Motif(EcartDetecte e) =>
-        $"Serveur écarté : l'autre serveur ({e.ServeurRetenu ?? "inconnu"}) a une timeline plus récente ({e.TimelineRetenue} contre {e.TimelineLocale} ici)";
+    public static string Motif(EcartDetecte e) => e.Retrait
+        ? $"Serveur écarté : mise hors jeu demandée par l'autre serveur ({e.ServeurRetenu ?? "inconnu"}) avant sa promotion"
+        : $"Serveur écarté : l'autre serveur ({e.ServeurRetenu ?? "inconnu"}) a une timeline plus récente ({e.TimelineRetenue} contre {e.TimelineLocale} ici)";
 }
 
 /// <summary>Démarrage de l'API face à un autre serveur principal (Q8, Q10) : décision prise avec les mêmes relevés que la surveillance.</summary>

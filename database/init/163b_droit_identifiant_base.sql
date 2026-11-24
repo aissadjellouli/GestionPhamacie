@@ -18,7 +18,7 @@
 -- catalogue sont propres à chaque base, donc à refaire après une
 -- restauration sur une base neuve) :
 --   psql -U postgres -d <base> -v ON_ERROR_STOP=1 -f 163b_droit_identifiant_base.sql
--- Retour arrière : retour/163b_droit_identifiant_base_retour.sql.
+-- Retour arrière : database/migration/retour/163b_droit_identifiant_base_retour.sql.
 -- Idempotent.
 -- =====================================================================
 

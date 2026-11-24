@@ -136,7 +136,8 @@ chiffrement résistant au quantique.
 | --- | --- | --- | --- |
 | `postgresql-x64-18` (nom donné par l'installeur PostgreSQL) | PC serveur, 2e serveur, PC de secours | Automatique | Ne pas arrêter pendant la journée |
 | `PharmaOfficine API` | PC serveur | Automatique | Créé à l'étape 4.7 du parcours A |
-| `PharmaOfficine API` | 2e serveur, PC de secours | **Manuel** (arrêté) | Démarré seulement en cas de bascule |
+| `PharmaOfficine API` | 2e serveur | **Automatique**, avec relance en cas d'arrêt | Tourne **en veille** sur la copie (rien n'écrit) et se relance en principal après une promotion (bascule du 2e serveur, vague 2, 2026-11-24) ; ne pas démarrer avant d'avoir réglé `SecondServeur:AutreServeur` |
+| `PharmaOfficine API` | PC de secours | **Manuel** (arrêté) | Démarré seulement en cas de bascule |
 | Serveur central | Hébergement | **[À CONFIRMER : pas de service Windows dans le code, voir parcours E, étapes 3.2 et 5.2]** | |
 
 ### Variables d'environnement de l'API (système, scope Machine)
@@ -169,7 +170,7 @@ Côté serveur central (outils d'administration) : voir parcours E, étape 3.2.
 
 | Chemin | Où | Contenu | À sauvegarder |
 | --- | --- | --- | --- |
-| `C:\Program Files\PharmaOfficine\Api` | PC serveur | Programme de l'API, `appsettings.Https.json`, `database\` (scripts 001 à 159, sans `111b`) | Non (republié à chaque mise à jour) |
+| `C:\Program Files\PharmaOfficine\Api` | PC serveur | Programme de l'API, `appsettings.Https.json`, `database\` (scripts numérotés de la suite) et `database\init\` (tous les scripts de mise en production : schéma, référentiel, fuseau, `111b`, `163b`, `166b`) | Non (republié à chaque mise à jour) |
 | `C:\ProgramData\PharmaOfficine\super-admin.dat` | PC serveur | Compte super admin, chiffré pour ce PC | **Oui**, sur le disque externe |
 | `C:\ProgramData\PharmaOfficine\cle-integrite.dat` | PC serveur | Clé de scellement des journaux, chiffrée pour ce PC | **Oui**, sur le disque externe |
 | `C:\ProgramData\PharmaOfficine\archives-fiscales\AAAA\MM` | PC serveur | Rapports scellés, à conserver 6 ans au moins | **Oui** |
@@ -324,7 +325,7 @@ Un seul script enchaîne tout dans le bon ordre, avec des contrôles : `scripts\
   dotnet publish src\Pharma.Api -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Api"
   ```
   - `--self-contained true` : aucun runtime .NET à installer sur le PC serveur.
-  - Le dossier publié contient `Pharma.Api.exe` et `database\` (scripts `001` à `159`, sans `111b`, qui se lance à part).
+  - Le dossier publié contient `Pharma.Api.exe`, `database\` (scripts numérotés de la suite) et `database\init\` (tous les scripts de mise en production : `schema.sql`, `seed_referentiel.sql`, `fuseau_horaire.sql`, `111b`, `163b`, `166b` ; jamais `clean.sql` ni `101b`).
   - Contrepartie : les correctifs de sécurité de .NET n'arrivent qu'avec une nouvelle publication (parcours B).
   - **Attendu** : `Pharma.Api.exe` et le dossier `database` sont présents dans `<dossier de livraison>\Api`.
   - **Si échec** : SDK absent (étape 1.6) ou version différente de .NET 10.
@@ -660,7 +661,7 @@ Les publications étant autonomes (.NET inclus), Windows Update ne corrige **pas
     dotnet publish src\Pharma.Api -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Api"
     dotnet publish src\Pharma.Desktop -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Poste"
     ```
-  - Copier `<dossier de livraison>` (avec son dossier `Api\database\migration`) et le dossier `scripts` du dépôt sur la clé USB. Copier aussi `database\migration\111b_roles_integrite.sql` du dépôt (il est exclu du dossier publié) si la séparation des rôles n'est pas encore faite.
+  - Copier `<dossier de livraison>` (avec son dossier `Api\database\migration`) et le dossier `scripts` du dépôt sur la clé USB. Les scripts d'administrateur (`111b`, `163b`, `166b`) sont dans `Api\database\init\` du dossier publié : rien à copier à part.
   - **Attendu** : `Api\Pharma.Api.exe`, `Api\database\migration\148_sauvegarde_alerte_sans_disque_externe.sql` et `Poste\Pharma.Desktop.exe` sont présents sur la clé.
 - [ ] **2.** Si l'officine est synchronisée avec le serveur central : **mettre le serveur central à jour d'abord** (parcours E, étape 10), puis l'officine.
 - [ ] **3.** Arrêter le service. **Où** : PC serveur. **Compte** : administrateur Windows. Le script de l'étape 4 refuse de travailler si le service tourne.
@@ -750,6 +751,8 @@ Les publications étant autonomes (.NET inclus), Windows Update ne corrige **pas
 Option facultative, fortement conseillée. L'officine fonctionne sans 2e serveur. Le 2e serveur reçoit **en continu** la base du PC serveur (réplication PostgreSQL en streaming, avec slot), et garde une API de secours **arrêtée**. En cas de panne du principal, une **personne** décide la bascule (procédure F3).
 
 Toujours **une seule base en écriture** : la base du 2e serveur est en lecture seule tant qu'elle n'est pas basculée. Les postes ne l'utilisent pas.
+
+**Droits du compte de l'API pour la bascule** (scripts d'administrateur, lancés avec le superutilisateur PostgreSQL par `creer_base_officine.ps1` et `mettre_a_jour_base_officine.ps1` sur le PC serveur, recopiés sur le 2e serveur par la réplication) : `163b_droit_identifiant_base.sql` (lire l'identifiant de la base : sans lui, aucun serveur n'est jamais écarté) et `166b_droit_promotion_base.sql` (promouvoir la base : sans lui, pas de promotion automatique, seulement le script manuel). Voir [scripts-base-de-donnees.md](scripts-base-de-donnees.md) § 3.9 et § 3.10. La même clé des jetons (`Jwt:Cle`) est exigée sur les deux serveurs : `initialiser-second-serveur.ps1` s'arrête si son empreinte diffère de celle du PC serveur (`Pharma.Api.exe --empreinte-jeton`).
 
 Scripts (dans `scripts\second-serveur\`, à copier sur les deux serveurs avec `commun.ps1` à côté des autres). Ils demandent un administrateur Windows et le superutilisateur PostgreSQL. **Chacun a un mode `-Essai`** qui n'écrit rien : **toujours le lancer d'abord**.
 

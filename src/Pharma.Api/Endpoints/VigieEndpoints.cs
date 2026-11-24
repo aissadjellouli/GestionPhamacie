@@ -57,6 +57,16 @@ public static class VigieServices
         services.AddSingleton<ILecteurEtatServeur1, LecteurEtatServeur1Signe>();
         services.AddSingleton<SondeServeur1>();
         services.AddSingleton<VigieSecondServeur>();
+        // Lot V2-4 : exécutant de la promotion automatique (retrait signé, preuves, fichier de décision, pg_promote) ; jamais en démonstration ni pendant une restauration de base
+        services.AddSingleton<IClientRetraitServeur1, ClientRetraitServeur1Signe>();
+        services.AddSingleton<IAlertesVersServeur1, AlertesVersServeur1Signe>();
+        services.AddSingleton<IFichiersDecisionBascule>(_ => new FichiersDecisionBascule(dossierJournaux));
+        services.AddSingleton(sp => new ExecutantPromotion(sp.GetRequiredService<VigieSecondServeur>(), sp.GetRequiredService<RegistreRapportsPostes>(),
+            sp.GetRequiredService<SondeServeur1>(), sp.GetRequiredService<IReleveServeurs>(), sp.GetRequiredService<IBasePromotion>(),
+            sp.GetRequiredService<IClientRetraitServeur1>(), sp.GetRequiredService<IAlertesVersServeur1>(), sp.GetRequiredService<LimiteAlertesHoraire>(),
+            sp.GetRequiredService<IFichiersDecisionBascule>(), sp.GetRequiredService<IJournalDecisions>(), sp.GetRequiredService<IVeilleServeur>(),
+            sp.GetRequiredService<IHorloge>(), sp.GetRequiredService<ReglagesBascule>(),
+            () => sp.GetRequiredService<Pharma.Application.Demo.ModeDemo>().Actif || sp.GetRequiredService<Pharma.Application.SuperAdmin.RestaurationsSuperAdmin>().BaseEnCours));
         return services;
     }
 }

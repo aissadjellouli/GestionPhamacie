@@ -52,6 +52,7 @@ public class InitEquivalentSuiteMigrationsTests
         var racine = ScriptsRejouablesTests.RacineDepot();
         var init = Path.Combine(racine, "database", "init", "schema.sql");
         var fuseau = Directory.GetFiles(Path.Combine(racine, "database", "migration"), "083_*.sql").Single();
+        var fuseauInit = Path.Combine(racine, "database", "init", "fuseau_horaire.sql");   // l'init se suffit à lui-même (MEP)
         var temporaires = new List<string>();
         using var parSuite = new BaseJetableM4("pharmacie_jetable_equiv_suite_", initialiser: false);
         using var parInit = new BaseJetableM4("pharmacie_jetable_equiv_init_", initialiser: false);
@@ -71,7 +72,7 @@ public class InitEquivalentSuiteMigrationsTests
             parSuite.Executer(["-f", ScriptsRejouablesTests.Chemin(fuseau)]);   // déjà dans la suite : rejeu sans effet, même état que creer_base_officine.ps1
 
             parInit.Executer(["-f", ScriptsRejouablesTests.Chemin(init)]);
-            parInit.Executer(["-f", ScriptsRejouablesTests.Chemin(fuseau)]);
+            parInit.Executer(["-f", ScriptsRejouablesTests.Chemin(fuseauInit)]);
 
             var ecarts = new List<string>();
             foreach (var (rubrique, requete) in Rubriques)
@@ -105,6 +106,7 @@ public class InitEquivalentSuiteMigrationsTests
         var racine = ScriptsRejouablesTests.RacineDepot();
         var init = Path.Combine(racine, "database", "init");
         var fuseau = Directory.GetFiles(Path.Combine(racine, "database", "migration"), "083_*.sql").Single();
+        var fuseauInit = Path.Combine(racine, "database", "init", "fuseau_horaire.sql");   // l'init se suffit à lui-même (MEP)
         var temporaires = new List<string>();
         using var parSuite = new BaseJetableM4("pharmacie_jetable_donnees_suite_", initialiser: false);
         using var parInit = new BaseJetableM4("pharmacie_jetable_donnees_init_", initialiser: false);
@@ -121,7 +123,7 @@ public class InitEquivalentSuiteMigrationsTests
                 parSuite.Executer(["-f", temporaire]);
             }
             parInit.Executer(["-f", ScriptsRejouablesTests.Chemin(Path.Combine(init, "schema.sql"))]);
-            parInit.Executer(["-f", ScriptsRejouablesTests.Chemin(fuseau)]);
+            parInit.Executer(["-f", ScriptsRejouablesTests.Chemin(fuseauInit)]);
             parInit.Executer(["-f", ScriptsRejouablesTests.Chemin(Path.Combine(init, "seed_referentiel.sql"))]);
 
             var ecarts = new List<string>();

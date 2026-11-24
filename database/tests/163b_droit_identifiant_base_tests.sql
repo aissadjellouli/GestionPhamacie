@@ -10,9 +10,9 @@ SELECT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)
 \if :peut_tester
 BEGIN;
 
-\ir ../migration/163b_droit_identifiant_base.sql
+\ir ../init/163b_droit_identifiant_base.sql
 SELECT has_function_privilege('pharma_app', 'pg_control_system()', 'EXECUTE') AS droit_aller \gset
-\ir ../migration/163b_droit_identifiant_base.sql
+\ir ../init/163b_droit_identifiant_base.sql
 SELECT has_function_privilege('pharma_app', 'pg_control_system()', 'EXECUTE') AS droit_rejeu \gset
 
 \ir ../migration/retour/163b_droit_identifiant_base_retour.sql
@@ -20,7 +20,7 @@ SELECT has_function_privilege('pharma_app', 'pg_control_system()', 'EXECUTE') AS
 \ir ../migration/retour/163b_droit_identifiant_base_retour.sql
 SELECT has_function_privilege('pharma_app', 'pg_control_system()', 'EXECUTE') AS droit_retour_rejeu \gset
 
-\ir ../migration/163b_droit_identifiant_base.sql
+\ir ../init/163b_droit_identifiant_base.sql
 SELECT has_function_privilege('pharma_app', 'pg_control_system()', 'EXECUTE') AS droit_second_aller \gset
 
 -- Seul ce droit est accordé : pas de droit sur une autre fonction système réservée

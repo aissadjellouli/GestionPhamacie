@@ -114,9 +114,12 @@ public partial class ScriptsMepTests
                 Assert.Contains(choisis, n => n.StartsWith("100_"));       // au-delà de 099
                 Assert.Contains(choisis, n => n.StartsWith("139_"));
                 Assert.DoesNotContain(choisis, n => n.StartsWith("101b") || n.StartsWith("111b"));
-                Assert.DoesNotContain(choisis, n => n.StartsWith("163b"));
-                Assert.Contains(tous, n => n.StartsWith("163b_"));
-                Assert.Contains(tous, n => n.StartsWith("111b_"));          // les scripts « b » existent bien et sont exclus
+                Assert.DoesNotContain(choisis, n => n.StartsWith("163b") || n.StartsWith("166b"));
+                Assert.Contains(tous, n => n.StartsWith("101b_"));          // le seul script « b » de la suite existe bien et est exclu
+                var init = Directory.GetFiles(Path.Combine(RacineDepot(), "database", "init"), "*.sql").Select(Path.GetFileName).OfType<string>().ToList();
+                Assert.Contains(init, n => n.StartsWith("111b_"));          // scripts « b » de mise en production : dans database/init
+                Assert.Contains(init, n => n.StartsWith("163b_"));
+                Assert.Contains(init, n => n.StartsWith("166b_"));
             }
         }
 

@@ -5,7 +5,7 @@
 -- Chaque test lève une exception en cas d'échec ; « Tests 111 : OK » à la fin.
 -- Les tests de modification et de suppression désactivent le déclencheur
 -- d'immuabilité DANS la transaction (possible tant que pharma_app est
--- propriétaire : voir database/migration/111b_roles_integrite.sql).
+-- propriétaire : voir database/init/111b_roles_integrite.sql).
 -- =====================================================================
 BEGIN;
 

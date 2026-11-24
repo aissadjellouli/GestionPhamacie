@@ -36,6 +36,8 @@ public static class TypeAlerteInterServeurs
     public const string ClesJetonsDifferentes = "cles_jetons_differentes";
     public const string ApiServeur1Arretee = "api_serveur1_arretee";
     public const string EgaliteMajorite = "egalite_majorite";
+    /// <summary>Lot V2-4 (ajout) : la promotion automatique n'a pas eu lieu et le titulaire doit décider (réglage coupé, droit 166b absent, lignée illisible, preuve manquante).</summary>
+    public const string PromotionManuelleNecessaire = "promotion_manuelle_necessaire";
 }
 
 /// <summary>Codes stables des ProblemDetails (champ « code ») ajoutés par la vague 2.</summary>

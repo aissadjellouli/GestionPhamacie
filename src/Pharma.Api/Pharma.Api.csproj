@@ -11,6 +11,9 @@
     <!-- Scripts de la base livrés avec l'API : une sauvegarde restaurée est mise à la version du logiciel.
          Masqués dans l'Explorateur de solutions : ils s’éditent dans le dossier de solution « database › migration ». -->
     <None Include="..\..\database\migration\*.sql" Exclude="..\..\database\migration\*b_*.sql" Link="database\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+    <!-- Tous les scripts de mise en production (décision du titulaire du 2026-11-24) : schéma, référentiel, fuseau et scripts administrateur
+         (111b, 163b, 166b). Jamais clean.sql (efface la base) ni 101b (irréversible, resté dans database\migration et exclu ci-dessus). -->
+    <None Include="..\..\database\init\*.sql" Exclude="..\..\database\init\clean.sql" Link="database\init\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Pharma.Application\Pharma.Application.csproj" />

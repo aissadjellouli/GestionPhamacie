@@ -77,12 +77,16 @@ public static class DecisionServeurEcarte
 /// (décision du titulaire sur Q10) : les deux serveurs se mettent en lecture seule, aucun n'est « retenu » (ServeurRetenu null) et
 /// l'état n'est pas gardé en base (la table serveur_ecarte exige une timeline retenue plus grande) ; un redémarrage le relit.
 /// </summary>
+/// <param name="Retrait">
+/// Vague 2, lot V2-4 (cas 2) : ce serveur a été mis hors jeu à la demande du 2e serveur, AVANT sa promotion (nature « retrait » de serveur_ecarte). La timeline du serveur
+/// retenu n'est pas encore connue : <c>TimelineRetenue</c> vaut 0 et n'est pas écrite en base. Gardé en base, collant, levée manuelle seulement.
+/// </param>
 /// <param name="Isole">
 /// Vague 2, lot V2-1b (règle de majorité, Q32) : ce serveur s'est lui-même mis en lecture seule (copie perdue ET moins de la moitié des postes vus), sans
 /// serveur retenu (motif « isole »). Comme « Indecis », cet état n'est PAS gardé en base : serveur_ecarte exige un serveur retenu et une timeline retenue plus
 /// grande, qu'un isolement n'a pas ; il est levé automatiquement (SurveillerIsolement) et un redémarrage de l'API l'oublie (la règle se réapplique 2 minutes après).
 /// </param>
-public sealed record EcartDetecte(DateTime DepuisUtc, string? ServeurRetenu, long TimelineLocale, long TimelineRetenue, bool Indecis = false, bool Isole = false)
+public sealed record EcartDetecte(DateTime DepuisUtc, string? ServeurRetenu, long TimelineLocale, long TimelineRetenue, bool Indecis = false, bool Isole = false, bool Retrait = false)
 {
     /// <summary>Vrai pour les états qui ne s'écrivent pas dans serveur_ecarte (indécis, isolé).</summary>
     public bool EnMemoireSeulement => Indecis || Isole;

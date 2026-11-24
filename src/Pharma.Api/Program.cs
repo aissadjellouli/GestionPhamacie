@@ -302,6 +302,23 @@ if (Pharma.Application.SecondServeur.SautCompteursBascule.Applicable(
     }
 }
 
+// Vague 2, lot V2-4 : au démarrage en principal, les décisions de promotion automatique (fichiers Journaux/bascule-*.json écrits AVANT la promotion, base alors
+// en lecture seule) deviennent une ligne bascule_decision, une ligne du journal des actions et une alerte au titulaire, puis le fichier est renommé. Idempotent.
+if (!veille && !demo.Actif && demarrage.BaseEnRecovery == false
+    && Pharma.Application.SecondServeur.DeuxServeursDeclares.Est(builder.Configuration["SecondServeur:AutreServeur"]))
+{
+    try
+    {
+        using var porteeBascule = app.Services.CreateScope();
+        var enregistrees = await porteeBascule.ServiceProvider.GetRequiredService<Pharma.Application.SecondServeur.EnregistrerDecisionsBascule>().ExecuterAsync();
+        if (enregistrees > 0) app.Logger.LogWarning("Promotion automatique : {Nombre} décision(s) de bascule enregistrée(s), titulaire prévenu", enregistrees);
+    }
+    catch (Exception e) when (e is not OperationCanceledException)
+    {
+        app.Logger.LogError(e, "Décisions de bascule : enregistrement impossible (script 166 passé ? nouvel essai au prochain démarrage)");
+    }
+}
+
 // Fuseau horaire : l'officine est en UTC+1 toute l'année (Africa/Algiers) ; la base est réglée par la migration 083
 if (ReseauSecurise.AvertissementFuseau(TimeZoneInfo.Local, DateTime.UtcNow) is { } fuseau)
     app.Logger.LogWarning("{Avertissement}", fuseau);

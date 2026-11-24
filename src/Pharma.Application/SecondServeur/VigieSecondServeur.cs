@@ -28,12 +28,18 @@ public sealed class SondeServeur1(IReleveServeurs releves, ILecteurEtatServeur1 
     private Serveur1Vu? derniere;
 
     public Serveur1Vu? Derniere => derniere;
+    private long? identifiantServeur1;
+
+    /// <summary>Identifiant système (lignée) de la base du serveur 1 au dernier relevé qui l'a donné ; null si jamais lu (droit du script 163b manquant ou serveur 1 jamais joint).</summary>
+    public long? IdentifiantServeur1 => identifiantServeur1;
 
     public async Task<Serveur1Vu> SonderAsync(DateTime maintenantUtc, CancellationToken ct = default)
     {
         var tb = Avec(releves.AutreAsync, ct);
         var ta = Avec(client.EtatServeur1Async, ct);
-        var baseOk = await tb is not null;
+        var releveAutre = await tb;
+        var baseOk = releveAutre is not null;
+        if (releveAutre is { EnRecovery: false, IdentifiantSysteme: { } id }) identifiantServeur1 = id;
         var apiOk = await ta is not null;
         baseMuette = baseOk ? null : baseMuette ?? maintenantUtc;
         apiMuette = apiOk ? null : apiMuette ?? maintenantUtc;

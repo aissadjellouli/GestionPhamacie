@@ -143,9 +143,45 @@ public sealed class InterServeursMiddleware(RequestDelegate suite, ILogger<Inter
 
 public static class InterServeursEndpoints
 {
-    /// <summary>GET /api/inter-serveurs/etat : état de CE serveur, signé par l'intergiciel. Reste permis serveur écarté (BarrageServeurEcarte).</summary>
+    private static IResult Probleme(int statut, string titre, string detail, string code, IDictionary<string, object?>? extra = null)
+    {
+        var ext = new Dictionary<string, object?> { ["code"] = code };
+        if (extra is not null) foreach (var (k, v) in extra) ext[k] = v;
+        return Results.Problem(title: titre, detail: detail, statusCode: statut, type: $"urn:pharmaofficine:erreur:{code}", extensions: ext);
+    }
+
+    /// <summary>Routes signées : etat (les deux serveurs), retrait et alerte (serveur 1). Restent permises serveur écarté (BarrageServeurEcarte).</summary>
     public static void MapInterServeurs(this WebApplication app)
     {
+        // POST /api/inter-serveurs/retrait : le 2e serveur met le serveur 1 hors jeu avant de se promouvoir (cas 2). Corps vide.
+        app.MapPost(InterServeursMiddleware.Prefixe + "/retrait", async (RetraitServeur retrait, CancellationToken ct) =>
+        {
+            var r = await retrait.ExecuterAsync(ct);
+            return r.Issue switch
+            {
+                IssueRetrait.Ecarte => Results.Ok(new RetraitInterServeursDto(true, r.LsnFinal!)),
+                IssueRetrait.DejaEcarte => Probleme(StatusCodes.Status409Conflict, "Déjà écarté", "Ce serveur est déjà écarté : aucun nouveau retrait.", CodesBasculeVague2.DejaEcarte,
+                    r.LsnFinal is null ? null : new Dictionary<string, object?> { ["lsnFinal"] = r.LsnFinal }),
+                _ => Probleme(StatusCodes.Status503ServiceUnavailable, "Retrait impossible",
+                    "Ce serveur n'a pas pu être mis hors jeu (serveur en veille, 2e serveur non déclaré, ou transactions non terminées dans le délai).", CodesBasculeVague2.RetraitImpossible)
+            };
+        });
+
+        // POST /api/inter-serveurs/alerte : le 2e serveur (base en lecture seule) fait prévenir le titulaire par le serveur 1 ; 202 sans corps
+        app.MapPost(InterServeursMiddleware.Prefixe + "/alerte", async (AlerteInterServeursDto? d, RecevoirAlerteInterServeurs alerte, IVeilleServeur veille, CancellationToken ct) =>
+        {
+            if (veille.EstVeille)
+                return Probleme(StatusCodes.Status503ServiceUnavailable, "Serveur en veille", "Ce serveur est en veille : il ne peut pas prévenir le titulaire.", CodesBasculeVague2.ServeurEnVeille);
+            if (d is null) return Probleme(StatusCodes.Status400BadRequest, "Alerte invalide", "Corps absent.", "alerte_invalide");
+            return await alerte.ExecuterAsync(d.Type, d.Poste, d.Message, ct) switch
+            {
+                IssueAlerteRecue.TypeInconnu => Probleme(StatusCodes.Status400BadRequest, "Type d'alerte inconnu", "Type d'alerte inconnu.", "alerte_type_inconnu"),
+                IssueAlerteRecue.PosteManquant => Probleme(StatusCodes.Status400BadRequest, "Alerte invalide", "Le poste est obligatoire pour ce type d'alerte.", "alerte_invalide"),
+                IssueAlerteRecue.MessageInvalide => Probleme(StatusCodes.Status400BadRequest, "Alerte invalide", "Message ou poste trop long.", "alerte_invalide"),
+                _ => Results.StatusCode(StatusCodes.Status202Accepted)   // acceptée, ou déjà partie dans l'heure (limite horaire : le 2e serveur n'a rien de plus à savoir)
+            };
+        });
+
         app.MapGet(InterServeursMiddleware.Prefixe + "/etat", async (CeServeur ce, SignatureInterServeurs signature, IServeurEcarteDetecte ecart,
             IVeilleServeur veille, IReleveServeurs releves, CancellationToken ct) =>
         {

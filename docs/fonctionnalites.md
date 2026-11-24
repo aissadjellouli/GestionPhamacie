@@ -2,7 +2,7 @@
 
 Inventaire complet des fonctionnalités du logiciel, mis à jour à chaque modification.
 
-Mis à jour le 2026-11-23.
+Mis à jour le 2026-11-24.
 
 **Mise à jour du 2026-11-23** (revue complète, non commitée) : écran de connexion avec les deux onglets toujours proposés
 (dernier choix retenu sur le poste) ; ressaisie du mot de passe pour l'export de la clé de scellement, les notifications,
@@ -25,15 +25,15 @@ Légende des états :
 
 | État | Nombre de fonctions |
 | --- | --- |
-| Fait | 192 |
+| Fait | 214 |
 | En cours | 1 |
 | En attente | 47 |
 | Bloqué | 9 |
 | Non proposé | 1 |
 | À vérifier | 0 |
-| **Total** | **250** |
+| **Total** | **272** |
 
-Recompté le 2026-11-21 (soir, lot S7.6) à partir des lignes ci-dessous (250 lignes ; « Fait en local » compté dans « Fait ») ; « En cours » : démonstration cloud (Docker absent du poste).
+Recompté le 2026-11-24 à partir des lignes ci-dessous (272 lignes ; « Fait en local » compté dans « Fait ») ; « En cours » : démonstration cloud (Docker absent du poste).
 
 ## Caisse et ventes
 
@@ -288,7 +288,22 @@ Recompté le 2026-11-21 (soir, lot S7.6) à partir des lignes ci-dessous (250 li
 | Export et import de la clé de scellement | Fait | Administration › 2e serveur |
 | Port 5432 ouvert au seul 2e serveur (script) | Fait (à essayer sur le vrai PC serveur) | scripts/second-serveur/ouvrir-port-base.ps1 |
 | PC de secours : bandeau « serveur injoignable », bascule par script | Fait (à essayer en réel) | scripts/basculer-pc-secours.ps1 |
-| Clé `Jwt__Cle` identique sur le PC de secours et le 2e serveur, ou reconnexion après bascule | En attente (à décider) | a-faire.md « Mise en production : à décider » |
+| Même clé des jetons (`Jwt:Cle`) sur les deux serveurs : contrôle bloquant à l'installation du 2e serveur (empreinte), alerte si elle diffère en marche | Fait (2026-11-24, à essayer en réel) | regles-metier.md « Bascule du 2e serveur, vague 2 », scripts/second-serveur |
+| Détection d'un serveur écarté en marche (toutes les 30 s, deux relevés concordants) ; inactive avec un seul serveur | Fait (2026-11-23) | regles-metier.md « Tests d'intégration SQL et bascule du 2e serveur » |
+| Serveur écarté en lecture seule (503 `serveur_ecarte`, base en lecture seule, tâches suspendues, démarrage en lecture seule, levée `--lever-ecart`) | Fait (2026-11-23, à essayer en réel) | regles-metier.md « Bascule du 2e serveur, vague 1 » |
+| Alertes de bascule au titulaire (serveur remplacé, ancien principal actif, même timeline, autre lignée, isolement) | Fait (2026-11-23) | regles-metier.md « Bascule du 2e serveur, vague 1 » |
+| Saut des compteurs (tickets, factures, avoirs, bons de commande) à la promotion du 2e serveur | Fait (2026-11-23, script 164) | regles-metier.md « Bascule du 2e serveur, vague 1 » |
+| Droit de lire l'identifiant de la base pour le compte de l'API (script administrateur 163b) | Fait (à lancer par le titulaire avec le compte postgres) | scripts-base-de-donnees.md § 3.9 |
+| 2e serveur en veille (API démarrée sur la copie, rôle publié, relance en principal après promotion) | Fait (2026-11-24, à essayer en réel) | regles-metier.md « Bascule du 2e serveur, vague 2 » |
+| Échanges signés entre les deux serveurs (HMAC, horodatage, usage unique, réponse signée) | Fait (2026-11-24) | regles-metier.md « Bascule du 2e serveur, vague 2 » |
+| Décision de promotion à la majorité des postes (rapports toutes les 15 s, postes connus figés à la dernière donnée reçue) | Fait (2026-11-24) | regles-metier.md « Bascule du 2e serveur, vague 2 » |
+| Présence des postes et isolement du serveur principal (mise à l'écart à 20 s, levée automatique) | Fait (2026-11-24, script 165) | regles-metier.md « Bascule du 2e serveur, vague 2 » |
+| Bascule des postes sans redémarrage ni déconnexion, panier en mémoire rejoué, poste isolé suspendu, case par poste | Fait (2026-11-24, à essayer en réel avec captures clair et sombre) | regles-metier.md « Bascule du 2e serveur, vague 2 » |
+| Réplication synchrone choisie par transaction (ventes, factures, registre), au plus 2 s | Fait (2026-11-24, réglage `synchronous_standby_names` à poser par le titulaire) | regles-metier.md « Bascule du 2e serveur, vague 2 » |
+| Mise hors jeu du serveur 1 et promotion automatique du 2e serveur (3 preuves, retrait rejouable, scripts 166 et 166b) | Fait (2026-11-24, à essayer en réel ; droit 166b à poser par le titulaire) | docs/taches/2026-11-23-bascule-2e-serveur/plan-vague-2.md |
+| Scripts de mise en production tous dans `database/init`, livrés avec l'API (schéma, référentiel, fuseau, scripts d'administrateur) | Fait (2026-11-24) | scripts-base-de-donnees.md § 2 |
+| Relais par le 2e serveur pour les postes qui ne joignent plus le serveur 1 | En attente (lot V2-5) | docs/taches/2026-11-23-bascule-2e-serveur/plan-vague-2.md |
+| Essai réel de la bascule sur deux PostgreSQL (cas 1, 2, 3, isolement, un seul serveur) | En attente (lot V2-8) | docs/taches/2026-11-23-bascule-2e-serveur/plan-vague-2.md |
 
 ## Sécurité et droits
 

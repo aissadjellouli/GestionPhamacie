@@ -404,6 +404,12 @@ public static class DependencyInjection
         services.AddScoped<SecondServeur.SurveillerServeurEcarte>();
         // Lot 3 : lecture seule du serveur écarté (verrou de la base et écart gardé en base ; IVerrouBase et IEcartsDepot viennent de l'Infrastructure)
         services.AddSingleton<SecondServeur.GardienServeurEcarte>();
+        // Vague 2, lot V2-4 : retrait du serveur 1 (cas 2), alertes reçues du 2e serveur, enregistrement des décisions de bascule au redémarrage en principal
+        // (IEcrituresServeur, IJournalSysteme, IDecisionsBasculeDepot, IFichiersDecisionBascule viennent de l'Infrastructure et de l'API)
+        services.AddSingleton<SecondServeur.RetraitServeur>();
+        services.AddSingleton<SecondServeur.LimiteAlertesHoraire>();
+        services.AddScoped<SecondServeur.RecevoirAlerteInterServeurs>();
+        services.AddScoped<SecondServeur.EnregistrerDecisionsBascule>();
         services.AddScoped<SecondServeur.ModifierServeurOfficine>();
         services.AddScoped<SecondServeur.ModifierSeuilsReplication>();
         services.AddScoped<SecondServeur.ModifierCopieGed>();

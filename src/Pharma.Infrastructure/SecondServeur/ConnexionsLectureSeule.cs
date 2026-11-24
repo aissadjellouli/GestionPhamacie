@@ -11,6 +11,9 @@ namespace Pharma.Infrastructure.SecondServeur;
 /// </summary>
 public sealed class ConnexionsLectureSeule : IVerrouBase
 {
+    /// <summary>Nom d'application des connexions de l'API (pg_stat_activity.application_name) : le retrait (cas 2) attend la fin de leurs transactions.</summary>
+    public const string NomApplicationApi = "PharmaOfficine.Api";
+
     private volatile bool _actif;
 
     public bool Actif => _actif;
@@ -43,6 +46,7 @@ public sealed class ConnexionsLectureSeule : IVerrouBase
     {
         var builder = new NpgsqlDataSourceBuilder(chaineConnexion);
         builder.ConnectionStringBuilder.NoResetOnClose = true;
+        if (string.IsNullOrWhiteSpace(builder.ConnectionStringBuilder.ApplicationName)) builder.ConnectionStringBuilder.ApplicationName = NomApplicationApi;
         builder.UsePhysicalConnectionInitializer(Initialiser, InitialiserAsync);
         var source = builder.Build();
         Source = source;
@@ -56,14 +60,18 @@ public sealed class ConnexionsLectureSeule : IVerrouBase
 /// </summary>
 public sealed class EcartsSql(NpgsqlDataSource sourceEcriture) : IEcartsDepot
 {
+    public const string NatureBascule = "bascule", NatureRetrait = "retrait";
+
     public async Task<EcartDetecte?> LireActifAsync(CancellationToken ct = default)
     {
         await using var cmd = sourceEcriture.CreateCommand("""
-            SELECT ecarte_le, serveur_retenu, timeline_locale, timeline_retenue FROM serveur_ecarte WHERE leve_le IS NULL
+            SELECT ecarte_le, serveur_retenu, timeline_locale, timeline_retenue, nature FROM serveur_ecarte WHERE leve_le IS NULL
             """);
         await using var r = await cmd.ExecuteReaderAsync(ct);
+        // Retrait (script 166) : timeline du serveur retenu inconnue (NULL), lue 0 ; l'écart est gardé en base et collant
         return await r.ReadAsync(ct)
-            ? new EcartDetecte(DateTime.SpecifyKind(r.GetDateTime(0), DateTimeKind.Utc), r.GetString(1), r.GetInt32(2), r.GetInt32(3))
+            ? new EcartDetecte(DateTime.SpecifyKind(r.GetDateTime(0), DateTimeKind.Utc), r.GetString(1), r.GetInt32(2), r.IsDBNull(3) ? 0 : r.GetInt32(3),
+                Retrait: r.GetString(4) == NatureRetrait)
             : null;
     }
 
@@ -79,16 +87,17 @@ public sealed class EcartsSql(NpgsqlDataSource sourceEcriture) : IEcartsDepot
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.InsufficientPrivilege) { }
 
         await using var cmd = new NpgsqlCommand("""
-            INSERT INTO serveur_ecarte (ecarte_le, serveur_retenu, timeline_locale, timeline_retenue, identifiant_systeme, motif)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO serveur_ecarte (ecarte_le, serveur_retenu, timeline_locale, timeline_retenue, identifiant_systeme, motif, nature)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT DO NOTHING
             """, cx);
         cmd.Parameters.AddWithValue(DateTime.SpecifyKind(ecart.DepuisUtc, DateTimeKind.Utc));
         cmd.Parameters.AddWithValue(ecart.ServeurRetenu ?? "inconnu");
         cmd.Parameters.AddWithValue((int)ecart.TimelineLocale);
-        cmd.Parameters.AddWithValue((int)ecart.TimelineRetenue);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = ecart.Retrait ? DBNull.Value : (int)ecart.TimelineRetenue, NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Integer });
         cmd.Parameters.AddWithValue(identifiant);
         cmd.Parameters.AddWithValue(motif.Length > 500 ? motif[..500] : motif);
+        cmd.Parameters.AddWithValue(ecart.Retrait ? NatureRetrait : NatureBascule);
         return await cmd.ExecuteNonQueryAsync(ct) > 0;
     }
 

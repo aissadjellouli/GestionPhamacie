@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 165 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 166 appliqués dans l'ordre (vérifié :
 -- même structure). Pour une base déjà installée, rejouer TOUTE la suite
 -- database/migration depuis le script 001 (mettre_a_jour_base_officine.ps1), jamais ce fichier ni un script isolé.
 --
@@ -12,7 +12,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 165 ; à régénérer à chaque nouveau script.
+-- par les scripts 001 à 166 ; à régénérer à chaque nouveau script.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -3164,6 +3164,17 @@ CREATE FUNCTION public.sans_accent(t text) RETURNS text
     LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
     RETURN translate(t, 'àâäáãçéèêëíìîïñóòôöõúùûüÿœÀÂÄÁÃÇÉÈÊËÍÌÎÏÑÓÒÔÖÕÚÙÛÜŸŒ'::text, 'aaaaaceeeeiiiinooooouuuuyoAAAAACEEEEIIIINOOOOOUUUUYO'::text);
 
+
+--
+-- Name: bascule_decision_proteger(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.bascule_decision_proteger() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'bascule_decision : ajout seul';
+END $$;
 
 --
 -- Name: serveur_ecarte_proteger(); Type: FUNCTION; Schema: public; Owner: -
@@ -11255,6 +11266,25 @@ ALTER TABLE public.serialisation_reponse_factice ALTER COLUMN id ADD GENERATED A
 
 
 --
+-- Name: bascule_decision; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.bascule_decision (
+    id bigint NOT NULL,
+    decidee_le timestamp with time zone NOT NULL,
+    cas character varying(30) NOT NULL,
+    timeline_avant integer,
+    timeline_apres integer,
+    lsn_final character varying(40),
+    derniere_donnee_recue timestamp with time zone,
+    rapports jsonb DEFAULT '[]'::jsonb NOT NULL,
+    sondes jsonb DEFAULT '{}'::jsonb NOT NULL,
+    motif character varying(500) NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT ck_bascule_decision_cas CHECK (((cas)::text = ANY (ARRAY['promotion'::text, 'retrait_promotion'::text])))
+);
+
+--
 -- Name: serveur_ecarte; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -11263,23 +11293,50 @@ CREATE TABLE public.serveur_ecarte (
     ecarte_le timestamp with time zone DEFAULT now() NOT NULL,
     serveur_retenu character varying(200) NOT NULL,
     timeline_locale integer NOT NULL,
-    timeline_retenue integer NOT NULL,
+    timeline_retenue integer,
     identifiant_systeme character varying(40) NOT NULL,
     motif character varying(500) NOT NULL,
     leve_le timestamp with time zone,
     leve_par character varying(200),
     leve_motif character varying(500),
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    nature character varying(20) DEFAULT 'bascule'::character varying NOT NULL,
     CONSTRAINT ck_serveur_ecarte_levee CHECK ((((leve_le IS NULL) AND (leve_par IS NULL) AND (leve_motif IS NULL)) OR ((leve_le IS NOT NULL) AND (leve_par IS NOT NULL) AND (leve_motif IS NOT NULL)))),
-    CONSTRAINT ck_serveur_ecarte_timelines CHECK ((timeline_retenue > timeline_locale)),
+    CONSTRAINT ck_serveur_ecarte_nature CHECK (((nature)::text = ANY (ARRAY['bascule'::text, 'retrait'::text]))),
+    CONSTRAINT ck_serveur_ecarte_timelines CHECK (((((nature)::text = 'bascule'::text) AND (timeline_retenue IS NOT NULL) AND (timeline_retenue > timeline_locale)) OR (((nature)::text = 'retrait'::text) AND ((timeline_retenue IS NULL) OR (timeline_retenue > timeline_locale))))),
     CONSTRAINT serveur_ecarte_timeline_locale_check CHECK ((timeline_locale >= 1))
 );
+
+--
+-- Name: TABLE bascule_decision; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.bascule_decision IS 'Promotions automatiques du 2e serveur (cas, timelines, LSN, dernière transaction reçue, rapports des postes et sondes ; noms de postes seulement) ; ajout seul ; jamais envoyée au central (script 166).';
 
 --
 -- Name: TABLE serveur_ecarte; Type: COMMENT; Schema: public; Owner: -
 --
 
 COMMENT ON TABLE public.serveur_ecarte IS 'État « serveur écarté » (lecture seule) après une bascule vers un autre serveur principal ; ajout seul, seule la levée modifie une ligne ; jamais envoyée au central (script 163).';
+
+--
+-- Name: COLUMN serveur_ecarte.nature; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.serveur_ecarte.nature IS 'bascule : écart constaté après la promotion de l''autre serveur (163) ; retrait : mise hors jeu demandée par le 2e serveur avant sa promotion (166)';
+
+--
+-- Name: bascule_decision_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.bascule_decision ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.bascule_decision_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
 
 --
 -- Name: serveur_ecarte_id_seq; Type: SEQUENCE; Schema: public; Owner: -
@@ -15134,6 +15191,13 @@ ALTER TABLE ONLY public.serialisation_reponse_factice
 
 
 --
+-- Name: bascule_decision bascule_decision_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bascule_decision
+    ADD CONSTRAINT bascule_decision_pkey PRIMARY KEY (id);
+
+--
 -- Name: serveur_ecarte serveur_ecarte_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -16404,6 +16468,12 @@ CREATE INDEX ix_remise_auto_produit ON public.remise_automatique USING btree (pr
 
 
 --
+-- Name: ix_bascule_decision_decidee_le; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_bascule_decision_decidee_le ON public.bascule_decision USING btree (decidee_le);
+
+--
 -- Name: ix_serveur_ecarte_ecarte_le; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -17529,6 +17599,18 @@ CREATE TRIGGER trg_sceau_integrite_immuable BEFORE DELETE OR UPDATE ON public.sc
 
 CREATE TRIGGER trg_sceau_integrite_non_vidable BEFORE TRUNCATE ON public.sceau_integrite FOR EACH STATEMENT EXECUTE FUNCTION public.integrite_interdire_modification_trace();
 
+
+--
+-- Name: bascule_decision trg_bascule_decision_ajout_seul; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bascule_decision_ajout_seul BEFORE DELETE OR UPDATE ON public.bascule_decision FOR EACH ROW EXECUTE FUNCTION public.bascule_decision_proteger();
+
+--
+-- Name: bascule_decision trg_bascule_decision_non_vidable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_bascule_decision_non_vidable BEFORE TRUNCATE ON public.bascule_decision FOR EACH STATEMENT EXECUTE FUNCTION public.bascule_decision_proteger();
 
 --
 -- Name: serveur_ecarte trg_serveur_ecarte_ajout_seul; Type: TRIGGER; Schema: public; Owner: -

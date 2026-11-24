@@ -17,10 +17,12 @@
       1. rôle pharma_app (créé avec LOGIN et CREATEDB s'il manque ; CREATEDB ajouté s'il manque) ;
       2. CREATE DATABASE <Base> OWNER pharma_app ENCODING UTF8 ;
       3. database\init\schema.sql (compte pharma_app) ;
-      4. fuseau horaire de la base : database\migration\083_fuseau_horaire.sql (non repris dans schema.sql) ;
+      4. fuseau horaire de la base : database\init\fuseau_horaire.sql (copie du script 083, non repris dans schema.sql) ;
       5. database\init\seed_referentiel.sql (référentiel de départ, compte « titulaire ») ;
-      6. séparation des rôles : database\migration\111b_roles_integrite.sql, compte superutilisateur
-      6 bis. droit de lire l'identifiant de la base : database\migration\163b_droit_identifiant_base.sql, compte superutilisateur
+      6. séparation des rôles : database\init\111b_roles_integrite.sql, compte superutilisateur
+      6 bis. droit de lire l'identifiant de la base : database\init\163b_droit_identifiant_base.sql, compte superutilisateur
+      6 ter. droit de promouvoir la base (promotion automatique du 2e serveur) : database\init\166b_droit_promotion_base.sql,
+         compte superutilisateur
          (sauf -SansSeparationRoles : les journaux ne sont alors PAS protégés) ;
       7. vérifications finales : objets_encore_a_pharma_app = 0 (si séparé), comptages de référence
          (wilayas, rôles, utilisateurs, ventes = 0), lecture et écriture par pharma_app, droits sur les journaux.
@@ -96,12 +98,16 @@ Invoke-Principal {
 
     $dossierInit = Join-Path $DossierDepot "database\init"
     $dossierMigration = Join-Path $DossierDepot "database\migration"
+    # Livraison (dossier publié de l'API) : les scripts numérotés sont à plat dans database\, l'init dans database\init
+    if (-not (Test-Path -LiteralPath $dossierMigration)) { $dossierMigration = Join-Path $DossierDepot "database" }
     $schema = Join-Path $dossierInit "schema.sql"
     $seed = Join-Path $dossierInit "seed_referentiel.sql"
-    $scriptFuseau = Get-ScriptsNumerotes $dossierMigration | Where-Object { $_.Name -like "083_*" } | Select-Object -First 1
-    $script111b = Join-Path $dossierMigration "111b_roles_integrite.sql"
-    $script163b = Join-Path $dossierMigration "163b_droit_identifiant_base.sql"
+    $scriptFuseau = Get-Item -LiteralPath (Join-Path $dossierInit "fuseau_horaire.sql") -ErrorAction SilentlyContinue
+    $script111b = Join-Path $dossierInit "111b_roles_integrite.sql"
+    $script163b = Join-Path $dossierInit "163b_droit_identifiant_base.sql"
     if (-not (Test-Path -LiteralPath $script163b)) { throw "Script introuvable : $script163b" }
+    $script166b = Join-Path $dossierInit "166b_droit_promotion_base.sql"
+    if (-not (Test-Path -LiteralPath $script166b)) { throw "Script introuvable : $script166b" }
     if (-not $scriptFuseau) { throw "Script 083 (fuseau horaire) introuvable dans $dossierMigration" }
     if (-not $SansSeparationRoles -and -not (Test-Path -LiteralPath $script111b)) { throw "Script introuvable : $script111b" }
     $scriptsOfficine = Get-ScriptsNumerotes $dossierMigration
@@ -198,6 +204,11 @@ Invoke-Principal {
         $r.Lignes | Where-Object { $_ } | ForEach-Object { Write-Info $_ }
         Write-Ok "Droit de lire l'identifiant de la base accordé à $RoleApp (163b)."
 
+        # 6 ter. droit de promouvoir la base (166b, superutilisateur) : promotion automatique du 2e serveur
+        $r = Invoke-Psql -Compte $CompteAdmin -Base $Base -Arguments @("-f", $script166b)
+        $r.Lignes | Where-Object { $_ } | ForEach-Object { Write-Info $_ }
+        Write-Ok "Droit de promouvoir la base accordé à $RoleApp (166b)."
+
         # 7. vérifications finales
         Write-Etape "Vérifications finales"
         $tz = Get-Scalaire -Compte $RoleApp -Base $Base -Sql "SHOW timezone"
@@ -242,6 +253,7 @@ Invoke-Principal {
         Write-Simul "$seed (compte $RoleApp)"
         if (-not $SansSeparationRoles) { Write-Simul "111b_roles_integrite.sql (compte $CompteAdmin, superutilisateur)" }
         Write-Simul "163b_droit_identifiant_base.sql (compte $CompteAdmin, superutilisateur)"
+        Write-Simul "166b_droit_promotion_base.sql (compte $CompteAdmin, superutilisateur)"
         Write-Simul "Vérifications finales : fuseau, comptages, lecture et écriture, objets_encore_a_pharma_app = 0"
     }
 }

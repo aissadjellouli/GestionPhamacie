@@ -64,7 +64,14 @@ public static class DependencyInjection
         services.AddSingleton(verrou);
         services.AddSingleton<Application.SecondServeur.IVerrouBase>(verrou);
         services.AddSingleton(verrou.CreerSource(AvecFuseau(options.ChaineConnexion)));
-        services.AddSingleton<Application.SecondServeur.IEcartsDepot>(new SecondServeur.EcartsSql(NpgsqlDataSource.Create(AvecFuseau(options.ChaineConnexion))));
+        var sourceEcart = NpgsqlDataSource.Create(AvecFuseau(options.ChaineConnexion));
+        services.AddSingleton<Application.SecondServeur.IEcartsDepot>(new SecondServeur.EcartsSql(sourceEcart));
+        // Vague 2, lot V2-4 : retrait (serveur 1), journal des actions du serveur et décisions de bascule (sans verrou de lecture seule : ce sont les écritures d'un serveur écarté) ;
+        // lectures et promotion du 2e serveur sur la source de l'API (la copie est en recovery, aucune écriture)
+        services.AddSingleton<Application.SecondServeur.IEcrituresServeur>(new SecondServeur.EcrituresServeurSql(sourceEcart));
+        services.AddSingleton<Application.SecondServeur.IJournalSysteme>(new SecondServeur.JournalSystemeSql(sourceEcart));
+        services.AddSingleton<Application.SecondServeur.IDecisionsBasculeDepot>(new SecondServeur.DecisionsBasculeSql(sourceEcart));
+        services.AddSingleton<Application.SecondServeur.IBasePromotion>(sp => new SecondServeur.BasePromotionSql(sp.GetRequiredService<NpgsqlDataSource>()));
         // Dossiers du serveur et protection des secrets hors base : inchangés sous Windows sans réglage (C:\ProgramData\PharmaOfficine, DPAPI)
         var racine = DossiersDonnees.Racine(options.RacineDonnees);
         var protection = options.Protection ?? new ProtectionDpapiMachine();

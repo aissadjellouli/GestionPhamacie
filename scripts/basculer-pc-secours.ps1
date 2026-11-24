@@ -36,8 +36,9 @@ param(
     [string]$SuperUser   = "postgres",
     [string]$AppUser     = "pharma_app",
     [string]$RoleProprietaire = "pharma_proprietaire",
-    [string]$Script111b  = "",                      # 111b_roles_integrite.sql (absent du dossier publié) ; vide : cherché près de l'API puis dans le dépôt
-    [string]$Script163b  = "",                      # 163b_droit_identifiant_base.sql (absent du dossier publié) ; vide : cherché près de l'API puis dans le dépôt
+    [string]$Script111b  = "",                      # 111b_roles_integrite.sql (database\init de la livraison) ; vide : cherché près de l'API puis dans le dépôt
+    [string]$Script163b  = "",                      # 163b_droit_identifiant_base.sql (database\init de la livraison) ; vide : cherché près de l'API puis dans le dépôt
+    [string]$Script166b  = "",                      # 166b_droit_promotion_base.sql (database\init de la livraison) ; vide : cherché près de l'API puis dans le dépôt
     [switch]$SeparerRoles,                          # impose la séparation des rôles même si le rôle pharma_proprietaire n'existe pas encore sur ce PC
     [switch]$Essai
 )
@@ -114,7 +115,7 @@ try {
     $separee = $SeparerRoles.IsPresent -or [bool](Invoke-Super "SELECT 1 FROM pg_roles WHERE rolname = '$RoleProprietaire'")
     if ($separee) {
         if (-not $Script111b) {
-            foreach ($c in @((Join-Path $dossierScripts "111b_roles_integrite.sql"), (Join-Path $DossierApi "database\migration\111b_roles_integrite.sql"), (Join-Path $PSScriptRoot "..\database\migration\111b_roles_integrite.sql"))) {
+            foreach ($c in @((Join-Path $dossierScripts "111b_roles_integrite.sql"), (Join-Path $DossierApi "database\init\111b_roles_integrite.sql"), (Join-Path $PSScriptRoot "..\database\init\111b_roles_integrite.sql"))) {
                 if (Test-Path -LiteralPath $c) { $Script111b = $c; break }
             }
         }
@@ -123,11 +124,17 @@ try {
     }
     else { Write-Warning "Séparation des rôles (111b) non en place sur ce PC ($RoleProprietaire absent) : les journaux ne seront pas protégés contre $AppUser. Pour la rétablir : -SeparerRoles." }
     if (-not $Script163b) {
-        foreach ($c in @((Join-Path $dossierScripts "163b_droit_identifiant_base.sql"), (Join-Path $DossierApi "database\migration\163b_droit_identifiant_base.sql"), (Join-Path $PSScriptRoot "..\database\migration\163b_droit_identifiant_base.sql"))) {
+        foreach ($c in @((Join-Path $dossierScripts "163b_droit_identifiant_base.sql"), (Join-Path $DossierApi "database\init\163b_droit_identifiant_base.sql"), (Join-Path $PSScriptRoot "..\database\init\163b_droit_identifiant_base.sql"))) {
             if (Test-Path -LiteralPath $c) { $Script163b = $c; break }
         }
     }
     if (-not $Script163b -or -not (Test-Path -LiteralPath $Script163b)) { throw "Script 163b_droit_identifiant_base.sql introuvable (préciser -Script163b). Rien n'a été modifié." }
+    if (-not $Script166b) {
+        foreach ($c in @((Join-Path $dossierScripts "166b_droit_promotion_base.sql"), (Join-Path $DossierApi "database\init\166b_droit_promotion_base.sql"), (Join-Path $PSScriptRoot "..\database\init\166b_droit_promotion_base.sql"))) {
+            if (Test-Path -LiteralPath $c) { $Script166b = $c; break }
+        }
+    }
+    if (-not $Script166b -or -not (Test-Path -LiteralPath $Script166b)) { throw "Script 166b_droit_promotion_base.sql introuvable (préciser -Script166b). Rien n'a été modifié." }
     & sc.exe stop $Service 2>$null | Out-Null   # service éventuellement démarré : arrêté pendant la bascule
     $horodatage = "{0:yyyyMMdd_HHmmss}" -f (Get-Date)
     $neuve = "{0}_bascule_{1}" -f $Base, $horodatage
@@ -168,6 +175,10 @@ try {
     & $psql -h $HostPg -p $Port -U $SuperUser -d $neuve -v ON_ERROR_STOP=1 -q -f $Script163b | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Script 163b en échec sur $neuve : base laissée telle quelle pour examen, $Base n'a pas été touchée." }
     Write-Host "Droit de lire l'identifiant de la base accordé à $AppUser (163b)."
+    # 166b : droit de promouvoir la base (propre à chaque base : à refaire sur la base restaurée ; promotion automatique d'un futur 2e serveur)
+    & $psql -h $HostPg -p $Port -U $SuperUser -d $neuve -v ON_ERROR_STOP=1 -q -f $Script166b | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Script 166b en échec sur $neuve : base laissée telle quelle pour examen, $Base n'a pas été touchée." }
+    Write-Host "Droit de promouvoir la base accordé à $AppUser (166b)."
     if ($separee) {
         $restes = Invoke-Super "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tableowner = '$AppUser'" $neuve
         if ($restes -ne "0") { throw "Séparation des rôles incomplète sur ${neuve} : $restes table(s) encore à $AppUser. Base laissée telle quelle pour examen, $Base n'a pas été touchée." }

@@ -39,8 +39,8 @@ internal static class BaseModeleSql
         {
             var racine = OutilsPostgres.RacineDepot();
             var init = Path.Combine(racine, "database", "init");
-            var fuseau = Directory.GetFiles(Path.Combine(racine, "database", "migration"), "083_*.sql").OrderBy(f => f, StringComparer.Ordinal).FirstOrDefault()
-                         ?? throw new FileNotFoundException("Script 083 (fuseau horaire) introuvable dans database/migration.");
+            var fuseau = Path.Combine(init, "fuseau_horaire.sql");   // database/init se suffit à lui-même (mise en production)
+            if (!File.Exists(fuseau)) throw new FileNotFoundException("database/init/fuseau_horaire.sql introuvable.");
             ExecuterFichier(nom, Path.Combine(init, "schema.sql"));
             ExecuterFichier(nom, fuseau);
             ExecuterFichier(nom, Path.Combine(init, "seed_referentiel.sql"));
