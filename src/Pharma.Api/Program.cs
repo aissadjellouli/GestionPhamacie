@@ -260,6 +260,8 @@ if (!demo.Actif && !veille)   // veille : aucune lecture ni écriture de l'écar
     await gardienEcart.ChargerAsync();
     if (gardienEcart.EcartIgnore is { } ignore)
         app.Logger.LogWarning("Une ligne active de serveur_ecarte (depuis {Depuis:u}) est ignorée : aucun 2e serveur déclaré (SecondServeur:AutreServeur), le serveur reste en écriture. Levez-la avec --lever-ecart", ignore.DepuisUtc);
+    if (gardienEcart.EcartPerimeLeve is { } perime)
+        app.Logger.LogWarning("Écart du {Depuis:u} (timeline {Timeline}) levé : écrit avant la promotion de cette base, il visait l'ancien serveur principal ; ce serveur reste en écriture", perime.DepuisUtc, perime.TimelineLocale);
     if (suiviEcart.Ecart is null && demarrage.AutreServeurPrincipal == true && demarrage.BaseEnRecovery == false)
     {
         using var porteeEcart = app.Services.CreateScope();

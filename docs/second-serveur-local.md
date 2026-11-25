@@ -368,17 +368,35 @@ toujours le serveur 1 en direct (API 5445, base 5432). Suivi : `suivre2.ps1` (ba
 | 5 | Retrait puis promotion (08:57:45) | Retrait signé accepté par le serveur 1 (ligne `serveur_ecarte` nature `retrait`), preuves réunies, copie promue (timeline 2), API relancée en principal |
 | 6 | **Après la promotion** | **Les deux serveurs sont écartés** (santé `role=ecarte` sur 5083 et 5082) : l'officine n'a plus de serveur en écriture ; aucun poste ne bascule |
 
-**Défaut grave (non corrigé, décision du titulaire)** : la ligne de retrait écrite par le serveur 1 (preuve n° 2 : elle doit être visible dans la
+**Défaut grave, corrigé le 2026-11-25 (« go défaut retrait »)** : la ligne de retrait écrite par le serveur 1 (preuve n° 2 : elle doit être visible dans la
 copie avant la promotion) est **répliquée** dans la copie ; après la promotion, le serveur promu relit cette ligne active (`EcartsSql.LireActifAsync` :
 toute ligne non levée, sans regarder la timeline) et se croit lui-même écarté (`GardienServeurEcarte.ChargerAsync`). La ligne porte pourtant
 `serveur_retenu = localhost:5433` (le serveur promu) et `timeline_locale = 1` (timeline d'avant la promotion). Message du journal trompeur en plus :
 « l'autre serveur a une timeline plus récente (0 contre 1) » (motif d'une bascule affiché pour un retrait). Le cas 1 n'est pas touché (l'écart y est
-écrit par l'ancien serveur 1 dans sa propre base, après la promotion, donc jamais répliqué).
+écrit par l'ancien serveur 1 dans sa propre base, après la promotion, donc jamais répliqué). Correction : une ligne active dont la timeline est plus
+petite que celle de la base locale en écriture est levée en base et jamais restaurée (`GardienServeurEcarte.Perime`, règle métier) ; journal du
+retrait corrigé (« mise hors jeu demandée par l'autre serveur »).
 
-**Constat non expliqué (à vérifier)** : pendant le cas 2, le 2e serveur n'a reçu aucun rapport compté du poste A alors que le poste B votait. Les
+**Constat expliqué (« go vérif rapports »)** : pendant le cas 2, le 2e serveur n'a reçu aucun rapport compté du poste A alors que le poste B votait. Les
 deux postes tournent sur le même PC (même adresse 127.0.0.1) et, coupés au même instant, envoient leur rapport toutes les 5 s ; la limite « un rapport
 par seconde par adresse » (`VigieRapports`, réponse 429 non journalisée) pourrait refuser systématiquement le second. **Hypothèse non prouvée** :
-aucune trace côté serveur. Sans effet attendu en officine réelle (une adresse par poste), mais l'essai à deux postes sur un même PC en dépend.
+aucune trace côté serveur à ce moment-là. **Confirmé** depuis : trace Debug des refus ajoutée, puis relais espions (`relais-espion.mjs`) qui notent
+chaque rapport et chaque réponse. Rejeu raté : **22 rapports du poste A refusés**, aucun du poste B ; essai décisif (deux postes vus depuis
+127.0.0.1) : après la coupure, poste A **15 réponses 429 sur 15**, poste B **35 réponses 200 sur 35** ; poste A sur le bandeau manuel, verdict « Relais ».
+Les deux postes, coupés au même instant, rapportent au même rythme (~9 s : 5 s d'attente + 4 s de sonde en échec) : le second arrive toujours
+moins d'une seconde après le premier, **refus permanent**. Avec une adresse par poste (poste A vu de 127.0.0.1, poste B de ::1) : les deux votent.
+**Question ouverte (décision du titulaire)** : plusieurs postes derrière une même adresse (serveur de sessions à distance, NAT) perdent leur vote ;
+la limite reste par adresse tant que rien n'est décidé. (Attention : le journal console de l'essai est mal encodé, chercher « Rapport refus ».)
+
+**Cas 2 rejoué avec la correction** :
+
+| # | Essai | Résultat |
+|---|---|---|
+| 7 | Mêmes adresses (19:59:04) | Poste A refusé (429), poste B vote ; retrait puis promotion à 20:01:14 quand le poste A sort des connus ; au redémarrage : « Écart du … (timeline 1) levé : écrit avant la promotion de cette base » ; **serveur promu en écriture** (timeline 2, 4 compteurs sautés), **serveur 1 écarté** (ligne `retrait` gardée) ; **les deux postes basculent seuls à 146 s** |
+| 8 | Une adresse par poste (20:09:12) | **Cas 2 nominal** : 2 votes sur 2 connus, attente à 29 s, retrait puis promotion, **les deux postes basculés à 110 s**, session gardée |
+| 9 | Deux postes depuis 127.0.0.1 (20:16:32) | Défaut de vote reproduit à l'identique (429 permanents pour le poste A) |
+
+Captures `cas2r-*`, `cas2e-*`, `cas2d-*`.
 
 **Rangement fait** : postes, API, relais et copie 5433 arrêtés ; slot `second_serveur` supprimé ; aucun port d'essai ouvert. La copie 5433 est
-promue et marquée écartée : à refaire par `reinit.ps1` avant tout nouvel essai.
+promue : à refaire par `reinit.ps1` avant tout nouvel essai.

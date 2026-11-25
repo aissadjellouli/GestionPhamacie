@@ -33,6 +33,9 @@ public sealed class SurveillanceSecondServeur(IServiceProvider services, CeServe
                     dernier = d.Verdict;
                     switch (d.Verdict)
                     {
+                        case VerdictEcart.Ecarte when d.Confirme && services.GetRequiredService<IServeurEcarteDetecte>().Ecart is { Retrait: true } retrait:
+                            logger.LogCritical("Ce serveur est écarté : mise hors jeu demandée par l'autre serveur ({Retenu}) avant sa promotion", retrait.ServeurRetenu);
+                            break;
                         case VerdictEcart.Ecarte when d.Confirme:
                             logger.LogCritical("Ce serveur est écarté : l'autre serveur a une timeline plus récente ({TimelineAutre} contre {TimelineLocale})", d.TimelineAutre, d.TimelineLocale);
                             break;

@@ -49,9 +49,37 @@ public sealed class GardienServeurEcarte(IServeurEcarteDetecte suivi, IVerrouBas
     /// <summary>Ligne active trouvée en base mais ignorée faute de 2e serveur déclaré (à signaler au journal par l'appelant), sinon null.</summary>
     public EcartDetecte? EcartIgnore { get; private set; }
 
+    /// <summary>Ligne active écrite avant une promotion de CETTE base, levée au démarrage (à signaler au journal par l'appelant), sinon null.</summary>
+    public EcartDetecte? EcartPerimeLeve { get; private set; }
+
+    public const string LeveParPromotion = "promotion de cette base";
+
+    /// <summary>
+    /// Essai réel du cas 2 (2026-11-25) : la ligne « retrait » écrite par le serveur 1 est répliquée dans la copie (c'est une preuve exigée avant la
+    /// promotion) ; une fois la copie promue, cette ligne visait l'ANCIEN serveur 1, pas ce serveur. Une ligne est périmée quand la base locale est en
+    /// écriture avec une timeline PLUS GRANDE que celle notée sur la ligne (la timeline ne monte qu'à une promotion). Relevé local illisible ou en recovery :
+    /// jamais périmée (prudence : l'écart est gardé comme avant). Toute ligne écrite par ce serveur porte sa timeline réelle (retrait : timeline lue, sinon refus).
+    /// </summary>
+    public static bool Perime(EcartDetecte ecart, ReleveServeur? local) =>
+        local is { EnRecovery: false, Timeline: { } timeline } && ecart.TimelineLocale > 0 && timeline > ecart.TimelineLocale;
+
+    public static string MotifLevee(EcartDetecte ecart, ReleveServeur local) =>
+        $"Écart levé : écrit avant la promotion de cette base (timeline {ecart.TimelineLocale} sur la ligne, {local.Timeline} ici), il visait l'ancien serveur principal";
+
+    /// <summary>Lève en base une ligne périmée ; vrai si elle l'était (la ligne n'est alors jamais restaurée).</summary>
+    private async Task<bool> LeverSiPerimeAsync(EcartDetecte ecart, CancellationToken ct)
+    {
+        var local = await releves.LocalAsync(ct);
+        if (!Perime(ecart, local)) return false;
+        await depot.LeverAsync(LeveParPromotion, MotifLevee(ecart, local!), ct);
+        EcartPerimeLeve = ecart;
+        return true;
+    }
+
     /// <summary>
     /// Au démarrage : relit l'écart actif en base et le restaure (état collant). Base illisible : rien n'est restauré, l'erreur est tracée.
     /// Sans 2e serveur déclaré : aucun verrou, la ligne éventuelle est seulement mémorisée dans <see cref="EcartIgnore"/>.
+    /// Ligne écrite avant une promotion de cette base (<see cref="Perime"/>) : levée en base, jamais restaurée (<see cref="EcartPerimeLeve"/>).
     /// </summary>
     public async Task<bool> ChargerAsync(CancellationToken ct = default)
     {
@@ -59,6 +87,7 @@ public sealed class GardienServeurEcarte(IServeurEcarteDetecte suivi, IVerrouBas
         {
             if (await depot.LireActifAsync(ct) is not { } ecart) return false;
             if (!releves.AutreServeurRegle) { EcartIgnore = ecart; return false; }
+            if (await LeverSiPerimeAsync(ecart, ct)) return false;
             _persiste = true;
             suivi.Restaurer(ecart);
             return true;
@@ -78,6 +107,8 @@ public sealed class GardienServeurEcarte(IServeurEcarteDetecte suivi, IVerrouBas
     {
         if (!releves.AutreServeurRegle || suivi.Ecart is not { EnMemoireSeulement: false } ecart) return;
         var actif = await depot.LireActifAsync(ct);
+        // Relevé local illisible au démarrage (ligne périmée restaurée par prudence) : levée dès que la timeline locale se lit
+        if (actif is not null && await LeverSiPerimeAsync(actif, ct)) { _persiste = false; suivi.Lever(); return; }
         if (actif is not null) { _persiste = true; return; }
         if (_persiste)
         {

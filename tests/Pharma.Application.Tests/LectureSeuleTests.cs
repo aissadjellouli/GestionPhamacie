@@ -85,6 +85,76 @@ public class LectureSeuleTests
         Assert.Equal([true, false], f.Verrou.Appels);
     }
 
+    // ---- Essai réel du cas 2 (2026-11-25) : ligne « retrait » du serveur 1 répliquée dans la copie, puis copie promue ----
+
+    private static EcartDetecte Retrait(long timelineLocale = 1) =>
+        new(new DateTime(2026, 11, 25, 7, 57, 45, DateTimeKind.Utc), "localhost:5433", timelineLocale, 0, Retrait: true);
+
+    [Fact]
+    public async Task Charger_leve_une_ligne_ecrite_avant_la_promotion_de_cette_base_et_reste_en_ecriture()
+    {
+        var f = new Fabrique();
+        f.Depot.Actif = Retrait();
+        f.Releves.Local = Ecriture(2);   // copie promue : timeline 2, la ligne porte la timeline 1 de l'ancien serveur 1
+        f.Gardien.Demarrer();
+
+        Assert.False(await f.Gardien.ChargerAsync());
+
+        Assert.Null(f.Suivi.Ecart);
+        Assert.Empty(f.Verrou.Appels);
+        Assert.Null(f.Depot.Actif);   // levée en base
+        var (par, motif) = Assert.Single(f.Depot.Levees);
+        Assert.Equal(GardienServeurEcarte.LeveParPromotion, par);
+        Assert.Contains("timeline 1 sur la ligne, 2 ici", motif);
+        Assert.Equal(Retrait(), f.Gardien.EcartPerimeLeve);
+    }
+
+    [Theory]
+    [InlineData(1L)]   // le serveur 1 lui-même (même timeline que la ligne) : toujours écarté
+    [InlineData(null)] // relevé local illisible : prudence, l'écart est gardé
+    public async Task Charger_garde_l_ecart_du_serveur_1_ou_quand_la_timeline_locale_est_illisible(long? timeline)
+    {
+        var f = new Fabrique();
+        f.Depot.Actif = Retrait();
+        f.Releves.Local = timeline is { } t ? Ecriture(t) : null;
+        f.Gardien.Demarrer();
+
+        Assert.True(await f.Gardien.ChargerAsync());
+
+        Assert.Equal(Retrait(), f.Suivi.Ecart);
+        Assert.Empty(f.Depot.Levees);
+        Assert.Null(f.Gardien.EcartPerimeLeve);
+    }
+
+    [Fact]
+    public void Perime_seulement_base_en_ecriture_de_timeline_plus_grande()
+    {
+        Assert.True(GardienServeurEcarte.Perime(Retrait(1), Ecriture(2)));
+        Assert.False(GardienServeurEcarte.Perime(Retrait(2), Ecriture(2)));
+        Assert.False(GardienServeurEcarte.Perime(Retrait(3), Ecriture(2)));
+        Assert.False(GardienServeurEcarte.Perime(Retrait(1), new ReleveServeur(true, null, Lignee)));   // copie en veille
+        Assert.False(GardienServeurEcarte.Perime(Retrait(1), new ReleveServeur(false, null, Lignee)));  // timeline illisible
+        Assert.False(GardienServeurEcarte.Perime(Retrait(0), Ecriture(2)));                              // timeline de ligne inconnue
+        Assert.False(GardienServeurEcarte.Perime(Retrait(1), null));
+    }
+
+    [Fact]
+    public async Task Synchroniser_leve_une_ligne_perimee_restauree_quand_la_timeline_locale_devient_lisible()
+    {
+        var f = new Fabrique();
+        f.Depot.Actif = Retrait();
+        f.Gardien.Demarrer();
+        Assert.True(await f.Gardien.ChargerAsync());   // relevé illisible au démarrage : écart gardé
+
+        f.Releves.Local = Ecriture(2);
+        await f.Gardien.SynchroniserAsync();
+
+        Assert.Null(f.Suivi.Ecart);
+        Assert.Equal([true, false], f.Verrou.Appels);   // verrou retiré : retour à l'écriture
+        Assert.Single(f.Depot.Levees);
+        Assert.Empty(f.Depot.Ecrits);                   // jamais réécrite
+    }
+
     // ---- Démarrage (Q8, Q10) ----
 
     [Fact]
@@ -213,7 +283,8 @@ public class LectureSeuleTests
             Actif = ecart;
             return Task.FromResult(true);
         }
-        public Task<bool> LeverAsync(string par, string motif, CancellationToken ct = default) { var a = Actif is not null; Actif = null; return Task.FromResult(a); }
+        public List<(string Par, string Motif)> Levees { get; } = [];
+        public Task<bool> LeverAsync(string par, string motif, CancellationToken ct = default) { var a = Actif is not null; if (a) Levees.Add((par, motif)); Actif = null; return Task.FromResult(a); }
     }
 
     private sealed class Trace : ITraceErreurs

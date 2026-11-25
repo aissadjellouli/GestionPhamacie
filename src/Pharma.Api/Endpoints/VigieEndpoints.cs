@@ -118,6 +118,8 @@ public static class VigieEndpoints
             switch (reponse.Statut)
             {
                 case StatutRapport.TropRapide:
+                    // Niveau Debug : route ouverte au réseau, un journal par refus ne doit pas pouvoir être noyé ; activé pour diagnostiquer un poste qui ne vote pas
+                    log.LogDebug("Rapport refusé pour le poste {Poste} : moins d'une seconde après le précédent rapport reçu de la même adresse", poste);
                     return Results.Problem(title: "Trop de rapports", detail: "Plus d'un rapport par seconde depuis cette adresse.", statusCode: StatusCodes.Status429TooManyRequests,
                         type: "urn:pharmaofficine:erreur:trop_de_rapports", extensions: new Dictionary<string, object?> { ["code"] = "trop_de_rapports" });
                 case StatutRapport.Ignore:
