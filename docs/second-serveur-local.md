@@ -348,7 +348,7 @@ non envoyée « Aucun serveur ne peut être désigné » (n° 11), alertes rég�
 Aucune ligne `serveur_ecarte`, aucun sceau, aucune vente. Le lanceur vérifie désormais que la base est `pharmacie_essai_v28` avant tout démarrage. **Nettoyage fait le 2026-11-25** (« go nettoyage dev », après sauvegarde complète `C:\MesAtlassian\sauvegardes-nettoyage-dev\pharmacie_dev-avant-nettoyage-2026-11-25.dump`) : alerte non envoyée n° 11 supprimée, empreinte de clé ADH remise à `3d9a11be1f399ad4`. Gardés : la ligne `bascule_promotion` (table en ajout seul, protégée par déclencheur ; même note que celle qu'écrit l'API de développement à sa mise en service), les dates de `mise_a_jour_le` des alertes et de démarrage de `sync_parametre` (valeurs d'avant inconnues, réécrites au prochain démarrage), le droit `pg_promote` (script 166b, normal en développement).
 
 **Rangement fait** : API, poste et instance 5433 arrêtés ; slot `second_serveur` supprimé (sinon les journaux de la 5432 grossissent sans fin).
-**Restent** (à retirer sur décision) : base `pharmacie_essai_v28`, rôle `pharma_replication`, dossier `C:\MesAtlassian\essai-v28` (copie promue, secrets
+**Restaient** (retirés le 2026-11-25, voir fin du § 16) : base `pharmacie_essai_v28`, rôle `pharma_replication`, dossier `C:\MesAtlassian\essai-v28` (copie promue, secrets
 de l'essai), droit `pg_promote` dans `pharmacie_dev` et `pharmacie_essai_v28`, clés TPM des postes d'essai `PharmaOfficine-Poste-d83c33c12993` et
 `PharmaOfficine-Poste-9eb4e4bfa028` (suppression en administrateur).
 
@@ -385,8 +385,10 @@ chaque rapport et chaque réponse. Rejeu raté : **22 rapports du poste A refus�
 127.0.0.1) : après la coupure, poste A **15 réponses 429 sur 15**, poste B **35 réponses 200 sur 35** ; poste A sur le bandeau manuel, verdict « Relais ».
 Les deux postes, coupés au même instant, rapportent au même rythme (~9 s : 5 s d'attente + 4 s de sonde en échec) : le second arrive toujours
 moins d'une seconde après le premier, **refus permanent**. Avec une adresse par poste (poste A vu de 127.0.0.1, poste B de ::1) : les deux votent.
-**Question ouverte (décision du titulaire)** : plusieurs postes derrière une même adresse (serveur de sessions à distance, NAT) perdent leur vote ;
-la limite reste par adresse tant que rien n'est décidé. (Attention : le journal console de l'essai est mal encodé, chercher « Rapport refus ».)
+**Décision du titulaire (« go limite par poste », 2026-11-25)** : la limite d'un rapport par seconde est **par poste** pour un rapport authentifié
+(poste prouvé ou jeton lié au poste), **par adresse** pour un rapport anonyme (`RegistreRapportsPostes.CleLimite`). Rejeu réel dans les conditions
+qui échouaient (deux postes vus depuis 127.0.0.1, coupés ensemble, 20:36:05) : **36 réponses 200 sur 36 pour chaque poste**, aucun 429 ; 2 votes sur
+2 connus, attente à 32 s, retrait puis promotion, **les deux postes basculés seuls à 114 s** ; serveur 1 écarté, serveur promu principal (captures `cas2p-*`). (Attention : le journal console de l'essai est mal encodé, chercher « Rapport refus ».)
 
 **Cas 2 rejoué avec la correction** :
 
@@ -398,5 +400,8 @@ la limite reste par adresse tant que rien n'est décidé. (Attention : le journa
 
 Captures `cas2r-*`, `cas2e-*`, `cas2d-*`.
 
-**Rangement fait** : postes, API, relais et copie 5433 arrêtés ; slot `second_serveur` supprimé ; aucun port d'essai ouvert. La copie 5433 est
-promue : à refaire par `reinit.ps1` avant tout nouvel essai.
+**Retrait de l'essai (« go retrait essai », 2026-11-25)** : postes, API, relais et copie 5433 arrêtés ; slot `second_serveur` supprimé ; rôle
+`pharma_replication` supprimé ; dossier `C:\MesAtlassian\essai-v28` supprimé (copie, scripts, secrets de l'essai), captures gardées dans
+`C:\MesAtlassian\essai-v28-captures` (hors dépôt). **Restent** : base `pharmacie_essai_v28` (deux connexions pgAdmin du compte `postgres` ouvertes :
+à fermer, puis `DROP DATABASE pharmacie_essai_v28`), clés TPM `PharmaOfficine-Poste-d83c33c12993` et `PharmaOfficine-Poste-9eb4e4bfa028` (demande
+d'élévation annulée : suppression à faire en administrateur), droit `pg_promote` dans `pharmacie_dev` (gardé : script 166b).

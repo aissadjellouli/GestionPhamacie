@@ -316,7 +316,7 @@ Recompté le 2026-11-24 à partir des lignes ci-dessous (275 lignes ; « Fait en
 | HTTPS sur le réseau de l’officine (HTTP limité au PC serveur), autorité unique par pharmacie | Fait (à essayer en réel) | scripts/certificat_https.ps1 ; mise-en-production.md |
 | Journaux du serveur et du poste sans données personnelles | Fait | securite-et-droits.md |
 | Liste des postes autorisés : autorisation par code à usage unique, clé non exportable du poste, preuve signée à chaque requête, jeton lié au poste, renommer, remplacer le PC, révoquer, modes transition et exigé | Fait (2026-11-24, script 167 ; compte Windows standard : création de la clé par la demande d'élévation de Windows, D4 option 1, à vérifier sur un vrai poste) | Administration › Postes autorisés ; securite-et-droits.md ; regles-metier.md |
-| Bascule du 2e serveur : présence, postes connus, votes et relais limités aux postes prouvés | Fait (essai réel du 2026-11-25 : vote prouvé, preuve acceptée par le serveur promu ; relais d'un poste prouvé essayé, § 16) | second-serveur-local.md § 14 ; regles-metier.md |
+| Bascule du 2e serveur : présence, postes connus, votes et relais limités aux postes prouvés | Fait (essai réel du 2026-11-25 : vote prouvé, preuve acceptée par le serveur promu ; relais d'un poste prouvé essayé, § 16 ; limite d'un rapport par seconde par poste prouvé, plusieurs postes derrière une même adresse votent tous, essai réel du 2026-11-25) | second-serveur-local.md § 14 ; regles-metier.md |
 | Port 5432 de la base fermé aux autres postes (écoute sur 127.0.0.1 seulement, contrôle à l'installation) | Fait (procédure écrite, à dérouler sur le vrai PC serveur) | mise-en-production.md, étapes 2.4 et 4 bis |
 
 ## Administration et réglages

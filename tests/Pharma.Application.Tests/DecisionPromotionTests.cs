@@ -311,6 +311,39 @@ public class DecisionPromotionTests
         Assert.Equal(IssueRapport.Accepte, reg.Enregistrer(Rapport("P2", true), "10.0.0.6", false, T.AddSeconds(1)));
     }
 
+    [Fact] public void Registre_deux_postes_prouves_derriere_la_meme_adresse_votent_tous_les_deux()
+    {
+        // Essai réel du 2026-11-25 : deux postes sur la même adresse, rapports à 47 ms d'écart ; avant : le second refusé à chaque fois
+        var reg = new RegistreRapportsPostes(new ReglagesBascule());
+        Assert.Equal(IssueRapport.Accepte, reg.Enregistrer(Rapport("CAISSE-1", false), "10.0.0.5", true, T));
+        Assert.Equal(IssueRapport.Accepte, reg.Enregistrer(Rapport("CAISSE-2", false), "10.0.0.5", true, T.AddMilliseconds(47)));
+        Assert.Equal(2, reg.Rapports().Count(r => !r.Serveur1Joint && r.Authentifie));
+    }
+
+    [Fact] public void Registre_un_poste_prouve_reste_limite_a_un_rapport_par_seconde()
+    {
+        var reg = new RegistreRapportsPostes(new ReglagesBascule());
+        Assert.Equal(IssueRapport.Accepte, reg.Enregistrer(Rapport("CAISSE-1", false), "10.0.0.5", true, T));
+        Assert.Equal(IssueRapport.TropRapide, reg.Enregistrer(Rapport("caisse-1", false), "10.0.0.5", true, T.AddMilliseconds(500)));   // même nom, casse ignorée
+        Assert.Equal(IssueRapport.Accepte, reg.Enregistrer(Rapport("CAISSE-1", false), "10.0.0.5", true, T.AddSeconds(1)));
+    }
+
+    [Fact] public void Registre_rapports_anonymes_toujours_limites_par_adresse_sans_gener_un_poste_prouve()
+    {
+        var reg = new RegistreRapportsPostes(new ReglagesBascule());
+        Assert.Equal(IssueRapport.Accepte, reg.Enregistrer(Rapport("FAUX-1", false), "10.0.0.5", false, T));
+        Assert.Equal(IssueRapport.TropRapide, reg.Enregistrer(Rapport("FAUX-2", false), "10.0.0.5", false, T.AddMilliseconds(100)));   // noms inventés : même adresse
+        // Un flot anonyme venu de la même adresse n'empêche pas le vote d'un poste prouvé
+        Assert.Equal(IssueRapport.Accepte, reg.Enregistrer(Rapport("CAISSE-1", false), "10.0.0.5", true, T.AddMilliseconds(200)));
+    }
+
+    [Fact] public void Registre_cle_de_limite_jamais_confondue_entre_poste_et_adresse()
+    {
+        Assert.Equal("poste|CAISSE-1", RegistreRapportsPostes.CleLimite("caisse-1", "10.0.0.5", true));
+        Assert.Equal("adresse|10.0.0.5", RegistreRapportsPostes.CleLimite("caisse-1", "10.0.0.5", false));
+        Assert.NotEqual(RegistreRapportsPostes.CleLimite("10.0.0.5", "x", true), RegistreRapportsPostes.CleLimite("x", "10.0.0.5", false));
+    }
+
     [Fact] public void Registre_nom_de_poste_annonce_par_deux_adresses_ignore()
     {
         var reg = new RegistreRapportsPostes(new ReglagesBascule());

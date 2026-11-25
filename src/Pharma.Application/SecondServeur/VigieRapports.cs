@@ -42,7 +42,8 @@ public enum IssueRapport { Accepte, TropRapide, PosteDeuxAdresses, AuthentifieRe
 
 /// <summary>
 /// Mémoire (veille : aucune écriture en base) des derniers rapports. Nom de poste annoncé par deux adresses différentes à moins de
-/// <c>PosteVuSecondes</c> d'intervalle : le second est ignoré (journalisé par l'appelant). Plus de 1 rapport par seconde par adresse : refusé (429).
+/// <c>PosteVuSecondes</c> d'intervalle : le second est ignoré (journalisé par l'appelant). Plus de 1 rapport par seconde : refusé (429) ; limite par poste
+/// pour un rapport authentifié, par adresse pour un rapport anonyme (<see cref="CleLimite"/>).
 /// </summary>
 public sealed class RegistreRapportsPostes(ReglagesBascule reglages)
 {
@@ -59,9 +60,13 @@ public sealed class RegistreRapportsPostes(ReglagesBascule reglages)
     {
         lock (verrou)
         {
-            if (parAdresse.TryGetValue(adresse, out var dernier) && maintenantUtc - dernier < IntervalleMinimum) return IssueRapport.TropRapide;
-            if (!parAdresse.ContainsKey(adresse) && parAdresse.Count >= AdressesMax) EvincerAdresses();
-            parAdresse[adresse] = maintenantUtc;
+            // Limite d'un rapport par seconde : par POSTE pour un rapport authentifié (nom prouvé, impossible à inventer), par ADRESSE pour un rapport anonyme.
+            // Essai réel du 2026-11-25 : deux postes derrière la même adresse, coupés au même instant, rapportent au même rythme ; avec une limite par adresse
+            // le second était refusé à chaque fois et ne votait jamais (serveur de sessions à distance, routeur qui partage une adresse).
+            var cle = CleLimite(rapport.Poste, adresse, authentifie);
+            if (parAdresse.TryGetValue(cle, out var dernier) && maintenantUtc - dernier < IntervalleMinimum) return IssueRapport.TropRapide;
+            if (!parAdresse.ContainsKey(cle) && parAdresse.Count >= AdressesMax) EvincerAdresses();
+            parAdresse[cle] = maintenantUtc;
             var vu = TimeSpan.FromSeconds(reglages.PosteVuSecondes);
             postes.TryGetValue(rapport.Poste, out var avant);
             if (avant is not null && maintenantUtc - avant.RecuLeUtc < vu)
@@ -78,6 +83,10 @@ public sealed class RegistreRapportsPostes(ReglagesBascule reglages)
             return IssueRapport.Accepte;
         }
     }
+
+    /// <summary>Clé de la limite d'un rapport par seconde : poste prouvé (« poste|NOM ») ou adresse de l'appelant (« adresse|… »), jamais confondues.</summary>
+    public static string CleLimite(string poste, string adresse, bool authentifie) =>
+        authentifie ? "poste|" + poste.ToUpperInvariant() : "adresse|" + adresse;
 
     /// <summary>Derniers rapports (tous, y compris anciens : le filtre de fraîcheur est celui de la décision).</summary>
     public IReadOnlyList<RapportRetenu> Rapports() =>
