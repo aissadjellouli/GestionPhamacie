@@ -295,7 +295,7 @@ ou une vente perdue au scénario 7.
 
 En modes « transition » et « exigé » (script 167), la présence, les postes connus et les votes ne comptent que les **postes prouvés** (signature
 vérifiée avec la clé publique de la copie répliquée). Tant qu'aucun poste n'est autorisé, aucun poste n'est connu : pas de promotion
-automatique. Essai réel avec deux PostgreSQL : **fait le 2026-11-25 pour le cas 1** (§ 15) ; relais (cas 3) et retrait (cas 2) non essayés.
+automatique. Essai réel avec deux PostgreSQL : **fait le 2026-11-25 pour le cas 1** (§ 15), puis pour le relais (cas 3, réussi) et le retrait (cas 2, défaut grave) (§ 16).
 
 ## 15. Essai réel V2-8 (2026-11-25) : panne complète du serveur 1, promotion automatique, poste prouvé
 
@@ -336,8 +336,8 @@ le 2e serveur, devenu serveur principal. Votre session et votre vente en cours s
 `poste.json` échangé ; requêtes signées acceptées par le serveur promu. Captures `cas1e-*` (clair ; accueil sur le serveur promu en sombre).
 Montage rangé ensuite (API, poste, copie arrêtés, slot supprimé).
 
-**Non essayé** : réplication synchrone (§ 12.3), panier en cours rejoué sans double (aucun article dans la base jetable), relais (cas 3), retrait
-(cas 2), copie de l'identité du poste sur un autre PC, captures des bandeaux « Vérification… » et « passé sur le 2e serveur » en sombre
+**Non essayé** : réplication synchrone (§ 12.3), panier en cours rejoué sans double (aucun article dans la base jetable), relais (cas 3) et retrait
+(cas 2) : voir § 16 ; copie de l'identité du poste sur un autre PC, captures des bandeaux « Vérification… » et « passé sur le 2e serveur » en sombre
 (capturés en clair seulement).
 
 **Écritures de l'essai dans `pharmacie_dev` (erreur de montage, 2026-11-25 de 00:22:57 à 00:27 environ)** : les deux premiers lancements
@@ -345,9 +345,40 @@ Montage rangé ensuite (API, poste, copie arrêtés, slot supprimé).
 `serveur_officine` (ADH) mis à jour (empreinte de clé de l'essai `687160665a9f8ae6`, au lieu de celle de l'API de développement ;
 rétablie au prochain démarrage de cette API), une ligne `bascule_promotion` (« Première note : timeline courante gardée sans saut »), une alerte
 non envoyée « Aucun serveur ne peut être désigné » (n° 11), alertes régénérées (109, `mise_a_jour_le`), dates de démarrage de `sync_parametre`.
-Aucune ligne `serveur_ecarte`, aucun sceau, aucune vente. Le lanceur vérifie désormais que la base est `pharmacie_essai_v28` avant tout démarrage.
+Aucune ligne `serveur_ecarte`, aucun sceau, aucune vente. Le lanceur vérifie désormais que la base est `pharmacie_essai_v28` avant tout démarrage. **Nettoyage fait le 2026-11-25** (« go nettoyage dev », après sauvegarde complète `C:\MesAtlassian\sauvegardes-nettoyage-dev\pharmacie_dev-avant-nettoyage-2026-11-25.dump`) : alerte non envoyée n° 11 supprimée, empreinte de clé ADH remise à `3d9a11be1f399ad4`. Gardés : la ligne `bascule_promotion` (table en ajout seul, protégée par déclencheur ; même note que celle qu'écrit l'API de développement à sa mise en service), les dates de `mise_a_jour_le` des alertes et de démarrage de `sync_parametre` (valeurs d'avant inconnues, réécrites au prochain démarrage), le droit `pg_promote` (script 166b, normal en développement).
 
 **Rangement fait** : API, poste et instance 5433 arrêtés ; slot `second_serveur` supprimé (sinon les journaux de la 5432 grossissent sans fin).
 **Restent** (à retirer sur décision) : base `pharmacie_essai_v28`, rôle `pharma_replication`, dossier `C:\MesAtlassian\essai-v28` (copie promue, secrets
-de l'essai), droit `pg_promote` dans `pharmacie_dev` et `pharmacie_essai_v28`, clé TPM du poste d'essai `PharmaOfficine-Poste-d83c33c12993` (suppression
-en administrateur).
+de l'essai), droit `pg_promote` dans `pharmacie_dev` et `pharmacie_essai_v28`, clés TPM des postes d'essai `PharmaOfficine-Poste-d83c33c12993` et
+`PharmaOfficine-Poste-9eb4e4bfa028` (suppression en administrateur).
+
+## 16. Essai réel des cas 3 (relais) et 2 (retrait) (2026-11-25, « go cas 2 et 3 »)
+
+**Montage** : celui du § 15, remis à zéro (`reinit.ps1`), avec **deux postes autorisés** (CAISSE-ESSAI, clé existante ; CAISSE-ESSAI-2, nouvelle
+clé créée dans le TPM après demande d'élévation acceptée, autorisé par code), titulaire connecté sur les deux. Chaque poste joint l'API du serveur 1
+par son propre relais TCP (`relais-tcp.mjs` 5447 et 5448 → 5083) : couper un relais = ce poste seul perd le serveur 1, alors que le 2e serveur joint
+toujours le serveur 1 en direct (API 5445, base 5432). Suivi : `suivre2.ps1` (bandeaux des deux postes, verdict), captures `cas3-*`, `cas3r-*`, `cas2-*`.
+
+| # | Essai | Résultat |
+|---|---|---|
+| 1 | Départ | 2 postes connus, verdict « Rester » |
+| 2 | **Cas 3** : relais du poste A coupé (08:46:44) | Verdict « Relais (cas_3_quelques_postes) », 1 vote sur 2 ; poste A : bandeau « Ce poste ne joint plus le serveur principal : il passe par le 2e serveur… » à **24 s**, barre d'état « Connecté · par le 2e serveur (relais) » ; ses requêtes passent par le 2e serveur et sont acceptées par le serveur 1 (« Requêtes reçues via le relais du 2e serveur », en-têtes signés) ; titulaire prévenu (alerte « Un poste ne joint plus le serveur ») ; poste B inchangé |
+| 3 | Relais du poste A rétabli (08:50:47) | **Retour à la voie directe à 128 s** (règle des 2 min), bandeau retiré, verdict « Rester » |
+| 4 | **Cas 2** : relais des deux postes coupés (08:54:25) | Poste B : relais à 29 s puis attente ; **poste A : aucun vote reçu par le 2e serveur**, bandeau manuel « Serveur injoignable » à 73 s ; verdict « Relais » (1 vote sur 2) pendant 3 min, puis « RetraitPuisPromotion » quand le poste A est sorti des postes connus (connus 1, `PosteActifMinutes`) |
+| 5 | Retrait puis promotion (08:57:45) | Retrait signé accepté par le serveur 1 (ligne `serveur_ecarte` nature `retrait`), preuves réunies, copie promue (timeline 2), API relancée en principal |
+| 6 | **Après la promotion** | **Les deux serveurs sont écartés** (santé `role=ecarte` sur 5083 et 5082) : l'officine n'a plus de serveur en écriture ; aucun poste ne bascule |
+
+**Défaut grave (non corrigé, décision du titulaire)** : la ligne de retrait écrite par le serveur 1 (preuve n° 2 : elle doit être visible dans la
+copie avant la promotion) est **répliquée** dans la copie ; après la promotion, le serveur promu relit cette ligne active (`EcartsSql.LireActifAsync` :
+toute ligne non levée, sans regarder la timeline) et se croit lui-même écarté (`GardienServeurEcarte.ChargerAsync`). La ligne porte pourtant
+`serveur_retenu = localhost:5433` (le serveur promu) et `timeline_locale = 1` (timeline d'avant la promotion). Message du journal trompeur en plus :
+« l'autre serveur a une timeline plus récente (0 contre 1) » (motif d'une bascule affiché pour un retrait). Le cas 1 n'est pas touché (l'écart y est
+écrit par l'ancien serveur 1 dans sa propre base, après la promotion, donc jamais répliqué).
+
+**Constat non expliqué (à vérifier)** : pendant le cas 2, le 2e serveur n'a reçu aucun rapport compté du poste A alors que le poste B votait. Les
+deux postes tournent sur le même PC (même adresse 127.0.0.1) et, coupés au même instant, envoient leur rapport toutes les 5 s ; la limite « un rapport
+par seconde par adresse » (`VigieRapports`, réponse 429 non journalisée) pourrait refuser systématiquement le second. **Hypothèse non prouvée** :
+aucune trace côté serveur. Sans effet attendu en officine réelle (une adresse par poste), mais l'essai à deux postes sur un même PC en dépend.
+
+**Rangement fait** : postes, API, relais et copie 5433 arrêtés ; slot `second_serveur` supprimé ; aucun port d'essai ouvert. La copie 5433 est
+promue et marquée écartée : à refaire par `reinit.ps1` avant tout nouvel essai.
