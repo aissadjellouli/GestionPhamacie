@@ -300,7 +300,7 @@ Recompté le 2026-11-24 à partir des lignes ci-dessous (275 lignes ; « Fait en
 | Présence des postes et isolement du serveur principal (mise à l'écart à 20 s, levée automatique) | Fait (2026-11-24, script 165) | regles-metier.md « Bascule du 2e serveur, vague 2 » |
 | Bascule des postes sans redémarrage ni déconnexion, panier en mémoire rejoué, poste isolé suspendu, case par poste | Fait (2026-11-24, à essayer en réel avec captures clair et sombre) | regles-metier.md « Bascule du 2e serveur, vague 2 » |
 | Réplication synchrone choisie par transaction (ventes, factures, registre), au plus 2 s | Fait (2026-11-24, réglage `synchronous_standby_names` à poser par le titulaire) | regles-metier.md « Bascule du 2e serveur, vague 2 » |
-| Mise hors jeu du serveur 1 et promotion automatique du 2e serveur (3 preuves, retrait rejouable, scripts 166 et 166b) | Fait (2026-11-24, à essayer en réel ; droit 166b à poser par le titulaire) | docs/taches/2026-11-23-bascule-2e-serveur/plan-vague-2.md |
+| Mise hors jeu du serveur 1 et promotion automatique du 2e serveur (3 preuves, retrait rejouable, scripts 166 et 166b) | Fait (2026-11-24 ; essai réel du cas 1 le 2026-11-25 : promotion en 1 min 35, ancien principal écarté ; postes basculés automatiquement après correction du 2026-11-25, voir second-serveur-local.md § 15) | docs/taches/2026-11-23-bascule-2e-serveur/plan-vague-2.md |
 | Scripts de mise en production tous dans `database/init`, livrés avec l'API (schéma, référentiel, fuseau, scripts d'administrateur) | Fait (2026-11-24) | scripts-base-de-donnees.md § 2 |
 | Relais par le 2e serveur pour les postes qui ne joignent plus le serveur 1 (adresse d'origine signée, aucun privilège local, retour à la voie directe sans coupure) | Fait (2026-11-24, à essayer en réel) | docs/taches/2026-11-23-bascule-2e-serveur/plan-vague-2.md |
 | Liste des postes autorisés (enrôlement par le titulaire, preuve d'identité du poste à la connexion) | En attente (plan à valider) | docs/taches/2026-11-24-postes-autorises/plan.md |
@@ -316,7 +316,7 @@ Recompté le 2026-11-24 à partir des lignes ci-dessous (275 lignes ; « Fait en
 | HTTPS sur le réseau de l’officine (HTTP limité au PC serveur), autorité unique par pharmacie | Fait (à essayer en réel) | scripts/certificat_https.ps1 ; mise-en-production.md |
 | Journaux du serveur et du poste sans données personnelles | Fait | securite-et-droits.md |
 | Liste des postes autorisés : autorisation par code à usage unique, clé non exportable du poste, preuve signée à chaque requête, jeton lié au poste, renommer, remplacer le PC, révoquer, modes transition et exigé | Fait (2026-11-24, script 167 ; compte Windows standard : création de la clé par la demande d'élévation de Windows, D4 option 1, à vérifier sur un vrai poste) | Administration › Postes autorisés ; securite-et-droits.md ; regles-metier.md |
-| Bascule du 2e serveur : présence, postes connus, votes et relais limités aux postes prouvés | Fait (à essayer en réel avec V2-8) | second-serveur-local.md § 14 ; regles-metier.md |
+| Bascule du 2e serveur : présence, postes connus, votes et relais limités aux postes prouvés | Fait (essai réel du 2026-11-25 : vote prouvé, preuve acceptée par le serveur promu ; relais non essayé) | second-serveur-local.md § 14 ; regles-metier.md |
 | Port 5432 de la base fermé aux autres postes (écoute sur 127.0.0.1 seulement, contrôle à l'installation) | Fait (procédure écrite, à dérouler sur le vrai PC serveur) | mise-en-production.md, étapes 2.4 et 4 bis |
 
 ## Administration et réglages

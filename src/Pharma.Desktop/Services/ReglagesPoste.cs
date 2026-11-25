@@ -54,8 +54,15 @@ public sealed class ReglagesPoste : IReglagesVigie
     /// <summary>Avertissement non bloquant : adresse http:// qui n'est pas celle du PC lui-même (réseau en HTTPS seul).</summary>
     public static string? AvertirAdresse(string? adresse) => AdresseApiPoste.Avertir(adresse);
 
-    private static readonly string Fichier =
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "poste.json");
+    /// <summary>
+    /// C:\ProgramData\PharmaOfficine\poste.json, sauf variable PHARMA_POSTE_REGLAGES (dossier) : plusieurs postes d'essai sur un même PC, chacun avec
+    /// ses réglages (adresse de secours, bascule), sans toucher au poste.json du PC (même principe que PHARMA_POSTE_IDENTITE).
+    /// </summary>
+    private static readonly string Fichier = Path.Combine(
+        Environment.GetEnvironmentVariable("PHARMA_POSTE_REGLAGES") is { Length: > 0 } dossier
+            ? dossier
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine"),
+        "poste.json");
 
     public Valeurs Actuelles { get; private set; } = Lire();
 

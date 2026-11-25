@@ -246,6 +246,15 @@ public class DecisionPromotionTests
     [InlineData(VerdictPromotion.Egalite, false, "attendre")]
     public void Consigne_selon_verdict_et_poste(VerdictPromotion v, bool joint, string attendue) => Assert.Equal(attendue, ConsigneDuVerdict.Pour(v, joint));
 
+    // Essai réel V2-8 (2026-11-25) : le 2e serveur promu (principal) doit dire « basculer » aux postes qui ont perdu leur serveur
+    [Theory]
+    [InlineData(true, false, false, "basculer")]   // promu, poste qui a perdu le serveur 1
+    [InlineData(true, false, true, "rester")]      // poste qui joint encore son serveur : aucune bascule
+    [InlineData(true, true, false, null)]          // serveur écarté : jamais de consigne (404)
+    [InlineData(false, false, false, null)]        // officine à un seul serveur : pas de vigie (404)
+    public void Consigne_d_un_serveur_principal(bool deuxServeurs, bool ecarte, bool joint, string? attendue) =>
+        Assert.Equal(attendue, ConsigneDuVerdict.PourPrincipal(deuxServeurs, ecarte, joint));
+
     // ---- Contrat : valeurs de fil et défauts alignés sur Pharma.Shared ----
     [Fact] public void Valeurs_de_fil_et_defauts_alignes_sur_le_contrat()
     {

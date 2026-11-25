@@ -76,11 +76,23 @@ public static class VigieEndpoints
     public static void MapVigie(this RouteGroupBuilder api)
     {
         // POST /api/vigie/rapport : serveur 2 (veille) seulement ; jeton FACULTATIF (invalide = traité comme absent, jamais 401)
-        api.MapPost("/vigie/rapport", async (RapportPosteDto? d, HttpContext http, IVeilleServeur mode, VigieSecondServeur vigie, ILogger<VigieSecondServeur> log, CancellationToken ct) =>
+        api.MapPost("/vigie/rapport", async (RapportPosteDto? d, HttpContext http, IVeilleServeur mode, IServeurEcarteDetecte ecart, IConfiguration config,
+            VigieSecondServeur vigie, ILogger<VigieSecondServeur> log, CancellationToken ct) =>
         {
             if (!mode.EstVeille)
-                return Results.Problem(title: "Introuvable", detail: "Ce serveur n'a pas de vigie.", statusCode: StatusCodes.Status404NotFound,
-                    type: "urn:pharmaofficine:erreur:introuvable", extensions: new Dictionary<string, object?> { ["code"] = "introuvable" });
+            {
+                // Serveur principal (2e serveur promu) : « basculer » au poste qui a perdu son serveur, « rester » sinon ; sans état, sans vote
+                var consignePrincipal = ConsigneDuVerdict.PourPrincipal(DeuxServeursDeclares.Est(config["SecondServeur:AutreServeur"]), ecart.Ecart is not null,
+                    d?.Serveur1Joint ?? true);
+                if (consignePrincipal is null)
+                    return Results.Problem(title: "Introuvable", detail: "Ce serveur n'a pas de vigie.", statusCode: StatusCodes.Status404NotFound,
+                        type: "urn:pharmaofficine:erreur:introuvable", extensions: new Dictionary<string, object?> { ["code"] = "introuvable" });
+                if (Invalide(d) is { } motifPrincipal)
+                    return Results.Problem(title: "Rapport invalide", detail: motifPrincipal, statusCode: StatusCodes.Status400BadRequest,
+                        type: "urn:pharmaofficine:erreur:rapport_invalide", extensions: new Dictionary<string, object?> { ["code"] = "rapport_invalide" });
+                return Results.Ok(new ConsigneVigieDto(RoleServeur.Principal, consignePrincipal,
+                    consignePrincipal == ConstantesVigie.Basculer ? ConsigneDuVerdict.MessageBasculer : null));
+            }
             if (Invalide(d) is { } motif)
                 return Results.Problem(title: "Rapport invalide", detail: motif, statusCode: StatusCodes.Status400BadRequest,
                     type: "urn:pharmaofficine:erreur:rapport_invalide", extensions: new Dictionary<string, object?> { ["code"] = "rapport_invalide" });

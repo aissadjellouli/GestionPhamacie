@@ -209,7 +209,7 @@ Plan : `docs/taches/2026-11-24-postes-autorises/plan.md` ; contrat : `contrat-ap
 - **Constaté à l'essai réel du 2026-11-24** : un compte Windows **standard** ne peut pas créer la clé machine (« Accès refusé »). **Décision D4,
   option 1 (titulaire, 2026-11-24)** : sur un compte standard, « Autoriser ce poste » relance le logiciel par la demande d'élévation de Windows
   (`Pharma.Desktop.exe --creer-cle-poste <nom>`, nom de clé de forme fixe contrôlé, aucune fenêtre) ; ce processus crée la clé avec son descripteur
-  (lecture pour les utilisateurs authentifiés, toujours posé) et ouvre `%ProgramData%\PharmaOfficine` en modification aux utilisateurs authentifiés,
+  (lecture pour les utilisateurs authentifiés, toujours posé) et ouvre `%ProgramData%\PharmaOfficine\Poste` (dossier de l'identité du poste ; jamais la racine, qui porte les données de l'API quand le PC serveur sert de poste) en modification aux utilisateurs authentifiés,
   puis s'arrête ; le compte standard ouvre ensuite la clé et termine l'autorisation. Demande d'élévation refusée : message, rien n'est enregistré.
   L'usage courant reste en compte standard. **Non vérifié** (demande d'élévation à accepter par une personne) : utilisation par le compte standard
   de la clé ainsi créée.

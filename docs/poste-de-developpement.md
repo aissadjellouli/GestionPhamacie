@@ -298,6 +298,9 @@ base (l'officine reste au central, les réglages de synchronisation restent dans
 | `PHARMA_PHARMACIE` | Nom de la pharmacie affiché dans l’en-tête | (aucun) |
 | `PHARMA_POSTE` | Nom du poste, ex. « Poste caisse 1 » | `Poste <nom du PC>` |
 | `PHARMA_IMPRIMANTE_ETIQUETTES` | Adresse IP de l'imprimante thermique d'étiquettes (ZPL, port 9100) ; sans elle, seule la planche PDF est produite | (aucune) |
+| `PHARMA_POSTE_IDENTITE` | Essai seulement : dossier de l'identité du poste autorisé (`poste-identite.json`) ; plusieurs postes d'essai sur un même PC | `C:\ProgramData\PharmaOfficine\Poste` |
+| `PHARMA_POSTE_REGLAGES` | Essai seulement : dossier du `poste.json` (adresse de secours, bascule) ; un poste d'essai sans toucher au `poste.json` du PC | `C:\ProgramData\PharmaOfficine` |
+| `WEBVIEW2_USER_DATA_FOLDER` | Essai seulement (variable de WebView2) : dossier propre du moteur web ; sans elle, deux postes lancés sur le même PC partagent le même moteur (et le port de débogage du second est ignoré) | `%LOCALAPPDATA%\Pharma.Desktop.WebView2` |
 
 Côté API, `Sauvegardes:PgDump` (dans `appsettings.json`) indique le chemin de `pg_dump.exe` si PostgreSQL n'est pas installé dans `C:\Program Files\PostgreSQL` ; les notifications et les sauvegardes se règlent ensuite dans l'Administration (voir [notifications.md](notifications.md)).
 

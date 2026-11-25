@@ -295,4 +295,59 @@ ou une vente perdue au scénario 7.
 
 En modes « transition » et « exigé » (script 167), la présence, les postes connus et les votes ne comptent que les **postes prouvés** (signature
 vérifiée avec la clé publique de la copie répliquée). Tant qu'aucun poste n'est autorisé, aucun poste n'est connu : pas de promotion
-automatique. Essai réel avec deux PostgreSQL (coupure, votes prouvés, relais) : **non fait** (2e serveur local retiré, § 11), à jouer avec V2-8.
+automatique. Essai réel avec deux PostgreSQL : **fait le 2026-11-25 pour le cas 1** (§ 15) ; relais (cas 3) et retrait (cas 2) non essayés.
+
+## 15. Essai réel V2-8 (2026-11-25) : panne complète du serveur 1, promotion automatique, poste prouvé
+
+Décisions du titulaire : postes autorisés réels (demande d'élévation de Windows acceptée), réplication synchrone **non essayée** (compte
+`postgres` requis, réglage global), panne simulée sans arrêter le service 5432 (il porte toutes les bases), base jetable `pharmacie_essai_v28`.
+
+**Montage (dossier `C:\MesAtlassian\essai-v28`, hors dépôt)** : copie physique de toute l'instance 5432 (1 254 Mo, rôle `pharma_replication`,
+slot `second_serveur`, `application_name=second_serveur`) démarrée en 5433 par `pg_ctl` ; API serveur 1 en `http://localhost:5083` +
+`https://localhost:5445` (base 5432), API 2e serveur en `5082` + `5446` (copie 5433), lancées par `lancer-api.ps1` (relance sur le code de sortie 10,
+comme le service Windows) ; même `Jwt:Cle` tirée au sort ; `SecondServeur:AutreServeur` = `localhost:<port PostgreSQL>` (le « :port » est
+accepté) et `SecondServeur:AutreServeurApi` en https ; `Donnees:Racine` propre à chaque API ; la clé `Urls` d'`appsettings.json` l'emporte sur
+`ASPNETCORE_URLS` : variable `Urls`. Poste d'essai : `PHARMA_API=5083`, `poste.json` (`PHARMA_POSTE_REGLAGES`) avec `AdresseApiSecours=5082`,
+identité dans `PHARMA_POSTE_IDENTITE`, moteur web propre (`WEBVIEW2_USER_DATA_FOLDER`). Droit `166b` donné par le titulaire dans pgAdmin :
+**il est propre à chaque base** (accordé d'abord dans `pharmacie_dev` par erreur d'indication, puis dans `pharmacie_essai_v28`) ; les scripts de
+MEP le passent bien sur la base de la pharmacie (`creer_base_officine.ps1`, `-Base`).
+
+**Constats**
+
+| # | Essai | Résultat |
+|---|---|---|
+| 1 | Autorisation du poste sur un compte Windows standard (D4 option 1) | Demande d'élévation acceptée ; clé créée dans le **TPM** (« Microsoft Platform Crypto Provider ») par le processus élevé, puis ouverte par le compte standard ; poste autorisé en 20 s ; requêtes signées acceptées (connexion du titulaire, accueil) |
+| 2 | API du serveur 1 arrêtée, **base 5432 vivante** | Verdict « base vivante, API muette » (alerte `api_serveur1_arretee`) : **aucune promotion** (attendu, jamais deux principaux) ; poste : bandeau « Vérification avec le 2e serveur en cours » |
+| 3 | 2e serveur relancé vers une base du serveur 1 jamais lue | Verdict « Promotion », puis **refus** `lignee_serveur1_inconnue` (attendu : jamais de promotion sans avoir lu la lignée du serveur 1) |
+| 4 | Poste plus vu par le serveur 1 depuis plus de 3 min | Verdict « Attendre (aucun_poste_connu) » (attendu, `PosteActifMinutes`) |
+| 5 | **Cas 1** : API du serveur 1 et accès à sa base coupés ensemble (relais TCP 5439 → 5432 arrêté) | Coupure 01:08:03 ; verdict « Promotion (cas_1_injoignable_majorite) », 1 poste connu, 1 vote prouvé ; **copie promue à 01:09:38 (1 min 35)** ; API arrêtée (code 10) puis relancée en principal : timeline 2, 4 compteurs sautés avant toute écriture, `bascule_decision` enregistrée, titulaire prévenu |
+| 6 | Poste après la promotion | Bandeau d'attente à 17 s, puis « Serveur injoignable » + bouton « Basculer sur le 2e serveur » à 106 s ; **aucune bascule automatique** (voir défaut) ; bouton : bascule sans redémarrage, `poste.json` échangé (`AdresseApi` 5082, secours 5083), message « Ce poste est passé sur le 2e serveur… » ; connexion du titulaire sur le serveur promu : preuve du poste acceptée (clé publique répliquée) |
+| 7 | Ancien serveur 1 relancé | Démarre en **lecture seule**, « un autre serveur est devenu principal (timeline 1 contre 2) », santé `role=ecarte`, ligne `serveur_ecarte` nature `bascule` |
+
+**Défaut trouvé, corrigé le 2026-11-25 (« go défaut basculer »)** : après une promotion du cas 1, aucun poste ne recevait la consigne `basculer`. Le 2e serveur
+en veille répond « attendre » jusqu'à la promotion (`ConsigneDuVerdict` ne rend jamais `basculer`), puis, devenu principal, sa route
+`/api/vigie/rapport` répond **404** (contrat § 2.2) : le poste n'a plus de consigne et reste sur le bandeau manuel. Le contrat prévoit pourtant
+`basculer` « le 2e serveur est devenu principal ». Le cas 2 n'est pas touché (le serveur 1 écarté répond 503 `serveur_ecarte` motif `bascule`). Correction : un serveur principal (deux serveurs
+déclarés, non écarté) répond à la vigie « basculer » au poste qui ne joint plus son serveur (`ConsigneDuVerdict.PourPrincipal`).
+
+**Cas 1 rejoué avec la correction (même montage, copie 5433 refaite, écart de l'ancien serveur 1 levé par `--lever-ecart`)** : coupure 01:48:11,
+promotion 01:49:43 (1 min 32), poste titulaire connecté : bandeau d'attente à 17 s, puis **bascule automatique à 101 s** (« Ce poste est passé sur
+le 2e serveur, devenu serveur principal. Votre session et votre vente en cours sont conservées »), sans redémarrage ni nouvelle connexion,
+`poste.json` échangé ; requêtes signées acceptées par le serveur promu. Captures `cas1e-*` (clair ; accueil sur le serveur promu en sombre).
+Montage rangé ensuite (API, poste, copie arrêtés, slot supprimé).
+
+**Non essayé** : réplication synchrone (§ 12.3), panier en cours rejoué sans double (aucun article dans la base jetable), relais (cas 3), retrait
+(cas 2), copie de l'identité du poste sur un autre PC, captures des bandeaux « Vérification… » et « passé sur le 2e serveur » en sombre
+(capturés en clair seulement).
+
+**Écritures de l'essai dans `pharmacie_dev` (erreur de montage, 2026-11-25 de 00:22:57 à 00:27 environ)** : les deux premiers lancements
+(substitution de la chaîne de connexion ratée sous PowerShell) ont branché les API d'essai sur `pharmacie_dev`. Constaté ensuite (lecture seule) :
+`serveur_officine` (ADH) mis à jour (empreinte de clé de l'essai `687160665a9f8ae6`, au lieu de celle de l'API de développement ;
+rétablie au prochain démarrage de cette API), une ligne `bascule_promotion` (« Première note : timeline courante gardée sans saut »), une alerte
+non envoyée « Aucun serveur ne peut être désigné » (n° 11), alertes régénérées (109, `mise_a_jour_le`), dates de démarrage de `sync_parametre`.
+Aucune ligne `serveur_ecarte`, aucun sceau, aucune vente. Le lanceur vérifie désormais que la base est `pharmacie_essai_v28` avant tout démarrage.
+
+**Rangement fait** : API, poste et instance 5433 arrêtés ; slot `second_serveur` supprimé (sinon les journaux de la 5432 grossissent sans fin).
+**Restent** (à retirer sur décision) : base `pharmacie_essai_v28`, rôle `pharma_replication`, dossier `C:\MesAtlassian\essai-v28` (copie promue, secrets
+de l'essai), droit `pg_promote` dans `pharmacie_dev` et `pharmacie_essai_v28`, clé TPM du poste d'essai `PharmaOfficine-Poste-d83c33c12993` (suppression
+en administrateur).

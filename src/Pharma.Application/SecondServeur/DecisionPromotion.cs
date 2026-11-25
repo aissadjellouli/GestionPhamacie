@@ -121,6 +121,17 @@ public static class ConsigneDuVerdict
 {
     public const string MessageAttente = "Vérification avec le 2e serveur en cours";
 
+    public const string MessageBasculer = "Le 2e serveur est devenu le serveur principal";
+
+    /// <summary>
+    /// Rapport de vigie reçu par un serveur PRINCIPAL (essai réel V2-8 du 2026-11-25 : après une promotion du cas 1, le serveur promu n'a plus de vigie et
+    /// aucun poste ne recevait « basculer »). Deux serveurs déclarés et serveur non écarté : « basculer » au poste qui ne joint plus son serveur (son
+    /// adresse de secours est ce serveur principal), « rester » sinon. Null (route absente, 404) : officine à un seul serveur, ou serveur écarté. Le poste ne
+    /// bascule qu'après avoir vérifié lui-même le rôle « principal » de ce serveur (santé) ; aucun état n'est gardé ici.
+    /// </summary>
+    public static string? PourPrincipal(bool deuxServeursDeclares, bool ecarte, bool posteJoint) =>
+        !deuxServeursDeclares || ecarte ? null : posteJoint ? ConstantesVigie.Rester : ConstantesVigie.Basculer;
+
     public static string Pour(VerdictPromotion verdict, bool posteJoint) =>
         posteJoint ? ConstantesVigie.Rester
         : verdict switch

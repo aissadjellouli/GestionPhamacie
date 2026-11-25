@@ -78,8 +78,9 @@ public sealed class CleMachineCng : ICleMachine
     }
 
     /// <summary>
-    /// Travail du processus relancé en administrateur (« --creer-cle-poste ») : crée la clé, puis ouvre le dossier de l'identité aux utilisateurs authentifiés
-    /// (un autre compte Windows du PC peut enregistrer l'identité du poste). Rend le code de sortie.
+    /// Travail du processus relancé en administrateur (« --creer-cle-poste ») : crée la clé, puis ouvre le dossier standard de l'identité
+    /// (%ProgramData%\PharmaOfficine\Poste, jamais la racine ni le dossier de PHARMA_POSTE_IDENTITE) aux utilisateurs authentifiés : un compte Windows
+    /// standard du PC peut y enregistrer l'identité du poste. Rend le code de sortie.
     /// </summary>
     public static int CreerEnAdministrateur(string nom)
     {
@@ -87,7 +88,7 @@ public sealed class CleMachineCng : ICleMachine
         catch (InvalidOperationException e) { App.NoterErreur(e); return CreationCleAdministrateur.Echec; }
         try
         {
-            var dossier = new DirectoryInfo(IdentitePoste.DossierParDefaut());
+            var dossier = new DirectoryInfo(IdentitePoste.DossierStandard());
             dossier.Create();
             var droits = dossier.GetAccessControl();
             droits.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null), FileSystemRights.Modify,
@@ -137,7 +138,7 @@ public sealed class CleMachineCng : ICleMachine
     }
 }
 
-/// <summary>Identité du poste enrôlé, gardée dans %ProgramData%\PharmaOfficine\poste-identite.json (rien de secret : la clé privée reste dans Windows).</summary>
+/// <summary>Identité du poste enrôlé, gardée dans %ProgramData%\PharmaOfficine\Poste\poste-identite.json (rien de secret : la clé privée reste dans Windows).</summary>
 public sealed record IdentitePosteFichier(long PosteId, string Nom, string Cle, string? Fournisseur);
 
 /// <summary>
@@ -160,12 +161,17 @@ public sealed class IdentitePoste
     }
 
     /// <summary>
-    /// %ProgramData%\PharmaOfficine, sauf variable PHARMA_POSTE_IDENTITE (dossier) : plusieurs postes d'essai sur un même PC, chacun avec son identité.
+    /// %ProgramData%\PharmaOfficine\Poste, sauf variable PHARMA_POSTE_IDENTITE (dossier) : plusieurs postes d'essai sur un même PC, chacun avec son identité.
     /// </summary>
     public static string DossierParDefaut() =>
-        Environment.GetEnvironmentVariable("PHARMA_POSTE_IDENTITE") is { Length: > 0 } dossier
-            ? dossier
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine");
+        Environment.GetEnvironmentVariable("PHARMA_POSTE_IDENTITE") is { Length: > 0 } dossier ? dossier : DossierStandard();
+
+    /// <summary>
+    /// %ProgramData%\PharmaOfficine\Poste : sous-dossier propre au poste. Jamais la racine %ProgramData%\PharmaOfficine, qui est aussi le dossier des
+    /// données de l'API quand le PC serveur sert de poste (GED, journaux, clés) : seul ce sous-dossier est ouvert en modification aux comptes du PC.
+    /// </summary>
+    public static string DossierStandard() =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "PharmaOfficine", "Poste");
 
     public long? PosteId => Enrole ? identite!.PosteId : null;
     public string? Nom => Enrole ? identite!.Nom : null;

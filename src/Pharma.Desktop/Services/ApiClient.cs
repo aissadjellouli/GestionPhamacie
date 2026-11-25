@@ -1689,7 +1689,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
             identite.Abandonner(nouvelle.Nom, nouvelle.Cle);
             App.NoterErreur(ex);
             return ex is UnauthorizedAccessException or IOException
-                ? "Identité du poste non enregistrée (dossier ProgramData › PharmaOfficine non accessible) : lancez Tracodex Officine une fois en administrateur."
+                ? "Identité du poste non enregistrée (dossier ProgramData › PharmaOfficine › Poste non accessible) : lancez Tracodex Officine une fois en administrateur."
                 : MessageEchec(ex);
         }
     }
