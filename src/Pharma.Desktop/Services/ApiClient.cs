@@ -1652,7 +1652,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         try
         {
             using var rep = await http.GetAsync("api/postes/etat");
-            return rep.IsSuccessStatusCode ? await rep.Content.ReadFromJsonAsync<EtatPosteAutoriseDto>() : null;
+            var etat = rep.IsSuccessStatusCode ? await rep.Content.ReadFromJsonAsync<EtatPosteAutoriseDto>() : null;
+            // Poste renommé par le titulaire : le nom donné par le serveur à ce poste prouvé remplace celui écrit à l'autorisation
+            if (identite is not null && NomPosteServeur.NouveauNom(identite.PosteId, identite.Nom, etat) is { } nouveauNom) identite.Renommer(nouveauNom);
+            return etat;
         }
         catch (Exception ex) when (EstEchecAppel(ex)) { return null; }
     }

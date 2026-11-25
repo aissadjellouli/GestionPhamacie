@@ -737,3 +737,11 @@ renvoi automatique ») au-dessus des colonnes de la Caisse ; panier et paiement 
 Mesuré sur le poste d'essai (titulaire, panier d'une ligne, suspens réel) : **0 px** à 1 366 × 768 et 1 536 × 890, clair et sombre ; mention
 « renvoyée automatiquement après la panne du serveur » dans le bandeau de la vente encaissée : 0 px à 1 366 × 768 en sombre. Première version en
 `bandeau` (rouge d'erreur) remplacée : une attente n'est pas une erreur.
+
+### Mesures du 2026-11-26 : Administration › Postes autorisés, résultat d'une action
+
+Le message « Poste … renommé en … » (et toute erreur ou réussite de l'écran) s'empilait sous le titre : **37 px** de débordement à
+1 366 × 768, le tableau étant déjà à sa hauteur minimale (un seul poste). Il s'affiche désormais **à la place du sous-titre**
+(`.sous-titre.texte-reussite`, couleur `--accent-texte` ; erreur en `.texte-urgent`, `data-champ="resultat"`) : la hauteur de l'écran ne
+change pas. Mesuré sur le poste d'essai (titulaire, message affiché après un vrai renommage) : **0 px** à 1 366 × 768 et 1 536 × 890, clair et
+sombre, captures regardées. Règle : sur un écran fixe, le résultat d'une action prend la place du sous-titre plutôt qu'une ligne de plus.

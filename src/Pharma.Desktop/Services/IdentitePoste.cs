@@ -221,6 +221,20 @@ public sealed class IdentitePoste
         Changee?.Invoke();
     }
 
+    /// <summary>
+    /// Poste renommé par le titulaire (nom reçu du serveur, voir NomPosteServeur) : seul le nom change dans poste-identite.json, l'identifiant et
+    /// la clé restent. Fichier illisible ou en lecture seule : le nouveau nom sert quand même jusqu'à la fermeture (journal), rien n'est cassé.
+    /// </summary>
+    public void Renommer(string nom)
+    {
+        if (identite is null || string.Equals(identite.Nom, nom, StringComparison.Ordinal)) return;
+        var lu = identite with { Nom = nom };
+        try { File.WriteAllText(fichier, JsonSerializer.Serialize(lu)); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { App.NoterErreur(e); }
+        identite = lu;
+        Changee?.Invoke();
+    }
+
     /// <summary>Enrôlement refusé : la nouvelle clé est supprimée, l'identité d'avant reste.</summary>
     public void Abandonner(string nomCle, ECDsa nouvelle)
     {

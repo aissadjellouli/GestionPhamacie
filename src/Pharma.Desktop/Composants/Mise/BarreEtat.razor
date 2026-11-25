@@ -5,6 +5,7 @@
 @inject ReglagesPoste Reglages
 @inject VigiePoste Bascule
 @inject ConfigurationPoste Configuration
+@inject IdentitePoste IdentiteDuPoste
 @inject ImprimanteTickets Tickets
 @inject IJSRuntime JS
 
@@ -274,6 +275,8 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
         Session.CaisseChangee += SurSession;
         Tickets.EtatChange += SurImprimante;
         Bascule.Change += SurBascule;
+        // Poste renommé par le titulaire : « poste · vendeur » reprend le nouveau nom tout de suite
+        IdentiteDuPoste.Changee += SurIdentite;
         await ActualiserAsync(complet: true);
         _ = BouclerAsync();
     }
@@ -285,6 +288,7 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
         Session.CaisseChangee -= SurSession;
         Tickets.EtatChange -= SurImprimante;
         Bascule.Change -= SurBascule;
+        IdentiteDuPoste.Changee -= SurIdentite;
         minuterie?.Dispose();
     }
 
@@ -358,6 +362,8 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
 
     private void SurNavigation(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) =>
         _ = InvokeAsync(async () => { await ActualiserAsync(complet: true); StateHasChanged(); });
+
+    private void SurIdentite() => _ = InvokeAsync(StateHasChanged);
 
     private void SurSession() => _ = InvokeAsync(async () => { await ActualiserAsync(complet: true); StateHasChanged(); });
 

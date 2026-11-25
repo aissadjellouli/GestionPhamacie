@@ -505,6 +505,8 @@ select, .panneau input[type="date"] { height: 44px; padding: 0 10px; border-radi
 [data-zone="compte-distant-edition"] > .detail { flex: 1 1 100%; margin: 0; }
 .ligne-comptee { background: var(--accent-clair); }
 .texte-urgent { color: var(--urgent); }
+/* Résultat réussi d'une action écrit à la place du sous-titre d'un écran fixe (Postes autorisés, 2026-11-26) : couleur du texte d'accent */
+.texte-reussite { color: var(--accent-texte); font-weight: 600; }
 .suggestions button.actif { background: var(--accent-clair); outline: 2px solid var(--accent-trait); outline-offset: -2px; }
 .suggestions mark { background: var(--avert-fond); color: inherit; padding: 0; border-radius: 2px; }
 .suggestions .choix-vide { padding: 10px 12px; color: var(--texte-2); }

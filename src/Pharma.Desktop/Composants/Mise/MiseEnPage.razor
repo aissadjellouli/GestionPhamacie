@@ -8,6 +8,7 @@
 @inject HistoriqueNavigation Historique
 @inject TachesLaissees Taches
 @inject CompteursAttente Compteurs
+@inject IdentitePoste Identite
 
 <header class="entete">
     <div class="entete-interieur">
@@ -234,6 +235,8 @@
     {
         Nav.LocationChanged += SurNavigation;
         Session.Changee += SurSession;
+        // Poste renommé par le titulaire : l'en-tête (« Pharmacie · poste ») reprend le nouveau nom sans attendre un changement d'écran
+        Identite.Changee += SurIdentite;
         Historique.Demarrer();
         Historique.Change += SurHistorique;
         Taches.Change += SurTaches;
@@ -461,10 +464,13 @@
 
     private void ToucheEchecChangement(KeyboardEventArgs e) { if (e.Key == "Escape") ResterSurLaVente(); }
 
+    private void SurIdentite() => _ = InvokeAsync(StateHasChanged);
+
     public void Dispose()
     {
         minuterie?.Dispose();
         Nav.LocationChanged -= SurNavigation;
+        Identite.Changee -= SurIdentite;
         Session.Changee -= SurSession;
         Api.AlertesModifiees -= SurSession;
         Historique.Change -= SurHistorique;

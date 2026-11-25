@@ -13,13 +13,14 @@
         <div class="titre-page">
             <div>
                 <h1>Postes autorisés</h1>
-                <p class="sous-titre">Seuls les postes autorisés ici prouvent leur identité au serveur : un PC autorisé ne peut pas être imité par un autre, même avec le même nom.</p>
+                @* Résultat d'une action à la place du sous-titre (2026-11-26) : empilé sous le titre, il faisait déborder l'écran de 37 px à 1 366 × 768
+                   (tableau déjà à sa hauteur minimale) ; à la même place, la hauteur de l'écran ne change pas *@
+                @if (erreur is not null) { <p class="sous-titre texte-urgent" role="alert" data-champ="resultat">@erreur</p> }
+                else if (message is not null) { <p class="sous-titre texte-reussite" role="status" data-champ="resultat">@message</p> }
+                else { <p class="sous-titre">Seuls les postes autorisés ici prouvent leur identité au serveur : un PC autorisé ne peut pas être imité par un autre, même avec le même nom.</p> }
             </div>
             <button type="button" class="btn btn-principal" @onclick="OuvrirAutorisation">Autoriser un poste</button>
         </div>
-
-        @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
-        @if (message is not null) { <div class="succes" role="status">@message</div> }
 
         @if (reglages is not null)
         {
@@ -318,6 +319,8 @@
             message = $"Poste « {cible.Nom} » renommé en « {saisieNom.Trim()} ».";
             fenetre = null;
             await ChargerAsync(page, taille);
+            // Ce poste-ci renommé : il reprend tout de suite son nom auprès du serveur (les autres postes, à leur prochain écran de connexion)
+            await Api.EtatAutorisationPosteAsync();
         }
         finally { enCours = false; }
     }

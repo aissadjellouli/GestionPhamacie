@@ -7,7 +7,10 @@ namespace Pharma.Desktop.Services;
 public sealed class ConfigurationPoste(string? nomEnrole = null)
 {
     /// <summary>Nom donné par le titulaire à l'enrôlement (liste des postes autorisés), prioritaire sur PHARMA_POSTE ; null si le poste n'est pas enrôlé.</summary>
-    public string? NomEnrole { get; } = string.IsNullOrWhiteSpace(nomEnrole) ? null : nomEnrole.Trim();
+    public string? NomEnrole { get; private set; } = string.IsNullOrWhiteSpace(nomEnrole) ? null : nomEnrole.Trim();
+
+    /// <summary>Poste renommé par le titulaire (identité du poste mise à jour) : le nouveau nom s'affiche dès le prochain rendu des écrans.</summary>
+    public void Renommer(string? nomEnrole) => NomEnrole = string.IsNullOrWhiteSpace(nomEnrole) ? null : nomEnrole.Trim();
     public string NomLogiciel { get; } = "Tracodex Officine";
     public string? Pharmacie { get; } = Lire("PHARMA_PHARMACIE");
     /// <summary>Nom donné au poste (PHARMA_POSTE), null s'il n'est pas déclaré (barre d'état : nom de l'ordinateur, voir NomCourt).</summary>

@@ -34,6 +34,8 @@ public partial class App : Application
         var horlogeServeur = new HorlogePoste();
         // Chaque appel nomme le poste : il identifie la caisse (le tiroir) partagée par les employés du poste (nom donné par le titulaire si le poste est enrôlé)
         var poste = new ConfigurationPoste(identite.Nom);
+        // Poste renommé par le titulaire : le nom reçu du serveur (identité mise à jour) remplace celui affiché, sans redémarrage
+        identite.Changee += () => poste.Renommer(identite.Nom);
         // Chaque appel est compté : la barre de chargement du haut de la fenêtre s'affiche pendant les appels
         var appels = new AppelsEnCours();
         services.AddSingleton(appels);

@@ -2768,3 +2768,12 @@ Revue complète de la branche `develop` (caisse, stock, factures, sécurité, se
   Le relais transmet les en-têtes de preuve tels quels (cible brute) ; en mode exigé, une requête sans preuve n'est jamais relayée.
 - Révocation : effet immédiat sur le serveur qui révoque, dans les 30 secondes sur l'autre (cache des clés) ; pendant une coupure, visible
   du 2e serveur seulement si elle a été répliquée (risque accepté, plan § 7).
+- **Nom du poste renommé repris par le poste** (2026-11-26, défaut constaté : le serveur utilisait aussitôt le nouveau nom, le poste affichait
+  l'ancien indéfiniment, écrit dans `poste-identite.json` à l'autorisation et jamais relu) : quand le poste lit son état
+  (`GET /api/postes/etat`, à chaque écran de connexion, et juste après un renommage fait depuis ce poste), le nom donné par le serveur à **ce**
+  poste prouvé (même identifiant) remplace le nom local : seul le nom change dans le fichier (identifiant et clé gardés), en-tête et barre
+  d'état mis à jour sans redémarrage. Jamais le nom d'un autre poste, ni sans preuve, ni un nom vide. Fichier en lecture seule : nouveau nom
+  gardé jusqu'à la fermeture (journal). Ordre du nom affiché : nom donné à l'autorisation (renommable par le titulaire), sinon variable
+  `PHARMA_POSTE` du PC, sinon « Poste » + nom de l'ordinateur. Vérifié en réel (renommage depuis le poste : en-tête et barre aussitôt ;
+  autre poste : au prochain écran de connexion ; nom gardé après redémarrage). — `src/Pharma.Desktop/Services/NomPosteServeur.cs`,
+  `IdentitePoste.Renommer`, `src/Pharma.Desktop/Services/ApiClient.cs` (`EtatAutorisationPosteAsync`)

@@ -754,6 +754,8 @@ Option facultative, fortement conseillée. L'officine fonctionne sans 2e serveur
 
 Toujours **une seule base en écriture** : la base du 2e serveur est en lecture seule tant qu'elle n'est pas promue ; un serveur écarté passe en lecture seule (503 `serveur_ecarte`).
 
+**Ordre complet de la mise en place** (PC serveur, 2e serveur, GED, réplication synchrone, postes, contrôles, panne, retour) : [procedure-deux-serveurs.md](procedure-deux-serveurs.md), qui renvoie aux étapes ci-dessous.
+
 **Droits du compte de l'API pour la bascule** (scripts d'administrateur, lancés avec le superutilisateur PostgreSQL par `creer_base_officine.ps1` et `mettre_a_jour_base_officine.ps1` sur le PC serveur, recopiés sur le 2e serveur par la réplication) : `163b_droit_identifiant_base.sql` (lire l'identifiant de la base : sans lui, aucun serveur n'est jamais écarté) et `166b_droit_promotion_base.sql` (promouvoir la base : sans lui, pas de promotion automatique, seulement le script manuel). Voir [scripts-base-de-donnees.md](scripts-base-de-donnees.md) § 3.9 et § 3.10. La même clé des jetons (`Jwt:Cle`) est exigée sur les deux serveurs : `initialiser-second-serveur.ps1` s'arrête si son empreinte diffère de celle du PC serveur (`Pharma.Api.exe --empreinte-jeton`).
 
 Scripts (dans `scripts\second-serveur\`, à copier sur les deux serveurs avec `commun.ps1` à côté des autres). Ils demandent un administrateur Windows et le superutilisateur PostgreSQL. **Chacun a un mode `-Essai`** qui n'écrit rien : **toujours le lancer d'abord**.
@@ -953,10 +955,25 @@ Scripts (dans `scripts\second-serveur\`, à copier sur les deux serveurs avec `c
     ALTER SYSTEM SET wal_sender_timeout = '10s';     -- réseau figé : copie écartée au bout de 10 s au lieu de 60
     SELECT pg_reload_conf();
     ```
-    Aucun redémarrage. Ces réglages sont recopiés sur le 2e serveur par la copie de base (étape 9) : après une bascule, le nouveau principal les a déjà.
+    Aucun redémarrage. Ces réglages sont dans un fichier du PC serveur (`postgresql.auto.conf`), **pas dans la base** : la réplication ne les recopie pas (la copie de base de l'étape 9 ne les emporte que s'ils étaient posés avant elle). **Après une bascule, les poser sur le nouveau principal** (F4, étape 2).
   - **Attendu** : `SELECT application_name, sync_state FROM pg_stat_replication;` sur le principal → `second_serveur | sync`. `SHOW synchronous_commit;` → `local`.
   - **Réseau figé entre les deux serveurs** (câble ou commutateur en panne sans coupure franche) : une seule vente attend 2 s, puis l'API cesse d'attendre la copie jusqu'à ce qu'elle ait rattrapé son retard ; elle l'attend de nouveau ensuite, sans intervention. Le titulaire est prévenu par une alerte.
   - **Retour arrière** : `ALTER SYSTEM RESET synchronous_standby_names; SELECT pg_reload_conf();` (les ventes ne demandent plus aucune attente).
+
+- [ ] **16.** **Essai de bascule réel avant la mise en service** (obligatoire, décision du titulaire du 2026-11-25). **Où** : PC serveur, 2e serveur, deux postes au moins. **Compte** : administrateur Windows, titulaire. **Quand** : après les étapes 1 à 15 et l'autorisation des postes, **avant l'ouverture**, sans client, prévoir une heure.
+  - **Préparer** : écran « 2e serveur » tout vert, `role = veille` sur le 2e serveur, `second_serveur | sync` si l'étape 15 est faite. Allumer **au moins deux postes autorisés**, un employé connecté sur chacun **depuis plus de 3 minutes** (un poste n'est compté que s'il a été vu dans les 3 dernières minutes avec un employé connecté), case « Basculer automatiquement » cochée. Sur un poste : ouvrir la Caisse et mettre un produit au panier **sans encaisser** (pas de vente d'essai dans la base de l'officine).
+  - **Provoquer la panne** : **débrancher le câble réseau du PC serveur** (ou arrêter ensemble le service de l'API **et** celui de PostgreSQL). Ne pas arrêter l'API seule : base vivante mais API muette = **pas de promotion**, par sécurité. Noter l'heure.
+  - **Attendu** :
+    - postes : bandeau « Le serveur principal ne répond plus. Vérification avec le 2e serveur en cours » en 15 à 30 s ;
+    - 2e serveur promu en **1 min 30 à 2 min** (santé `role = principal`) ;
+    - postes basculés **seuls** quelques secondes après : « Ce poste est passé sur le 2e serveur, devenu serveur principal… », barre d'état « Connecté · 2e serveur », session et panier gardés ;
+    - alerte de bascule reçue par le titulaire (SMS ou e-mail) ;
+    - Administration › 2e serveur sur un poste : le 2e serveur est « Principal ».
+  - **Rebrancher l'ancien PC serveur** : son API passe d'elle-même en **lecture seule**, écartée (santé `role = ecarte`, motif « un autre serveur est devenu principal ») : attendu, jamais deux serveurs en écriture. Ne rien y lancer d'autre.
+  - **Remettre en place** : procédure **F4** complète (l'ancien PC serveur redevient 2e serveur ; réglages synchrones posés sur le nouveau principal ; GED dans le nouveau sens). Puis, au choix du titulaire : garder cette répartition, ou revenir à la répartition d'origine (F4, étape 4), qui fait aussi un essai de la bascule manuelle.
+  - **À savoir** : la promotion **saute les compteurs** des tickets, factures, avoirs et bons de commande (script 164). Après l'essai, la numérotation repart plus haut : un trou de numéros, voulu (jamais deux fois le même numéro). **[À VÉRIFIER avec le comptable : trou de numéros dû à l'essai avant la mise en service.]**
+  - **Si la promotion n'a pas lieu au bout de 3 minutes** : lire l'alerte reçue et le journal de l'API du 2e serveur (verdict : « Attendre », « égalité », « aucun poste connu »…). Causes fréquentes : postes non autorisés, postes vus depuis moins de 3 minutes, API arrêtée seule, droit `166b` absent. Faire alors la **bascule manuelle F3** (c'est aussi un essai utile), corriger la cause, puis refaire l'essai.
+  - **Noter** dans le dossier de l'officine : heure de la panne, heure de la promotion, heure de la bascule de chaque poste, et tout écart avec ce qui est attendu.
 
 ---
 
@@ -1453,6 +1470,7 @@ Prérequis : parcours C fait.
   .\partager-ged.ps1 -AdresseSecond <IP de l'ancien>
   ```
   - **Attendu** : partage `PharmaGED$` en lecture seule, règle 445 pour la seule IP de l'ancien, « aucune autre règle active n'ouvre le port 445 ».
+  Puis, si la réplication synchrone est utilisée (parcours C, étape 15) : vérifier sur le **nouveau** principal `SHOW synchronous_standby_names;` et `SHOW synchronous_commit;` ; s'ils ne valent pas `second_serveur` et `local`, poser les trois réglages de l'étape 15 b (ils ne suivent pas la réplication).
 - [ ] **3.** Sur l'**ancien** principal :
   ```powershell
   .\remettre-en-second.ps1 -NouveauPrincipal <IP du nouveau> -Essai
