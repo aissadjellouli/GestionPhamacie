@@ -87,6 +87,39 @@ public class ReplicationSynchroneTests
         Assert.Equal(defaut, await ScalaireAsync<string>(cx, null, "SELECT current_setting('synchronous_commit')"));
     }
 
+    [Fact]
+    public void Suspension_apres_abandon_garde_la_position_la_plus_avancee()
+    {
+        // Essai réel du 2026-11-25 (réseau figé) : après un abandon, le 2e serveur doit avoir écrit au moins jusqu'à cette position
+        ReplicationSynchrone.Suspendre(new NpgsqlTypes.NpgsqlLogSequenceNumber(0xFFFF_0000_0000_0010));
+        ReplicationSynchrone.Suspendre(new NpgsqlTypes.NpgsqlLogSequenceNumber(0xFFFF_0000_0000_0001));
+        Assert.True(ReplicationSynchrone.SuspenduJusqua >= new NpgsqlTypes.NpgsqlLogSequenceNumber(0xFFFF_0000_0000_0010));
+    }
+
+    [Fact]
+    public async Task Suspendu_sans_2e_serveur_qui_repond_aucun_SET_et_la_suspension_reste()
+    {
+        using var base_ = new BaseJetableM4("pharmacie_jetable_v27_", false);
+        if (!base_.Disponible) return;
+        ReplicationSynchrone.Suspendre(new NpgsqlTypes.NpgsqlLogSequenceNumber(0xFFFF_0000_0000_0020));
+        await using var cx = await base_.Source!.OpenConnectionAsync();
+        await using var tx = await cx.BeginTransactionAsync();
+        var defaut = await ScalaireAsync<string>(cx, tx, "SELECT current_setting('synchronous_commit')");
+        Assert.False(await ReplicationSynchrone.ActiverAsync(cx, tx));   // requête « le 2e serveur répond » acceptée par PostgreSQL
+        Assert.Equal(defaut, await ScalaireAsync<string>(cx, tx, "SELECT current_setting('synchronous_commit')"));
+        Assert.NotNull(ReplicationSynchrone.SuspenduJusqua);
+        await tx.RollbackAsync();
+    }
+
+    [Fact]
+    public void Abandon_note_la_position_du_principal_et_la_reprise_exige_le_2e_serveur_a_jour()
+    {
+        var source = File.ReadAllText(Path.Combine(BaseJetableM4.RacineDepot(), "src", "Pharma.Infrastructure", "SecondServeur", "ReplicationSynchrone.cs"));
+        Assert.Contains("if (annule) await SuspendreApresAbandonAsync(db, c);", source);
+        Assert.Contains("SELECT pg_current_wal_lsn()", source);
+        Assert.Contains("WHERE write_lsn >= $1", source);
+    }
+
     private static async Task<T> ScalaireAsync<T>(NpgsqlConnection cx, NpgsqlTransaction? tx, string sql)
     {
         await using var cmd = new NpgsqlCommand(sql, cx, tx);

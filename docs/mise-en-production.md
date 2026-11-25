@@ -748,9 +748,11 @@ Les publications étant autonomes (.NET inclus), Windows Update ne corrige **pas
 
 ## Parcours C, 2e serveur
 
-Option facultative, fortement conseillée. L'officine fonctionne sans 2e serveur. Le 2e serveur reçoit **en continu** la base du PC serveur (réplication PostgreSQL en streaming, avec slot), et garde une API de secours **arrêtée**. En cas de panne du principal, une **personne** décide la bascule (procédure F3).
+Option facultative, fortement conseillée. L'officine fonctionne sans 2e serveur. Le 2e serveur reçoit **en continu** la base du PC serveur (réplication PostgreSQL en streaming, avec slot). Son API tourne **en permanence, en veille** (santé : `role = veille`) : elle n'écrit rien et répond aux seuls rapports des postes, à la santé et aux échanges signés avec le PC serveur.
 
-Toujours **une seule base en écriture** : la base du 2e serveur est en lecture seule tant qu'elle n'est pas basculée. Les postes ne l'utilisent pas.
+**Bascule automatique** (vague 2, essayée en réel le 2026-11-25, [second-serveur-local.md](second-serveur-local.md) § 15 à 17) : les postes rapportent au 2e serveur toutes les 15 s. Si plus de la moitié des postes connus ne joignent plus le PC serveur et que le 2e serveur ne le joint plus non plus (cas 1), il se promeut seul (environ 1 min 30 à 2 min après la panne) ; s'il joint encore le PC serveur mais aucun poste (cas 2), il le met d'abord hors jeu (lecture seule) puis se promeut ; si quelques postes seulement le perdent (cas 3), il relaie leurs requêtes. Les postes basculent ensuite seuls, sans redémarrage ni reconnexion ; une vente interrompue par la panne est renvoyée automatiquement (même clé : jamais deux fois). Égalité, base du PC serveur vivante mais API muette, droit `166b` absent : **pas de promotion**, alerte au titulaire, et la bascule reste **manuelle** (procédure F3).
+
+Toujours **une seule base en écriture** : la base du 2e serveur est en lecture seule tant qu'elle n'est pas promue ; un serveur écarté passe en lecture seule (503 `serveur_ecarte`).
 
 **Droits du compte de l'API pour la bascule** (scripts d'administrateur, lancés avec le superutilisateur PostgreSQL par `creer_base_officine.ps1` et `mettre_a_jour_base_officine.ps1` sur le PC serveur, recopiés sur le 2e serveur par la réplication) : `163b_droit_identifiant_base.sql` (lire l'identifiant de la base : sans lui, aucun serveur n'est jamais écarté) et `166b_droit_promotion_base.sql` (promouvoir la base : sans lui, pas de promotion automatique, seulement le script manuel). Voir [scripts-base-de-donnees.md](scripts-base-de-donnees.md) § 3.9 et § 3.10. La même clé des jetons (`Jwt:Cle`) est exigée sur les deux serveurs : `initialiser-second-serveur.ps1` s'arrête si son empreinte diffère de celle du PC serveur (`Pharma.Api.exe --empreinte-jeton`).
 
@@ -845,7 +847,7 @@ Scripts (dans `scripts\second-serveur\`, à copier sur les deux serveurs avec `c
   ```
   - Le script demande la phrase de passe, importe le certificat (clé **non exportable** dans le magasin Windows), écrit `appsettings.Https.json` (HTTP `localhost:5080`, HTTPS `0.0.0.0:5443`) et ouvre le port 5443 en réseau privé, comme sur le PC serveur. Il affiche les noms et adresses du certificat et avertit si ni le nom ni une adresse de ce PC n'y figure.
   - Vérifier : `Get-Content "C:\Program Files\PharmaOfficine\Api\appsettings.Https.json"` et `Get-NetFirewallRule -DisplayName "PharmaOfficine API (https 5443)" | Select-Object DisplayName, Enabled`.
-  - **Attendu** : `Certificat importé dans Cert:\LocalMachine\My …`, fichier de configuration identique à celui du PC serveur, règle `Enabled : True`. Le service de l'API reste **arrêté** (étape 10) : il est démarré par la bascule seulement.
+  - **Attendu** : `Certificat importé dans Cert:\LocalMachine\My …`, fichier de configuration identique à celui du PC serveur, règle `Enabled : True`. Le service de l'API reste **arrêté** jusqu'à l'étape 10 (démarrage en veille).
   - **Si échec** : « phrase de passe incorrecte » = ressaisir. « Ce fichier est une autorité » = mauvais fichier (l'autorité ne s'importe qu'avec `-RestaurerAutorite`, procédure F2 bis). Le certificat est valable **825 jours** : voir F6 pour le renouveler.
   - Supprimer ensuite le PFX de la clé USB des postes ; le garder au coffre avec sa phrase, à part.
   - Essai réel après la bascule (étape F3) : un poste ouvre `https://<IP du 2e>:5443/api/healthcheck` sans avertissement.
@@ -857,16 +859,18 @@ Scripts (dans `scripts\second-serveur\`, à copier sur les deux serveurs avec `c
   .\initialiser-second-serveur.ps1 -Principal <IP du principal> -EmpreinteJetonPrincipal <empreinte du principal> -FichierCle E:\cle-scellement-<...>.pocle
   ```
   - Le script demande de taper `OUI`, puis le mot de passe du rôle de réplication, puis **le titulaire** tape le mot de passe du fichier de clé.
-  - **Attendu** : le contrôle « lecture seule » réussit. Le service de l'API reste **arrêté**.
+  - **Attendu** : le contrôle « lecture seule » réussit. Le service de l'API est réglé en **démarrage automatique avec relance sur erreur** mais reste **arrêté** jusqu'à l'étape 10 (sans `SecondServeur__AutreServeur`, l'API refuse de démarrer sur une base en lecture seule et le service redémarrerait en boucle).
   - **Si échec** : relire le message du script. Ne pas relancer sans comprendre la cause (il peut réinitialiser le dossier de données ; l'ancien dossier est gardé).
 
-- [ ] **10.** 2e serveur : déclarer le principal, service en démarrage manuel. **Où** : 2e serveur. **Compte** : administrateur Windows.
+- [ ] **10.** 2e serveur : déclarer le principal, démarrer l'API en veille. **Où** : 2e serveur. **Compte** : administrateur Windows.
   ```powershell
   [Environment]::SetEnvironmentVariable("SecondServeur__AutreServeur", "<IP du principal>", "Machine")
-  Set-Service "PharmaOfficine API" -StartupType Manual
-  Get-Service "PharmaOfficine API"
+  Start-Service "PharmaOfficine API"
+  Get-Service "PharmaOfficine API" | Select-Object Status, StartType
+  Invoke-RestMethod https://<IP du 2e>:5443/api/healthcheck
   ```
-  - **Attendu** : `Stopped`. Le démarrage est fait seulement en cas de bascule.
+  - **Attendu** : `Running`, `Automatic` ; santé `role = veille`. Le service est réglé par `initialiser-second-serveur.ps1` pour être **relancé** quand l'API s'arrête avec le code 10 : c'est ainsi qu'après une promotion la veille s'arrête d'elle-même et redémarre en principal (`role = principal`), sans intervention.
+  - **Si échec** : `role` absent ou « inconnu » = ancienne version de l'API (mettre à jour). Le service redémarre en boucle = `SecondServeur__AutreServeur` absent ou faux (le journal de l'API dit qu'elle refuse de démarrer sur une base en lecture seule).
 
 - [ ] **11.** Titulaire : réglages propres à chaque serveur. **Où** : application, sur le PC serveur. **Compte** : titulaire.
   - Administration, 2e serveur, **Réglages par serveur** : cliquer sur un serveur, régler son dossier d'échange **CHIFA-Officine** et son dossier du **logiciel MDN** (vide : réglages `Chifa__DossierExport` et `Mdn:Dossier` de ce serveur), cocher « CHIFA-Officine installé », « Lecteur de carte et Token disponibles », « Logiciel MDN installé », « Douchette branchée et testée ».
@@ -938,6 +942,21 @@ Scripts (dans `scripts\second-serveur\`, à copier sur les deux serveurs avec `c
   - Le titulaire est prévenu (SMS ou e-mail des alertes de sauvegarde, au plus une fois par heure) si le 2e serveur décroche ou si le retard dépasse les seuils (300 s et 64 Mo par défaut). Vérifier les seuils dans l'écran « 2e serveur ».
   - **Rattrapage** : au redémarrage de l'un ou l'autre PC, la réplication reprend seule.
   - **Limite** : un 2e serveur éteint longtemps fait grossir le retard sur le principal, jusqu'à `max_slot_wal_keep_size` (20 Go par défaut). Au-delà, le 2e serveur doit être **réinitialisé** (étape 9).
+
+- [ ] **15.** Réplication synchrone des ventes, factures et registre (recommandé : **aucune vente perdue** si le PC serveur tombe). **Où** : les deux serveurs. **Compte** : administrateur Windows et superutilisateur PostgreSQL. Sans cette étape, la copie reste en différé : ce qui a été validé dans la dernière seconde avant une panne brutale peut manquer.
+  - **Pourquoi** : l'API demande, pour ces seules transactions, que le 2e serveur ait reçu et écrit les données avant de confirmer (`remote_write`), au plus **2 s** ; au-delà, la vente est confirmée quand même et la copie continue en différé. Les autres transactions n'attendent jamais. 2e serveur arrêté : aucune attente. Mesures du 2026-11-25 (même PC) : environ +7 ms par vente ; panne brutale du principal en pleine série : **92 ventes confirmées sur 92 présentes sur la copie** ([second-serveur-local.md](second-serveur-local.md) § 17).
+  - **a. Nom de la copie** : le principal ne reconnaît la copie comme synchrone que si elle se présente sous le nom `second_serveur`. `pg_basebackup -R` n'écrit pas ce nom : **`initialiser-second-serveur.ps1` (étape 9) et `remettre-en-second.ps1` (F4) l'ajoutent** à `primary_conninfo` dans `postgresql.auto.conf`, avant le démarrage de PostgreSQL (message « Nom de la copie pour la réplication synchrone (application_name=second_serveur) : ajouté »). **Copie faite avec une version plus ancienne de ces scripts** : ajouter à la main ` application_name=second_serveur` à la fin de `primary_conninfo` (à l'intérieur des apostrophes), fichier enregistré **sans BOM**, puis redémarrer le service PostgreSQL de la copie.
+  - **b. Réglages du principal** (PC serveur, `psql -U postgres`), **les trois ensemble** :
+    ```sql
+    ALTER SYSTEM SET synchronous_standby_names = 'second_serveur';
+    ALTER SYSTEM SET synchronous_commit = 'local';   -- obligatoire : sinon TOUTES les transactions attendraient le 2e serveur, et bloqueraient s'il est arrêté
+    ALTER SYSTEM SET wal_sender_timeout = '10s';     -- réseau figé : copie écartée au bout de 10 s au lieu de 60
+    SELECT pg_reload_conf();
+    ```
+    Aucun redémarrage. Ces réglages sont recopiés sur le 2e serveur par la copie de base (étape 9) : après une bascule, le nouveau principal les a déjà.
+  - **Attendu** : `SELECT application_name, sync_state FROM pg_stat_replication;` sur le principal → `second_serveur | sync`. `SHOW synchronous_commit;` → `local`.
+  - **Réseau figé entre les deux serveurs** (câble ou commutateur en panne sans coupure franche) : une seule vente attend 2 s, puis l'API cesse d'attendre la copie jusqu'à ce qu'elle ait rattrapé son retard ; elle l'attend de nouveau ensuite, sans intervention. Le titulaire est prévenu par une alerte.
+  - **Retour arrière** : `ALTER SYSTEM RESET synchronous_standby_names; SELECT pg_reload_conf();` (les ventes ne demandent plus aucune attente).
 
 ---
 
@@ -1380,7 +1399,11 @@ Prérequis : la clé USB du coffre (`F:\autorite-pharmacie.pfx`) et sa phrase de
 
 ### F3. Bascule du 2e serveur
 
-Prérequis : parcours C fait. Décision du titulaire.
+Prérequis : parcours C fait.
+
+**D'abord : la bascule a-t-elle déjà eu lieu toute seule ?** Dans la plupart des pannes, le 2e serveur se promeut seul (1 min 30 à 2 min) et les postes basculent seuls, avec le message « Ce poste est passé sur le 2e serveur, devenu serveur principal. Votre session et votre vente en cours sont conservées » ; la barre d'état affiche « Connecté · 2e serveur ». Le titulaire reçoit une alerte de bascule. Dans ce cas, **ne lancer aucun script** : faire seulement les étapes 2, 2 bis, 3 bis, 5, 6 et 7 ci-dessous.
+
+**Bascule manuelle** (décision du titulaire) quand la promotion automatique n'a pas lieu : alerte « promotion manuelle nécessaire », égalité des postes, droit `166b` absent, réglage « promotion automatique » désactivé, ou postes restés sur le bandeau « Serveur injoignable ».
 
 - [ ] **1.** Constater la panne (bandeau « Serveur injoignable » sur les postes). Vérifier le PC principal (allumé, réseau, services). Le titulaire décide.
 - [ ] **2.** Sur le PC principal, si possible : arrêter le service de l'API et PostgreSQL, ou **débrancher son câble réseau**.
@@ -1404,7 +1427,7 @@ Prérequis : parcours C fait. Décision du titulaire.
   ```
   - **Pourquoi** : la copie ne va que dans un sens, du principal vers le second. Cette tâche tirerait la GED d'un serveur qui n'est plus le principal. Elle ne supprimerait rien, mais le sens doit être inversé au retour (F4). La GED locale (documents copiés) est **gardée** et l'API de ce serveur l'utilise : **vérifier que `Ged__Dossier` de ce serveur (ou le défaut `C:\ProgramData\PharmaOfficine\GED`) est bien le dossier où la copie a écrit** (`Destination` de la tâche), sinon les documents copiés ne seraient pas vus.
   - **Attendu** : « Tâche … supprimée ». Si la tâche était déjà absente : « rien à supprimer ».
-- [ ] **4.** Sur chaque poste : bouton **« Basculer sur le 2e serveur »**, puis fermer et rouvrir Tracodex Officine.
+- [ ] **4.** Postes : ceux dont la case « Basculer automatiquement » est cochée (par défaut) basculent seuls dès que le 2e serveur est principal. Sur un poste resté sur le bandeau « Serveur injoignable » : bouton **« Basculer sur le 2e serveur »** (sans redémarrage ; le poste vérifie d'abord que ce serveur est bien principal). Une vente interrompue par la panne est renvoyée automatiquement après la bascule, avec la même clé : jamais encaissée deux fois.
 - [ ] **5.** Titulaire : écran « 2e serveur ». Ce serveur est maintenant « Principal ». Vérifier les dossiers Chifa et MDN, la clé (identique). **CHIFA-Officine, lecteur de carte et Token** : à confirmer sur ce PC (question posée à la CNAS, `docs/taches/2026-11-15-recette-complete/demande-cnas.md`).
 - [ ] **6.** Le principal ne doit **jamais** redevenir actif sans la procédure F4 : l'API refuse de démarrer si l'autre serveur a aussi une base principale.
 - [ ] **7.** Synchronisation activée : si des transactions non répliquées avaient déjà été envoyées au serveur central, l'envoi se suspend (« Base revenue en arrière… ») ; le **titulaire** repart alors sur une nouvelle époque (parcours E, « Base de l'officine revenue en arrière »). Sans message, rien à faire.

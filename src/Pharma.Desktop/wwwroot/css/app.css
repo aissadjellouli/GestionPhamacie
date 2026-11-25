@@ -945,6 +945,8 @@ fieldset.groupe-champs .champ input { max-width: 120px; }
 fieldset.panneau { margin: 0; min-width: 0; }
 .groupe-reglage { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: inherit; }
 fieldset.panneau:disabled { opacity: 0.85; }
+/* Encaissement en suspens après une panne du serveur (Q25) : panier et paiement figés (attribut inert) jusqu'au renvoi automatique */
+.caisse-vente [inert] { opacity: 0.6; }
 .ordonnance-ligne { display: flex; gap: 8px; align-items: stretch; }
 .ordonnance-ligne .ordonnance-medecin { flex: 2 1 0; min-width: 0; }
 .ordonnance-ligne .ordonnance-date { flex: 0 0 140px; min-width: 0; }

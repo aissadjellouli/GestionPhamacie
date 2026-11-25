@@ -28,6 +28,7 @@
     <Compile Include="..\..\src\Pharma.Desktop\Services\ReglagesPoste.cs" Link="Poste\ReglagesPoste.cs" />
     <Compile Include="..\..\src\Pharma.Desktop\Services\AdresseApiCourante.cs" Link="Poste\AdresseApiCourante.cs" />
     <Compile Include="..\..\src\Pharma.Desktop\Services\BasculeSecours.cs" Link="Poste\BasculeSecours.cs" />
+    <Compile Include="..\..\src\Pharma.Desktop\Services\RenvoiEncaissement.cs" Link="Poste\RenvoiEncaissement.cs" />
     <Compile Include="..\..\src\Pharma.Desktop\Services\PanierBascule.cs" Link="Poste\PanierBascule.cs" />
     <Compile Include="..\..\src\Pharma.Desktop\Services\VigiePoste.cs" Link="Poste\VigiePoste.cs" />
     <Compile Include="..\..\src\Pharma.Desktop\Services\CreationCleAdministrateur.cs" Link="Poste\CreationCleAdministrateur.cs" />

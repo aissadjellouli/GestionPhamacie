@@ -49,7 +49,7 @@ $ancien = "{0}_ancien_principal_{1:yyyyMMdd_HHmmss}" -f $DossierDonnees.TrimEnd(
 if ($Essai) {
     Write-Etape $mode "Service « $ServiceApi » arrêté, démarrage automatique avec relance sur erreur ; à démarrer ensuite (veille) une fois SecondServeur:AutreServeur réglé sur le nouveau principal."
     Write-Etape $mode "Service $ServicePg arrêté ; $DossierDonnees gardé sous $ancien (dernières saisies d'avant la panne à examiner)."
-    Write-Etape $mode "pg_basebackup -h $NouveauPrincipal -U $RoleReplication -S $Slot -X stream -R -D $DossierDonnees ; démarrage ; contrôle « lecture seule »."
+    Write-Etape $mode "pg_basebackup -h $NouveauPrincipal -U $RoleReplication -S $Slot -X stream -R -D $DossierDonnees ; application_name=$Slot ajouté à primary_conninfo (réplication synchrone) ; démarrage ; contrôle « lecture seule »."
     Write-Host "$mode Simulation terminée : rien n'a été modifié."
     return
 }
@@ -66,6 +66,8 @@ try {
     & (Join-Path $PgBin "pg_basebackup.exe") -h $NouveauPrincipal -p $Port -U $RoleReplication -D $DossierDonnees -S $Slot -X stream -R -P -w
     if ($LASTEXITCODE -ne 0) { throw "pg_basebackup a échoué (slot $Slot créé sur le nouveau principal ? preparer-principal.ps1). Ancienne base : $ancien." }
 } finally { Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue }
+# Nom de la copie (réplication synchrone des ventes, factures et registre) : pg_basebackup -R ne l'écrit pas
+Write-Host "Nom de la copie pour la réplication synchrone (application_name=$Slot) : $(Set-NomCopieSynchrone $DossierDonnees $Slot)."
 $compte = (Get-CimInstance Win32_Service -Filter "Name='$ServicePg'").StartName
 if ($compte -and $compte -ne "LocalSystem") { & icacls $DossierDonnees /grant "${compte}:(OI)(CI)F" /T /Q | Out-Null }
 Start-Service $ServicePg

@@ -729,3 +729,11 @@ sous le tableau, est amenée dans le cadre (`pharma.voirZone`) et reste entière
   outre à la zone l'espace resté libre sous la page. **0 px** aux deux tailles, clair et sombre, avec et sans message.
 - `/comptes` et `/comptes?compte=…` (formulaire ouvert) : 0 px ; en-tête de l'éditeur à 4 liens sur une ligne.
 - Contre-mesure de `/mes-officines/reglages` (même mécanisme) : 0 px avec et sans message.
+
+### Mesures du 2026-11-25 (soir) : Caisse, encaissement en suspens après une panne du serveur
+
+Bandeau « Encaissement interrompu par la panne du serveur… » (`bandeau-attention`, `data-champ="renvoi_encaissement"`, bouton « Annuler le
+renvoi automatique ») au-dessus des colonnes de la Caisse ; panier et paiement figés par l'attribut `inert` (opacité 0,6, rien de masqué).
+Mesuré sur le poste d'essai (titulaire, panier d'une ligne, suspens réel) : **0 px** à 1 366 × 768 et 1 536 × 890, clair et sombre ; mention
+« renvoyée automatiquement après la panne du serveur » dans le bandeau de la vente encaissée : 0 px à 1 366 × 768 en sombre. Première version en
+`bandeau` (rouge d'erreur) remplacée : une attente n'est pas une erreur.

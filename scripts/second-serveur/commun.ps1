@@ -57,6 +57,27 @@ function Set-ServiceApiRelance([string]$Nom) {
     & sc.exe failureflag $Nom 1 | Out-Null
 }
 
+# Nom de la copie pour la réplication synchrone (2026-11-25, essai réel) : « pg_basebackup -R » n'écrit pas application_name dans
+# primary_conninfo ; sans lui, le principal (synchronous_standby_names = 'second_serveur') ne voit jamais la copie comme synchrone
+# (aucune attente, aucune garantie). Ajouté à la ligne primary_conninfo de postgresql.auto.conf du dossier de données de la copie,
+# AVANT son démarrage, sans BOM ; déjà présent : rien n'est modifié. Rend « ajouté » ou « déjà présent ».
+function Set-NomCopieSynchrone([string]$DossierDonnees, [string]$Nom = "second_serveur") {
+    $fichier = Join-Path $DossierDonnees "postgresql.auto.conf"
+    if (-not (Test-Path $fichier)) { throw "postgresql.auto.conf introuvable dans $DossierDonnees (copie créée avec pg_basebackup -R attendue)." }
+    $lignes = [IO.File]::ReadAllLines($fichier)
+    $trouve = $false
+    for ($i = 0; $i -lt $lignes.Count; $i++) {
+        if ($lignes[$i] -match "^\s*primary_conninfo\s*=\s*'(.*)'\s*$") {
+            $trouve = $true
+            if ($Matches[1] -match "(^|\s)application_name=") { return "déjà présent" }
+            $lignes[$i] = "primary_conninfo = '$($Matches[1]) application_name=$Nom'"
+        }
+    }
+    if (-not $trouve) { throw "primary_conninfo absent de $fichier : la copie n'a pas été créée avec pg_basebackup -R." }
+    [IO.File]::WriteAllLines($fichier, $lignes, (New-Object System.Text.UTF8Encoding $false))
+    return "ajouté"
+}
+
 # Rôle publié par /api/healthcheck (principal | veille | ecarte) ou $null si l'API ne répond pas (ancienne version : « inconnu »).
 function Get-RoleApi([string]$Url, [int]$DelaiSecondes = 3) {
     try {

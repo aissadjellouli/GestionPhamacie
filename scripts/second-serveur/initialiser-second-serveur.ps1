@@ -10,7 +10,7 @@
       2. API de secours : service arrêté, mis en démarrage AUTOMATIQUE avec relance sur erreur (vague 2 : l'API démarre en « veille »
          sur la base en lecture seule dès que « SecondServeur:AutreServeur » est réglé ; sans ce réglage elle refuse de démarrer) ;
       3. PostgreSQL de ce PC arrêté ; son dossier de données gardé à côté (renommé « <dossier>_avant_second_<date> », jamais supprimé) ;
-      4. pg_basebackup depuis le principal avec le slot « second_serveur » et -R (standby.signal et primary_conninfo écrits) :
+      4. pg_basebackup depuis le principal avec le slot « second_serveur » et -R (standby.signal et primary_conninfo écrits, puis application_name=second_serveur ajouté : réplication synchrone) :
          la base arrive complète, puis se met à jour en continu ; au démarrage de l'un ou l'autre PC, le retard se rattrape seul ;
       5. droits du compte du service PostgreSQL sur le nouveau dossier, démarrage, contrôle « en lecture seule » et « réception » ;
       6. clé de scellement : import du fichier exporté par le titulaire (-FichierCle ; le titulaire tape son mot de passe).
@@ -69,7 +69,7 @@ if ($Essai) {
     Write-Etape $mode "Clé des jetons contrôlée (empreinte identique) puis enregistrée en variable machine Jwt__Cle."
     Write-Etape $mode "Service « $ServiceApi » arrêté, démarrage automatique et relance sur erreur (démarré à la fin si SecondServeur:AutreServeur est déjà réglé : voir le message final)."
     Write-Etape $mode "Service $ServicePg arrêté ; $DossierDonnees renommé en $ancien (gardé)."
-    Write-Etape $mode "pg_basebackup -h $Principal -U $RoleReplication -S $Slot -X stream -R -D $DossierDonnees (mot de passe de $RoleReplication demandé)."
+    Write-Etape $mode "pg_basebackup -h $Principal -U $RoleReplication -S $Slot -X stream -R -D $DossierDonnees (mot de passe de $RoleReplication demandé) ; application_name=$Slot ajouté à primary_conninfo (réplication synchrone)."
     Write-Etape $mode "Droits du service PostgreSQL sur $DossierDonnees, démarrage de $ServicePg, contrôle pg_is_in_recovery() = vrai."
     if ($FichierCle) { Write-Etape $mode "Import de la clé : `"$exeApi`" --importer-cle `"$FichierCle`" (mot de passe tapé par le titulaire)." }
     Write-Host "$mode Simulation terminée : rien n'a été modifié."
@@ -102,6 +102,8 @@ try {
     & (Join-Path $PgBin "pg_basebackup.exe") -h $Principal -p $Port -U $RoleReplication -D $DossierDonnees -S $Slot -X stream -R -P -w
     if ($LASTEXITCODE -ne 0) { throw "pg_basebackup a échoué : l'ancien dossier reste disponible sous $ancien (le renommer pour revenir en arrière)." }
 } finally { Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue }
+# Nom de la copie (réplication synchrone des ventes, factures et registre) : pg_basebackup -R ne l'écrit pas
+Write-Host "Nom de la copie pour la réplication synchrone (application_name=$Slot) : $(Set-NomCopieSynchrone $DossierDonnees $Slot)."
 
 # 5. Droits du compte du service, démarrage, contrôle
 $compte = (Get-CimInstance Win32_Service -Filter "Name='$ServicePg'").StartName

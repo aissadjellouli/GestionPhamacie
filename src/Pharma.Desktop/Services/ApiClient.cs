@@ -134,7 +134,8 @@ public sealed record ReponseLotFefo(LotFefoDto? Lot, IReadOnlyList<LotEcarteDto>
 public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAutorisation? autorisations = null, TachesLaissees? tachesLaissees = null,
     AdresseApiCourante? adresseCourante = null, IBasculePoste? bascule = null, IdentitePoste? identite = null, HorlogePoste? horlogeServeur = null)
 {
-    private const string Injoignable = "Serveur de la pharmacie injoignable : vérifiez que le PC serveur est allumé.";
+    /// <summary>Serveur injoignable : l'écran peut le reconnaître (ex. encaissement mis en suspens jusqu'à la bascule).</summary>
+    public const string Injoignable = "Serveur de la pharmacie injoignable : vérifiez que le PC serveur est allumé.";
 
     /// <summary>Échecs attendus d'un appel : serveur injoignable, délai dépassé, réponse illisible, fichier local inaccessible.</summary>
     private static bool EstEchecAppel(Exception ex) =>

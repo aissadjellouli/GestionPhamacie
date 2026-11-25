@@ -32,6 +32,41 @@ public class BasculePosteCablageTests
     }
 
     [Fact]
+    public void Encaissement_en_suspens_renvoye_par_la_caisse_apres_la_bascule_avec_la_commande_gardee()
+    {
+        // Essai réel du 2026-11-25 : promotion 108 s après la panne, la tentative immédiate d'ApiClient ne suffisait pas
+        var caisse = Lire("Composants", "Pages", "Caisse.razor");
+        Assert.Contains("var panne = err == ApiClient.Injoignable || err == ApiClient.MessageDelaiDepasse;", caisse);
+        Assert.Contains("RenvoiEncaissement.APlacer(Bascule.Active, panne)", caisse);
+        Assert.Contains("await Api.EncaisserAsync(r.Commande);", caisse);   // la commande du premier envoi, donc la même clé
+        Assert.Contains("r.Etape(DateTime.UtcNow, Bascule.Generation, joint, Session.EstConnecte, Bascule.VentesSuspendues)", caisse);
+        // Panier et paiement figés pendant le suspens ; Encaisser (bouton et F12) refusé ; renvoi arrêté en quittant la Caisse
+        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(caisse, @"inert=""@\(renvoi is not null\)""").Count);
+        Assert.Contains("private bool PeutEncaisser => !enCours && renvoi is null", caisse);
+        Assert.Contains("ArreterRenvoi();\n        Historique.Oublier(\"caisse\");", caisse.Replace("\r\n", "\n"));
+        Assert.Contains("Annuler le renvoi automatique", caisse);
+    }
+
+    [Fact]
+    public void Panier_a_la_cle_en_doute_jamais_mis_en_attente_garde_en_memoire_avec_sa_cle()
+    {
+        // Décision du titulaire (2026-11-25) : pas de mise en attente pendant la panne (une reprise changerait la clé : double possible)
+        var caisse = Lire("Composants", "Pages", "Caisse.razor").Replace("\r\n", "\n");
+        Assert.Contains("if (cleEnDoute) { erreurAttente = MessageAttenteRefusee; return; }", caisse);   // garde unique de toute mise en attente
+        Assert.Contains("if (panne) cleEnDoute = true;", caisse);
+        Assert.Contains("disabled=\"@(enCours || lignes.Count == 0 || cleEnDoute)\"", caisse);           // bouton ⏸ Attente
+        // Quitter la Caisse, changer d'utilisateur, déconnexion, écran détruit : gardé en mémoire avec sa clé, jamais en attente
+        Assert.Contains("if (cleEnDoute) { GarderPanierEnDoute(); return true; }", caisse);
+        Assert.Contains("if (cleEnDoute) { GarderPanierEnDoute(); await InvokeAsync(StateHasChanged); return null; }", caisse);
+        Assert.Contains("if (cleEnDoute && lignes.Any(l => l.Quantite > 0)) { GarderPanierEnDoute(); return; }", caisse);
+        Assert.Contains("if (cleEnDoute) { GarderPanierEnDoute(); return; }", caisse);
+        Assert.Contains("Panier.Garder(new PanierCapture([.. lignes], cleEncaissement, patient, mode, remisePct, CleEnDoute: true));", caisse);
+        // Rendu avec sa clé et son doute ; un nouveau panier (vente réussie, panier vidé) lève le doute
+        Assert.Contains("(cleEncaissement, patient, mode, remisePct, cleEnDoute) = (p.Cle, p.Patient, p.Mode, p.RemisePct, p.CleEnDoute);", caisse);
+        Assert.Contains("cleEncaissement = Guid.NewGuid();\n        cleEnDoute = false;", caisse);
+    }
+
+    [Fact]
     public void Barre_d_etat_bandeaux_de_la_vigie_et_bouton_manuel_sans_redemarrage_avec_role_verifie()
     {
         var barre = Lire("Composants", "Mise", "BarreEtat.razor");

@@ -62,6 +62,7 @@
         {
             <div class="succes" role="status" style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px">
                 <strong>Vente @venteFaite.Numero encaissée : @Libelles.Dinars(venteFaite.MontantTotal, 2)</strong>
+                @if (venteRenvoyee) { <span data-champ="vente_renvoyee">@RenvoiEncaissement.MessageRenvoyee</span> }
                 @if (venteFaite.PartOrganisme > 0) { <span>part organisme @Libelles.Dinars(venteFaite.PartOrganisme, 2)</span> }
                 @if (venteFaite.EcartChifaPatient > 0) { <span>Écart Chifa payé par le patient : @Libelles.Dinars(venteFaite.EcartChifaPatient, 2)</span> }
                 @if (venteFaite.Mode == "especes" && venteFaite.Rendu > 0) { <span class="rendu-vente">Rendu : @Libelles.Dinars(venteFaite.Rendu, 2)</span> }
@@ -106,8 +107,16 @@
 
         @* Caisse en trois parties (2026-11-15, maquettes validées) : 1 · le panier, 2 · le client et l'ordonnance (sous le panier,
            réduit à une ligne quand rien n'est exigé), 3 · le paiement seul à droite. Écran fixe : seul le panier défile. *@
+        @if (renvoi is not null)
+        {
+            @* Encaissement en suspens (Q25) : panier et paiement figés (inert) jusqu'au renvoi automatique, même clé d'encaissement *@
+            <div class="bandeau-attention" role="status" data-champ="renvoi_encaissement" style="display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center">
+                <span style="flex: 1 1 320px; min-width: 0">@RenvoiEncaissement.MessageSuspens</span>
+                <button type="button" class="btn" @onclick="AnnulerRenvoi">Annuler le renvoi automatique</button>
+            </div>
+        }
         <div class="colonnes caisse-vente" style="gap: 20px">
-            <section class="colonne-principale" aria-label="Panier, client et ordonnance">
+            <section class="colonne-principale" aria-label="Panier, client et ordonnance" inert="@(renvoi is not null)">
                 @if (cameraOuverte)
                 {
                     <div class="panneau camera">
@@ -304,7 +313,7 @@
                     </div>
                     <div class="actions-attente">
                         <button type="button" class="btn" data-champ="prestation" disabled="@enCours" @onclick="OuvrirPrestationsAsync" title="Vendre une prestation sans stock (prise de tension, glycémie, injection…)">+ Prestation</button>
-                        <button type="button" class="btn" disabled="@(enCours || lignes.Count == 0)" @onclick="DemanderMotifAttenteAsync" title="Mettre ce panier de côté pour servir un autre patient (motif demandé)">⏸ Attente</button>
+                        <button type="button" class="btn" disabled="@(enCours || lignes.Count == 0 || cleEnDoute)" @onclick="DemanderMotifAttenteAsync" title="@(cleEnDoute ? MessageAttenteRefusee : "Mettre ce panier de côté pour servir un autre patient (motif demandé)")">⏸ Attente</button>
                         @if (attentes.Count > 0)
                         {
                             <button type="button" class="btn bouton-attentes" aria-expanded="@(attentesOuvertes ? "true" : "false")" @onclick="() => attentesOuvertes = !attentesOuvertes">
@@ -1067,7 +1076,7 @@
             </section>
 
             <!-- 3 · Paiement -->
-            <aside class="panneau colonne-laterale reglement" aria-label="Paiement">
+            <aside class="panneau colonne-laterale reglement" aria-label="Paiement" inert="@(renvoi is not null)">
                 <strong>3 · Paiement</strong>
                 @if (tiersPayant)
                 {
@@ -1527,7 +1536,7 @@
     private bool PorteurAdresseManque => PorteurDemande && string.IsNullOrWhiteSpace(porteurAdresse);
     private bool PorteurPieceManque => PorteurDemande && string.IsNullOrWhiteSpace(porteurPiece);
 
-    private bool PeutEncaisser => !enCours && apercu is not null && RaisonBlocage is null;
+    private bool PeutEncaisser => !enCours && renvoi is null && apercu is not null && RaisonBlocage is null;
 
     // ---- Disposition en trois parties (2026-11-15) ----
     /// <summary>Le bouton principal suit le mode choisi : « Crédit » demande en plus le patient.</summary>
@@ -1713,21 +1722,35 @@
 
     // ---- Bascule du poste sur le 2e serveur (lot V2-6) ----
     /// <summary>Panier mis de côté EN MÉMOIRE quand le nouveau serveur refuse le jeton (jamais sur disque) : lignes, clé d'encaissement, client, mode.</summary>
-    private sealed record PanierCapture(List<LignePanier> Lignes, Guid Cle, PatientDto? Patient, string Mode, decimal RemisePct);
+    /// <param name="CleEnDoute">Encaissement de ce panier interrompu par la panne : la vente est peut-être déjà enregistrée sous cette clé.</param>
+    private sealed record PanierCapture(List<LignePanier> Lignes, Guid Cle, PatientDto? Patient, string Mode, decimal RemisePct, bool CleEnDoute = false);
 
     private Task MettreDeCoteBasculeAsync() => InvokeAsync(() =>
     {
         if (!lignes.Any(l => l.Quantite > 0)) return;
-        Panier.Garder(new PanierCapture([.. lignes], cleEncaissement, patient, mode, remisePct));
+        ArreterRenvoi();
+        Panier.Garder(new PanierCapture([.. lignes], cleEncaissement, patient, mode, remisePct, cleEnDoute));
         lignes.Clear();   // rien n'est signalé « retiré » : le panier est rendu à la reconnexion
     });
+
+    /// <summary>
+    /// Panier dont l'encaissement a été interrompu par la panne, quand on quitte la Caisse ou change d'utilisateur : jamais mis en attente
+    /// (décision du titulaire, 2026-11-25), gardé EN MÉMOIRE sur ce poste avec sa clé, comme au repli ; rendu au retour sur la Caisse
+    /// (même employé ou non). Le renvoi automatique s'arrête ; rien n'est signalé « retiré ».
+    /// </summary>
+    private void GarderPanierEnDoute()
+    {
+        ArreterRenvoi();
+        Panier.Garder(new PanierCapture([.. lignes], cleEncaissement, patient, mode, remisePct, CleEnDoute: true));
+        lignes.Clear();
+    }
 
     private async Task RendrePanierBasculeAsync(PanierCapture p)
     {
         lignes.AddRange(p.Lignes);
-        (cleEncaissement, patient, mode, remisePct) = (p.Cle, p.Patient, p.Mode, p.RemisePct);
+        (cleEncaissement, patient, mode, remisePct, cleEnDoute) = (p.Cle, p.Patient, p.Mode, p.RemisePct, p.CleEnDoute);
         await RecalculerAsync();
-        messageRetour = "Votre vente en cours a été reprise après le passage de ce poste sur le 2e serveur.";
+        messageRetour = p.CleEnDoute ? MessagePanierEnDouteRendu : "Votre vente en cours a été reprise après le passage de ce poste sur le 2e serveur.";
     }
 
     private void SurBascule() => _ = InvokeAsync(StateHasChanged);
@@ -1826,6 +1849,7 @@
         venteMiseDeCoteEnPartant = null;
         if (lignes.Count == 0) return true;
         if (enCours) { erreurAttente = "Encaissement en cours : attendez la fin avant de quitter la caisse."; await InvokeAsync(StateHasChanged); return false; }
+        if (cleEnDoute) { GarderPanierEnDoute(); return true; }   // jamais en attente : gardé en mémoire, rendu au retour
         enCours = true;
         try { derniereMiseEnAttente = null; await MettreDeCoteAsync(); }
         finally { enCours = false; }
@@ -1850,6 +1874,7 @@
     {
         if (!lignes.Any(l => l.Quantite > 0)) return null;
         if (enCours) return "Encaissement en cours : attendez la fin de l’encaissement avant de changer d’utilisateur.";
+        if (cleEnDoute) { GarderPanierEnDoute(); await InvokeAsync(StateHasChanged); return null; }   // jamais en attente : rendu au suivant
         var quitte = Session.NomComplet ?? "l’employé précédent";
         enCours = true;
         try { derniereMiseEnAttente = null; await MettreDeCoteAsync(DemandeAttente($" · laissée par {quitte}")); }
@@ -3045,7 +3070,7 @@
         {
             (apercu, erreurCalcul) = (null, null);
             Afficheur.Accueil();
-            if (lignes.Count == 0) cleEncaissement = Guid.NewGuid();   // panier vidé : le prochain panier est une autre vente
+            if (lignes.Count == 0) (cleEncaissement, cleEnDoute) = (Guid.NewGuid(), false);   // panier vidé : le prochain panier est une autre vente
             return;
         }
         var (resultat, err) = await Api.CalculerVenteAsync(Commande("especes"));
@@ -3125,6 +3150,7 @@
     {
         if (!PeutEncaisser || Bascule.VentesSuspendues) return;
         messageTicket = null;
+        venteRenvoyee = false;
         enCours = true;
         erreurEncaissement = null;
         // Registre renforcé (lot 8) : produit sous registre, alertes contrôlées avant l'encaissement (avertissement ; « Forcer » avec motif)
@@ -3145,8 +3171,109 @@
         // Choix de prix Chifa demandé sans le droit : la fenêtre « Faire autoriser » montre au valideur chaque ligne et le choix (2026-11-15)
         if (voletBrut is not null && !Session.A("prix.modifier"))
             Api.DetaillerProchaineAutorisation(DetailAutorisationChifa.Construire(apercu?.EcartsChifa, choixChifa, m => Libelles.Dinars(m, 2)));
-        var (vente, err) = await Api.EncaisserAsync(Commande(modePaiement));
+        var commande = Commande(modePaiement);
+        var (vente, err) = await Api.EncaisserAsync(commande);
         enCours = false;
+        // Panne du serveur sur un poste qui a un 2e serveur (Q25) : la commande est gardée et renvoyée une fois, avec la même clé,
+        // dès que le poste a basculé (la promotion arrive 1 à 2 minutes après la panne) ou retrouvé son serveur
+        var panne = err == ApiClient.Injoignable || err == ApiClient.MessageDelaiDepasse;
+        // Panne pendant l'encaissement (un ou deux serveurs) : la vente est peut-être enregistrée, ce panier ne part plus en attente
+        if (panne) cleEnDoute = true;
+        if (err is not null && RenvoiEncaissement.APlacer(Bascule.Active, panne))
+        {
+            MettreEnSuspens(new RenvoiEncaissement(commande, modePaiement, Bascule.Generation, DateTime.UtcNow));
+            return;
+        }
+        await TerminerEncaissementAsync(vente, err);
+    }
+
+    // ---- Encaissement en suspens après une panne du serveur (Q25, corrigé le 2026-11-25) ----
+    private RenvoiEncaissement? renvoi;
+    private CancellationTokenSource? arretRenvoi;
+    private bool venteRenvoyee;
+    /// <summary>
+    /// Encaissement de ce panier interrompu par la panne : la vente est peut-être enregistrée sous sa clé. Jusqu'à un nouveau panier
+    /// (vente réussie, panier vidé), jamais de mise en attente (une reprise changerait la clé) : gardé en mémoire avec sa clé.
+    /// </summary>
+    private bool cleEnDoute;
+
+    internal const string MessageAttenteRefusee =
+        "Mise en attente impossible : l’encaissement de ce panier a été interrompu par la panne du serveur et la vente est peut-être déjà "
+        + "enregistrée. Encaissez-le de nouveau sans rien changer (il ne sera jamais encaissé deux fois), ou videz le panier.";
+
+    internal const string MessagePanierEnDouteRendu =
+        "Vente reprise : son encaissement avait été interrompu par la panne du serveur. Encaissez-la de nouveau sans rien changer : "
+        + "elle ne sera jamais encaissée deux fois.";
+
+    private void MettreEnSuspens(RenvoiEncaissement r)
+    {
+        ArreterRenvoi();
+        cleEnDoute = true;
+        (renvoi, erreurEncaissement) = (r, null);
+        arretRenvoi = new CancellationTokenSource();
+        _ = SuivreRenvoiAsync(r, arretRenvoi.Token);
+    }
+
+    private void ArreterRenvoi()
+    {
+        arretRenvoi?.Cancel();
+        arretRenvoi?.Dispose();
+        (arretRenvoi, renvoi) = (null, null);
+    }
+
+    /// <summary>« Annuler le renvoi automatique » : le panier redevient modifiable, sa clé est gardée (un nouvel essai ne crée jamais de double).</summary>
+    private void AnnulerRenvoi()
+    {
+        ArreterRenvoi();
+        erreurEncaissement = RenvoiEncaissement.MessageAnnule;
+    }
+
+    private async Task SuivreRenvoiAsync(RenvoiEncaissement r, CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(RenvoiEncaissement.Cadence, ct);
+                var basculee = Bascule.Generation != r.Generation;
+                var joint = !basculee && await Api.ServeurJoignableAsync();
+                if (ct.IsCancellationRequested) return;
+                switch (r.Etape(DateTime.UtcNow, Bascule.Generation, joint, Session.EstConnecte, Bascule.VentesSuspendues))
+                {
+                    case EtapeRenvoi.Renvoyer:
+                        await InvokeAsync(() => RenvoyerAsync(r));
+                        return;
+                    case EtapeRenvoi.Expire:
+                        await InvokeAsync(() =>
+                        {
+                            if (renvoi != r) return;
+                            ArreterRenvoi();
+                            erreurEncaissement = RenvoiEncaissement.MessageExpire;
+                            StateHasChanged();
+                        });
+                        return;
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    /// <summary>Renvoi unique de la commande gardée (même clé) : un nouvel échec est affiché tel quel, sans nouvelle mise en suspens.</summary>
+    private async Task RenvoyerAsync(RenvoiEncaissement r)
+    {
+        if (renvoi != r) return;
+        ArreterRenvoi();
+        enCours = true;
+        StateHasChanged();
+        var (vente, err) = await Api.EncaisserAsync(r.Commande);
+        enCours = false;
+        venteRenvoyee = err is null;
+        await TerminerEncaissementAsync(vente, err);
+        StateHasChanged();
+    }
+
+    private async Task TerminerEncaissementAsync(VenteEncaisseeDto? vente, string? err)
+    {
         if (err is not null)
         {
             // Réponse trop lente : la vente est peut-être enregistrée. La clé du panier est gardée : un nouvel essai rend la vente
@@ -3265,6 +3392,9 @@
     private async Task MettreDeCoteAsync(MiseEnAttenteRequete? demande = null)
     {
         if (lignes.Count == 0) return;
+        // Pas de mise en attente d'un panier dont l'encaissement a été interrompu par la panne (décision du titulaire, 2026-11-25) :
+        // la vente est peut-être enregistrée, et une reprise lui donnerait une nouvelle clé (risque de double encaissement)
+        if (cleEnDoute) { erreurAttente = MessageAttenteRefusee; return; }
         erreurAttente = null;
         var (id, e) = await Api.MettreEnAttenteAsync(demande ?? DemandeAttente());
         if (e is not null) { erreurAttente = e; return; }
@@ -3344,6 +3474,7 @@
     {
         lignes.Clear();
         cleEncaissement = Guid.NewGuid();
+        cleEnDoute = false;
         (apercu, bandeau, erreur, montantRecu, remisePct, remiseAdditionnee) = (null, null, null, null, 0, false);
         erreurRemise = null;
         (patient, medecin, medecinTexte, numeroOrdonnance, tiersPayant, mode, resteSaisi) = (null, null, "", null, false, "especes", null);
@@ -3371,6 +3502,8 @@
     // déconnexion, appelé juste avant que le jeton soit effacé (SessionPoste.AvantFermeture).
     private void PanierAbandonne()
     {
+        // Encaissement interrompu par la panne : ni attente ni « retiré » (la vente est peut-être enregistrée) ; gardé en mémoire
+        if (cleEnDoute && lignes.Any(l => l.Quantite > 0)) { GarderPanierEnDoute(); return; }
         // « Changer d'utilisateur » : le panier est déjà parti en attente, réponse attendue (LaisserAuSuivantAsync, appelé par
         // l'en-tête avant de fermer la session ; un échec arrête le changement). Filet si un panier est encore là malgré tout :
         // la vente part en attente sans attendre la réponse (rien n'est signalé « retiré »).
@@ -3396,6 +3529,7 @@
     {
         var restantes = lignes.Where(l => l.Quantite > 0).ToList();
         if (restantes.Count == 0) { lignes.Clear(); return; }
+        if (cleEnDoute) { GarderPanierEnDoute(); return; }   // jamais en attente : gardé en mémoire avec sa clé
         var demande = DemandeAttente(" · sauvée après une erreur de l’écran");
         lignes.Clear();
         _ = MettreEnAttenteOuSignalerAsync(demande, restantes);
@@ -3421,6 +3555,8 @@
         arretAlertesDispo.Dispose();
         arretAttenteEncaissement.Cancel();
         arretAttenteEncaissement.Dispose();
+        // Caisse quittée pendant un encaissement en suspens : renvoi automatique abandonné, panier traité comme d'habitude
+        ArreterRenvoi();
         Historique.Oublier("caisse");
         SauverPanierRestant();
         // Écran quitté : l'afficheur client revient à l'accueil, la caméra s'éteint (même si elle était encore en train de démarrer)

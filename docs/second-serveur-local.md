@@ -257,6 +257,7 @@ Sur le principal (5432) :
 ```sql
 ALTER SYSTEM SET synchronous_standby_names = 'second_serveur';
 ALTER SYSTEM SET synchronous_commit = 'local';   -- défaut : aucune attente, sauf transaction qui demande remote_write
+ALTER SYSTEM SET wal_sender_timeout = '10s';     -- ajouté le 2026-11-25 (essai réel, § 17) : réseau figé, copie écartée en 10 s
 SELECT pg_reload_conf();
 ```
 Sur le 2e serveur, `primary_conninfo` doit contenir `application_name=second_serveur` (sinon le principal ne reconnaît pas la copie
@@ -283,7 +284,7 @@ Contrôles pendant l'essai : `SELECT application_name, state, sync_state FROM pg
 `SELECT pid, wait_event FROM pg_stat_activity WHERE wait_event = 'SyncRep';` (doit être vide hors scénario 6) ;
 `SHOW synchronous_commit;` (reste `local` en dehors des transactions).
 Consigner les durées et les constats dans cette section après l'essai. Critères d'arrêt : un blocage de plus de 3 s au scénario 5 ou 6,
-ou une vente perdue au scénario 7.
+ou une vente perdue au scénario 7. **Joué le 2026-11-25 : résultats au § 17.**
 
 ## 13. Clé des jetons commune et signature entre serveurs (vague 2, lot V2-2)
 - Les deux API doivent avoir la **même** `Jwt__Cle`. Sur un seul PC (deux instances) la variable est naturellement commune ; sur deux PC, `scripts/second-serveur/initialiser-second-serveur.ps1` exige `-EmpreinteJetonPrincipal` (affichée par `Pharma.Api.exe --empreinte-jeton` sur le principal), saisit la clé masquée et refuse de continuer si l'empreinte diffère.
@@ -405,3 +406,65 @@ Captures `cas2r-*`, `cas2e-*`, `cas2d-*`.
 `C:\MesAtlassian\essai-v28-captures` (hors dépôt). **Restent** : base `pharmacie_essai_v28` (deux connexions pgAdmin du compte `postgres` ouvertes :
 à fermer, puis `DROP DATABASE pharmacie_essai_v28`), clés TPM `PharmaOfficine-Poste-d83c33c12993` et `PharmaOfficine-Poste-9eb4e4bfa028` (demande
 d'élévation annulée : suppression à faire en administrateur), droit `pg_promote` dans `pharmacie_dev` (gardé : script 166b).
+
+## 17. Essai réel de la réplication synchrone et du panier pendant une bascule (2026-11-25, soir)
+
+Décision du titulaire : « paire de copies » (le 5432 porte toutes les bases et ne peut pas être arrêté brutalement).
+
+**Montage (dossier `C:\MesAtlassian\essai-sync`, hors dépôt)** : copie physique de toute l'instance 5432 par `pg_basebackup` avec le compte
+`pharma_app` (aucun rôle, aucun slot, aucun réglage créé sur le 5432), démarrée en **principal d'essai sur 5434** ; dans cette copie seulement,
+`pg_hba.conf` en `trust` limité à 127.0.0.1 et ::1 (superutilisateur sans le mot de passe `postgres`), script `166b` passé, envois coupés dans la
+copie de `pharmacie_test` (§ 8.3). Copie répliquée **5435** faite depuis le 5434 (slot `second_serveur`, `application_name=second_serveur` ajouté
+à la main : `pg_basebackup -R` ne l'écrit pas), reliée au 5434 par un relais TCP « gelable » (réseau figé sans coupure franche). API serveur 1 en
+5083/5445 (base 5434), API 2e serveur en 5082/5446 (base 5435), relancées sur le code 10 ; poste CAISSE-SYNC autorisé (clé TPM, demande
+d'élévation acceptée) joignant le serveur 1 par un relais (5447) dont on peut retenir les seules réponses. Mesures : script d'encaissements
+par l'API (`/api/caisse/encaisser`, titulaire de démonstration, une ligne, espèces).
+
+**Réplication synchrone (§ 12.3), 35 ventes par scénario**
+
+| # | Scénario | Résultat |
+|---|---|---|
+| 1 | Un seul serveur (référence) | médiane 21,6 ms |
+| 2 | 2e serveur connecté, `synchronous_standby_names` vide | 22,9 ms |
+| 3 | 2e serveur connecté et attendu (`remote_write`) | 30,2 ms (≈ +7 ms) |
+| 4 | `synchronous_commit = on` pour tout | 20,8 ms : peu significatif, l'API impose `remote_write` à ces transactions |
+| 5 | 2e serveur arrêté, réglage gardé | 21,9 ms, aucune attente `SyncRep` |
+| 6a | 2e serveur arrêté net en pleine série (`-m immediate`) | rien de visible (105 ms au plus) : la connexion tombe franchement |
+| 6b | **Réseau figé** entre les serveurs | **défaut** : chaque vente à 2 s pendant 60 s (copie vue « sync » jusqu'à `wal_sender_timeout`) ; toutes validées, une seule alerte |
+| 7 | **Panne brutale du principal** en pleine série | **92 ventes confirmées sur 92 présentes sur la copie**, dont la dernière (141 ms avant la panne) ; la vente en cours : erreur 500, absente partout |
+| 8 | Retour du 2e serveur | `sync` en 1 s, retard nul |
+
+**Défaut 6b corrigé (« go correctif sync A+C »)** : après un abandon, plus d'attente tant que la copie n'a pas écrit jusqu'à la position notée
+(regles-metier.md, « Après une attente abandonnée… ») ; `wal_sender_timeout = 10s` (§ 12.2, mise-en-production.md parcours C étape 15).
+**Rejoué** (nouvelle copie, réseau figé 25 s) : **une seule vente à 2,1 s**, puis 56 ventes à vitesse normale (médiane 77 ms) ; copie écartée par
+PostgreSQL en 10 s ; après le dégel, `sync` en 1 s et l'attente reprend d'elle-même (au 2e gel : de nouveau une seule vente à 2 s).
+
+**Panier pendant une bascule (cas 1)**
+
+| # | Essai | Résultat |
+|---|---|---|
+| 1 | Panier VALASTAN, « Encaisser » avec la réponse retenue, puis panne complète du serveur 1 (base et API) | vente T-006322 enregistrée et répliquée avant la panne, réponse jamais reçue par le poste |
+| 2 | Bascule | promotion à ≈ 109 s, poste basculé seul à ≈ 129 s, session et panier gardés |
+| 3 | Renvoi automatique (Q25) | **défaut** : jamais fait. Le poste ne tentait la bascule qu'une fois, aussitôt l'échec (2e serveur encore en veille) |
+| 4 | Nouveau clic « Encaisser » (même clé) | « Vente T-006322 encaissée », aucune vente en double (3 713 avant et après) |
+| 5 | Nouvelle vente sur le serveur promu | T-106323 : compteur sauté à la promotion (script 164) |
+
+**Défaut 3 corrigé (« go renvoi auto comme recommandé »)** : encaissement mis en suspens, renvoyé une fois dès la bascule ou le retour du serveur,
+5 minutes au plus (regles-metier.md, « Encaissement interrompu par la panne »). **Rejoué** : vente T-006040 enregistrée et répliquée, réponse
+retenue, panne ; panier figé avec le bandeau dès l'échec ; promotion ≈ 110 s, bascule ≈ 115 s, **vente renvoyée seule à ≈ 119 s**
+(« Vente T-006040 encaissée … renvoyée automatiquement après la panne du serveur »), une seule T-006040 sur le serveur promu. Autre chemin :
+API du serveur arrêtée, encaissement mis en suspens, API relancée : vente T-106041 partie seule 16 s après, une seule fois. Bandeau mesuré à
+0 px à 1 366 × 768 et 1 536 × 890, clair et sombre (captures `suspens-*`, `renvoi-*`, `panier-*` dans `C:\MesAtlassian\essai-sync`, hors dépôt).
+
+**Constat pour la mise en production, corrigé (« go script application_name »)** : `initialiser-second-serveur.ps1` et `remettre-en-second.ps1`
+créent la copie avec `pg_basebackup -R`, qui n'écrit pas `application_name=second_serveur` : le principal ne voyait jamais la copie comme
+synchrone. Les deux scripts l'ajoutent désormais avant le démarrage de PostgreSQL (`Set-NomCopieSynchrone`, `commun.ps1`, sans BOM, une seule
+fois ; test `NomCopieSynchroneTests` sur le format réel). Non rejoué avec les scripts eux-mêmes (administrateur Windows et `postgres` requis).
+
+**Pas de mise en attente pendant la panne (décision du titulaire)** : vérifié en réel sur le serveur promu : suspens puis annulation, bouton
+« Attente » désactivé, Caisse quittée puis reprise avec l'API joignable : **aucune vente en attente créée** (10 avant, 10 après), panier rendu
+avec sa clé et le message « Vente reprise : son encaissement avait été interrompu… », puis encaissé (T-106042) ; 0 px à 1 366 × 768 en clair.
+
+**Rangement** : poste, API, relais et les PostgreSQL d'essai arrêtés (aucun port d'essai ouvert) ; rien créé sur le 5432. Copies de bases d'essai (`p`, `s`,
+`p2`, `s2`) **supprimées** le 2026-11-25 ; restent dans `C:\MesAtlassian\essai-sync` les programmes compilés, les lanceurs et les captures.
+**Reste** : la clé TPM du poste `CAISSE-SYNC` (suppression en administrateur).

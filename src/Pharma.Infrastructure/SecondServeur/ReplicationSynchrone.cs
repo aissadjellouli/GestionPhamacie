@@ -1,4 +1,5 @@
 using Npgsql;
+using NpgsqlTypes;
 
 namespace Pharma.Infrastructure.SecondServeur;
 
@@ -25,16 +26,52 @@ public static class ReplicationSynchrone
         SELECT EXISTS (SELECT 1 FROM pg_stat_replication) AND current_setting('synchronous_standby_names') <> ''
         """;
 
+    /// <summary>Après un abandon : le 2e serveur ne compte de nouveau que s'il a écrit les journaux au moins jusqu'à la position notée.</summary>
+    internal const string SqlStandbyRepond = """
+        SELECT EXISTS (SELECT 1 FROM pg_stat_replication WHERE write_lsn >= $1) AND current_setting('synchronous_standby_names') <> ''
+        """;
+
+    private static readonly object verrouSuspension = new();
+    private static NpgsqlLogSequenceNumber? suspenduJusqua;
+
+    /// <summary>
+    /// Position des journaux du principal notée au dernier abandon (null : aucune suspension). Tant que le 2e serveur n'a pas écrit jusque-là,
+    /// aucune transaction ne l'attend : essai réel du 2026-11-25, réseau figé entre les deux serveurs, PostgreSQL voit encore la copie
+    /// « sync » jusqu'à <c>wal_sender_timeout</c> (60 s par défaut) et chaque vente attendait alors 2 s. Une position, pas une heure :
+    /// aucune dépendance aux horloges des deux PC.
+    /// </summary>
+    public static NpgsqlLogSequenceNumber? SuspenduJusqua { get { lock (verrouSuspension) return suspenduJusqua; } }
+
+    /// <summary>Note la position à atteindre par le 2e serveur avant de l'attendre de nouveau (la plus avancée l'emporte).</summary>
+    public static void Suspendre(NpgsqlLogSequenceNumber position)
+    {
+        lock (verrouSuspension)
+            if (suspenduJusqua is not { } actuelle || position > actuelle) suspenduJusqua = position;
+    }
+
+    /// <summary>Lève la suspension si elle porte toujours sur cette position (un abandon plus récent la garde).</summary>
+    private static void Lever(NpgsqlLogSequenceNumber position)
+    {
+        lock (verrouSuspension)
+            if (suspenduJusqua == position) suspenduJusqua = null;
+    }
+
     /// <summary>
     /// À appeler juste après l'ouverture de la transaction. Pose <c>SET LOCAL synchronous_commit = remote_write</c> seulement si un 2e serveur
-    /// est connecté et que le serveur est configuré pour l'attendre ; renvoie vrai dans ce cas.
+    /// est connecté, que le serveur est configuré pour l'attendre et, après un abandon, que le 2e serveur répond de nouveau (journaux écrits
+    /// au-delà de la position notée) ; renvoie vrai dans ce cas.
     /// </summary>
     public static async Task<bool> ActiverAsync(NpgsqlConnection cx, NpgsqlTransaction tx, CancellationToken ct = default)
     {
+        var suspension = SuspenduJusqua;
         bool connecte;
-        await using (var cmd = new NpgsqlCommand(SqlStandbyConnecte, cx, tx))
+        await using (var cmd = new NpgsqlCommand(suspension is null ? SqlStandbyConnecte : SqlStandbyRepond, cx, tx))
+        {
+            if (suspension is { } p) cmd.Parameters.Add(new NpgsqlParameter { Value = p, NpgsqlDbType = NpgsqlDbType.PgLsn });
             connecte = (bool)(await cmd.ExecuteScalarAsync(ct))!;
+        }
         if (!connecte) return false;
+        if (suspension is { } levee) Lever(levee);
         await using var set = new NpgsqlCommand("SET LOCAL synchronous_commit = remote_write", cx, tx);
         await set.ExecuteNonQueryAsync(ct);
         return true;
@@ -52,8 +89,21 @@ public static class ReplicationSynchrone
         {
             await using var cmd = db.CreateCommand("SELECT pg_cancel_backend(pid) FROM pg_stat_activity WHERE pid = $1 AND wait_event = 'SyncRep'");
             cmd.Parameters.AddWithValue(pid);
-            return await cmd.ExecuteScalarAsync(c) is true;
+            var annule = await cmd.ExecuteScalarAsync(c) is true;
+            // Attente abandonnée : plus d'attente du 2e serveur tant qu'il n'a pas écrit jusqu'ici (il répond de nouveau)
+            if (annule) await SuspendreApresAbandonAsync(db, c);
+            return annule;
         }, ct);
+    }
+
+    private static async Task SuspendreApresAbandonAsync(NpgsqlDataSource db, CancellationToken ct)
+    {
+        try
+        {
+            await using var cmd = db.CreateCommand("SELECT pg_current_wal_lsn()");
+            if (await cmd.ExecuteScalarAsync(ct) is NpgsqlLogSequenceNumber position) Suspendre(position);
+        }
+        catch (NpgsqlException) { /* position illisible : pas de suspension, comportement d'avant (attente bornée à 2 s) */ }
     }
 
     /// <summary>Attend <paramref name="travail"/> ; passé <paramref name="delai"/>, appelle <paramref name="annuler"/> puis attend la fin du travail.</summary>
