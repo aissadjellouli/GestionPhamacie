@@ -89,18 +89,29 @@ public sealed class PostesAutorisesSql(NpgsqlDataSource db) : IPostesAutorisesDe
         return (int)(await cmd.ExecuteScalarAsync(ct))!;
     }
 
-    public async Task<long?> CreerAsync(string nom, byte[] codeHache, DateTime expireLe, long creePar, CancellationToken ct = default)
+    public async Task<CreationPoste> CreerAsync(string nom, byte[] codeHache, DateTime expireLe, long creePar, int maximum, CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("""
+        await using var cx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cx.BeginTransactionAsync(ct);
+        // Une création à la fois : sans verrou, deux autorisations simultanées comptaient chacune les mêmes postes et dépassaient le maximum
+        await using (var verrou = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtext('poste_autorise_creation'))", cx, tx))
+            await verrou.ExecuteNonQueryAsync(ct);
+        // Compté après le verrou, par une nouvelle requête (nouvel instantané) : voit le poste créé par l'autorisation précédente
+        await using (var compte = new NpgsqlCommand("SELECT count(*)::int FROM poste_autorise WHERE statut <> 'revoque'", cx, tx))
+            if ((int)(await compte.ExecuteScalarAsync(ct))! >= maximum)
+                return new CreationPoste(null, MaximumAtteint: true);
+        await using var cmd = new NpgsqlCommand("""
             INSERT INTO poste_autorise (nom, code_hache, code_expire_le, cree_par) VALUES ($1, $2, $3, $4)
             ON CONFLICT (lower(nom)) WHERE statut <> 'revoque' DO NOTHING
             RETURNING id
-            """);
+            """, cx, tx);
         cmd.Parameters.AddWithValue(nom);
         cmd.Parameters.AddWithValue(codeHache);
         cmd.Parameters.AddWithValue(DateTime.SpecifyKind(expireLe, DateTimeKind.Utc));
         cmd.Parameters.AddWithValue(creePar);
-        return await cmd.ExecuteScalarAsync(ct) is long id ? id : null;
+        var id = await cmd.ExecuteScalarAsync(ct) is long v ? v : (long?)null;
+        await tx.CommitAsync(ct);
+        return new CreationPoste(id);
     }
 
     public async Task<bool> NouveauCodeAsync(long id, byte[] codeHache, DateTime expireLe, CancellationToken ct = default)

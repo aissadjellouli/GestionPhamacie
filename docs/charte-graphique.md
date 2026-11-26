@@ -541,7 +541,7 @@ Seule exception de taille : « Encaisser » à la caisse (`.btn-large`, 52 px).
 - **Bouton mis en évidence au survol et au clavier** (`.btn`, `.puce`, automatique) : bord et texte verts, fond vert clair et
   halo ; bouton principal plus foncé ; bouton rouge plus foncé avec halo rouge. Aucun effet sur un bouton inactif, jamais
   d'agrandissement.
-- **Texte cliquable mis en évidence** (liens, `.lien`, `.lien-bouton`, nom de contact) : vert, gras et souligné au repos ; au survol ou au clavier, fond vert clair arrondi et soulignement plein ; inactif : gris sans soulignement. L’en-tête vert garde son texte blanc.
+- **Texte cliquable mis en évidence** (liens, `.lien`, `.lien-bouton`, nom de contact) : vert, gras et souligné au repos ; au survol ou au clavier, fond vert clair arrondi et soulignement plein ; inactif : gris sans soulignement. **Sauf les menus verticaux** (`.admin-nav`, `.nav-laterale`, 2026-11-26, décision du titulaire) : jamais soulignés ; l'écran ouvert se signale par son fond et son trait ambre, le survol par le fond vert clair. L’en-tête vert garde son texte blanc.
 - **Relief des tableaux** (automatique avec `.tableau`, rien à ajouter dans un écran) : bandeau d'en-tête souligné, trait
   vertical léger entre les colonnes, une ligne sur deux teintée, ligne survolée mise en avant (contour vert et ombre ; jamais d'agrandissement, qui ferait apparaître une barre de défilement dans le cadre du tableau), pied de total séparé par un
   trait de 2 px. Valable en thème clair comme en sombre.
@@ -745,3 +745,16 @@ Le message « Poste … renommé en … » (et toute erreur ou réussite de l'é
 (`.sous-titre.texte-reussite`, couleur `--accent-texte` ; erreur en `.texte-urgent`, `data-champ="resultat"`) : la hauteur de l'écran ne
 change pas. Mesuré sur le poste d'essai (titulaire, message affiché après un vrai renommage) : **0 px** à 1 366 × 768 et 1 536 × 890, clair et
 sombre, captures regardées. Règle : sur un écran fixe, le résultat d'une action prend la place du sous-titre plutôt qu'une ligne de plus.
+
+**Avertissement « maximum baissé » (2026-11-26)** : même place, en `.texte-attention` (`--attention`, orange). Un premier texte plus long
+que le sous-titre faisait passer le bouton « Autoriser un poste » sous le titre (+21 px) : raccourci, il garde la hauteur du sous-titre.
+Mesuré sur le poste d'essai avec **4 postes** (message affiché après un vrai enregistrement) : 1 536 × 890 **0 px**, clair et sombre ;
+1 366 × 768 117 px, comme sans le message : dès 3 postes, le tableau (plancher de 240 px, `poste.js`) ne pouvait plus céder de place
+(la mesure précédente, 0 px, était faite avec un seul poste).
+
+**Écran compacté (« go réglages compacts », 2026-11-26)** : bouton « Autoriser un poste » à droite du titre (`.titre-actions-cote`) ; réglage
+(preuve, postes au plus, code en minutes, Enregistrer) et recherche (nom, statut, « Tout afficher ») **sur une seule ligne** `.postes-barre`,
+séparés par un trait (`.postes-reglage`, bordure droite) ; la recherche cède sa largeur (`min-width: 0`) au bouton « Tout afficher » ;
+l'explication du mode passe en tête de la note du bas (gras). Mesuré sur le poste d'essai avec **4 postes** : **0 px** à 1 366 × 768 et
+1 536 × 890, clair et sombre, sans message, avec l'avertissement orange et avec un filtre actif ; tableau de 253 px à 1 366 × 768 (2 à
+3 lignes visibles), captures regardées.

@@ -16,6 +16,24 @@ public sealed class PostesAutorisesSqlTests(CopieSql copie) : IClassFixture<Copi
     }
 
     private static readonly byte[] Cle = [0x30, 0x59, 1, 2, 3];
+    private const int Maximum = 20;
+
+    [FactSql]
+    public async Task Maximum_tenu_meme_avec_des_autorisations_simultanees_et_libere_par_une_revocation()
+    {
+        var (sql, titulaire) = await PreparerAsync();
+        // Dix autorisations lancées ensemble pour un maximum de 3 : le comptage et la création sont faits sous verrou
+        var essais = await Task.WhenAll(Enumerable.Range(1, 10).Select(i =>
+            Task.Run(() => sql.CreerAsync($"CAISSE-{i}", CodeEnrolement.Hacher($"AAAA-AAA{i % 10}"), DateTime.UtcNow.AddMinutes(15), titulaire, 3))));
+        Assert.Equal(3, essais.Count(e => e.Id is not null));
+        Assert.Equal(7, essais.Count(e => e.MaximumAtteint));
+        Assert.Equal(3, await sql.NombreNonRevoquesAsync());
+
+        // Une révocation libère une place
+        Assert.True(await sql.RevoquerAsync(essais.First(e => e.Id is not null).Id!.Value, titulaire, "essai de révocation"));
+        Assert.NotNull((await sql.CreerAsync("CAISSE-11", CodeEnrolement.Hacher("BBBB-BBBB"), DateTime.UtcNow.AddMinutes(15), titulaire, 3)).Id);
+        Assert.True((await sql.CreerAsync("CAISSE-12", CodeEnrolement.Hacher("CCCC-CCCC"), DateTime.UtcNow.AddMinutes(15), titulaire, 3)).MaximumAtteint);
+    }
 
     [FactSql]
     public async Task Reglages_par_defaut_transition_20_postes_15_minutes_et_enregistrement()
@@ -30,11 +48,11 @@ public sealed class PostesAutorisesSqlTests(CopieSql copie) : IClassFixture<Copi
     public async Task Nom_unique_sans_la_casse_parmi_les_postes_non_revoques()
     {
         var (sql, titulaire) = await PreparerAsync();
-        var id = await sql.CreerAsync("CAISSE-1", CodeEnrolement.Hacher("AAAA-AAAA"), DateTime.UtcNow.AddMinutes(15), titulaire);
+        var id = (await sql.CreerAsync("CAISSE-1", CodeEnrolement.Hacher("AAAA-AAAA"), DateTime.UtcNow.AddMinutes(15), titulaire, Maximum)).Id;
         Assert.NotNull(id);
-        Assert.Null(await sql.CreerAsync("caisse-1", CodeEnrolement.Hacher("BBBB-BBBB"), DateTime.UtcNow.AddMinutes(15), titulaire));
+        Assert.Null((await sql.CreerAsync("caisse-1", CodeEnrolement.Hacher("BBBB-BBBB"), DateTime.UtcNow.AddMinutes(15), titulaire, Maximum)).Id);
         Assert.True(await sql.RevoquerAsync(id!.Value, titulaire, "essai de révocation"));
-        Assert.NotNull(await sql.CreerAsync("caisse-1", CodeEnrolement.Hacher("CCCC-CCCC"), DateTime.UtcNow.AddMinutes(15), titulaire));
+        Assert.NotNull((await sql.CreerAsync("caisse-1", CodeEnrolement.Hacher("CCCC-CCCC"), DateTime.UtcNow.AddMinutes(15), titulaire, Maximum)).Id);
         Assert.Equal(["caisse-1"], (await sql.NomsReservesAsync()).ToArray());
     }
 
@@ -43,7 +61,7 @@ public sealed class PostesAutorisesSqlTests(CopieSql copie) : IClassFixture<Copi
     {
         var (sql, titulaire) = await PreparerAsync();
         var code = CodeEnrolement.Hacher("AAAA-AAAA");
-        var id = (await sql.CreerAsync("CAISSE-1", code, DateTime.UtcNow.AddMinutes(15), titulaire))!.Value;
+        var id = (await sql.CreerAsync("CAISSE-1", code, DateTime.UtcNow.AddMinutes(15), titulaire, Maximum)).Id!.Value;
         var lu = await sql.EnrolerAsync(code, Cle, "0123456789ABCDEF", "PC-1", CodeEnrolement.EssaisMax);
         Assert.Equal(new EnrolementLu(id, "CAISSE-1", titulaire), lu);
         Assert.Null(await sql.EnrolerAsync(code, Cle, "0123456789ABCDEF", "PC-1", CodeEnrolement.EssaisMax));
@@ -53,12 +71,12 @@ public sealed class PostesAutorisesSqlTests(CopieSql copie) : IClassFixture<Copi
 
         // Expiré
         var codeExpire = CodeEnrolement.Hacher("BBBB-BBBB");
-        await sql.CreerAsync("CAISSE-2", codeExpire, DateTime.UtcNow.AddMinutes(-1), titulaire);
+        await sql.CreerAsync("CAISSE-2", codeExpire, DateTime.UtcNow.AddMinutes(-1), titulaire, Maximum);
         Assert.Null(await sql.EnrolerAsync(codeExpire, Cle, "0123456789ABCDEF", null, CodeEnrolement.EssaisMax));
 
         // Cinq échecs : invalidé ; un nouveau code remet le compteur à zéro
         var code3 = CodeEnrolement.Hacher("CCCC-CCCC");
-        var id3 = (await sql.CreerAsync("CAISSE-3", code3, DateTime.UtcNow.AddMinutes(15), titulaire))!.Value;
+        var id3 = (await sql.CreerAsync("CAISSE-3", code3, DateTime.UtcNow.AddMinutes(15), titulaire, Maximum)).Id!.Value;
         for (var i = 0; i < 5; i++) await sql.NoterEchecCodeAsync();
         Assert.Null(await sql.EnrolerAsync(code3, Cle, "0123456789ABCDEF", null, CodeEnrolement.EssaisMax));
         var code4 = CodeEnrolement.Hacher("DDDD-DDDD");
@@ -71,14 +89,14 @@ public sealed class PostesAutorisesSqlTests(CopieSql copie) : IClassFixture<Copi
     {
         var (sql, titulaire) = await PreparerAsync();
         var code = CodeEnrolement.Hacher("AAAA-AAAA");
-        var id = (await sql.CreerAsync("CAISSE-1", code, DateTime.UtcNow.AddMinutes(15), titulaire))!.Value;
+        var id = (await sql.CreerAsync("CAISSE-1", code, DateTime.UtcNow.AddMinutes(15), titulaire, Maximum)).Id!.Value;
         await sql.EnrolerAsync(code, Cle, "0123456789ABCDEF", "PC-1", CodeEnrolement.EssaisMax);
         Assert.True(await sql.RemplacerAsync(id, CodeEnrolement.Hacher("BBBB-BBBB"), DateTime.UtcNow.AddMinutes(15)));
         var cle = await sql.LireCleAsync(id);
         Assert.Equal(("en_attente", 2), (cle!.Statut, cle.Generation));
         Assert.Null(cle.ClePublique);
 
-        await sql.CreerAsync("CAISSE-2", CodeEnrolement.Hacher("CCCC-CCCC"), DateTime.UtcNow.AddMinutes(15), titulaire);
+        await sql.CreerAsync("CAISSE-2", CodeEnrolement.Hacher("CCCC-CCCC"), DateTime.UtcNow.AddMinutes(15), titulaire, Maximum);
         Assert.False(await sql.RenommerAsync(id, "caisse-2"));
         Assert.True(await sql.RenommerAsync(id, "CAISSE-9"));
         Assert.Null(await sql.RenommerAsync(999_999, "X"));

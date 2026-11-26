@@ -743,6 +743,9 @@ details.avance[open] summary { margin-bottom: 8px; }
    clavier, fond vert clair arrondi (ombre portée : rien ne bouge autour). Inactif : gris, sans soulignement.
    L'en-tête vert garde son style (texte blanc). */
 :is(a, .lien, .lien-bouton):not(.entete *) { font-weight: 600; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+/* Menus verticaux (Administration, rubriques) : pas de soulignement, ni au repos ni au survol (décision du titulaire, 2026-11-26) ;
+   l'écran ouvert se signale par son fond et son trait ambre, le survol par le fond vert clair */
+:is(.admin-nav, .nav-laterale) a:is(*, :hover, :focus-visible) { text-decoration: none; }
 :is(a, .lien, .lien-bouton, .lien-contact):is(:hover, :focus-visible):not(:disabled) {
   background: color-mix(in srgb, var(--accent-texte) 16%, transparent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-texte) 16%, transparent);
   border-radius: 4px; color: var(--accent-texte); text-decoration-thickness: 2px; outline: none; }
@@ -1115,6 +1118,12 @@ fieldset.panneau:disabled { opacity: 0.85; }
 .actions-fenetre { display: flex; gap: 8px; margin-top: 12px; }
 .actions-ligne { white-space: nowrap; }
 .actions-ligne .lien-bouton + .lien-bouton { margin-left: 12px; }
-.postes-reglage { padding: 12px 20px; }
+/* Administration › Postes autorisés (2026-11-26) : réglage et recherche sur une seule ligne, séparés par un trait (écran fixe à 1 366 × 768) */
+.postes-barre { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-end; }
+.postes-reglage { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding-right: 20px; border-right: 1px solid var(--bordure); }
+.postes-barre > .filtres-liste { flex: 1 1 320px; }
+/* La recherche cède sa largeur au bouton « Tout afficher » (sinon la largeur propre du champ le renvoie à la ligne) */
+.postes-barre .champ { min-width: 0; }
+.postes-barre .champ > input { min-width: 0; width: 100%; }
 .code-enrolement { margin: 8px 0; text-align: center; font-size: 32px; font-weight: 600; letter-spacing: 4px; color: var(--accent-texte); }
 .autorisation-poste { display: flex; flex-direction: column; gap: 12px; }

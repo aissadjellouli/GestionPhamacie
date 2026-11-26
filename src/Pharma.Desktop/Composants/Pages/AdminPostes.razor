@@ -10,47 +10,47 @@
     <NavAdmin Actif="admin/postes" />
 
     <div class="admin-contenu">
-        <div class="titre-page">
+        @* Écran compact (2026-11-26) : à 1 366 × 768, dès 3 postes, l'écran débordait de 117 px (tableau à son plancher de 240 px). Bouton à droite
+           du titre, réglage et recherche sur une seule ligne, explication du mode dans la note du bas *@
+        <div class="titre-page titre-actions-cote">
             <div>
                 <h1>Postes autorisés</h1>
                 @* Résultat d'une action à la place du sous-titre (2026-11-26) : empilé sous le titre, il faisait déborder l'écran de 37 px à 1 366 × 768
                    (tableau déjà à sa hauteur minimale) ; à la même place, la hauteur de l'écran ne change pas *@
                 @if (erreur is not null) { <p class="sous-titre texte-urgent" role="alert" data-champ="resultat">@erreur</p> }
-                else if (message is not null) { <p class="sous-titre texte-reussite" role="status" data-champ="resultat">@message</p> }
+                else if (message is not null) { <p class="sous-titre @(attention ? "texte-attention" : "texte-reussite")" role="status" data-champ="resultat">@message</p> }
                 else { <p class="sous-titre">Seuls les postes autorisés ici prouvent leur identité au serveur : un PC autorisé ne peut pas être imité par un autre, même avec le même nom.</p> }
             </div>
-            <button type="button" class="btn btn-principal" @onclick="OuvrirAutorisation">Autoriser un poste</button>
+            <div class="actions"><button type="button" class="btn btn-principal" @onclick="OuvrirAutorisation">Autoriser un poste</button></div>
         </div>
 
-        @if (reglages is not null)
-        {
-            <section class="panneau postes-reglage" aria-labelledby="t-reglage-postes">
-                <h2 id="t-reglage-postes" class="visuellement-cache">Réglage de la liste</h2>
-                <div class="achats-ligne">
-                    <div class="champ" style="flex: 0 0 230px"><label for="pa-mode">Preuve des postes</label>
+        <div class="postes-barre">
+            @if (reglages is not null)
+            {
+                <section class="postes-reglage" aria-labelledby="t-reglage-postes">
+                    <h2 id="t-reglage-postes" class="visuellement-cache">Réglage de la liste</h2>
+                    <div class="champ" style="flex: 0 0 170px"><label for="pa-mode">Preuve des postes</label>
                         <select id="pa-mode" data-champ="mode" @bind="mode">
                             <option value="transition">En transition</option>
                             <option value="exige">Exigée pour tous</option>
                             <option value="inactif">Désactivée</option>
                         </select></div>
-                    <div class="champ" style="flex: 0 0 150px"><label for="pa-max">Postes au plus</label>
+                    <div class="champ" style="flex: 0 0 110px"><label for="pa-max">Postes au plus</label>
                         <input id="pa-max" data-champ="maximumPostes" type="number" min="1" max="200" @bind="maximum" /></div>
-                    <div class="champ" style="flex: 0 0 170px"><label for="pa-duree">Code valable (min)</label>
+                    <div class="champ" style="flex: 0 0 110px"><label for="pa-duree">Code (min)</label>
                         <input id="pa-duree" data-champ="dureeCodeMinutes" type="number" min="5" max="60" @bind="duree" /></div>
                     <button type="button" class="btn" disabled="@(enCours || !ReglageModifie)" @onclick="EnregistrerReglagesAsync">Enregistrer</button>
-                    <p class="detail" style="flex: 1 1 260px; margin: 0">@ExpliquerMode(reglages.Mode)</p>
-                </div>
-            </section>
-        }
-
-        <div class="filtres-liste" role="search" aria-label="Filtrer les postes">
-            <div class="champ" style="flex: 1 1 220px"><label for="pa-texte">Nom ou ordinateur</label>
-                <input id="pa-texte" type="search" autocomplete="off" value="@fTexte" @oninput="RechercheAsync" /></div>
-            <div class="champ" style="flex: 0 0 190px"><label for="pa-statut">Statut</label>
-                <select id="pa-statut" @bind="fStatut" @bind:after="PremierePageAsync">
-                    <option value="">Tous</option><option value="actif">Autorisés</option><option value="en_attente">En attente du code</option><option value="revoque">Révoqués</option>
-                </select></div>
-            @if (fTexte.Trim() != "" || fStatut != "") { <button type="button" class="btn" @onclick="ToutAfficherAsync">Tout afficher</button> }
+                </section>
+            }
+            <div class="filtres-liste" role="search" aria-label="Filtrer les postes">
+                <div class="champ" style="flex: 1 1 140px"><label for="pa-texte">Nom ou ordinateur</label>
+                    <input id="pa-texte" type="search" autocomplete="off" value="@fTexte" @oninput="RechercheAsync" /></div>
+                <div class="champ" style="flex: 0 0 185px"><label for="pa-statut">Statut</label>
+                    <select id="pa-statut" @bind="fStatut" @bind:after="PremierePageAsync">
+                        <option value="">Tous</option><option value="actif">Autorisés</option><option value="en_attente">En attente du code</option><option value="revoque">Révoqués</option>
+                    </select></div>
+                @if (fTexte.Trim() != "" || fStatut != "") { <button type="button" class="btn" @onclick="ToutAfficherAsync">Tout afficher</button> }
+            </div>
         </div>
         <section class="tableau-cadre" aria-label="Postes autorisés">
             <table class="tableau" style="min-width: 0">
@@ -85,7 +85,7 @@
             </table>
         </section>
         <Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des postes" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
-        <p class="pied-page">Sur le PC à autoriser, cliquez « Autoriser ce poste » à l’écran de connexion et tapez le code. Un PC volé ou perdu se révoque ici : il est refusé dans les 30 secondes. Seuls les postes autorisés comptent pour la bascule automatique vers le 2e serveur.</p>
+        <p class="pied-page">@if (reglages is not null) { <strong>@ExpliquerMode(reglages.Mode)</strong> } Sur le PC à autoriser, cliquez « Autoriser ce poste » à l’écran de connexion et tapez le code. Un PC volé ou perdu se révoque ici : il est refusé dans les 30 secondes. Seuls les postes autorisés comptent pour la bascule automatique vers le 2e serveur.</p>
     </div>
 </div>
 
@@ -169,7 +169,10 @@
     private string mode = "transition";
     private int maximum = 20, duree = 15;
     private bool enCours, controle;
-    private string? erreur, message, erreurFenetre;
+    private string? erreur, texteMessage, erreurFenetre;
+    // Message affiché en orange (maximum baissé sous le nombre de postes) : tout nouveau message repasse en vert
+    private bool attention;
+    private string? message { get => texteMessage; set => (texteMessage, attention) = (value, false); }
     private int total, page = 1, taille = Pagination.TailleParDefaut, saisie;
     private string fTexte = "", fStatut = "";
     private Fenetre? fenetre;
@@ -246,14 +249,15 @@
         (enCours, erreur, message) = (true, null, null);
         try
         {
-            var e = await Api.ModifierReglagesPostesAsync(new ReglagesPostesDto(mode, maximum, duree));
+            var (e, avertissement) = await Api.ModifierReglagesPostesAsync(new ReglagesPostesDto(mode, maximum, duree));
             if (e is not null)
             {
                 if (fenetre == Fenetre.Exiger) erreurFenetre = e; else erreur = e;
                 return;
             }
             fenetre = null;
-            message = "Réglage des postes enregistré (appliqué par chaque serveur dans les 30 secondes).";
+            message = avertissement is null ? "Réglage des postes enregistré (appliqué par chaque serveur dans les 30 secondes)." : $"Réglage enregistré. {avertissement}";
+            attention = avertissement is not null;
             await ChargerReglagesAsync();
         }
         finally { enCours = false; }

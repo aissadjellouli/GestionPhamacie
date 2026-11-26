@@ -1703,8 +1703,12 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
     public Task<(ReglagesPostesDto?, string?)> ReglagesPostesAsync() => GetAsync<ReglagesPostesDto?>("api/admin/postes/reglages", null);
 
-    public async Task<string?> ModifierReglagesPostesAsync(ReglagesPostesDto reglages) =>
-        (await EnvoyerCorpsAsync<ReglagesPostesDto, object>(HttpMethod.Put, "api/admin/postes/reglages", reglages with { NomsSansPreuve = null })).Item2;
+    /// <summary>Erreur, ou avertissement du serveur quand le maximum est baissé sous le nombre de postes déjà comptés.</summary>
+    public async Task<(string? Erreur, string? Avertissement)> ModifierReglagesPostesAsync(ReglagesPostesDto reglages)
+    {
+        var (r, e) = await EnvoyerCorpsAsync<ReglagesPostesDto, ReglagesPostesEnregistresDto>(HttpMethod.Put, "api/admin/postes/reglages", reglages with { NomsSansPreuve = null });
+        return (e, r?.Avertissement);
+    }
 
     public Task<(CodeEnrolementDto?, string?)> AutoriserPosteAsync(string nom) => PostAsync<NomPosteRequete, CodeEnrolementDto>("api/admin/postes", new(nom));
 

@@ -69,12 +69,13 @@ public class PostesAutorisesTests
 
         public Task<int> NombreNonRevoquesAsync(CancellationToken ct = default) => Task.FromResult(Lignes.Count(l => l.Statut != "revoque"));
 
-        public Task<long?> CreerAsync(string nom, byte[] codeHache, DateTime expireLe, long creePar, CancellationToken ct = default)
+        public Task<CreationPoste> CreerAsync(string nom, byte[] codeHache, DateTime expireLe, long creePar, int maximum, CancellationToken ct = default)
         {
-            if (Lignes.Any(l => l.Statut != "revoque" && string.Equals(l.Nom, nom, StringComparison.OrdinalIgnoreCase))) return Task.FromResult<long?>(null);
+            if (Lignes.Count(l => l.Statut != "revoque") >= maximum) return Task.FromResult(new CreationPoste(null, MaximumAtteint: true));
+            if (Lignes.Any(l => l.Statut != "revoque" && string.Equals(l.Nom, nom, StringComparison.OrdinalIgnoreCase))) return Task.FromResult(new CreationPoste(null));
             var l = new Ligne { Id = suivant++, Nom = nom, Code = codeHache, Expire = expireLe, CreePar = creePar };
             Lignes.Add(l);
-            return Task.FromResult<long?>(l.Id);
+            return Task.FromResult(new CreationPoste(l.Id));
         }
 
         public Task<bool> NouveauCodeAsync(long id, byte[] codeHache, DateTime expireLe, CancellationToken ct = default)
@@ -576,6 +577,25 @@ public class PostesAutorisesTests
         depot.Reglages = depot.Reglages with { MaximumPostes = 1 };
         await Assert.ThrowsAsync<Pharma.Domain.Commun.RegleMetierException>(() => gerer.AutoriserAsync(1, "CAISSE-2"));
         await Assert.ThrowsAsync<Pharma.Domain.Commun.RegleMetierException>(() => gerer.AutoriserAsync(1, "   "));
+    }
+
+    [Fact]
+    public async Task Baisser_le_maximum_sous_les_postes_comptes_avertit_sans_rien_retirer()
+    {
+        var (_, gerer, depot, _, _, _, _) = BancGestion();
+        foreach (var n in new[] { "CAISSE-1", "CAISSE-2", "CAISSE-3" }) await gerer.AutoriserAsync(1, n);
+
+        var avertissement = await gerer.ModifierReglagesAsync(1, depot.Reglages with { MaximumPostes = 2 });
+        Assert.Equal(GererPostesAutorises.AvertissementMaximum(3, 2), avertissement);
+        Assert.Equal(3, depot.Lignes.Count(l => l.Statut != "revoque"));     // aucun poste retiré
+        var refus = await Assert.ThrowsAsync<Pharma.Domain.Commun.RegleMetierException>(() => gerer.AutoriserAsync(1, "CAISSE-4"));
+        Assert.Equal(GererPostesAutorises.MessageMaximumAtteint(2), refus.Message);
+
+        // Relevé, baissé à égalité ou autre réglage : pas d'avertissement
+        Assert.Null(await gerer.ModifierReglagesAsync(1, depot.Reglages with { MaximumPostes = 3 }));
+        Assert.Null(await gerer.ModifierReglagesAsync(1, depot.Reglages with { MaximumPostes = 10 }));
+        Assert.Null(await gerer.ModifierReglagesAsync(1, depot.Reglages with { MaximumPostes = 3 }));
+        Assert.Null(await gerer.ModifierReglagesAsync(1, depot.Reglages with { DureeCodeMinutes = 30 }));
     }
 
     [Fact]

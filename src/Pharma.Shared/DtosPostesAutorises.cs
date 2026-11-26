@@ -12,6 +12,9 @@ public sealed record CodeEnrolementDto(long PosteId, string Nom, string Code, Da
 /// <summary>Réglage de la liste (mode inactif / transition / exige). NomsSansPreuve : en lecture seule, ignoré à l'enregistrement.</summary>
 public sealed record ReglagesPostesDto(string Mode, int MaximumPostes, int DureeCodeMinutes, IReadOnlyList<NomSansPreuveDto>? NomsSansPreuve = null);
 
+/// <summary>Réponse à l'enregistrement du réglage : avertissement quand le maximum est baissé sous le nombre de postes déjà comptés.</summary>
+public sealed record ReglagesPostesEnregistresDto(string? Avertissement);
+
 /// <summary>Nom de poste vu récemment à une connexion, qui n'est pas un poste enrôlé.</summary>
 public sealed record NomSansPreuveDto(string Nom, DateTime VuLe);
 

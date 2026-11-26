@@ -2754,6 +2754,14 @@ Revue complète de la branche `develop` (caisse, stock, factures, sécurité, se
   les postes non révoqués, 20 postes au plus par défaut, réglable de 1 à 200), donner un nouveau code à un poste en attente, renommer,
   remplacer le PC d'un poste actif (même poste, même nom, génération + 1, ancienne clé refusée aussitôt), révoquer avec un motif (5 à 200
   caractères ; le nom redevient libre).
+- **Maximum de postes** (2026-11-26) : il compte les postes non révoqués (autorisés et en attente de leur code) et ne limite que les
+  **nouvelles autorisations** (écran et `--autoriser-poste`) ; nouveau code, remplacement du PC et saisie d'un code déjà créé ne sont pas
+  limités. Le comptage et la création se font **sous verrou** (`pg_advisory_xact_lock`, une seule transaction) : deux autorisations
+  simultanées ne dépassent pas le maximum. **Baisser le maximum sous le nombre de postes déjà comptés** est permis : aucun poste n'est retiré,
+  le titulaire est **averti** (« N postes sont déjà comptés pour un maximum de M : aucun n'est retiré, mais aucun nouveau ne pourra être
+  autorisé », en orange à la place du sous-titre) ; relever le maximum, le baisser sans passer sous le nombre de postes ou changer un autre
+  réglage n'avertit pas. — `src/Pharma.Application/Postes/PostesAutorises.cs` (`GererPostesAutorises.ModifierReglagesAsync`,
+  `AutoriserAsync`), `src/Pharma.Infrastructure/Postes/PostesAutorisesSql.cs` (`CreerAsync`), `src/Pharma.Desktop/Composants/Pages/AdminPostes.razor`
 - Code d'autorisation : 8 caractères sans caractères ambigus (`XXXX-XXXX`), à usage unique, valable 15 minutes par défaut (5 à 60), affiché
   une seule fois ; 5 codes faux invalident les codes en attente et alertent le titulaire.
 - Renommer un poste est refusé (409 `poste_occupe`) tant que sa caisse est ouverte ou qu'il reste des ventes ou réceptions en attente sous son

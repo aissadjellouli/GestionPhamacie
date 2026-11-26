@@ -45,10 +45,8 @@ internal static class PostesEndpoints
            .ExigerTitulaire();
 
         admin.MapPut("/reglages", async (ReglagesPostesDto req, GererPostesAutorises gerer, ClaimsPrincipal user, CancellationToken ct) =>
-            {
-                await gerer.ModifierReglagesAsync(user.UtilisateurId(), new ReglagesPostes(req.Mode, req.MaximumPostes, req.DureeCodeMinutes), ct);
-                return Results.NoContent();
-            })
+                Results.Ok(new ReglagesPostesEnregistresDto(
+                    await gerer.ModifierReglagesAsync(user.UtilisateurId(), new ReglagesPostes(req.Mode, req.MaximumPostes, req.DureeCodeMinutes), ct))))
            .ExigerTitulaire();
 
         admin.MapPost("", async (NomPosteRequete req, GererPostesAutorises gerer, ClaimsPrincipal user, CancellationToken ct) =>
