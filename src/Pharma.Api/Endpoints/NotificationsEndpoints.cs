@@ -71,7 +71,7 @@ internal static class NotificationsEndpoints
         // Rapport du jour envoyé tout de suite (vérification des réglages) ; n'empêche pas l'envoi automatique du soir
         n.MapPost("/rapport", async (EnvoyerRapportQuotidien rapport, CancellationToken ct) =>
                 Results.Ok(new NombreDto(await rapport.EnvoyerAsync(DateOnly.FromDateTime(DateTime.Now), ct))))
-           .ExigerTitulaire();
+           .ExigerTitulaire().ExigerPack(Pharma.Application.Offre.PacksOffre.Pilotage);
 
         // File des messages, paginée et filtrée : ?page=&taille=&type=&statut=&du=&au=
         n.MapGet("/file", async (int? page, int? taille, string? type, string? statut, DateOnly? du, DateOnly? au, ConsulterFileMessages consulter,

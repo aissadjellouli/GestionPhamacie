@@ -23,6 +23,7 @@
         <div class="titre-page">
             <div>
                 <h1>Contrôle interne</h1>
+                <OptionNonIncluse Pack="A" />
                 <p class="sous-titre">Réservé au titulaire · au-delà d’un seuil, une anomalie est créée et vous êtes prévenu ; le double d’un seuil la rend urgente</p>
             </div>
             @if (reglages is not null) { <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">Enregistrer</button> }

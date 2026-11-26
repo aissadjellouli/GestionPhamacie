@@ -2785,6 +2785,18 @@ Revue complète de la branche `develop` (caisse, stock, factures, sécurité, se
   tout de suite). Fermeture des packs non inclus : pas encore faite (lot O6, après le tour des packs). — `src/Pharma.Application/Offre/`,
   `src/Pharma.Infrastructure/Offre/ActivationsOffreSql.cs`, `src/Pharma.Desktop/Composants/Pages/AdminOffre.razor`, `src/Pharma.Editeur/`,
   `database/migration/172_activation_offre.sql`, `database/cloud/044_ordre_activation_offre.sql`
+- **(2026-11-26) Fermeture des packs non inclus (lot O6)** : le serveur refuse lui-même les routes d'un pack non inclus dans l'offre
+  (403, « Option non incluse dans votre offre (pack X, …) — voir Administration › Mon offre ») ; packs B, C, D et réglages du 2e serveur (F) :
+  **consultation permise**, actions refusées ; pack A : fermé entièrement (anomalies du contrôle interne **enregistrées en silence**,
+  visibles avec leur historique dès l'achat du pack). Sans A : réception simple (pas à l'aveugle) quel que soit le réglage, pas de SMS ni
+  d'e-mail pour un ancien lot délaissé ou un point du contrôle interne. Sans D : la clôture ne verse rien au coffre ; facture à une
+  entreprise ou un organisme refusée (à un patient : permise). Sans E : pas de rapport quotidien, pas de SMS ni d'e-mail pour un écart de
+  caisse, un lot bloqué, des écarts d'inventaire ou des annulations ; **alertes de sécurité toujours envoyées** (sauvegarde, synchronisation,
+  2e serveur, réglages imposés). Sans F : la paire de serveurs déjà installée continue de tourner (réplication, bascule) ; ses réglages sont
+  en consultation. Sans G : la synchronisation s'arrête ; les ordres déjà reçus sont traités et leurs résultats remontent encore. Sans H :
+  afficheur client éteint, ordonnance lue par l'OCR refusée. Offre relue au plus une fois par minute au serveur et toutes les 2 minutes au
+  poste (aussitôt après une saisie dans Mon offre). — `src/Pharma.Api/Securite/PackFilter.cs`, `src/Pharma.Application/Offre/Offre.cs`,
+  `src/Pharma.Application/Notifications/AlertesSelonOffre.cs`, `src/Pharma.Desktop/Composants/Mise/OptionNonIncluse.razor`
 - Code d'autorisation : 8 caractères sans caractères ambigus (`XXXX-XXXX`), à usage unique, valable 15 minutes par défaut (5 à 60), affiché
   une seule fois ; 5 codes faux invalident les codes en attente et alertent le titulaire.
 - Renommer un poste est refusé (409 `poste_occupe`) tant que sa caisse est ouverte ou qu'il reste des ventes ou réceptions en attente sous son

@@ -67,6 +67,7 @@ public partial class App : Application
         services.AddSingleton<ImprimanteTickets>();
         services.AddSingleton<AfficheurClient>();
         services.AddSingleton<ApiClient>();
+        services.AddSingleton<OffrePoste>();
         services.AddSingleton<FichesContact>();
         // Compteurs du travail en attente (menu du haut et menu de gauche)
         services.AddSingleton<CompteursAttente>();

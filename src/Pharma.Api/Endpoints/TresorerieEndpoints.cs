@@ -1,3 +1,4 @@
+using Pharma.Application.Offre;
 using System.Security.Claims;
 using Pharma.Api.Securite;
 using Pharma.Application.Commun;
@@ -13,7 +14,7 @@ internal static class TresorerieEndpoints
 {
     public static void MapTresorerie(this RouteGroupBuilder api)
     {
-        var t = api.MapGroup("/tresorerie").ExigerPermission(Permissions.TresorerieGerer);
+        var t = api.MapGroup("/tresorerie").ExigerPermission(Permissions.TresorerieGerer).ExigerPack(PacksOffre.Finances);
 
         t.MapGet("/comptes", async (ConsulterTresorerie c, ClaimsPrincipal user, CancellationToken ct) =>
             Results.Ok((await c.ComptesAsync(user.UtilisateurId(), ct)).Select(VersDto)));

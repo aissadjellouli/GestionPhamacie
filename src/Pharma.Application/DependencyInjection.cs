@@ -377,7 +377,10 @@ public static class DependencyInjection
         services.AddScoped<Rapports.ModifierTvaSorties>();
         services.AddScoped<RechercherDci>();
         services.AddScoped<Notifications.INotificationService, Notifications.NotificationService>();
-        services.AddScoped<Notifications.IAlertesTitulaire, Notifications.AlertesTitulaire>();
+        // Lot O6 : alertes métier selon les packs de l'offre, alertes de sécurité toujours
+        services.AddScoped<Notifications.AlertesTitulaire>();
+        services.AddScoped<Notifications.IAlertesTitulaire>(sp => new Notifications.AlertesTitulaireSelonOffre(
+            sp.GetRequiredService<Notifications.AlertesTitulaire>(), sp.GetRequiredService<Offre.IPacksOffre>()));
         services.AddScoped<Notifications.TraiterFileAttente>();
         services.AddScoped<Notifications.ConsulterAlertesNonEnvoyees>();
         services.AddScoped<Notifications.MarquerAlertesNonEnvoyeesVues>();
@@ -427,9 +430,11 @@ public static class DependencyInjection
         services.AddSingleton<Postes.AlertesPostes>();
         services.AddScoped<Postes.GererPostesAutorises>();
         // Offre de base et options (script 172) : activation signée par l'éditeur, contrôlée avec la clé publique du programme
+        services.AddSingleton<Offre.CacheOffre>();
         services.AddScoped<Offre.OffreCourante>(sp => new Offre.OffreCourante(sp.GetRequiredService<Offre.IActivationsOffreDepot>(),
-            sp.GetRequiredService<Commun.IHorloge>()));
+            sp.GetRequiredService<Commun.IHorloge>(), cache: sp.GetRequiredService<Offre.CacheOffre>()));
         services.AddScoped<Offre.ILimitesOffre>(sp => sp.GetRequiredService<Offre.OffreCourante>());
+        services.AddScoped<Offre.IPacksOffre>(sp => sp.GetRequiredService<Offre.OffreCourante>());
         services.AddScoped<Offre.GererOffre>();
         return services;
     }

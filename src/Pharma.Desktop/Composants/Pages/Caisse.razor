@@ -4,6 +4,7 @@
 @inject SessionPoste Session
 @inject ConfigurationPoste Poste
 @inject AfficheurClient Afficheur
+@inject OffrePoste Offre
 @inject IJSRuntime JS
 @inject ImprimanteTickets Tickets
 @inject HistoriqueNavigation Historique
@@ -1694,6 +1695,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _ = Offre.ChargerAsync();   // lot O6 : packs de l'offre (afficheur client : pack H), sans retarder l'ouverture de la caisse
         Session.AvantFermeture += PanierAbandonne;
         Bascule.Change += SurBascule;
         Panier.Abonner(MettreDeCoteBasculeAsync);

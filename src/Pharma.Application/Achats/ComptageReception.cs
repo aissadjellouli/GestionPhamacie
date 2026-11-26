@@ -42,10 +42,14 @@ public interface IComptagesReception
         CancellationToken ct = default);
 }
 
-/// <summary>Réception à l'aveugle active (réglage du titulaire dans Contrôle interne).</summary>
-public sealed class ModeReception(Surveillance.ISurveillance surveillance)
+/// <summary>
+/// Réception à l'aveugle active (réglage du titulaire dans Contrôle interne). Lot O6 : elle fait partie du pack A (contrôle et anti-fraude) ;
+/// sans ce pack, la réception est simple, quel que soit le réglage (gardé pour le jour où le pack est pris).
+/// </summary>
+public sealed class ModeReception(Surveillance.ISurveillance surveillance, Offre.IPacksOffre? packs = null)
 {
-    public async Task<bool> AveugleAsync(CancellationToken ct = default) => (await surveillance.ParametresAsync(ct)).ReceptionAveugle;
+    public async Task<bool> AveugleAsync(CancellationToken ct = default) =>
+        (await surveillance.ParametresAsync(ct)).ReceptionAveugle && (packs is null || await packs.InclusAsync(Offre.PacksOffre.ControleFraude, ct));
 }
 
 internal static class LignesComptees

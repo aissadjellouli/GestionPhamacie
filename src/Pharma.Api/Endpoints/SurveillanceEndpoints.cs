@@ -1,4 +1,5 @@
-﻿using System.Security.Claims;
+﻿using Pharma.Application.Offre;
+using System.Security.Claims;
 using Pharma.Api.Securite;
 using Pharma.Application.Surveillance;
 using Pharma.Domain.Securite;
@@ -58,12 +59,12 @@ internal static class SurveillanceEndpoints
 
         surveillance.MapGet("", async (bool? traitees, ListerSurveillance lister, ClaimsPrincipal user, CancellationToken ct) =>
             Results.Ok((await lister.ExecuterAsync(traitees == true, user.UtilisateurId(), ct)).Select(a => new AlerteSurveillanceDto(
-                a.Id, a.Type, a.Niveau, a.UtilisateurId, a.Employe, a.Jour, a.Message, a.Valeur, a.Statut, a.MiseAJourLe, a.TraiteePar, a.TraiteeLe, a.ActionPrise))));
+                a.Id, a.Type, a.Niveau, a.UtilisateurId, a.Employe, a.Jour, a.Message, a.Valeur, a.Statut, a.MiseAJourLe, a.TraiteePar, a.TraiteeLe, a.ActionPrise)))).ExigerPack(PacksOffre.ControleFraude);
 
         surveillance.MapPost("/{id:long}/traiter", async (long id, TraiterSurveillanceRequete req, TraiterSurveillance traiter, ClaimsPrincipal user, CancellationToken ct) =>
             await traiter.ExecuterAsync(id, req.ActionPrise, user.UtilisateurId(), ct, req.MotDePasseTitulaire)
                 ? Results.NoContent()
-                : Results.NotFound(new ErreurDto("Anomalie introuvable ou déjà traitée : actualisez la liste.")));
+                : Results.NotFound(new ErreurDto("Anomalie introuvable ou déjà traitée : actualisez la liste."))).ExigerPack(PacksOffre.ControleFraude);
 
         surveillance.MapGet("/parametres", async (ReglerSurveillance regler, ClaimsPrincipal user, CancellationToken ct) =>
             {
@@ -74,7 +75,7 @@ internal static class SurveillanceEndpoints
                     p.JoursCreditSansRemboursement, p.SeuilAutorisationsValideur, p.SeuilAutorisationsEmploye, p.MinutesPostesSimultanes,
                     p.SeuilChangementsPoste, p.SeuilBaissesPrix, p.SeuilSortiesTiroir));
             })
-           .AvecEtatReglageCentral(Pharma.Domain.Reglages.TablesMutualisables.Surveillance);
+           .AvecEtatReglageCentral(Pharma.Domain.Reglages.TablesMutualisables.Surveillance).ExigerPack(PacksOffre.ControleFraude);
 
         surveillance.MapPut("/parametres", async (ParametresSurveillanceDto req, ReglerSurveillance regler, ClaimsPrincipal user, CancellationToken ct) =>
             {
@@ -85,7 +86,7 @@ internal static class SurveillanceEndpoints
                     req.SeuilAutorisationsValideur, req.SeuilAutorisationsEmploye, req.MinutesPostesSimultanes, req.SeuilChangementsPoste,
                     req.SeuilBaissesPrix, req.SeuilSortiesTiroir), user.UtilisateurId(), ct);
                 return Results.NoContent();
-            });
+            }).ExigerPack(PacksOffre.ControleFraude);
 
         // Contrôle interne : sorties et entrées du tiroir par motif, employé et période (script 096)
         surveillance.MapGet("/tiroir", async (DateOnly? du, DateOnly? au, long? employe, string? motif, string? sens, int? page, int? taille,
@@ -100,14 +101,14 @@ internal static class SurveillanceEndpoints
 
         // Produits sensibles : comptés à part et régulièrement
         surveillance.MapGet("/sensibles", async (GererProduitsSensibles gerer, ClaimsPrincipal user, CancellationToken ct) =>
-            Results.Ok((await gerer.ListerAsync(user.UtilisateurId(), ct)).Select(p => new ProduitSensibleDto(p.ProduitId, p.Nom, p.Stock))));
+            Results.Ok((await gerer.ListerAsync(user.UtilisateurId(), ct)).Select(p => new ProduitSensibleDto(p.ProduitId, p.Nom, p.Stock)))).ExigerPack(PacksOffre.ControleFraude);
 
         surveillance.MapPut("/sensibles/{produitId:long}", async (long produitId, MarquerSensibleRequete req, GererProduitsSensibles gerer,
                 ClaimsPrincipal user, CancellationToken ct) =>
             {
                 await gerer.MarquerAsync(produitId, req.Sensible, user.UtilisateurId(), ct);
                 return Results.NoContent();
-            });
+            }).ExigerPack(PacksOffre.ControleFraude);
 
         // Écarts dans le temps (par jour, poste, employés présents) et risques par employé
         surveillance.MapGet("/risques", async (DateOnly? du, DateOnly? au, ObtenirTableauRisques obtenir, ClaimsPrincipal user, CancellationToken ct) =>
@@ -123,7 +124,7 @@ internal static class SurveillanceEndpoints
                         e.Activite.RetoursClients, e.Activite.Remises, e.Activite.Credits, e.Activite.AutorisationsDemandees, e.Activite.AutorisationsDonnees,
                         e.Activite.Casses, e.Activite.Echantillons, e.Activite.BoitesAjustees)).ToList(),
                     Pharma.Domain.Rapports.RegleRisques.JoursPerteMin, Pharma.Domain.Rapports.RegleRisques.Facteur, Pharma.Domain.Rapports.RegleRisques.JoursAbsentMin));
-            });
+            }).ExigerPack(PacksOffre.ControleFraude);
 
         // Intégrité des journaux chaînés : état de chaque chaîne et « Vérifier maintenant » (titulaire)
         surveillance.MapGet("/integrite", async (Pharma.Application.Integrite.ObtenirIntegrite obtenir, ClaimsPrincipal user, CancellationToken ct) =>

@@ -28,6 +28,48 @@ public interface ILimitesOffre
     Task<int> MaximumPostesAsync(CancellationToken ct = default);
 }
 
+/// <summary>Packs de l'offre en vigueur (lot O6) : routes, écrans et tâches d'un pack non inclus sont fermés.</summary>
+public interface IPacksOffre
+{
+    Task<bool> InclusAsync(string pack, CancellationToken ct = default);
+    Task<int> ScannersMobilesAsync(CancellationToken ct = default);
+}
+
+/// <summary>Action d'un pack non inclus dans l'offre : refusée (403, « Option non incluse — voir Mon offre »).</summary>
+public sealed class OptionNonIncluseException(string pack) : Exception(PacksOffre.MessageNonInclus(pack))
+{
+    public string Pack { get; } = pack;
+}
+
+public static class PacksOffreExtensions
+{
+    /// <summary>Refuse l'action si le pack n'est pas inclus dans l'offre en vigueur.</summary>
+    public static async Task ExigerPackAsync(this IPacksOffre packs, string pack, CancellationToken ct = default)
+    {
+        if (!await packs.InclusAsync(pack, ct)) throw new OptionNonIncluseException(pack);
+    }
+}
+
+/// <summary>
+/// Offre en vigueur gardée une minute (une lecture de la base et un contrôle de signature par minute au plus, pas à chaque requête) ;
+/// vidée à chaque saisie ou réception d'un code. Singleton.
+/// </summary>
+public sealed class CacheOffre
+{
+    public static readonly TimeSpan Duree = TimeSpan.FromMinutes(1);
+    private (EtatOffre Etat, DateTime LeUtc)? valeur;
+    private readonly object verrou = new();
+
+    public EtatOffre? Lire(DateTime maintenantUtc)
+    {
+        lock (verrou) return valeur is { } v && maintenantUtc - v.LeUtc < Duree && maintenantUtc >= v.LeUtc ? v.Etat : null;
+    }
+
+    public void Ecrire(EtatOffre etat, DateTime maintenantUtc) { lock (verrou) valeur = (etat, maintenantUtc); }
+
+    public void Vider() { lock (verrou) valeur = null; }
+}
+
 /// <summary>Offre en vigueur.</summary>
 /// <param name="Etat">base (aucune activation valable), active, grace (échue depuis moins de 15 jours).</param>
 /// <param name="Alerte">Avertissement à montrer au titulaire (échéance proche, délai de grâce, activation refusée), sinon null.</param>
@@ -44,7 +86,8 @@ public static class EtatsOffre
 /// l'éditeur, même officine, même NIF) et n'est pas échue depuis plus de 15 jours. Sans activation valable : offre de base, 2 postes ;
 /// une activation effacée ou modifiée dans la base ramène à l'offre de base, jamais à tout ouvert.
 /// </summary>
-public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge, byte[]? clePublique = null) : ILimitesOffre
+public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge, byte[]? clePublique = null, CacheOffre? cache = null)
+    : ILimitesOffre, IPacksOffre
 {
     /// <summary>Offre de base : 2 postes inclus (proposition du 2026-11-26, docs/offre-et-options.md).</summary>
     public const int PostesBase = 2;
@@ -53,6 +96,13 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
     private readonly byte[] cle = clePublique ?? CleEditeur.Publique;
 
     public async Task<int> MaximumPostesAsync(CancellationToken ct = default) => (await LireAsync(ct)).Postes;
+
+    public async Task<bool> InclusAsync(string pack, CancellationToken ct = default) => (await LireAsync(ct)).Packs.Contains(pack);
+
+    public async Task<int> ScannersMobilesAsync(CancellationToken ct = default) => (await LireAsync(ct)).ScannersMobiles;
+
+    /// <summary>Vide le cache (après une saisie ou une réception de code).</summary>
+    public void Invalider() => cache?.Vider();
 
     /// <summary>Contrôle une activation pour CETTE pharmacie : signature, officine, NIF. Lève <see cref="ActivationInvalideException"/>.</summary>
     public ActivationOffre Controler(string code, IdentiteOffre identite)
@@ -70,6 +120,14 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
     public static int JoursAvantFermeture(DateOnly fin, DateOnly aujourdhui) => fin.AddDays(GraceJours).DayNumber - aujourdhui.DayNumber;
 
     public async Task<EtatOffre> LireAsync(CancellationToken ct = default)
+    {
+        if (cache?.Lire(horloge.MaintenantUtc) is { } garde) return garde;
+        var etat = await CalculerAsync(ct);
+        cache?.Ecrire(etat, horloge.MaintenantUtc);
+        return etat;
+    }
+
+    private async Task<EtatOffre> CalculerAsync(CancellationToken ct)
     {
         var identite = await depot.IdentiteAsync(ct);
         var aujourdhui = horloge.Aujourdhui;
@@ -145,6 +203,7 @@ public sealed class GererOffre(IActivationsOffreDepot depot, OffreCourante offre
             throw new RegleMetierException($"Code plus ancien que l’activation en place (signée le {derniere:dd/MM/yyyy}) : il n’est pas pris.", "code");
         if (!await depot.AjouterAsync(code!.Trim(), a.EmiseLeUtc, source, par, ordre, ct))
             throw new RegleMetierException("Ce code est déjà enregistré.", "code");
+        offre.Invalider();
         return a;
     }
 

@@ -16,7 +16,7 @@ namespace Pharma.Desktop.Services;
 /// 40 caractères) ou le jeu « cd5220 » (ESC Q A / ESC Q B) ; à vérifier sur l'appareil réel.
 /// Une panne d'afficheur ne bloque jamais la caisse : les erreurs sont gardées dans DerniereErreur.
 /// </summary>
-public sealed class AfficheurClient(ReglagesPoste reglages, ConfigurationPoste poste, SessionPoste session) : IDisposable
+public sealed class AfficheurClient(ReglagesPoste reglages, ConfigurationPoste poste, SessionPoste session, OffrePoste? offre = null) : IDisposable
 {
     private static readonly CultureInfo Fr = CultureInfo.GetCultureInfo("fr-FR");
     private readonly object verrou = new();
@@ -93,11 +93,14 @@ public sealed class AfficheurClient(ReglagesPoste reglages, ConfigurationPoste p
 
     public static string[] Ports() => SerialPort.GetPortNames().OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray();
 
+    /// <summary>Lot O6 : l'afficheur client fait partie du pack H (confort du comptoir) ; sans lui (ou offre pas encore lue), rien n'est affiché.</summary>
+    private bool PackComptoir => offre is null || offre.Inclus("H");
+
     // ---- Écran secondaire ----------------------------------------------------------------
 
     private void Ecran(Action<FenetreClient> action)
     {
-        if (!AvecEcran || Application.Current is null) return;
+        if (!AvecEcran || !PackComptoir || Application.Current is null) return;
         Application.Current.Dispatcher.InvokeAsync(() =>
         {
             try
@@ -129,7 +132,7 @@ public sealed class AfficheurClient(ReglagesPoste reglages, ConfigurationPoste p
 
     private void Vfd(string ligne1, string ligne2, string? ligne1Detail = null)
     {
-        if (!AvecVfd) return;
+        if (!AvecVfd || !PackComptoir) return;
         var nomPort = reglages.Actuelles.PortAfficheur;
         if (string.IsNullOrWhiteSpace(nomPort)) { DerniereErreur = "Afficheur 2 lignes : port COM non choisi."; return; }
         var l1 = Ligne(ligne1Detail ?? ligne1);

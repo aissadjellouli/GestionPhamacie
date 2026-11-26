@@ -1,3 +1,4 @@
+using Pharma.Application.Offre;
 using System.Security.Claims;
 using Pharma.Api.Securite;
 using Pharma.Application.Achats;
@@ -26,7 +27,7 @@ internal static class MultiGrossistesEndpoints
                 return Results.Ok(new ProfilCatalogueDto(p.FournisseurId, p.ColonneCode, p.ColonneCodeBarre, p.ColonneDesignation, p.ColonnePrixHt,
                     p.ColonneDisponibilite, p.ColonneDelai, p.ValeursIndisponible, p.ValeursDisponible, p.ModifieLe));
             })
-           .ExigerPermission(Permissions.AchatsCommander);
+           .ExigerPermission(Permissions.AchatsCommander).ExigerPack(PacksOffre.Achats);
 
         g.MapPut("/catalogues/profils/{fournisseurId:long}", async (long fournisseurId, ProfilCatalogueDto d, EnregistrerProfilCatalogue enregistrer,
                 ClaimsPrincipal user, CancellationToken ct) =>
@@ -35,11 +36,11 @@ internal static class MultiGrossistesEndpoints
                     d.ColonneDisponibilite, d.ColonneDelai, d.ValeursIndisponible, d.ValeursDisponible), user.UtilisateurId(), ct);
                 return Results.NoContent();
             })
-           .ExigerPermission(Permissions.AchatsCommander);
+           .ExigerPermission(Permissions.AchatsCommander).ExigerPack(PacksOffre.Achats);
 
         g.MapPost("/catalogues/colonnes", (FichierCatalogueRequete r, LireColonnesCatalogue lire) =>
                 Results.Ok(lire.Executer(Fichier(r))))
-           .ExigerPermission(Permissions.AchatsCommander);
+           .ExigerPermission(Permissions.AchatsCommander).ExigerPack(PacksOffre.Achats);
 
         g.MapPost("/catalogues/{fournisseurId:long}/import", async (long fournisseurId, FichierCatalogueRequete r, ImporterCatalogueGrossiste importer,
                 ClaimsPrincipal user, CancellationToken ct) =>
@@ -48,12 +49,12 @@ internal static class MultiGrossistesEndpoints
                 return Results.Ok(new BilanImportCatalogueDto(b.ImportId, b.LignesLues, b.LignesRapprochees, b.LignesIgnorees, b.NonRapprochees,
                     b.Anomalies.Select(a => new AnomalieCatalogueDto(a.NumeroLigne, a.Message)).ToList()));
             })
-           .ExigerPermission(Permissions.AchatsCommander);
+           .ExigerPermission(Permissions.AchatsCommander).ExigerPack(PacksOffre.Achats);
 
         g.MapGet("/catalogues/imports", async (long? grossiste, int? page, int? taille, ListerImportsCatalogue lister, CancellationToken ct) =>
                 Results.Ok(VersDto((await lister.ExecuterAsync(grossiste, DemandePage.Lire(page, taille), ct)).Vers(i => new ImportCatalogueDto(
                     i.Id, i.FournisseurId, i.Grossiste, i.NomFichier, i.ImporteLe, i.Utilisateur, i.LignesLues, i.LignesRapprochees, i.LignesIgnorees)))))
-           .ExigerPermission(Permissions.AchatsCommander);
+           .ExigerPermission(Permissions.AchatsCommander).ExigerPack(PacksOffre.Achats);
 
         g.MapGet("/commander", async (string? recherche, string? statut, int? page, int? taille, ComparerGrossistes comparer,
                 IPermissionService droits, ClaimsPrincipal user, CancellationToken ct) =>
@@ -66,12 +67,12 @@ internal static class MultiGrossistesEndpoints
                         o.DelaiJours, o.CatalogueLe, v.Prix(o.DernierPrixAchatHt), o.DernierAchatLe)).ToList(),
                     c.Proposition.FournisseurId, c.Proposition.Motif))));
             })
-           .ExigerPermission(Permissions.AchatsCommander);
+           .ExigerPermission(Permissions.AchatsCommander).ExigerPack(PacksOffre.Achats);
 
         g.MapPost("/commander/repartir", async (RepartitionRequete r, RepartirCommande repartir, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok((await repartir.ExecuterAsync(r.Lignes.Select(l => new LigneRepartition(l.ProduitId, l.FournisseurId, l.Quantite)).ToList(),
                     user.UtilisateurId(), ct)).Select(b => new BonRepartiDto(b.CommandeId, b.FournisseurId, b.Grossiste, b.Lignes)).ToList()))
-           .ExigerPermission(Permissions.AchatsCommander);
+           .ExigerPermission(Permissions.AchatsCommander).ExigerPack(PacksOffre.Achats);
 
         g.MapPost("/commandes/{id:long}/envoyer-email", async (long id, EnvoyerBonParEmail envoyer, ClaimsPrincipal user, CancellationToken ct) =>
             {

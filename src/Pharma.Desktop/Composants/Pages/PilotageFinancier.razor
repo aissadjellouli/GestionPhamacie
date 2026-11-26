@@ -18,6 +18,7 @@
     <div class="titre-page">
         <div>
             <h1>Tableau de bord financier · @Rubriques.First(x => x.Id == rubrique).Libelle<AideEcran Cle="pilotage-financier" /></h1>
+            <OptionNonIncluse Pack="D" LectureSeule />
             <p class="sous-titre">@(tableau is { } tt ? $"{tt.Libelle}{(tt.PrecedentDu is { } pd ? $" · comparé au {pd:dd/MM/yyyy} – {tt.PrecedentAu:dd/MM/yyyy}" : "")}" : "Chargement…")</p>
         </div>
         <div style="display: flex; gap: 8px; flex-wrap: wrap">

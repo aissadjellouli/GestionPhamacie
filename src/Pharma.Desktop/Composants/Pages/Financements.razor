@@ -27,6 +27,7 @@
         <div class="titre-page">
             <div>
                 <h1>Financements · @RubriqueCourante.Libelle<AideEcran Cle="financements" /></h1>
+                <OptionNonIncluse Pack="D" LectureSeule />
                 <p class="sous-titre">@RubriqueCourante.SousTitre</p>
             </div>
             @if (rubrique == "prets" && Pret is null && !creation) { <button type="button" class="btn" @onclick="NouveauPret">Nouveau prêt</button> }

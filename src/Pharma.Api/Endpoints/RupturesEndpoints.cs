@@ -1,3 +1,4 @@
+using Pharma.Application.Offre;
 using System.Security.Claims;
 using Pharma.Api.Securite;
 using Pharma.Application.Achats;
@@ -17,7 +18,7 @@ internal static class RupturesEndpoints
 {
     public static void MapRuptures(this RouteGroupBuilder api)
     {
-        var a = api.MapGroup("/achats/ruptures");
+        var a = api.MapGroup("/achats/ruptures").ExigerPack(PacksOffre.Achats);
         a.MapGet("/partout", async (string? recherche, int? page, int? taille, ConsulterRuptures c, CancellationToken ct) =>
                 Results.Ok(VersDto((await c.PartoutAsync(recherche, DemandePage.Lire(page, taille), ct)).Vers(r =>
                     new RuptureProduitDto(r.ProduitId, r.Produit, r.Grossistes, r.Depuis, r.StockOfficine, r.PatientsEnAttente)))))
@@ -27,7 +28,7 @@ internal static class RupturesEndpoints
                     new PeriodeRuptureDto(r.Id, r.ProduitId, r.Produit, r.FournisseurId, r.Grossiste, r.Debut, r.Fin)))))
            .ExigerPermission(Permissions.AchatsCommander);
 
-        var d = api.MapGroup("/caisse/demandes-patients");
+        var d = api.MapGroup("/caisse/demandes-patients").ExigerPack(PacksOffre.Achats);
         d.MapGet("", async (string? recherche, string? statut, int? page, int? taille, ConsulterDemandesPatients c, CancellationToken ct) =>
                 Results.Ok(VersDto((await c.PageAsync(recherche, statut, DemandePage.Lire(page, taille), ct)).Vers(VersDto))))
            .ExigerPermission(Permissions.CaisseVendre);

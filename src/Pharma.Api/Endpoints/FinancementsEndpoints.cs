@@ -1,3 +1,4 @@
+using Pharma.Application.Offre;
 using System.Security.Claims;
 using Pharma.Api.Securite;
 using Pharma.Application.Commun;
@@ -13,7 +14,7 @@ internal static class FinancementsEndpoints
 {
     public static void MapFinancements(this RouteGroupBuilder api)
     {
-        var f = api.MapGroup("/financements").ExigerTitulaire();
+        var f = api.MapGroup("/financements").ExigerTitulaire().ExigerPack(PacksOffre.Finances);
 
         // Prêts filtrés (état, texte, banque) et paginés par le serveur
         f.MapGet("/prets", async (string? etat, string? q, long? banque, int? page, int? taille, ConsulterFinancements c, ClaimsPrincipal user,

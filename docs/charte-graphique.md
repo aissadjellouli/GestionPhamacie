@@ -770,6 +770,12 @@ avant livraison : un bandeau « Remboursement anticipé enregistré… » au-des
 (tableau déjà à 140 px) ; l'avertissement prend la place du pied de la tuile « Mensualité » (`.tuile-pied.texte-attention`, orange : la règle
 `.tuile-pied`, déclarée après `.texte-attention`, l'emportait) et chaque échéance bloquée porte la pastille « Nouveau tableau à importer ».
 
+### Mesures du 2026-11-26 : bandeau « Option non incluse » (lot O6)
+
+Poste d'essai à l'offre de base : bandeau sous le titre (`OptionNonIncluse`, `.info-bandeau.texte-attention`) sur Trésorerie, Contrôle
+interne, 2e serveur et Synchronisation : **0 px** à 1 366 × 768, clair et sombre ; après activation des packs A et D, Trésorerie et Contrôle
+interne sans bandeau : 0 px.
+
 ### Mesures du 2026-11-26 : Administration › Mon offre (`/admin/offre`)
 
 Poste d'essai, base jetable, titulaire : offre en vigueur (état, postes « N autorisés sur M », échéance, 8 packs sur deux colonnes) et saisie

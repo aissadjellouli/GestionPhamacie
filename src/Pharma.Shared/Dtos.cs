@@ -1114,6 +1114,9 @@ public sealed record OffreDto(string Etat, IReadOnlyList<PackOffreDto> Packs, in
     IReadOnlyList<PackOffreDto> TousLesPacks);
 
 public sealed record ActivationOffreRequete(string Code);
+
+/// <summary>Lot O6 : packs de l'offre en vigueur (tout employé connecté).</summary>
+public sealed record PacksOffreDto(string Etat, IReadOnlyList<string> Packs, int Postes, int ScannersMobiles, IReadOnlyList<PackOffreDto>? Tous = null);
 /// <summary>Taux proposé à la création d'un produit de la catégorie ; null : à choisir.</summary>
 public sealed record TauxTvaCategorieDto(string Code, string Libelle, decimal? Taux);
 /// <summary>Taux enregistré sur des produits ou des prestations sans être dans la liste (signalé, jamais modifié).</summary>

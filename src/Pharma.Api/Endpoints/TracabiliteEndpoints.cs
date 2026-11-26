@@ -1,3 +1,4 @@
+using Pharma.Application.Offre;
 using System.Security.Claims;
 using Pharma.Api.Securite;
 using Pharma.Application.Tracabilite;
@@ -12,7 +13,7 @@ internal static class TracabiliteEndpoints
     {
         api.MapGet("/tracabilite/etiquetage", async (ObtenirEtatEtiquetage obtenir, CancellationToken ct) =>
                 Results.Ok((await obtenir.ExecuterAsync(ct)).VersDto()))
-           .ExigerPermission(Permissions.StockConsulter);
+           .ExigerPermission(Permissions.StockConsulter).ExigerPack(PacksOffre.Inventaire);
 
         api.MapPost("/tracabilite/rappels", async (RappelLotRequete req, RappelerLot rappeler,
                 ClaimsPrincipal user, CancellationToken ct) =>
@@ -22,7 +23,7 @@ internal static class TracabiliteEndpoints
         // État d'un lot et patients concernés, sans rien bloquer (lot déjà rappelé) : même droit que le rappel
         api.MapGet("/tracabilite/rappels", async (long produit, string? lot, ConsulterRappelLot consulter, CancellationToken ct) =>
                 Results.Ok((await consulter.ExecuterAsync(produit, lot, ct)).VersDto()))
-           .ExigerPermission(Permissions.StockDeclarerPerime);
+           .ExigerPermission(Permissions.StockDeclarerPerime).ExigerPack(PacksOffre.Inventaire);
 
         // Numéros de lot proposés au rappel (2026-11-18) : tous les lots du produit, épuisés compris, 10 au plus ; même droit que le rappel
         api.MapGet("/tracabilite/produits/{id:long}/lots", async (long id, string? q, ProposerLotsRappel proposer, CancellationToken ct) =>
@@ -33,6 +34,6 @@ internal static class TracabiliteEndpoints
                 await consulter.ExecuterAsync(code, user.UtilisateurId(), ct) is { } parcours
                     ? Results.Ok(parcours.VersDto())
                     : Results.NotFound(new ErreurDto("Boîte inconnue : vérifiez le code ou l'étiquette.")))
-           .ExigerPermission(Permissions.StockConsulter);
+           .ExigerPermission(Permissions.StockConsulter).ExigerPack(PacksOffre.Inventaire);
     }
 }

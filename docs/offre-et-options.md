@@ -1,7 +1,6 @@
 # Offre de base et options vendues à la demande
 
-> Décision du titulaire du 2026-11-26. **Mécanisme d'activation codé le 2026-11-26** (« go all lot » : lots O1 à O5, voir « Mise en œuvre ») ;
-> le partage des fonctionnalités entre offre de base et packs (lot O6) attend le tour des packs A à H.
+> Décision du titulaire du 2026-11-26. **Mécanisme d'activation et fermeture des packs codés le 2026-11-26** (lots O1 à O6, voir « Mise en œuvre »).
 
 ## Le besoin
 
@@ -116,7 +115,24 @@ Faite à partir des 275 fonctionnalités de [fonctionnalites.md](fonctionnalites
 | O3 | Outil de l'éditeur `src/Pharma.Editeur` : `generer-cle`, `cle-publique`, `signer`, `lire` (jamais livré aux pharmacies) | Fait |
 | O4 | Écran Administration › Mon offre (titulaire) : offre en lecture seule, packs, postes, échéance, saisie d'un code, codes enregistrés | Fait (mesuré à 0 px, clair et sombre) |
 | O5 | Voie du central : ordre `activation_offre` (script central 044, console `--ordre-activation`) ; le central transmet, l'officine contrôle | Fait (console ; pas d'écran de l'éditeur au central) |
-| O6 | Fermer les packs non inclus (écrans et routes masqués ou en lecture seule, données gardées) | **En attente** du tour des packs A à H |
+| O6 | Fermer les packs non inclus : filtre `ExigerPack` sur les routes (refus 403 « Option non incluse — voir Mon offre » ; lecture permise pour B, C, D et les réglages du 2e serveur F ; A fermé entièrement, anomalies enregistrées en silence), comportements (réception à l'aveugle sans A ; aucun versement au coffre à la clôture sans D ; facture à une entreprise ou un organisme : D ; rapport quotidien : E ; afficheur client : H), alertes au titulaire selon les packs (sécurité toujours), synchronisation sans G (seuls les résultats d'ordres déjà reçus remontent), bandeau « Option non incluse » sur les écrans des packs | Fait (essayé en réel, bandeaux mesurés à 0 px, clair et sombre) |
+
+### Rattachement des routes (lot O6, figé par `PacksOffreRoutesTests`)
+
+| Pack | Routes fermées | Restent dans la base |
+|---|---|---|
+| A | `/surveillance` (liste, traitement, réglages, produits sensibles, risques) | tiroir, intégrité, journal fiscal |
+| B | traçabilité par boîte, étiquetage, consultation d'un rappel, sérialisation, `/mobile`, démarrage d'un inventaire tournant et ses réglages | rappel (blocage) d'un lot, comptage (sert à l'inventaire complet), inventaire complet |
+| C | multi-grossistes (catalogues, comparaison, répartition), `/achats/ruptures`, `/caisse/demandes-patients` | bons de commande et leur envoi par e-mail, réception, facture d'achat, retours |
+| D | `/tresorerie`, `/suivi-dettes`, `/financements`, `/pilotage/financier` ; facture à une entreprise ou un organisme | facture à un patient, rapports |
+| E | `/pilotage`, rapport quotidien envoyé tout de suite | alertes de sécurité |
+| F | réglages `/admin/second-serveur` (consultation permise) | vigie et bascule de la paire déjà installée |
+| G | activation, envoi, rechargement, réglages, supervision, accès à distance, nouvelle époque de `/admin/synchronisation` | statut, ordres déjà reçus et leurs résultats |
+| H | `/ordonnances/analyser`, `/ordonnances/scans` (OCR) | lecture manuelle de l'ordonnance |
+
+**Limites connues** : le quota de **scanners mobiles** n'est pas compté (aucun registre des téléphones : seul le pack B ouvre `/mobile`) ;
+pas de bandeau dans l'onglet multi-grossistes des Achats ni sur l'ordonnance scannée de la caisse (le refus du serveur s'affiche) ; les
+boutons d'action ne sont pas grisés : le bandeau prévient, le serveur refuse.
 
 ### Mise en service (à faire une fois par l'éditeur)
 
@@ -126,7 +142,8 @@ Faite à partir des 275 fonctionnalités de [fonctionnalites.md](fonctionnalites
    signé** (il faudrait une nouvelle clé et une nouvelle version du programme).
 2. **Intégrer la clé publique** (contenu de `cle-editeur-publique.txt`) dans `src/Pharma.Application/Offre/ActivationOffre.cs`
    (`CleEditeur.PubliqueBase64`), puis livrer cette version. **Tant que cette constante est vide, aucun code n'est accepté : toutes les
-   pharmacies sont à l'offre de base (2 postes)** ; les postes déjà autorisés restent, seules les nouvelles autorisations sont refusées.
+   pharmacies sont à l'offre de base (2 postes, aucun pack : écrans des packs A à H fermés)** ; les postes déjà autorisés restent, seules
+   les nouvelles autorisations sont refusées. Bases de développement et d'essai comprises : leur saisir un code de transition.
 3. **À chaque mise en place ou mise à jour d'une pharmacie** : relever son code d'officine et son NIF (Administration › Mon offre), signer un
    code de transition `signer --cle <cle-editeur.pem> --officine <code> --nif <NIF> --postes <n> --transition --fin AAAA-MM-JJ` (durée fixée
    à ce moment-là), le saisir dans Mon offre (connecté en titulaire) ou l'envoyer par le central :
@@ -150,3 +167,5 @@ Faite à partir des 275 fonctionnalités de [fonctionnalites.md](fonctionnalites
 | 2026-11-26 | Liaison (Q3 précisée) : l'activation contient le **code de l'officine** (`officine_id`) **et son NIF** ; le NIF doit être saisi avant l'activation. |
 | 2026-11-26 | Clé de l'éditeur : **fichier chiffré par un mot de passe**, hors de tout dépôt, sur le PC de l'éditeur, avec une copie sur une clé USB rangée à part ; l'outil demande le mot de passe à chaque signature. |
 | 2026-11-26 | Transition (Q8 précisée) : **code de transition** « tout compris » signé, saisi par l'éditeur lors de la mise en place ou de la mise à jour, avec une date de fin choisie à ce moment-là. **Sans aucune activation valable : offre de base, 2 postes** ; une activation effacée ramène à l'offre de base, jamais à tout ouvert. |
+| 2026-11-26 | **Tour des packs : recommandations acceptées** (« prends tes recommandations ») : packs A à H confirmés, avec ces précisions. A : la **réception à l'aveugle avec double saisie** entre dans le pack A (la base garde la réception simple). B : l'**inventaire complet annuel** et le **blocage d'un lot rappelé** restent dans la base ; la liste des patients à contacter et son export vont dans B. C : bons de commande, réception, facture d'achat et retours restent dans la base. D : la **facture à un patient** reste dans la base ; sans D, la clôture de caisse ne verse rien en trésorerie ; les rapports simples restent dans la base. E : les **alertes de sécurité** par SMS ou e-mail (sauvegarde absente, rupture d'intégrité, poste ou serveur isolé) restent dans la base. F : sauvegarde quotidienne, rotation des disques et test de restauration restent dans la base. Quotas : 2 postes et **0 scanner mobile** dans la base. **Fermeture d'un pack** : packs avec données (A à D) en **lecture seule** (actions refusées « Option non incluse — voir Mon offre », rien d'effacé) ; packs sans données propres (E à H) **arrêtés** ; tâches automatiques du pack arrêtées ; le serveur refuse lui-même les routes d'un pack fermé. |
+| 2026-11-26 | Lot O6 (« 1 reco, 2 reco, 3 reco, go O6 ») : (1) sans le pack A, les anomalies sont **enregistrées en silence** et deviennent visibles, avec leur historique, dès l'achat du pack ; (2) pack F échu alors que les deux serveurs tournent : la paire **continue de fonctionner** (réplication, bascule), le titulaire est prévenu, aucune nouvelle installation, écrans de réglage du 2e serveur en lecture seule ; (3) pack G échu : la synchronisation s'arrête, mais les **résultats des ordres déjà reçus** sont encore envoyés. |

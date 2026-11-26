@@ -96,6 +96,14 @@ internal static class ReglagesMutualisesEndpoints
                     Pharma.Application.Offre.PacksOffre.Tous.Select(p => new PackOffreDto(p.Code, p.Libelle)).ToList()));
             })
            .ExigerTitulaire();
+        // Lot O6 : packs de l'offre en vigueur, pour tout employé connecté (jamais le code de l'officine ni le NIF)
+        api.MapGet("/offre/packs", async (Pharma.Application.Offre.OffreCourante o, CancellationToken ct) =>
+            {
+                var e = await o.LireAsync(ct);
+                return Results.Ok(new PacksOffreDto(e.Etat, e.Packs, e.Postes, e.ScannersMobiles,
+                    Pharma.Application.Offre.PacksOffre.Tous.Select(p => new PackOffreDto(p.Code, p.Libelle)).ToList()));
+            })
+           .ExigerConnexion();
         api.MapPost("/offre/activation", async (ActivationOffreRequete r, Pharma.Application.Offre.GererOffre g, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 await g.SaisirAsync(user.UtilisateurId(), r.Code, ct);

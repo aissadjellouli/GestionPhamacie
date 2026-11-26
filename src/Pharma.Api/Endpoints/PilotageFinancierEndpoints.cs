@@ -1,3 +1,4 @@
+using Pharma.Application.Offre;
 using System.Security.Claims;
 using Pharma.Api.Securite;
 using Pharma.Application.Commun;
@@ -16,7 +17,7 @@ internal static class PilotageFinancierEndpoints
 {
     public static void MapPilotageFinancier(this RouteGroupBuilder api)
     {
-        var g = api.MapGroup("/pilotage/financier");
+        var g = api.MapGroup("/pilotage/financier").ExigerPack(PacksOffre.Finances);
 
         // ?periode=jour|semaine|mois&date=… ou ?periode=dates&du=…&au=… ; dormant=jours (seuil, sinon celui des alertes)
         g.MapGet("", async (string? periode, DateOnly? date, DateOnly? du, DateOnly? au, int? dormant, ObtenirPilotageFinancier obtenir,

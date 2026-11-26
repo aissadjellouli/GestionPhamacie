@@ -1,3 +1,4 @@
+using Pharma.Application.Offre;
 using System.Security.Claims;
 using Pharma.Api.Securite;
 using Pharma.Application.Mobile;
@@ -11,7 +12,7 @@ internal static class MobileEndpoints
 {
     public static void MapMobile(this RouteGroupBuilder api)
     {
-        var mobile = api.MapGroup("/mobile");
+        var mobile = api.MapGroup("/mobile").ExigerPack(PacksOffre.Inventaire);
 
         mobile.MapPost("/code", async (CodeRequete req, IdentifierCode identifier, ClaimsPrincipal user, CancellationToken ct) =>
             {

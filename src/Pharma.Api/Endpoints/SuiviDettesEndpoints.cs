@@ -1,3 +1,4 @@
+using Pharma.Application.Offre;
 using System.Security.Claims;
 using Pharma.Api.Securite;
 using Pharma.Application.Commun;
@@ -20,7 +21,7 @@ internal static class SuiviDettesEndpoints
                     s.Tranches.Select(t => new TotalTrancheDto(t.Sens, t.Tranche, t.Nombre, t.Montant)).ToList(),
                     s.Alertes.Select(a => new AlerteDetteDto(a.Sens, a.Categorie, a.Nombre, a.Montant, a.Message)).ToList()));
             })
-           .ExigerPermission(Permissions.TresorerieGerer);
+           .ExigerPermission(Permissions.TresorerieGerer).ExigerPack(PacksOffre.Finances);
 
         // Liste paginée et filtrée par le serveur (catégorie, tiers, état, période) : total de tout le filtre, tiers de la catégorie
         api.MapGet("/suivi-dettes/lignes", async (string? categorie, string? tiers, string? etat, DateOnly? du, DateOnly? au, string? recherche, int? page, int? taille,
@@ -31,14 +32,14 @@ internal static class SuiviDettesEndpoints
                 return Results.Ok(new SuiviDettesLignesDto(new PageDto<LigneSuiviDto>(p.Lignes, p.Total, p.Numero, p.Taille), r.Total,
                     r.Tiers.Select(t => new TiersSuiviDto(t.Valeur, t.Nom)).ToList()));
             })
-           .ExigerPermission(Permissions.TresorerieGerer);
+           .ExigerPermission(Permissions.TresorerieGerer).ExigerPack(PacksOffre.Finances);
 
         api.MapPut("/suivi-dettes/delai", async (DelaiAlerteDettesRequete req, ModifierDelaiAlerteDettes modifier, ClaimsPrincipal user, CancellationToken ct) =>
             {
                 await modifier.ExecuterAsync(req.Jours, user.UtilisateurId(), ct);
                 return Results.NoContent();
             })
-           .ExigerTitulaire();
+           .ExigerTitulaire().ExigerPack(PacksOffre.Finances);
     }
 
     private static LigneSuiviDto Ligne(LigneSuivi l) => new(l.Somme.Sens, l.Somme.Categorie, l.Somme.Tiers, l.Somme.Libelle, l.Somme.Depuis, l.Somme.Echeance,

@@ -18,7 +18,11 @@ public sealed class EnvoiNotifications(IServiceProvider services, ILogger<EnvoiN
             try
             {
                 using var scope = services.CreateScope();
-                if (await scope.ServiceProvider.GetRequiredService<EnvoyerRapportQuotidien>().ExecuterAsync(DateTime.Now, stoppingToken))
+                // Lot O6 : le rapport quotidien par e-mail fait partie du pack E (pilotage et notifications) ; la file part toujours
+                // (alertes de sécurité comprises)
+                if (await scope.ServiceProvider.GetRequiredService<Pharma.Application.Offre.IPacksOffre>()
+                        .InclusAsync(Pharma.Application.Offre.PacksOffre.Pilotage, stoppingToken)
+                    && await scope.ServiceProvider.GetRequiredService<EnvoyerRapportQuotidien>().ExecuterAsync(DateTime.Now, stoppingToken))
                     logger.LogInformation("Rapport quotidien mis en file");
                 var bilan = await scope.ServiceProvider.GetRequiredService<TraiterFileAttente>().ExecuterAsync(DateTime.UtcNow, stoppingToken);
                 if (bilan.Envoyes + bilan.Echecs > 0)

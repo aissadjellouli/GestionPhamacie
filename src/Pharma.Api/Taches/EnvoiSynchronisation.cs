@@ -21,6 +21,25 @@ public sealed class EnvoiSynchronisation(IServiceProvider services, ILogger<Envo
 
     // 2e serveur : l'API refuse déjà de démarrer sur une base en veille (ReplicationOfficine.RefusDemarrage) ; en plus, chaque
     // passage vérifie pg_is_in_recovery() et n'envoie rien sur une base en lecture seule (EnvoyerLotsSync.ArretLectureSeule).
+    private static Task<bool> PackSynchronisationAsync(IServiceProvider sp, CancellationToken ct) =>
+        sp.GetRequiredService<Pharma.Application.Offre.IPacksOffre>().InclusAsync(Pharma.Application.Offre.PacksOffre.MultiOfficines, ct);
+
+    /// <summary>Résultats d'ordres du central pas encore accusés par lui (journal de sortie, table sync_ordre_resultat).</summary>
+    private static async Task<bool> ResultatsOrdresEnAttenteAsync(IServiceProvider sp, CancellationToken ct)
+    {
+        await using var cmd = sp.GetRequiredService<Npgsql.NpgsqlDataSource>().CreateCommand("""
+            SELECT EXISTS (SELECT 1 FROM sync_sortie s, sync_parametre p WHERE p.id = 1 AND p.active AND s.nom_table = 'sync_ordre_resultat'
+                           AND (s.lot_numero IS NULL OR s.lot_numero > p.dernier_accuse))
+            """);
+        return await cmd.ExecuteScalarAsync(ct) is true;
+    }
+
+    private async Task AppliquerOrdresAsync(IServiceProvider sp, CancellationToken ct)
+    {
+        try { await sp.GetRequiredService<AppliquerOrdresCentraux>().ExecuterAsync(ct); }
+        catch (Exception ex) when (ex is not OperationCanceledException) { logger.LogError(ex, "Synchronisation : ordres du serveur central non traités"); }
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var echecs = 0;
@@ -52,6 +71,14 @@ public sealed class EnvoiSynchronisation(IServiceProvider services, ILogger<Envo
             try
             {
                 using var scope = services.CreateScope();
+                // Lot O6 (décision 3) : sans le pack G, la synchronisation s'arrête ; un passage n'est fait que s'il reste des résultats
+                // d'ordres déjà reçus à remonter au central (le central ne reste pas dans un état faux). Les ordres reçus sont encore traités.
+                if (!await PackSynchronisationAsync(scope.ServiceProvider, stoppingToken) && !await ResultatsOrdresEnAttenteAsync(scope.ServiceProvider, stoppingToken))
+                {
+                    await AppliquerOrdresAsync(scope.ServiceProvider, stoppingToken);
+                    await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+                    continue;
+                }
                 var r = await scope.ServiceProvider.GetRequiredService<EnvoyerLotsSync>().ExecuterAsync(DateTime.UtcNow, ct: stoppingToken);
                 if (r.EnErreur)
                 {

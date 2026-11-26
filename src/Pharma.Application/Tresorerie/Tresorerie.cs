@@ -244,7 +244,8 @@ public sealed class RemettreCheques(ITresorerie tresorerie, IPermissionService d
 /// Argent d'une caisse porté au coffre : après la clôture (caisse à verser), ou pendant la journée depuis la caisse ouverte
 /// du poste (l'attendu de cette caisse diminue d'autant).
 /// </summary>
-public sealed class VerserCaisseAuCoffre(ITresorerie tresorerie, ISessionsCaisse sessions, IPermissionService droits, IHorloge horloge, IJournal journal)
+public sealed class VerserCaisseAuCoffre(ITresorerie tresorerie, ISessionsCaisse sessions, IPermissionService droits, IHorloge horloge, IJournal journal,
+    Offre.IPacksOffre? packs = null)
 {
     public async Task<long> ApresClotureAsync(long sessionId, decimal montant, long utilisateurId, CancellationToken ct = default)
     {
@@ -284,6 +285,8 @@ public sealed class VerserCaisseAuCoffre(ITresorerie tresorerie, ISessionsCaisse
     {
         var parametres = await sessions.ParametresAsync(ct);
         if (parametres.VersementCloture != "automatique") return 0;
+        // Lot O6 : la trésorerie fait partie du pack D ; sans lui, la clôture ne verse rien au coffre (aucune écriture en trésorerie)
+        if (packs is not null && !await packs.InclusAsync(Offre.PacksOffre.Finances, ct)) return 0;
         var caisse = (await tresorerie.AVerserAsync(ct)).Caisses.FirstOrDefault(c => c.SessionId == sessionId);
         if (caisse is null) return 0;
         var montant = RegleTresorerie.VersementAutomatique(caisse.Compte, parametres.FondCaisseDefaut);

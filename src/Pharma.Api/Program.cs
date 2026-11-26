@@ -354,6 +354,7 @@ app.UseExceptionHandler(erreur => erreur.Run(async ctx =>
         Pharma.Application.Reglages.ReglageImposeException i => (StatusCodes.Status409Conflict, i.Message),
         Pharma.Application.Reglages.ModeleReglageChangeException c => (StatusCodes.Status409Conflict, c.Message),
         Pharma.Application.Commun.DroitRefuseException d => (StatusCodes.Status403Forbidden, d.Message),
+        Pharma.Application.Offre.OptionNonIncluseException o => (StatusCodes.Status403Forbidden, o.Message),
         PostgresException { SqlState: "P0001" } p => (StatusCodes.Status422UnprocessableEntity, p.MessageText),
         PostgresException p when ErreursMetier.Traduire(p) is { } refus => refus,
         BadHttpRequestException b => (b.StatusCode, "Requête invalide : données mal formées."),

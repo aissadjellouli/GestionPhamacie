@@ -1,3 +1,4 @@
+using Pharma.Application.Offre;
 using System.Security.Claims;
 using Pharma.Api.Securite;
 using Pharma.Application.Stock;
@@ -37,17 +38,17 @@ internal static class InventaireEndpoints
 
         inv.MapPost("", async (CommencerInventaireRequete req, CommencerInventaire commencer, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(new IdentifiantDto(await commencer.ExecuterAsync(req.Rayon, user.UtilisateurId(), ct))))
-           .ExigerPermission(Permissions.StockAjuster);
+           .ExigerPermission(Permissions.StockAjuster).ExigerPack(PacksOffre.Inventaire);
 
         // Comptage des produits sensibles (choisis par le titulaire)
         inv.MapPost("/sensibles", async (CommencerInventaireSensibles commencer, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(new IdentifiantDto(await commencer.ExecuterAsync(user.UtilisateurId(), ct))))
-           .ExigerPermission(Permissions.StockAjuster);
+           .ExigerPermission(Permissions.StockAjuster).ExigerPack(PacksOffre.Inventaire);
 
         // Inventaire d'un produit, depuis l'alerte « ancien lot délaissé » (titulaire seul)
         inv.MapPost("/produit/{produitId:long}", async (long produitId, CommencerInventaireProduit commencer, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(new IdentifiantDto(await commencer.ExecuterAsync(produitId, user.UtilisateurId(), ct))))
-           .ExigerTitulaire();
+           .ExigerTitulaire().ExigerPack(PacksOffre.Inventaire);
 
         inv.MapGet("/{id:long}", async (long id, ObtenirInventaire obtenir, CancellationToken ct) =>
                 await obtenir.ExecuterAsync(id, ct) is { } d
@@ -97,7 +98,7 @@ internal static class InventaireEndpoints
                 await modifier.ExecuterAsync(new ParametresInventaire(req.SeuilBoites, req.SeuilMontant), user.UtilisateurId(), ct);
                 return Results.NoContent();
             })
-           .ExigerTitulaire();
+           .ExigerTitulaire().ExigerPack(PacksOffre.Inventaire);
     }
 
     private static EcartAValiderDto VersDto(EcartAValider e) =>

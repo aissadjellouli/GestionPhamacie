@@ -206,6 +206,72 @@ public class OffreTests
         await Assert.ThrowsAsync<RegleMetierException>(() => g.RecevoirDuCentralAsync(Code(officine: Guid.NewGuid()), Guid.NewGuid()));
     }
 
+    // ---- Lot O6 : packs ----------------------------------------------------------------------------------------------------------------
+
+    private sealed class AlertesEspion : Pharma.Application.Notifications.IAlertesTitulaire
+    {
+        public List<string> Envoyees { get; } = [];
+        public Task EcartCaisseAsync(string employe, string poste, decimal ecart, decimal seuilCaisse, CancellationToken ct = default, bool releve = false) { Envoyees.Add("ecart_caisse"); return Task.CompletedTask; }
+        public Task LotBloqueAsync(string produit, string numeroLot, int boitesEnStock, int boitesVendues, CancellationToken ct = default) { Envoyees.Add("lot_bloque"); return Task.CompletedTask; }
+        public Task SauvegardeEnEchecAsync(bool disqueAbsent, string detail, CancellationToken ct = default) { Envoyees.Add("sauvegarde"); return Task.CompletedTask; }
+        public Task EcartsInventaireAsync(string rayon, int lignes, int boites, decimal valeur, CancellationToken ct = default) { Envoyees.Add("inventaire"); return Task.CompletedTask; }
+        public Task AnnulationsAsync(string poste, int annulations, int seuil, CancellationToken ct = default) { Envoyees.Add("annulations"); return Task.CompletedTask; }
+        public Task LotDelaisseAsync(string message, bool urgent, CancellationToken ct = default) { Envoyees.Add("lot_delaisse"); return Task.CompletedTask; }
+        public Task SurveillanceAsync(string message, bool urgent, CancellationToken ct = default) { Envoyees.Add("surveillance"); return Task.CompletedTask; }
+        public Task SynchronisationAsync(string objet, string detail, string sms, CancellationToken ct = default) { Envoyees.Add("synchronisation"); return Task.CompletedTask; }
+        public Task SecondServeurAsync(string objet, string detail, string sms, CancellationToken ct = default) { Envoyees.Add("second_serveur"); return Task.CompletedTask; }
+    }
+
+    [Fact]
+    public async Task Packs_inclus_selon_l_offre_aucun_sans_activation()
+    {
+        var (_, o, g, _) = Banc();
+        Assert.False(await o.InclusAsync(PacksOffre.Finances));
+        await g.SaisirAsync(1, Code(packs: ["A", "D"]));
+        Assert.True(await o.InclusAsync(PacksOffre.Finances));
+        Assert.False(await o.InclusAsync(PacksOffre.Comptoir));
+        await Assert.ThrowsAsync<OptionNonIncluseException>(() => o.ExigerPackAsync(PacksOffre.Comptoir));
+        Assert.Contains("pack H, Confort du comptoir", new OptionNonIncluseException("H").Message);
+        // Consultables une fois fermés : B, C, D et les réglages du 2e serveur (F) ; A fermé entièrement (anomalies cachées, décision 1)
+        Assert.Equal(["B", "C", "D", "F"], PacksOffre.Tous.Select(p => p.Code).Where(PacksOffre.LectureSeuleSiFerme));
+    }
+
+    [Fact]
+    public async Task L_offre_est_gardee_une_minute_et_relue_apres_une_saisie()
+    {
+        var d = new Depot();
+        var cache = new CacheOffre();
+        var h = new HorlogeFixe(Aujourdhui);
+        var o = new OffreCourante(d, h, Publique, cache);
+        var g = new GererOffre(d, o, new DroitsFactices { Titulaire = true }, new JournalEspion(), h);
+        Assert.Equal(2, await o.MaximumPostesAsync());
+        await g.SaisirAsync(1, Code(postes: 8));          // la saisie vide le cache
+        Assert.Equal(8, await o.MaximumPostesAsync());
+        d.Lignes.Clear();                                  // effacé dans la base : vu au plus tard une minute après
+        Assert.Equal(8, await o.MaximumPostesAsync());
+        Assert.Equal(2, await new OffreCourante(d, h, Publique, new CacheOffre()).MaximumPostesAsync());
+    }
+
+    [Fact]
+    public async Task Alertes_metier_selon_les_packs_alertes_de_securite_toujours()
+    {
+        var (_, o, g, _) = Banc();
+        var espion = new AlertesEspion();
+        var alertes = new Pharma.Application.Notifications.AlertesTitulaireSelonOffre(espion, o);
+        async Task Tout()
+        {
+            await alertes.EcartCaisseAsync("x", "p", 10, 5); await alertes.LotBloqueAsync("p", "l", 1, 1); await alertes.EcartsInventaireAsync("r", 1, 1, 1);
+            await alertes.AnnulationsAsync("p", 3, 2); await alertes.LotDelaisseAsync("m", false); await alertes.SurveillanceAsync("m", false);
+            await alertes.SauvegardeEnEchecAsync(true, "d"); await alertes.SynchronisationAsync("o", "d", "s"); await alertes.SecondServeurAsync("o", "d", "s");
+        }
+        await Tout();
+        Assert.Equal(["sauvegarde", "synchronisation", "second_serveur"], espion.Envoyees);
+        espion.Envoyees.Clear();
+        await g.SaisirAsync(1, Code(packs: ["A", "E"]));
+        await Tout();
+        Assert.Equal(9, espion.Envoyees.Count);
+    }
+
     [Fact]
     public void Sans_cle_publique_dans_le_programme_aucun_code_n_est_accepte()
     {

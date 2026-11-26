@@ -1,4 +1,5 @@
-﻿using System.Security.Claims;
+﻿using Pharma.Application.Offre;
+using System.Security.Claims;
 using Pharma.Api.Securite;
 using Pharma.Application.Serialisation;
 using Pharma.Shared;
@@ -20,7 +21,7 @@ internal static class SerialisationEndpoints
                     ai.Select(i => new IdentifiantGs1Dto(i.Code, i.Champ.ToString().ToLowerInvariant(), i.LongueurFixe, i.LongueurMax)).ToList()));
             })
            .ExigerTitulaire()
-           .AvecEtatReglageCentral(Pharma.Domain.Reglages.TablesMutualisables.Serialisation);
+           .AvecEtatReglageCentral(Pharma.Domain.Reglages.TablesMutualisables.Serialisation).ExigerPack(PacksOffre.Inventaire);
 
         api.MapGet("/serialisation/file", async (string? statut, int? page, int? taille, PiloterFileSerialisation piloter, CancellationToken ct) =>
             {
@@ -33,7 +34,7 @@ internal static class SerialisationEndpoints
                     total, numero, t));
             })
            .ExigerTitulaire()
-           .GererErreursMetier();
+           .GererErreursMetier().ExigerPack(PacksOffre.Inventaire);
 
         // Relance d'une opération (id) ou de toute la file en attente, puis rejeu immédiat
         api.MapPost("/serialisation/relance", async (long? id, PiloterFileSerialisation piloter, ClaimsPrincipal user, CancellationToken ct) =>
@@ -42,7 +43,7 @@ internal static class SerialisationEndpoints
                 return Results.Ok(new RelanceSerialisationDto(n, b.Reussies, b.Refusees, b.ConnecteurIndisponible));
             })
            .ExigerTitulaire()
-           .GererErreursMetier();
+           .GererErreursMetier().ExigerPack(PacksOffre.Inventaire);
 
         api.MapPut("/serialisation/parametres", async (ParametresSerialisationRequete r, PiloterFileSerialisation piloter,
                 ClaimsPrincipal user, CancellationToken ct) =>
@@ -50,6 +51,6 @@ internal static class SerialisationEndpoints
                 await piloter.EnregistrerAsync(r.Actif, r.FacticeHorsLigne, user.UtilisateurId(), ct);
                 return Results.NoContent();
             })
-           .ExigerTitulaire();
+           .ExigerTitulaire().ExigerPack(PacksOffre.Inventaire);
     }
 }

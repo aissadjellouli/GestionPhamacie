@@ -13,6 +13,20 @@ namespace Pharma.Application.Offre;
 /// <summary>Packs en option (docs/offre-et-options.md, proposition du 2026-11-26) ; la liste fermée des codes acceptés.</summary>
 public static class PacksOffre
 {
+    public const string ControleFraude = "A", Inventaire = "B", Achats = "C", Finances = "D", Pilotage = "E", Continuite = "F",
+        MultiOfficines = "G", Comptoir = "H";
+
+    /// <summary>
+    /// Fermés, leurs écrans restent consultables en lecture seule (lot O6) : B, C, D (données de la pharmacie) et F (réglages du 2e serveur :
+    /// la paire déjà installée continue de tourner, décision 2). A est fermé entièrement : ses anomalies sont enregistrées en silence et ne
+    /// se voient qu'une fois le pack acheté (décision 1).
+    /// </summary>
+    public static bool LectureSeuleSiFerme(string code) => code is Inventaire or Achats or Finances or Continuite;
+
+    public static string MessageNonInclus(string code) =>
+        $"Option non incluse dans votre offre (pack {code}, {Libelle(code)})"
+        + (LectureSeuleSiFerme(code) ? " : consultation seulement." : ".") + " Voir Administration › Mon offre.";
+
     public static readonly IReadOnlyList<(string Code, string Libelle)> Tous =
     [
         ("A", "Contrôle et anti-fraude"),

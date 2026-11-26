@@ -1,3 +1,4 @@
+using Pharma.Application.Offre;
 using System.Security.Claims;
 using Pharma.Api.Securite;
 using Pharma.Application.Synchronisation;
@@ -72,7 +73,7 @@ public static class SynchronisationEndpoints
         {
             var r = await repartir.ExecuterAsync(d.EpoqueAffichee, d.MotDePasse, user.UtilisateurId(), ct);
             return Results.Ok(new ResultatNouvelleEpoqueSynchronisationDto(r.Epoque, r.AncienneEpoque, r.Chargement));
-        });
+        }).ExigerPack(PacksOffre.MultiOfficines);
 
         // Lot S7.2b : accès à distance, code de rattachement de l'officine (celle du certificat) à un compte distant ; titulaire seulement,
         // mot de passe du titulaire ressaisi ; code rendu une fois, réponse non mise en cache, jamais gardé ni journalisé
@@ -82,7 +83,7 @@ public static class SynchronisationEndpoints
             ctx.Response.Headers.CacheControl = "no-store";
             var r = await generer.ExecuterAsync(d.Compte, d.MotDePasse, user.UtilisateurId(), ct);
             return Results.Ok(new CodeAccesDistantDto(r.Code, r.ExpireLeUtc));
-        });
+        }).ExigerPack(PacksOffre.MultiOfficines);
 
         // Lot S7.3 : comptes distants rattachés à l'officine, droits (dont « ordres », accordé seulement d'ici) et retrait ; titulaire
         // seulement, mot de passe ressaisi pour un changement (cas d'usage ComptesAccesDistant) ; réponses non mises en cache
@@ -92,11 +93,11 @@ public static class SynchronisationEndpoints
             var liste = await comptes.ListerAsync(user.UtilisateurId(), ct);
             return Results.Ok(liste.Select(c => new CompteDistantRattacheDto(c.Identifiant, c.Nom, c.Droits,
                 new DateTimeOffset(DateTime.SpecifyKind(c.RattacheLeUtc, DateTimeKind.Utc)), c.Actif)).ToList());
-        });
+        }).ExigerPack(PacksOffre.MultiOfficines);
         s.MapPost("/acces-distant/droits", async (DemandeDroitsAccesDistantDto d, ComptesAccesDistant comptes, ClaimsPrincipal user, CancellationToken ct) =>
-            Results.Ok(new ReponseCompteDistantDto(await comptes.ModifierDroitsAsync(d.Compte, d.Droits, d.MotDePasse, user.UtilisateurId(), ct))));
+            Results.Ok(new ReponseCompteDistantDto(await comptes.ModifierDroitsAsync(d.Compte, d.Droits, d.MotDePasse, user.UtilisateurId(), ct)))).ExigerPack(PacksOffre.MultiOfficines);
         s.MapPost("/acces-distant/retrait", async (DemandeRetraitAccesDistantDto d, ComptesAccesDistant comptes, ClaimsPrincipal user, CancellationToken ct) =>
-            Results.Ok(new ReponseCompteDistantDto(await comptes.RetirerAsync(d.Compte, d.MotDePasse, user.UtilisateurId(), ct))));
+            Results.Ok(new ReponseCompteDistantDto(await comptes.RetirerAsync(d.Compte, d.MotDePasse, user.UtilisateurId(), ct)))).ExigerPack(PacksOffre.MultiOfficines);
 
         // Lot S6.5.4 (S6.5-D4) : prise d'acte du titulaire d'une restauration constatée par le serveur central (cause), journalisée,
         // envoyée au central ; une fois par époque
@@ -111,26 +112,26 @@ public static class SynchronisationEndpoints
         {
             var n = await recharger.ExecuterAsync(user.UtilisateurId(), ct);
             return Results.Ok(new { numero = n });
-        });
+        }).ExigerPack(PacksOffre.MultiOfficines);
 
         s.MapPut("/reglages", async (ReglagesSynchronisationDto d, ReglerSync regler, ClaimsPrincipal user, CancellationToken ct) =>
         {
             await regler.ExecuterAsync(new ReglagesSync(d.Active, d.Adresse, d.TextesLibres, d.EnvoyerMedecins, d.DelaiControleDemarrage), user.UtilisateurId(), ct);
             return Results.NoContent();
-        });
+        }).ExigerPack(PacksOffre.MultiOfficines);
 
         // Lot S3 : seuils du bandeau et des alertes, conservation des lots accusés
         s.MapPut("/supervision", async (ReglagesSupervisionSynchronisationDto d, ReglerSupervisionSync regler, ClaimsPrincipal user, CancellationToken ct) =>
         {
             await regler.ExecuterAsync(new ReglagesSupervisionSync(d.BandeauMinutes, d.RetardHeures, d.ErreurMinutes, d.PurgeActive, d.PurgeJours), user.UtilisateurId(), ct);
             return Results.NoContent();
-        });
+        }).ExigerPack(PacksOffre.MultiOfficines);
 
         s.MapPost("/activation", async (ActivationSynchronisationDto d, ActiverSync activer, ClaimsPrincipal user, CancellationToken ct) =>
         {
             var c = await activer.ExecuterAsync(d.Code, user.UtilisateurId(), ct);
             return Results.Ok(new { echeance = c.EcheanceUtc, empreinte = c.Empreinte[..16] });
-        });
+        }).ExigerPack(PacksOffre.MultiOfficines);
 
         s.MapPost("/envoyer", async (EnvoyerLotsSync envoyer, CancellationToken ct) =>
         {
@@ -140,7 +141,7 @@ public static class SynchronisationEndpoints
             if (r.Suspendu) return Results.Ok(new ResultatEnvoiSynchronisationDto(r.LotsAccuses, null, null, r.Erreur));
             if (r.Erreur is not null) return Results.Problem(r.Erreur, statusCode: StatusCodes.Status502BadGateway);
             return Results.Ok(new ResultatEnvoiSynchronisationDto(r.LotsAccuses, r.Arret, r.Erreur));
-        });
+        }).ExigerPack(PacksOffre.MultiOfficines);
 
         // Lots S5.1 et S5.5 : ordres reçus du serveur central (liste : admin.parametres ; confirmation et refus : titulaire seul)
         s.MapGet("/ordres", async (string? statut, string? type, int? page, int? taille, IOrdresCentrauxDepot ordres,

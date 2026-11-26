@@ -140,7 +140,8 @@ public sealed class ConsulterFactures(IFactures factures, IPermissionService dro
 }
 
 /// <summary>Émission, rejet, correction, remplacement, avoir et suivi des factures clients (droit « factures.gerer »).</summary>
-public sealed class Facturation(IFactures factures, IPermissionService droits, IHorloge horloge, IJournal journal, Fiscal.TauxTvaAutorises? tauxTva = null)
+public sealed class Facturation(IFactures factures, IPermissionService droits, IHorloge horloge, IJournal journal, Fiscal.TauxTvaAutorises? tauxTva = null,
+    Offre.IPacksOffre? packs = null)
 {
     public async Task<(long Id, string Numero)> EmettreAsync(DemandeFacture demande, long utilisateurId, CancellationToken ct = default)
     {
@@ -280,6 +281,9 @@ public sealed class Facturation(IFactures factures, IPermissionService droits, I
     private async Task<FactureAEcrire> PreparerAsync(DemandeFacture d, long? sauf, long utilisateurId, CancellationToken ct)
     {
         var dest = RegleFacture.Lire(d.Destinataire);
+        // Lot O6 : la facture à un patient reste dans l'offre de base ; aux entreprises et aux organismes, pack D (gestion financière)
+        if (dest != Destinataire.Patient && packs is not null && !await packs.InclusAsync(Offre.PacksOffre.Finances, ct))
+            throw new Offre.OptionNonIncluseException(Offre.PacksOffre.Finances);
         var idDest = dest switch { Destinataire.Patient => d.PatientId, Destinataire.Entreprise => d.ClientId, _ => d.OrganismeId }
                      ?? throw new RegleMetierException("Choisissez le destinataire de la facture.");
         var (nom, infos) = await factures.DestinataireAsync(dest, idDest, ct) ?? throw new RegleMetierException("Destinataire introuvable ou inactif.");

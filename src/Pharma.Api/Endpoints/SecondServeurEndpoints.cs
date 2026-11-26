@@ -1,3 +1,4 @@
+using Pharma.Application.Offre;
 using System.Security.Claims;
 using Pharma.Api.Securite;
 using Pharma.Application.Integrite;
@@ -11,7 +12,7 @@ public static class SecondServeurEndpoints
 {
     public static void MapSecondServeur(this RouteGroupBuilder api)
     {
-        var s = api.MapGroup("/admin/second-serveur").ExigerTitulaire();
+        var s = api.MapGroup("/admin/second-serveur").ExigerTitulaire().ExigerPack(PacksOffre.Continuite);
 
         s.MapGet("", async (ObtenirSecondServeur obtenir, CeServeur ce, IScelleurIntegrite scelleur, CancellationToken ct) =>
         {

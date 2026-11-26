@@ -1,0 +1,25 @@
+@inject OffrePoste Offre
+
+@* Lot O6 (offre de base et options) : bandeau en haut d'un écran dont le pack n'est pas inclus dans l'offre. Le serveur refuse lui-même
+   les actions (et, pour le pack A, la consultation) ; le bandeau l'annonce avant le premier refus. Rien n'est affiché si le pack est inclus. *@
+@if (ferme)
+{
+    <div class="info-bandeau texte-attention" role="status" data-option="@Pack">
+        Option non incluse dans votre offre (pack @Pack, @Offre.Libelle(Pack))@(LectureSeule ? " : consultation seulement" : "").
+        Voir Administration › <a href="admin/offre">Mon offre</a>.
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Pack { get; set; } = "";
+    /// <summary>Écran consultable sans le pack (B, C, D et réglages du 2e serveur).</summary>
+    [Parameter] public bool LectureSeule { get; set; }
+
+    private bool ferme;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var e = await Offre.ChargerAsync();
+        ferme = e is not null && !e.Packs.Contains(Pack);
+    }
+}

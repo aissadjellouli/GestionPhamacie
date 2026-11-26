@@ -1,3 +1,4 @@
+using Pharma.Application.Offre;
 using System.Security.Claims;
 using Pharma.Api.Securite;
 using Pharma.Application.Pilotage;
@@ -10,5 +11,5 @@ internal static class PilotageEndpoints
     public static void MapPilotage(this RouteGroupBuilder api) =>
         api.MapGet("/pilotage", async (ObtenirPilotage obtenir, ClaimsPrincipal user, CancellationToken ct) =>
                 Results.Ok(await obtenir.ExecuterAsync(user.UtilisateurId(), ct)))
-           .ExigerTitulaire();
+           .ExigerTitulaire().ExigerPack(PacksOffre.Pilotage);
 }

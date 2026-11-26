@@ -1,3 +1,4 @@
+using Pharma.Application.Offre;
 using Pharma.Api.Securite;
 using Pharma.Application.Ordonnances;
 using Pharma.Domain.Commun;
@@ -19,7 +20,7 @@ internal static class OrdonnancesEndpoints
                         c.ProduitId, c.NomCommercial, c.Dci, c.Dosage, c.Forme, c.PrixPublic, c.Stock, c.Classe.Code(), c.Score)).ToList(), l.NombreBoites)).ToList(),
                     a.LignesIgnorees));
             })
-           .ExigerPermission(Permissions.CaisseVendre);
+           .ExigerPermission(Permissions.CaisseVendre).ExigerPack(PacksOffre.Comptoir);
 
         // Image de l'ordonnance (corps brut JPEG ou PNG), conservée sur le serveur et liée ensuite à la vente
         api.MapPost("/ordonnances/scans", async (HttpRequest requete, EnregistrerScanOrdonnance enregistrer, CancellationToken ct) =>
@@ -30,6 +31,6 @@ internal static class OrdonnancesEndpoints
                 await requete.Body.CopyToAsync(flux, ct);
                 return Results.Ok(new ScanOrdonnanceDto(await enregistrer.ExecuterAsync(flux.ToArray(), ct)));
             })
-           .ExigerPermission(Permissions.CaisseVendre);
+           .ExigerPermission(Permissions.CaisseVendre).ExigerPack(PacksOffre.Comptoir);
     }
 }

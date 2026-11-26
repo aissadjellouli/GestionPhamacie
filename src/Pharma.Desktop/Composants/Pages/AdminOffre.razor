@@ -1,6 +1,7 @@
 @page "/admin/offre"
 @inject ApiClient Api
 @inject SessionPoste Session
+@inject OffrePoste OffreDuPoste
 
 @* Mon offre (décisions du titulaire du 2026-11-26, docs/offre-et-options.md, script 172) : offre en vigueur en lecture seule (packs, postes,
    échéance) et saisie d'un code d'activation signé par l'éditeur. Rien ne se règle ici : l'offre vient du code signé. Titulaire seul.
@@ -137,6 +138,7 @@
             // Saisie gardée après un refus (seul le mot de passe se ressaisit) : le code reste dans le champ
             if (await Api.SaisirActivationOffreAsync(code.Trim()) is { } e) { erreur = e; return; }
             code = "";
+            OffreDuPoste.Oublier();   // lot O6 : bandeaux et afficheur suivent la nouvelle offre
             await ChargerAsync();
             message = $"Code accepté : {Etat(o!)}, {o!.Postes} poste(s).";
         }
