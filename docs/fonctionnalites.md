@@ -25,13 +25,13 @@ Légende des états :
 
 | État | Nombre de fonctions |
 | --- | --- |
-| Fait | 228 |
+| Fait | 229 |
 | En cours | 1 |
 | En attente | 38 |
 | Bloqué | 9 |
 | Non proposé | 1 |
 | À vérifier | 0 |
-| **Total** | **277** |
+| **Total** | **278** |
 
 Recompté le 2026-11-24 à partir des lignes ci-dessous (275 lignes ; « Fait en local » compté dans « Fait ») ; « En cours » : démonstration cloud (Docker absent du poste).
 
@@ -319,7 +319,8 @@ Recompté le 2026-11-24 à partir des lignes ci-dessous (275 lignes ; « Fait en
 | Compte super admin hors de la base (fichier chiffré du PC serveur, au moins un canal vérifié SMS ou e-mail), réservé à la reprise et à la restauration : chaque action sensible validée par mot de passe ressaisi et code à 6 chiffres, 3 codes faux = 15 minutes de blocage | Fait | Administration › Reprise, Restauration |
 | HTTPS sur le réseau de l’officine (HTTP limité au PC serveur), autorité unique par pharmacie | Fait (à essayer en réel) | scripts/certificat_https.ps1 ; mise-en-production.md |
 | Journaux du serveur et du poste sans données personnelles | Fait | securite-et-droits.md |
-| Offre de base et options vendues à la demande (activation signée, non modifiable dans la base ; premier cas : maximum de postes fixé par le super admin) | En attente (décision du 2026-11-26 ; tour des fonctionnalités à faire, questions ouvertes) | offre-et-options.md |
+| Offre de base et options : activation signée par l'éditeur (liée au code de l'officine et au NIF), écran Mon offre, outil de l'éditeur, transmission par le central ; maximum de postes fixé par l'offre | Fait (2026-11-26, script 172, central 044 ; mesuré à 0 px, clair et sombre) | offre-et-options.md |
+| Fermeture des packs non inclus dans l'offre (écrans et routes masqués ou en lecture seule, données gardées) | En attente (tour des packs A à H) | offre-et-options.md |
 | Liste des postes autorisés : autorisation par code à usage unique, clé non exportable du poste, preuve signée à chaque requête, jeton lié au poste, renommer, remplacer le PC, révoquer, modes transition et exigé ; maximum de postes tenu sous verrou, avertissement quand il est baissé sous le nombre de postes (2026-11-26) | Fait (2026-11-24, script 167 ; compte Windows standard : création de la clé par la demande d'élévation de Windows, D4 option 1, à vérifier sur un vrai poste) | Administration › Postes autorisés ; securite-et-droits.md ; regles-metier.md |
 | Poste renommé par le titulaire : nouveau nom repris par le poste (écran de connexion, aussitôt sur le poste qui renomme), sans redémarrage | Fait (2026-11-26, vérifié en réel) | regles-metier.md « Nom du poste renommé repris par le poste » |
 | Bascule du 2e serveur : présence, postes connus, votes et relais limités aux postes prouvés | Fait (essai réel du 2026-11-25 : vote prouvé, preuve acceptée par le serveur promu ; relais d'un poste prouvé essayé, § 16 ; limite d'un rapport par seconde par poste prouvé, plusieurs postes derrière une même adresse votent tous, essai réel du 2026-11-25) | second-serveur-local.md § 14 ; regles-metier.md |

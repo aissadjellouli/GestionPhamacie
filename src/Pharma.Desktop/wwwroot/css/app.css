@@ -589,6 +589,16 @@ label.requis::after, .etiquette-champ.requis::after { content: " *"; color: var(
 /* Réglages fiscaux › taux de TVA (script 171) : liste des taux et taux par défaut des catégories côte à côte, chaque tableau dans son cadre */
 .tva-reglage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 .tva-colonne { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+/* Administration › Mon offre (script 172) : offre en vigueur et saisie d'un code côte à côte ; seul l'historique défile dans son cadre */
+.offre-grille { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.offre-colonne { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.offre-valeurs { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
+.offre-valeurs dt { color: var(--texte-2); }
+.offre-valeurs dd { margin: 0; font-weight: 600; }
+.offre-sous-titre { margin: 4px 0 0; font-size: 15px; }
+.offre-packs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px 12px; }
+.offre-packs li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.offre-pack-absent { color: var(--texte-2); }
 /* Histogramme : colonnes fines, extrémité arrondie, une seule ligne de base, grille discrète */
 .histogramme { display: flex; gap: 8px; height: 240px; }
 /* Synthèse du tableau de bord financier : histogramme abaissé en fenêtre basse (1366 × 768, 2026-11-20), l’écran ne défile pas */

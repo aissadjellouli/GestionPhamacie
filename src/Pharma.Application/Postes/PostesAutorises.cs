@@ -36,12 +36,15 @@ public sealed record PosteProuve(long Id, string Nom);
 /// <summary>Clé d'un poste pour la vérification des preuves.</summary>
 public sealed record PosteCle(long Id, string Nom, string Statut, byte[]? ClePublique, int Generation = 1);
 
-/// <summary>Réglage de la liste (table parametre_postes).</summary>
-public sealed record ReglagesPostes(string Mode, int MaximumPostes, int DureeCodeMinutes)
+/// <summary>
+/// Réglage de la liste (table parametre_postes). Le nombre maximum de postes n'est plus réglé ici : il vient de l'offre signée par
+/// l'éditeur (Administration › Mon offre, script 172 ; décision du titulaire du 2026-11-26), sans possibilité de le modifier dans la base.
+/// </summary>
+public sealed record ReglagesPostes(string Mode, int DureeCodeMinutes)
 {
-    public const int MaximumMin = 1, MaximumMax = 200, DureeMin = 5, DureeMax = 60;
-    public static readonly ReglagesPostes ParDefaut = new(ConstantesPostes.ModeTransition, 20, 15);
-    public static readonly ReglagesPostes Inactif = new(ConstantesPostes.ModeInactif, 20, 15);
+    public const int DureeMin = 5, DureeMax = 60;
+    public static readonly ReglagesPostes ParDefaut = new(ConstantesPostes.ModeTransition, 15);
+    public static readonly ReglagesPostes Inactif = new(ConstantesPostes.ModeInactif, 15);
     public static readonly IReadOnlyList<string> Modes = [ConstantesPostes.ModeInactif, ConstantesPostes.ModeTransition, ConstantesPostes.ModeExige];
 }
 
@@ -236,7 +239,8 @@ public sealed class AlertesPostes(IHorloge horloge)
 }
 
 /// <summary>Gestion de la liste par le titulaire (Administration › Postes) : chaque action est inscrite au journal, sans donnée personnelle.</summary>
-public sealed class GererPostesAutorises(IPostesAutorisesDepot depot, RegistrePostesAutorises registre, IPermissionService droits, IJournal journal, IHorloge horloge)
+public sealed class GererPostesAutorises(IPostesAutorisesDepot depot, RegistrePostesAutorises registre, IPermissionService droits, IJournal journal, IHorloge horloge,
+    Offre.ILimitesOffre limites)
 {
     public const string ActionAutorise = "poste_autorise", ActionRenomme = "poste_renomme", ActionCode = "poste_code_renouvele",
         ActionRemplace = "poste_remplace", ActionRevoque = "poste_revoque", ActionReglages = "postes_reglages", ActionEnrole = "poste_enrole",
@@ -251,21 +255,23 @@ public sealed class GererPostesAutorises(IPostesAutorisesDepot depot, RegistrePo
         return await depot.ListerAsync(s, string.IsNullOrWhiteSpace(recherche) ? null : recherche.Trim(), page, ct);
     }
 
-    public async Task<(ReglagesPostes Reglages, IReadOnlyList<NomSansPreuve> NomsSansPreuve)> ReglagesAsync(long utilisateurId, CancellationToken ct = default)
+    /// <returns>Réglage, noms vus sans preuve, maximum de postes de l'offre en vigueur (lecture seule) et postes déjà comptés.</returns>
+    public async Task<(ReglagesPostes Reglages, IReadOnlyList<NomSansPreuve> NomsSansPreuve, int Maximum, int Comptes)> ReglagesAsync(long utilisateurId,
+        CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "gérer les postes autorisés", ct);
-        return (await depot.ReglagesAsync(ct), await depot.NomsSansPreuveAsync(ct));
+        return (await depot.ReglagesAsync(ct), await depot.NomsSansPreuveAsync(ct), await limites.MaximumPostesAsync(ct), await depot.NombreNonRevoquesAsync(ct));
     }
 
-    /// <summary>Enregistre le réglage. Rend un avertissement quand le maximum est baissé sous le nombre de postes déjà comptés :
-    /// aucun n'est retiré, seules les nouvelles autorisations sont refusées.</summary>
+    /// <summary>Postes non révoqués (comptés dans le maximum).</summary>
+    public Task<int> NombreComptesAsync(CancellationToken ct = default) => depot.NombreNonRevoquesAsync(ct);
+
+    /// <summary>Enregistre le réglage (mode, durée du code). Rend toujours null (plus d'avertissement : le maximum vient de l'offre).</summary>
     public async Task<string?> ModifierReglagesAsync(long utilisateurId, ReglagesPostes demande, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "régler la liste des postes autorisés", ct);
         if (!ReglagesPostes.Modes.Contains(demande.Mode))
             throw new Domain.Commun.RegleMetierException("Mode inconnu : inactif, transition ou exige.", "mode");
-        if (demande.MaximumPostes is < ReglagesPostes.MaximumMin or > ReglagesPostes.MaximumMax)
-            throw new Domain.Commun.RegleMetierException($"Nombre maximum de postes : de {ReglagesPostes.MaximumMin} à {ReglagesPostes.MaximumMax}.", "maximumPostes");
         if (demande.DureeCodeMinutes is < ReglagesPostes.DureeMin or > ReglagesPostes.DureeMax)
             throw new Domain.Commun.RegleMetierException($"Durée du code : de {ReglagesPostes.DureeMin} à {ReglagesPostes.DureeMax} minutes.", "dureeCodeMinutes");
         var avant = await depot.ReglagesAsync(ct);
@@ -274,29 +280,28 @@ public sealed class GererPostesAutorises(IPostesAutorisesDepot depot, RegistrePo
         registre.Invalider();
         await journal.EcrireAsync(utilisateurId, ActionReglages, "parametre_postes", 1, new Dictionary<string, object?>
         {
-            ["mode_avant"] = avant.Mode, ["mode_apres"] = demande.Mode, ["maximum_avant"] = avant.MaximumPostes, ["maximum_apres"] = demande.MaximumPostes,
+            ["mode_avant"] = avant.Mode, ["mode_apres"] = demande.Mode,
             ["duree_code_avant"] = avant.DureeCodeMinutes, ["duree_code_apres"] = demande.DureeCodeMinutes
         }, null, ct);
-        if (demande.MaximumPostes >= avant.MaximumPostes) return null;
-        var comptes = await depot.NombreNonRevoquesAsync(ct);
-        return comptes > demande.MaximumPostes ? AvertissementMaximum(comptes, demande.MaximumPostes) : null;
+        return null;
     }
 
     public static string AvertissementMaximum(int comptes, int maximum) =>
         $"{comptes} postes sont déjà comptés pour un maximum de {maximum} : aucun n'est retiré, mais aucun nouveau ne pourra être autorisé.";
 
     public static string MessageMaximumAtteint(int maximum) =>
-        $"Nombre maximum de postes atteint ({maximum}) : révoquez un poste ou relevez le maximum.";
+        $"Nombre maximum de postes atteint ({maximum}, fixé par votre offre) : révoquez un poste ou demandez des postes supplémentaires à l’éditeur (Administration › Mon offre).";
 
     public async Task<CodeEnrolementCree> AutoriserAsync(long utilisateurId, string? nom, CancellationToken ct = default, bool verifierTitulaire = true)
     {
         if (verifierTitulaire) await droits.ExigerTitulaireAsync(utilisateurId, "autoriser un poste", ct);
         var n = NomValide(nom);
         var reglages = await depot.ReglagesAsync(ct);
+        var maximum = await limites.MaximumPostesAsync(ct);   // offre signée par l'éditeur (script 172)
         var code = CodeEnrolement.Nouveau();
         var expire = horloge.MaintenantUtc.AddMinutes(reglages.DureeCodeMinutes);
-        var cree = await depot.CreerAsync(n, CodeEnrolement.Hacher(code), expire, utilisateurId, reglages.MaximumPostes, ct);
-        if (cree.MaximumAtteint) throw new Domain.Commun.RegleMetierException(MessageMaximumAtteint(reglages.MaximumPostes), "nom");
+        var cree = await depot.CreerAsync(n, CodeEnrolement.Hacher(code), expire, utilisateurId, maximum, ct);
+        if (cree.MaximumAtteint) throw new Domain.Commun.RegleMetierException(MessageMaximumAtteint(maximum), "nom");
         var id = cree.Id ?? throw NomPris(n);
         registre.Invalider(id);
         await journal.EcrireAsync(utilisateurId, ActionAutorise, Table, id, new Dictionary<string, object?> { ["nom"] = n }, null, ct);

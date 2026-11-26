@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 171 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 172 appliqués dans l'ordre (vérifié :
 -- même structure), puis au script 101b (colonne obsolète vente.num_facture_chifa absente :
 -- décision du titulaire du 2026-11-26 ; une base neuve n'a jamais besoin de 101b). Pour une base déjà installée, rejouer TOUTE la suite
 -- database/migration depuis le script 001 (mettre_a_jour_base_officine.ps1), jamais ce fichier ni un script isolé.
@@ -13,7 +13,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 171 ; à régénérer à chaque nouveau script.
+-- par les scripts 001 à 172 ; à régénérer à chaque nouveau script.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -834,6 +834,32 @@ CREATE FUNCTION public.a_permission(p_utilisateur_id bigint, p_code text) RETURN
               AND rp.permission_code = p_code)
     END;
 $$;
+
+
+--
+-- Name: activation_offre_signaler_refus(bigint, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.activation_offre_signaler_refus(p_id bigint, p_motif text) RETURNS boolean
+    LANGUAGE plpgsql
+    AS $$
+DECLARE n int;
+BEGIN
+    UPDATE activation_offre SET refusee_le = now(), motif_refus = left(p_motif, 300) WHERE id = p_id AND refusee_le IS NULL;
+    GET DIAGNOSTICS n = ROW_COUNT;
+    IF n = 1 THEN
+        INSERT INTO journal_audit (utilisateur_id, action, table_cible, enregistrement_id, details)
+        VALUES (NULL, 'offre_activation_refusee', 'activation_offre', p_id, jsonb_build_object('motif', left(p_motif, 300)));
+    END IF;
+    RETURN n = 1;
+END $$;
+
+
+--
+-- Name: FUNCTION activation_offre_signaler_refus(p_id bigint, p_motif text); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.activation_offre_signaler_refus(p_id bigint, p_motif text) IS 'Note une seule fois qu''une activation rangée ne passe plus le contrôle de l''API, avec une ligne au journal (script 172)';
 
 
 --
@@ -5961,6 +5987,55 @@ ALTER TABLE import.stock_src ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
 
 
 --
+-- Name: activation_offre; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.activation_offre (
+    id bigint NOT NULL,
+    code text NOT NULL,
+    emise_le timestamp with time zone NOT NULL,
+    source text NOT NULL,
+    saisie_le timestamp with time zone DEFAULT now() NOT NULL,
+    saisie_par bigint,
+    ordre_central uuid,
+    refusee_le timestamp with time zone,
+    motif_refus text,
+    CONSTRAINT activation_offre_code_check CHECK (((length(code) >= 20) AND (length(code) <= 4000))),
+    CONSTRAINT activation_offre_motif_refus_check CHECK ((length(motif_refus) <= 300)),
+    CONSTRAINT activation_offre_source_check CHECK ((source = ANY (ARRAY['code'::text, 'central'::text]))),
+    CONSTRAINT ck_activation_offre_source CHECK (((source = 'code'::text) = (ordre_central IS NULL)))
+);
+
+
+--
+-- Name: TABLE activation_offre; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.activation_offre IS 'Activations de l''offre signées par l''éditeur (script 172) : contrôlées par l''API (signature, officine, NIF) ; une ligne seule ne donne aucun droit';
+
+
+--
+-- Name: COLUMN activation_offre.emise_le; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.activation_offre.emise_le IS 'Date de signature lue dans le code (pour l''ordre) ; contrôlée à chaque lecture contre le contenu signé';
+
+
+--
+-- Name: activation_offre_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.activation_offre ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.activation_offre_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: alerte; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -9690,6 +9765,13 @@ CREATE TABLE public.parametre_postes (
 --
 
 COMMENT ON TABLE public.parametre_postes IS 'Réglage de la liste des postes autorisés (mode inactif / transition / exige, maximum, durée du code) ; jamais envoyée au central (script 167).';
+
+
+--
+-- Name: COLUMN parametre_postes.maximum_postes; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.parametre_postes.maximum_postes IS 'Plus lu depuis le script 172 : le maximum de postes vient de l''activation signée par l''éditeur (Administration › Mon offre)';
 
 
 --
@@ -14242,6 +14324,14 @@ ALTER TABLE ONLY import.doublon_patient
 
 
 --
+-- Name: activation_offre activation_offre_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.activation_offre
+    ADD CONSTRAINT activation_offre_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: alerte_non_envoyee alerte_non_envoyee_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -15703,6 +15793,14 @@ ALTER TABLE ONLY public.taux_tva
 
 ALTER TABLE ONLY public.type_prestation
     ADD CONSTRAINT type_prestation_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: activation_offre uq_activation_offre_code; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.activation_offre
+    ADD CONSTRAINT uq_activation_offre_code UNIQUE (code);
 
 
 --
@@ -18419,6 +18517,14 @@ ALTER TABLE ONLY import.produit_src
 
 ALTER TABLE ONLY import.stock_src
     ADD CONSTRAINT stock_src_session_id_fkey FOREIGN KEY (session_id) REFERENCES import.session(id);
+
+
+--
+-- Name: activation_offre activation_offre_saisie_par_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.activation_offre
+    ADD CONSTRAINT activation_offre_saisie_par_fkey FOREIGN KEY (saisie_par) REFERENCES public.utilisateur(id);
 
 
 --

@@ -1101,6 +1101,19 @@ public sealed record ImportContenancesResultatDto(int Ecrites, int DejaRenseigne
 
 /// <summary>Taux de TVA de la liste (script 171) ; Produits : nombre de produits qui l'utilisent.</summary>
 public sealed record TauxTvaDto(long Id, decimal Taux, string Libelle, bool Actif, int Produits);
+
+// Offre de base et options (script 172, docs/offre-et-options.md) : écran « Mon offre » du titulaire
+public sealed record PackOffreDto(string Code, string Libelle);
+
+/// <summary>Activation rangée (historique) ; jamais le code lui-même.</summary>
+public sealed record ActivationOffreDto(long Id, DateTime SigneeLe, string Source, DateTime SaisieLe, string? SaisiePar, DateTime? RefuseeLe, string? MotifRefus);
+
+/// <summary>Offre en vigueur. Etat : base, active, grace. Officine et Nif : à transmettre à l'éditeur pour obtenir un code.</summary>
+public sealed record OffreDto(string Etat, IReadOnlyList<PackOffreDto> Packs, int Postes, int PostesComptes, int ScannersMobiles, DateOnly? Fin,
+    bool Transition, DateTime? SigneeLe, string? Alerte, Guid Officine, string? Nif, IReadOnlyList<ActivationOffreDto> Historique,
+    IReadOnlyList<PackOffreDto> TousLesPacks);
+
+public sealed record ActivationOffreRequete(string Code);
 /// <summary>Taux proposé à la création d'un produit de la catégorie ; null : à choisir.</summary>
 public sealed record TauxTvaCategorieDto(string Code, string Libelle, decimal? Taux);
 /// <summary>Taux enregistré sur des produits ou des prestations sans être dans la liste (signalé, jamais modifié).</summary>

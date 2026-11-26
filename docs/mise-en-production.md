@@ -629,6 +629,7 @@ L'ancienne base n'est **jamais** modifiée : on travaille sur une copie. Préreq
 
 - [ ] **13.1** Accès du titulaire hors de la pharmacie, par VPN : voir [acces-distant.md](acces-distant.md). Ne **jamais** ouvrir l'API sur internet. Si une adresse VPN est utilisée, relancer le script de l'étape 4.6 avec `-AdressesSupplementaires <adresse VPN>`.
 - [ ] **13.2** 2e serveur : parcours C (facultatif, fortement conseillé). À faire **après** la présente installation, sur un PC de l'officine.
+- [ ] **13.0** **Offre (code d'activation)** : relever le code de l'officine et le NIF (Administration › Mon offre ; NIF saisi d'abord dans Administration › Pharmacie), faire signer par l'éditeur un **code de transition** (durée fixée ce jour-là) ou le code de l'offre vendue, le saisir dans Mon offre. **Attendu** : « Offre activée » ou « Période de transition », nombre de postes de l'offre. Sans code : offre de base, 2 postes. Voir [offre-et-options.md](offre-et-options.md), « Mise en service ».
 - [ ] **13.3** Synchronisation avec le serveur central : parcours E. La synchronisation reste **désactivée** tant que le serveur central n'est pas prêt et que le titulaire ne l'a pas activée. Ne pas la toucher avant le jour J.
 
 ### 14. Vérifications avant ouverture (J-1)

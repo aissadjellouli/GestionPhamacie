@@ -324,6 +324,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\169_contenance_contenant_seul_pilulier.sql = database\migration\169_contenance_contenant_seul_pilulier.sql
 		database\migration\170_pret_paiement_partiel_remboursement_anticipe.sql = database\migration\170_pret_paiement_partiel_remboursement_anticipe.sql
 		database\migration\171_taux_tva_liste.sql = database\migration\171_taux_tva_liste.sql
+		database\migration\172_activation_offre.sql = database\migration\172_activation_offre.sql
 		database\migration\retour\165_presence_postes_retour.sql = database\migration\retour\165_presence_postes_retour.sql
 		database\migration\retour\166_bascule_retrait_decision_retour.sql = database\migration\retour\166_bascule_retrait_decision_retour.sql
 		database\migration\retour\167_postes_autorises_retour.sql = database\migration\retour\167_postes_autorises_retour.sql
@@ -331,6 +332,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "migration", "migration", "{
 		database\migration\retour\169_contenance_contenant_seul_pilulier_retour.sql = database\migration\retour\169_contenance_contenant_seul_pilulier_retour.sql
 		database\migration\retour\170_pret_paiement_partiel_remboursement_anticipe_retour.sql = database\migration\retour\170_pret_paiement_partiel_remboursement_anticipe_retour.sql
 		database\migration\retour\171_taux_tva_liste_retour.sql = database\migration\retour\171_taux_tva_liste_retour.sql
+		database\migration\retour\172_activation_offre_retour.sql = database\migration\retour\172_activation_offre_retour.sql
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52-9A41-4B8E-A5F2-3C6D11B0E111}"
@@ -384,6 +386,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{7D3C1E52
 		database\tests\169_contenance_contenant_seul_pilulier_tests.sql = database\tests\169_contenance_contenant_seul_pilulier_tests.sql
 		database\tests\170_pret_paiement_partiel_remboursement_anticipe_tests.sql = database\tests\170_pret_paiement_partiel_remboursement_anticipe_tests.sql
 		database\tests\171_taux_tva_liste_tests.sql = database\tests\171_taux_tva_liste_tests.sql
+		database\tests\172_activation_offre_tests.sql = database\tests\172_activation_offre_tests.sql
 		database\tests\117_registre_renforce_tests.sql = database\tests\117_registre_renforce_tests.sql
 		database\tests\101b_suppression_num_facture_chifa_tests.sql = database\tests\101b_suppression_num_facture_chifa_tests.sql
 		database\tests\rejeu_complet.ps1 = database\tests\rejeu_complet.ps1
@@ -469,10 +472,12 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "cloud", "cloud", "{9B1E6C2A
 		database\cloud\041_delai_provisoire_comptes_anterieurs.sql = database\cloud\041_delai_provisoire_comptes_anterieurs.sql
 		database\cloud\042_deconnexion_motif_inactivite.sql = database\cloud\042_deconnexion_motif_inactivite.sql
 		database\cloud\043_regles_rattachement_ordres_central.sql = database\cloud\043_regles_rattachement_ordres_central.sql
+		database\cloud\044_ordre_activation_offre.sql = database\cloud\044_ordre_activation_offre.sql
 		database\cloud\tests\040_import_comptes_duree_provisoire_tests.sql = database\cloud\tests\040_import_comptes_duree_provisoire_tests.sql
 		database\cloud\tests\041_delai_provisoire_comptes_anterieurs_tests.sql = database\cloud\tests\041_delai_provisoire_comptes_anterieurs_tests.sql
 		database\cloud\tests\042_deconnexion_motif_inactivite_tests.sql = database\cloud\tests\042_deconnexion_motif_inactivite_tests.sql
 		database\cloud\tests\043_regles_rattachement_ordres_central_tests.sql = database\cloud\tests\043_regles_rattachement_ordres_central_tests.sql
+		database\cloud\tests\044_ordre_activation_offre_tests.sql = database\cloud\tests\044_ordre_activation_offre_tests.sql
 		database\cloud\001_base_centrale.sql = database\cloud\001_base_centrale.sql
 		database\cloud\002_tables_miroir.sql = database\cloud\002_tables_miroir.sql
 		database\cloud\003_chargement_complet_officine.sql = database\cloud\003_chargement_complet_officine.sql
@@ -569,6 +574,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "ordonnances-photos-2", "ord
 	ProjectSection(SolutionItems) = preProject
 		docs\EXEMPLE\aid\ordonnances-photos-2\WhatsApp Image 2026-11-12 at 19.58.54.jpeg = docs\EXEMPLE\aid\ordonnances-photos-2\WhatsApp Image 2026-11-12 at 19.58.54.jpeg
 	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pharma.Editeur", "src\Pharma.Editeur\Pharma.Editeur.csproj", "{4E2343FE-9D49-43EC-AD6A-DEE6592A4B9E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -760,15 +767,23 @@ Global
 		{8A1C3E5F-2B4D-4C6E-8F70-91A2B3C4D5E6}.Release|x64.Build.0 = Release|Any CPU
 		{8A1C3E5F-2B4D-4C6E-8F70-91A2B3C4D5E6}.Release|x86.ActiveCfg = Release|Any CPU
 		{8A1C3E5F-2B4D-4C6E-8F70-91A2B3C4D5E6}.Release|x86.Build.0 = Release|Any CPU
+		{4E2343FE-9D49-43EC-AD6A-DEE6592A4B9E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4E2343FE-9D49-43EC-AD6A-DEE6592A4B9E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4E2343FE-9D49-43EC-AD6A-DEE6592A4B9E}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4E2343FE-9D49-43EC-AD6A-DEE6592A4B9E}.Debug|x64.Build.0 = Debug|Any CPU
+		{4E2343FE-9D49-43EC-AD6A-DEE6592A4B9E}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{4E2343FE-9D49-43EC-AD6A-DEE6592A4B9E}.Debug|x86.Build.0 = Debug|Any CPU
+		{4E2343FE-9D49-43EC-AD6A-DEE6592A4B9E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4E2343FE-9D49-43EC-AD6A-DEE6592A4B9E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4E2343FE-9D49-43EC-AD6A-DEE6592A4B9E}.Release|x64.ActiveCfg = Release|Any CPU
+		{4E2343FE-9D49-43EC-AD6A-DEE6592A4B9E}.Release|x64.Build.0 = Release|Any CPU
+		{4E2343FE-9D49-43EC-AD6A-DEE6592A4B9E}.Release|x86.ActiveCfg = Release|Any CPU
+		{4E2343FE-9D49-43EC-AD6A-DEE6592A4B9E}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{04913C7A-E084-44CF-9B04-22F7F6B1A87E} = {5C34D9A9-5CA5-437D-A8B9-360F0CA99753}
-		{B6EA602A-D238-443C-A74A-37C9712DAC1F} = {5C34D9A9-5CA5-437D-A8B9-360F0CA99753}
-		{E8EB9343-E715-4099-B51F-8BC7A9D6B1A3} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}
-		{5C34D9A9-5CA5-437D-A8B9-360F0CA99753} = {E8EB9343-E715-4099-B51F-8BC7A9D6B1A3}
 		{A8314956-6467-45DE-90F5-6E180390EA5B} = {891AAAF3-F7CF-430C-87DE-15B9E19C57E4}
 		{37188A88-124B-4C94-9543-9F8284DA8D73} = {891AAAF3-F7CF-430C-87DE-15B9E19C57E4}
 		{FB519F12-139E-4EE0-AD20-830F3AC0D3F9} = {891AAAF3-F7CF-430C-87DE-15B9E19C57E4}
@@ -787,12 +802,17 @@ Global
 		{F7EF4CD7-5740-415E-8001-0454EA5D98E0} = {386EBD72-0D5B-4454-978E-2D35C00026D8}
 		{7D3C1E52-9A41-4B8E-A5F2-3C6D11B0E111} = {386EBD72-0D5B-4454-978E-2D35C00026D8}
 		{260B10C5-14E0-4E71-ACF8-F97E022B21BE} = {386EBD72-0D5B-4454-978E-2D35C00026D8}
-		{9B1E6C2A-3D4F-4A5B-8C7D-1E2F3A4B5C6D} = {386EBD72-0D5B-4454-978E-2D35C00026D8}
 		{6D7EDF33-6E97-443F-9818-AD4EFFFCE50A} = {891AAAF3-F7CF-430C-87DE-15B9E19C57E4}
 		{C3F1DD1B-52F0-4D59-9333-73BC940384B4} = {AE6C7AA5-8869-44C5-8489-62A9DAD0AC10}
 		{5ACC9FA3-CC1C-4AF0-8044-FD8EAC39D542} = {AE6C7AA5-8869-44C5-8489-62A9DAD0AC10}
 		{4E2B8C61-7A3D-4F19-9B52-C0D1E2F3A4B5} = {891AAAF3-F7CF-430C-87DE-15B9E19C57E4}
 		{8A1C3E5F-2B4D-4C6E-8F70-91A2B3C4D5E6} = {AE6C7AA5-8869-44C5-8489-62A9DAD0AC10}
+		{9B1E6C2A-3D4F-4A5B-8C7D-1E2F3A4B5C6D} = {386EBD72-0D5B-4454-978E-2D35C00026D8}
+		{E8EB9343-E715-4099-B51F-8BC7A9D6B1A3} = {6F1C2B3A-4D5E-4F60-8A71-92B3C4D5E6F7}
+		{5C34D9A9-5CA5-437D-A8B9-360F0CA99753} = {E8EB9343-E715-4099-B51F-8BC7A9D6B1A3}
+		{04913C7A-E084-44CF-9B04-22F7F6B1A87E} = {5C34D9A9-5CA5-437D-A8B9-360F0CA99753}
+		{B6EA602A-D238-443C-A74A-37C9712DAC1F} = {5C34D9A9-5CA5-437D-A8B9-360F0CA99753}
+		{4E2343FE-9D49-43EC-AD6A-DEE6592A4B9E} = {891AAAF3-F7CF-430C-87DE-15B9E19C57E4}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {82509D8C-BF89-40EE-96D5-21A0C4CD1E18}

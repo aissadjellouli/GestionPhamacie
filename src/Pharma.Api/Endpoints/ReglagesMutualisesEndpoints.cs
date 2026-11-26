@@ -85,6 +85,24 @@ internal static class ReglagesMutualisesEndpoints
             })
            .ExigerTitulaire();
 
+        // Offre de base et options (script 172) : écran « Mon offre » du titulaire, saisie d'un code d'activation signé par l'éditeur
+        api.MapGet("/offre", async (Pharma.Application.Offre.GererOffre g, Pharma.Application.Postes.GererPostesAutorises postes, ClaimsPrincipal user,
+                CancellationToken ct) =>
+            {
+                var (e, id, historique, comptes) = await g.LireAsync(user.UtilisateurId(), postes.NombreComptesAsync, ct);
+                return Results.Ok(new OffreDto(e.Etat, e.Packs.Select(p => new PackOffreDto(p, Pharma.Application.Offre.PacksOffre.Libelle(p))).ToList(),
+                    e.Postes, comptes, e.ScannersMobiles, e.Fin, e.Transition, e.EmiseLeUtc, e.Alerte, id.Officine, id.Nif,
+                    historique.Select(h => new ActivationOffreDto(h.Id, h.EmiseLeUtc, h.Source, h.SaisieLeUtc, h.SaisiePar, h.RefuseeLeUtc, h.MotifRefus)).ToList(),
+                    Pharma.Application.Offre.PacksOffre.Tous.Select(p => new PackOffreDto(p.Code, p.Libelle)).ToList()));
+            })
+           .ExigerTitulaire();
+        api.MapPost("/offre/activation", async (ActivationOffreRequete r, Pharma.Application.Offre.GererOffre g, ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await g.SaisirAsync(user.UtilisateurId(), r.Code, ct);
+                return Results.NoContent();
+            })
+           .ExigerTitulaire();
+
         api.MapGet("/tracabilite/parametres", async (ConsulterParametreTracabilite c, CancellationToken ct) =>
             {
                 var p = await c.ExecuterAsync(ct);

@@ -1425,6 +1425,14 @@ par `substance_surveillee`).
   inchangés ; journaux au nom du titulaire ; résultats remontés au central (appliqué, appliqué). Écran « Ordres du central » avec la
   fenêtre de confirmation : sans défilement, captures en clair et sombre. Arrêt de l'outil d'essai : un seul passage, 3 s.
 
+### 28.0 bis Ordre « activation de l'offre » (2026-11-26, script central 044, script local 172)
+
+- **Central** : type `activation_offre`, créé seulement par la console de l'éditeur (`--ordre-activation --officine <code> --code <code>
+  --auteur <nom>`, fonction `cloud_creer_ordre_activation`, jamais ouverte aux écrans ni au titulaire). Le central contrôle la forme du code
+  (`PO1.<contenu>.<signature>`), **ne signe rien** et ne peut pas créer d'activation.
+- **Officine** : appliqué tout de suite, sans confirmation ; le code est contrôlé comme une saisie dans Mon offre (signature de l'éditeur,
+  code de l'officine, NIF, échéance) ; refusé : ordre « refusé » avec le motif, rien ne change.
+
 ### 28.1 Référentiels, lots 3 à 5 : prestations, indications, DCI (2026-11-18, « go » du titulaire, les trois tables)
 
 - **Central** (script `018`) : types d'ordre `prestations` (1 à 200 par code, mis en majuscules ; libellé, prix, TVA, remboursable

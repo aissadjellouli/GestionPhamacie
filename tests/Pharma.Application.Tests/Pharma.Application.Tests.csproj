@@ -15,6 +15,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Pharma.Application\Pharma.Application.csproj" />
+    <!-- Outil de l'éditeur (offre, script 172) : signature des codes d'activation -->
+    <ProjectReference Include="..\..\src\Pharma.Editeur\Pharma.Editeur.csproj" />
     <!-- Logique du poste partagée par le contrat HTTP (choix Chifa d'une vente en attente, détail d'une autorisation) -->
     <ProjectReference Include="..\..\src\Pharma.Shared\Pharma.Shared.csproj" />
     <!-- Saisie de la remise au poste (fichiers sans dépendance à l'interface), testée sans référencer le projet du poste -->

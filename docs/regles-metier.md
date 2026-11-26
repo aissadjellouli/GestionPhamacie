@@ -2759,17 +2759,32 @@ Revue complète de la branche `develop` (caisse, stock, factures, sécurité, se
 ## Liste des postes autorisés (2026-11-24, script 167)
 
 - Seul le titulaire gère la liste (Administration › Postes autorisés) : autoriser un poste (nom unique sans tenir compte des majuscules parmi
-  les postes non révoqués, 20 postes au plus par défaut, réglable de 1 à 200), donner un nouveau code à un poste en attente, renommer,
+  les postes non révoqués, nombre de postes au plus fixé par l'offre signée de l'éditeur : Administration › Mon offre, 2 sans activation,
+  script 172), donner un nouveau code à un poste en attente, renommer,
   remplacer le PC d'un poste actif (même poste, même nom, génération + 1, ancienne clé refusée aussitôt), révoquer avec un motif (5 à 200
   caractères ; le nom redevient libre).
 - **Maximum de postes** (2026-11-26) : il compte les postes non révoqués (autorisés et en attente de leur code) et ne limite que les
   **nouvelles autorisations** (écran et `--autoriser-poste`) ; nouveau code, remplacement du PC et saisie d'un code déjà créé ne sont pas
   limités. Le comptage et la création se font **sous verrou** (`pg_advisory_xact_lock`, une seule transaction) : deux autorisations
-  simultanées ne dépassent pas le maximum. **Baisser le maximum sous le nombre de postes déjà comptés** est permis : aucun poste n'est retiré,
-  le titulaire est **averti** (« N postes sont déjà comptés pour un maximum de M : aucun n'est retiré, mais aucun nouveau ne pourra être
-  autorisé », en orange à la place du sous-titre) ; relever le maximum, le baisser sans passer sous le nombre de postes ou changer un autre
-  réglage n'avertit pas. — `src/Pharma.Application/Postes/PostesAutorises.cs` (`GererPostesAutorises.ModifierReglagesAsync`,
+  simultanées ne dépassent pas le maximum. **(2026-11-26, script 172) Le maximum vient de l'offre signée par l'éditeur**, plus du réglage
+  du titulaire (écran : « Postes (offre) N sur M », en lecture seule) : une offre plus petite que les postes déjà comptés ne retire aucun
+  poste, elle refuse seulement les nouvelles autorisations (« Nombre maximum de postes atteint (M, fixé par votre offre) : révoquez un poste
+  ou demandez des postes supplémentaires à l'éditeur »), signalé dans Mon offre. — `src/Pharma.Application/Postes/PostesAutorises.cs` (`GererPostesAutorises.ModifierReglagesAsync`,
   `AutoriserAsync`), `src/Pharma.Infrastructure/Postes/PostesAutorisesSql.cs` (`CreerAsync`), `src/Pharma.Desktop/Composants/Pages/AdminPostes.razor`
+- **(2026-11-26) Offre de base et options : activation signée par l'éditeur** (décisions du titulaire, docs/offre-et-options.md, script 172,
+  « go all lot ») : options (packs A à H) et quotas (postes, scanners mobiles) viennent d'un **code signé par l'éditeur** (ECDSA P-256 ; clé
+  privée chez l'éditeur seulement, fichier chiffré par mot de passe), contrôlé par l'API avec la clé publique **intégrée au programme**
+  (jamais dans la base ni dans un fichier de réglage). Le code est **lié à la pharmacie** : code de l'officine ET NIF (comparé sans espaces,
+  points ni tirets ; NIF à saisir avant). **Sans activation valable : offre de base, 2 postes** ; une activation effacée ou modifiée dans la
+  base (signature fausse) ramène à l'offre de base, jamais à tout ouvert, avec une ligne au journal (`offre_activation_refusee`, une seule
+  fois) et un message dans Mon offre. La **plus récente** activation valable (date de signature) l'emporte ; un code plus ancien, déjà
+  enregistré, échu (délai de grâce passé), d'une autre pharmacie ou d'un autre NIF est refusé. **Échéance** facultative : rappel à 30 jours,
+  puis **15 jours de grâce**, puis offre de base, **aucune donnée effacée**. **Code de transition** « tout compris » (tous les packs, date de
+  fin obligatoire) saisi lors de la mise en place ou de la mise à jour. Saisie : Administration › Mon offre (titulaire seul ; journal
+  `offre_activee`) ; ou ordre `activation_offre` du serveur central (le central transmet, ne signe rien ; contrôlé dans l'officine, appliqué
+  tout de suite). Fermeture des packs non inclus : pas encore faite (lot O6, après le tour des packs). — `src/Pharma.Application/Offre/`,
+  `src/Pharma.Infrastructure/Offre/ActivationsOffreSql.cs`, `src/Pharma.Desktop/Composants/Pages/AdminOffre.razor`, `src/Pharma.Editeur/`,
+  `database/migration/172_activation_offre.sql`, `database/cloud/044_ordre_activation_offre.sql`
 - Code d'autorisation : 8 caractères sans caractères ambigus (`XXXX-XXXX`), à usage unique, valable 15 minutes par défaut (5 à 60), affiché
   une seule fois ; 5 codes faux invalident les codes en attente et alertent le titulaire.
 - Renommer un poste est refusé (409 `poste_occupe`) tant que sa caisse est ouverte ou qu'il reste des ventes ou réceptions en attente sous son

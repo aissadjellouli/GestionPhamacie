@@ -35,8 +35,10 @@
                             <option value="exige">Exigée pour tous</option>
                             <option value="inactif">Désactivée</option>
                         </select></div>
-                    <div class="champ" style="flex: 0 0 110px"><label for="pa-max">Postes au plus</label>
-                        <input id="pa-max" data-champ="maximumPostes" type="number" min="1" max="200" @bind="maximum" /></div>
+                    @* Maximum fixé par l'offre signée de l'éditeur (Administration › Mon offre, script 172) : lecture seule *@
+                    <div class="champ" style="flex: 0 0 130px"><label for="pa-max">Postes (offre)</label>
+                        <input id="pa-max" type="text" disabled title="Fixé par votre offre (Administration › Mon offre)"
+                               value="@($"{reglages.PostesComptes} sur {reglages.MaximumPostes}")" /></div>
                     <div class="champ" style="flex: 0 0 110px"><label for="pa-duree">Code (min)</label>
                         <input id="pa-duree" data-champ="dureeCodeMinutes" type="number" min="5" max="60" @bind="duree" /></div>
                     <button type="button" class="btn" disabled="@(enCours || !ReglageModifie)" @onclick="EnregistrerReglagesAsync">Enregistrer</button>
@@ -167,7 +169,7 @@
     private List<PosteAutoriseDto> liste = [];
     private ReglagesPostesDto? reglages;
     private string mode = "transition";
-    private int maximum = 20, duree = 15;
+    private int duree = 15;
     private bool enCours, controle;
     private string? erreur, texteMessage, erreurFenetre;
     // Message affiché en orange (maximum baissé sous le nombre de postes) : tout nouveau message repasse en vert
@@ -181,7 +183,7 @@
     private string saisieNom = "", saisieMotif = "";
     private System.Threading.Timer? minuteur;
 
-    private bool ReglageModifie => reglages is not null && (mode != reglages.Mode || maximum != reglages.MaximumPostes || duree != reglages.DureeCodeMinutes);
+    private bool ReglageModifie => reglages is not null && (mode != reglages.Mode || duree != reglages.DureeCodeMinutes);
     private TimeSpan Restant => codeCree is null ? TimeSpan.Zero : codeCree.ExpireLe.ToUniversalTime() - DateTime.UtcNow is var r && r > TimeSpan.Zero ? r : TimeSpan.Zero;
 
     protected override async Task OnInitializedAsync()
@@ -197,7 +199,7 @@
     {
         var (r, e) = await Api.ReglagesPostesAsync();
         if (r is null) { erreur ??= e; return; }
-        (reglages, mode, maximum, duree) = (r, r.Mode, r.MaximumPostes, r.DureeCodeMinutes);
+        (reglages, mode, duree) = (r, r.Mode, r.DureeCodeMinutes);
     }
 
     private Task PremierePageAsync() => ChargerAsync(1, taille);
@@ -249,7 +251,7 @@
         (enCours, erreur, message) = (true, null, null);
         try
         {
-            var (e, avertissement) = await Api.ModifierReglagesPostesAsync(new ReglagesPostesDto(mode, maximum, duree));
+            var (e, avertissement) = await Api.ModifierReglagesPostesAsync(new ReglagesPostesDto(mode, reglages?.MaximumPostes ?? 0, duree));
             if (e is not null)
             {
                 if (fenetre == Fenetre.Exiger) erreurFenetre = e; else erreur = e;

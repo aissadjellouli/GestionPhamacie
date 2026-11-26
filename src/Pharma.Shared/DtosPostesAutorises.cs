@@ -9,8 +9,12 @@ public sealed record PosteAutoriseDto(long Id, string Nom, string Statut, int Ge
 /// <summary>Code d'enrôlement affiché une seule fois au titulaire.</summary>
 public sealed record CodeEnrolementDto(long PosteId, string Nom, string Code, DateTime ExpireLe);
 
-/// <summary>Réglage de la liste (mode inactif / transition / exige). NomsSansPreuve : en lecture seule, ignoré à l'enregistrement.</summary>
-public sealed record ReglagesPostesDto(string Mode, int MaximumPostes, int DureeCodeMinutes, IReadOnlyList<NomSansPreuveDto>? NomsSansPreuve = null);
+/// <summary>
+/// Réglage de la liste (mode inactif / transition / exige). MaximumPostes (offre signée par l'éditeur, script 172), PostesComptes et
+/// NomsSansPreuve : en lecture seule, ignorés à l'enregistrement.
+/// </summary>
+public sealed record ReglagesPostesDto(string Mode, int MaximumPostes, int DureeCodeMinutes, IReadOnlyList<NomSansPreuveDto>? NomsSansPreuve = null,
+    int PostesComptes = 0);
 
 /// <summary>Réponse à l'enregistrement du réglage : avertissement quand le maximum est baissé sous le nombre de postes déjà comptés.</summary>
 public sealed record ReglagesPostesEnregistresDto(string? Avertissement);

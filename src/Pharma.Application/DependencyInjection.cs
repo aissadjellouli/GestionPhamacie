@@ -426,6 +426,11 @@ public static class DependencyInjection
         services.AddSingleton<Postes.DernieresPreuvesPostes>();
         services.AddSingleton<Postes.AlertesPostes>();
         services.AddScoped<Postes.GererPostesAutorises>();
+        // Offre de base et options (script 172) : activation signée par l'éditeur, contrôlée avec la clé publique du programme
+        services.AddScoped<Offre.OffreCourante>(sp => new Offre.OffreCourante(sp.GetRequiredService<Offre.IActivationsOffreDepot>(),
+            sp.GetRequiredService<Commun.IHorloge>()));
+        services.AddScoped<Offre.ILimitesOffre>(sp => sp.GetRequiredService<Offre.OffreCourante>());
+        services.AddScoped<Offre.GererOffre>();
         return services;
     }
 }

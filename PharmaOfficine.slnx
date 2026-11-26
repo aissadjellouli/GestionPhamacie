@@ -280,6 +280,7 @@
     <File Path="database/migration/169_contenance_contenant_seul_pilulier.sql" />
     <File Path="database/migration/170_pret_paiement_partiel_remboursement_anticipe.sql" />
     <File Path="database/migration/171_taux_tva_liste.sql" />
+    <File Path="database/migration/172_activation_offre.sql" />
     <File Path="database/migration/retour/165_presence_postes_retour.sql" />
     <File Path="database/migration/retour/166_bascule_retrait_decision_retour.sql" />
     <File Path="database/migration/retour/167_postes_autorises_retour.sql" />
@@ -287,6 +288,7 @@
     <File Path="database/migration/retour/169_contenance_contenant_seul_pilulier_retour.sql" />
     <File Path="database/migration/retour/170_pret_paiement_partiel_remboursement_anticipe_retour.sql" />
     <File Path="database/migration/retour/171_taux_tva_liste_retour.sql" />
+    <File Path="database/migration/retour/172_activation_offre_retour.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
@@ -338,6 +340,7 @@
     <File Path="database/tests/169_contenance_contenant_seul_pilulier_tests.sql" />
     <File Path="database/tests/170_pret_paiement_partiel_remboursement_anticipe_tests.sql" />
     <File Path="database/tests/171_taux_tva_liste_tests.sql" />
+    <File Path="database/tests/172_activation_offre_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
     <File Path="database/tests/101b_suppression_num_facture_chifa_tests.sql" />
     <File Path="database/tests/rejeu_complet.ps1" />
@@ -423,10 +426,12 @@
     <File Path="database/cloud/041_delai_provisoire_comptes_anterieurs.sql" />
     <File Path="database/cloud/042_deconnexion_motif_inactivite.sql" />
     <File Path="database/cloud/043_regles_rattachement_ordres_central.sql" />
+    <File Path="database/cloud/044_ordre_activation_offre.sql" />
     <File Path="database/cloud/tests/040_import_comptes_duree_provisoire_tests.sql" />
     <File Path="database/cloud/tests/041_delai_provisoire_comptes_anterieurs_tests.sql" />
     <File Path="database/cloud/tests/042_deconnexion_motif_inactivite_tests.sql" />
     <File Path="database/cloud/tests/043_regles_rattachement_ordres_central_tests.sql" />
+    <File Path="database/cloud/tests/044_ordre_activation_offre_tests.sql" />
   </Folder>
   <Folder Name="/database/init/">
     <File Path="database/init/schema.sql" />
@@ -477,6 +482,7 @@
     <Project Path="src/Pharma.Domain/Pharma.Domain.csproj" />
     <Project Path="src/Pharma.Shared/Pharma.Shared.csproj" />
     <Project Path="src/Pharma.Application/Pharma.Application.csproj" />
+    <Project Path="src/Pharma.Editeur/Pharma.Editeur.csproj" />
     <Project Path="src/Pharma.Infrastructure/Pharma.Infrastructure.csproj" />
     <Project Path="src/Pharma.Api/Pharma.Api.csproj" />
     <Project Path="src/Pharma.Desktop/Pharma.Desktop.csproj" />

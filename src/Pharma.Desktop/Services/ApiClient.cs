@@ -975,6 +975,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
     // Taux de TVA réglables (script 171)
     public Task<(ListeTauxTvaDto?, string?)> TauxTvaAsync() => GetAsync<ListeTauxTvaDto?>("api/fiscal/taux-tva", null);
+    // Offre de base et options (script 172) : écran « Mon offre »
+    public Task<(OffreDto?, string?)> OffreAsync() => GetAsync<OffreDto?>("api/offre", null);
+    public async Task<string?> SaisirActivationOffreAsync(string code) =>
+        (await EnvoyerCorpsAsync<ActivationOffreRequete, object>(HttpMethod.Post, "api/offre/activation", new(code))).Item2;
     public async Task<string?> AjouterTauxTvaAsync(TauxTvaRequete r) => (await PostAsync<TauxTvaRequete, IdentifiantDto>("api/fiscal/taux-tva", r)).Item2;
     public async Task<string?> ModifierTauxTvaAsync(long id, TauxTvaModificationRequete r) =>
         (await EnvoyerCorpsAsync<TauxTvaModificationRequete, object>(HttpMethod.Put, $"api/fiscal/taux-tva/{id}", r)).Item2;

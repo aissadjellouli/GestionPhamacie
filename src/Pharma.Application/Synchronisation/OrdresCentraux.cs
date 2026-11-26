@@ -50,10 +50,13 @@ public static class TypesOrdre
     /// <summary>Reste du lot S7.3 : message court du titulaire à distance affiché sur les postes (message-v1, texte simple, 7 jours au
     /// plus) ; appliqué tout de suite (= affiché dans la barre d'état), rien d'autre ne change.</summary>
     public const string Message = Pharma.Domain.Reglages.MessagePostes.TypeOrdre;
+    /// <summary>Offre de base et options (script 172) : activation signée par l'éditeur, transmise par le central (qui ne peut pas en créer) ;
+    /// contrôlée dans l'officine (signature, code de l'officine, NIF) et appliquée tout de suite.</summary>
+    public const string ActivationOffre = "activation_offre";
     public static readonly IReadOnlySet<string> Connus = new HashSet<string>(StringComparer.Ordinal)
     {
         Essai, EmployeCreer, EmployeModifier, EmployeBloquer, EmployeDebloquer, DroitsRole, PrixProduit, Nomenclature, Commande, ClasseSuivie, Organismes,
-        Prestations, Indications, Dci, Sauvegarde, VerificationIntegrite, Reglages, Message
+        Prestations, Indications, Dci, Sauvegarde, VerificationIntegrite, Reglages, Message, ActivationOffre
     };
 
     /// <summary>Confirmation du titulaire exigée avant application (décision S5-D3) ; le blocage et l'essai s'appliquent tout de suite.</summary>
@@ -84,6 +87,7 @@ public static class TypesOrdre
         VerificationIntegrite => "Vérification d’intégrité demandée à distance",
         Reglages => "Réglages communs proposés à distance",
         Message => "Message du titulaire à distance",
+        ActivationOffre => "Activation de l’offre (éditeur)",
         _ => type
     };
 }
@@ -167,7 +171,7 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
     Catalogue.IProduitsModification produits, IOrdresCentrauxDepot depot, Catalogue.ImporterNomenclature nomenclature,
     ITelechargementReferentiel referentiels, Achats.IAchats achats, IOrganismesCentraux organismes, IListesCentrales listes,
     Sauvegardes.LancerSauvegarde? sauvegarde = null, Integrite.VerifierIntegrite? integrite = null, ReglagesCommunsOrdre? reglagesCommuns = null,
-    IHorloge? horloge = null)
+    IHorloge? horloge = null, Offre.GererOffre? offre = null)
 {
     /// <summary>Lignes au plus dans un ordre de commande (décision S5.4-D5).</summary>
     public const int LignesCommandeMax = 200;
@@ -244,6 +248,18 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
         // Reste du lot S7.3 : message à afficher sur les postes, revérifié ici (texte simple, sans lien, fin 1 à 7 jours après l'envoi,
         // pas déjà échue) ; « appliqué » = affiché dans la barre d'état de tous les postes jusqu'à sa fin
         if (o.Type == TypesOrdre.Message) return VerifierMessage(o);
+        // Offre (script 172) : le code signé est contrôlé ici comme une saisie au poste ; refusé (autre pharmacie, NIF, signature, échu) : refus définitif
+        if (o.Type == TypesOrdre.ActivationOffre)
+        {
+            var code = d.TryGetProperty("code", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : null;
+            try
+            {
+                var act = await (offre ?? throw new OrdreInapplicableException("Offre indisponible sur ce serveur.")).RecevoirDuCentralAsync(code, o.Id, ct);
+                return $"Offre activée : {act.Postes} poste(s), packs {(act.Packs.Count == 0 ? "aucun" : string.Join(", ", act.Packs))}"
+                       + (act.Fin is { } f ? $", jusqu’au {f:dd/MM/yyyy}." : ", définitive.");
+            }
+            catch (RegleMetierException x) { throw new OrdreInapplicableException(x.Message); }
+        }
         var etat = await admin.LireAsync(ct);
         switch (o.Type)
         {
@@ -696,6 +712,8 @@ public static class ResumeOrdre
                 TypesOrdre.Message => Pharma.Domain.Reglages.MessagePostes.Lire(o.DonneesJson, o.CreeLeUtc) is { Code: null } m
                     ? $"Message affiché sur les postes jusqu’au {m.JusquAuUtc!.Value.ToLocalTime():dd/MM/yyyy HH:mm} : « {m.Texte} »"
                     : "Message illisible ou hors des bornes permises (refusé).",
+                TypesOrdre.ActivationOffre => "Activation de l’offre signée par l’éditeur : contrôlée dans l’officine (signature, code de l’officine, NIF), "
+                                              + "appliquée tout de suite ; un code refusé ne change rien.",
                 TypesOrdre.EmployeCreer => $"Nouveau compte « {T(d, "nom")} », identifiant {T(d, "identifiant")}, rôle {NomRole(T(d, "role"))}.",
                 TypesOrdre.EmployeModifier => $"{Employe()} : "
                     + string.Join(", ", new[]

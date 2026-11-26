@@ -166,6 +166,7 @@ public static class DependencyInjection
         services.AddScoped<IReglageTachesLaissees, ReglageTachesLaisseesSql>();
         // Liste des postes autorisés (script 167) : sans état, en singleton (lu par les caches et la vérification des preuves)
         services.AddSingleton<Application.Postes.IPostesAutorisesDepot, Postes.PostesAutorisesSql>();
+        services.AddScoped<Application.Offre.IActivationsOffreDepot, Offre.ActivationsOffreSql>();
         services.AddScoped<IEcartsCaisseRecents, EcartsCaisseRecentsSql>();
         services.AddSingleton<IDocumentsPdf, DocumentsPdf>();
         services.AddSingleton<Pharma.Application.Rapports.IDocumentsRapports, DocumentsPdf>();

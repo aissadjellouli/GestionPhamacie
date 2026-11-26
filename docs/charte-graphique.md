@@ -104,7 +104,8 @@ vendeur)** : `/`, `/accueil`, `/caisse`, `/caisse/etat`, `/cloture`, `/stock`, `
 2026-11-20 ci-dessous ; reprise et profils de reprise à 1 366 × 768 : non mesurés, voir plus bas),
 `/admin/restauration`, `/admin/sauvegardes`, `/admin/seuils`, `/guide`, `/mon-code`, `/mot-de-passe` ; `/admin/contenances` (ajouté le
 2026-11-26 : 0 px aux deux tailles, clair et sombre, voir « Mesures du 2026-11-26 : Administration › Contenances des produits ») ;
-`/admin/taux-tva` (ajouté le 2026-11-26 : 0 px aux deux tailles, clair et sombre, voir « Mesures du 2026-11-26 : Administration › Taux de TVA »).
+`/admin/taux-tva` (ajouté le 2026-11-26 : 0 px aux deux tailles, clair et sombre, voir « Mesures du 2026-11-26 : Administration › Taux de TVA ») ;
+`/admin/offre` (ajouté le 2026-11-26 : 0 px aux deux tailles, clair et sombre, voir « Mesures du 2026-11-26 : Administration › Mon offre »).
 **`/admin/postes` mesuré le 2026-11-24** (titulaire, clair et sombre, 1 536 × 890 et 1 366 × 768) : 0 px de défilement vertical et horizontal ; liste paginée et filtrée (statut, nom ou ordinateur), seul le tableau défile ; autorisation, code, renommage, révocation et passage en « exigé » dans une fenêtre `.voile`. Code d'autorisation affiché en 32 px (`.code-enrolement`, voulu pour être recopié sans erreur). Écran de connexion : bandeau `.info-bandeau` (transition) ou `.bandeau-attention` (exigé, révoqué), carte « Autoriser ce poste » ; 0 px.
 **`/admin/seuils?rubrique=produits` corrigé le 2026-11-18** (l'écran défilait de 75 px à 1 366 × 768, défaut déjà présent avant
 le filtre avec propositions : le tableau restait à son minimum de 240 px sous le choix du produit) : deux colonnes dans le panneau
@@ -768,6 +769,13 @@ Poste d'essai, base jetable, titulaire : Financements › Échéances à payer (
 avant livraison : un bandeau « Remboursement anticipé enregistré… » au-dessus des onglets faisait déborder la fiche de 41 px à 1 366 × 768
 (tableau déjà à 140 px) ; l'avertissement prend la place du pied de la tuile « Mensualité » (`.tuile-pied.texte-attention`, orange : la règle
 `.tuile-pied`, déclarée après `.texte-attention`, l'emportait) et chaque échéance bloquée porte la pastille « Nouveau tableau à importer ».
+
+### Mesures du 2026-11-26 : Administration › Mon offre (`/admin/offre`)
+
+Poste d'essai, base jetable, titulaire : offre en vigueur (état, postes « N autorisés sur M », échéance, 8 packs sur deux colonnes) et saisie
+d'un code avec l'historique dans son cadre, côte à côte (`.offre-grille`) : **0 px** à 1 366 × 768 et 1 536 × 890, clair et sombre, avant
+puis après l'activation (bandeau « Code accepté » affiché). Administration › Postes autorisés avec le maximum en lecture seule
+(« Postes (offre) 4 sur 6 ») : **0 px** aux deux tailles, clair et sombre.
 
 ### Mesures du 2026-11-26 : Administration › Taux de TVA (`/admin/taux-tva`)
 

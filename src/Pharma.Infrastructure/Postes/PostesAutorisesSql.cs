@@ -14,20 +14,19 @@ public sealed class PostesAutorisesSql(NpgsqlDataSource db) : IPostesAutorisesDe
 
     public async Task<ReglagesPostes> ReglagesAsync(CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("SELECT mode, maximum_postes, duree_code_minutes FROM parametre_postes WHERE id = 1");
+        await using var cmd = db.CreateCommand("SELECT mode, duree_code_minutes FROM parametre_postes WHERE id = 1");
         await using var r = await cmd.ExecuteReaderAsync(ct);
         // Ligne absente : valeurs par défaut du schéma
-        return await r.ReadAsync(ct) ? new ReglagesPostes(r.GetString(0), r.GetInt32(1), r.GetInt32(2)) : ReglagesPostes.ParDefaut;
+        return await r.ReadAsync(ct) ? new ReglagesPostes(r.GetString(0), r.GetInt32(1)) : ReglagesPostes.ParDefaut;
     }
 
     public async Task EnregistrerReglagesAsync(ReglagesPostes reglages, CancellationToken ct = default)
     {
         await using var cmd = db.CreateCommand("""
-            INSERT INTO parametre_postes (id, mode, maximum_postes, duree_code_minutes) VALUES (1, $1, $2, $3)
-            ON CONFLICT (id) DO UPDATE SET mode = EXCLUDED.mode, maximum_postes = EXCLUDED.maximum_postes, duree_code_minutes = EXCLUDED.duree_code_minutes
+            INSERT INTO parametre_postes (id, mode, duree_code_minutes) VALUES (1, $1, $2)
+            ON CONFLICT (id) DO UPDATE SET mode = EXCLUDED.mode, duree_code_minutes = EXCLUDED.duree_code_minutes
             """);
         cmd.Parameters.AddWithValue(reglages.Mode);
-        cmd.Parameters.AddWithValue(reglages.MaximumPostes);
         cmd.Parameters.AddWithValue(reglages.DureeCodeMinutes);
         await cmd.ExecuteNonQueryAsync(ct);
     }

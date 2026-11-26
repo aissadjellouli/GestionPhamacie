@@ -1,7 +1,7 @@
 # Offre de base et options vendues à la demande
 
-> Décision du titulaire du 2026-11-26. **À l'étude, rien n'est codé.** Ce document sert de point de départ au tour des fonctionnalités à
-> faire ensemble ; il sera complété au fil des décisions.
+> Décision du titulaire du 2026-11-26. **Mécanisme d'activation codé le 2026-11-26** (« go all lot » : lots O1 à O5, voir « Mise en œuvre ») ;
+> le partage des fonctionnalités entre offre de base et packs (lot O6) attend le tour des packs A à H.
 
 ## Le besoin
 
@@ -107,6 +107,32 @@ Faite à partir des 275 fonctionnalités de [fonctionnalites.md](fonctionnalites
 3. Plan technique (mécanisme d'activation signé, écran du super admin, lecture seule pour le titulaire, contrôle par le serveur), validé
    avant tout code. Premier cas d'usage : le maximum de postes autorisés.
 
+## Mise en œuvre (2026-11-26, « go all lot »)
+
+| Lot | Contenu | État |
+|---|---|---|
+| O1 | Activation signée : code `PO1.<contenu>.<signature>` (ECDSA P-256, SHA-256), contrôlé par l'API avec la clé publique intégrée au programme (`CleEditeur`) ; lié au code de l'officine et au NIF ; table `activation_offre` (script 172) ; offre en vigueur = la plus récente activation valable, sinon offre de base (2 postes) | Fait |
+| O2 | Maximum de postes lu dans l'offre (plus réglable par le titulaire ; `parametre_postes.maximum_postes` n'est plus lu) | Fait |
+| O3 | Outil de l'éditeur `src/Pharma.Editeur` : `generer-cle`, `cle-publique`, `signer`, `lire` (jamais livré aux pharmacies) | Fait |
+| O4 | Écran Administration › Mon offre (titulaire) : offre en lecture seule, packs, postes, échéance, saisie d'un code, codes enregistrés | Fait (mesuré à 0 px, clair et sombre) |
+| O5 | Voie du central : ordre `activation_offre` (script central 044, console `--ordre-activation`) ; le central transmet, l'officine contrôle | Fait (console ; pas d'écran de l'éditeur au central) |
+| O6 | Fermer les packs non inclus (écrans et routes masqués ou en lecture seule, données gardées) | **En attente** du tour des packs A à H |
+
+### Mise en service (à faire une fois par l'éditeur)
+
+1. **Générer la clé de l'éditeur** sur le PC de l'éditeur, hors de tout dépôt :
+   `dotnet run --project src\Pharma.Editeur -- generer-cle --dossier <dossier protégé>` (mot de passe demandé deux fois, 12 caractères au
+   moins). Copier `cle-editeur.pem` sur une clé USB rangée à part. **Sans ce fichier ou sans son mot de passe, plus aucun code ne peut être
+   signé** (il faudrait une nouvelle clé et une nouvelle version du programme).
+2. **Intégrer la clé publique** (contenu de `cle-editeur-publique.txt`) dans `src/Pharma.Application/Offre/ActivationOffre.cs`
+   (`CleEditeur.PubliqueBase64`), puis livrer cette version. **Tant que cette constante est vide, aucun code n'est accepté : toutes les
+   pharmacies sont à l'offre de base (2 postes)** ; les postes déjà autorisés restent, seules les nouvelles autorisations sont refusées.
+3. **À chaque mise en place ou mise à jour d'une pharmacie** : relever son code d'officine et son NIF (Administration › Mon offre), signer un
+   code de transition `signer --cle <cle-editeur.pem> --officine <code> --nif <NIF> --postes <n> --transition --fin AAAA-MM-JJ` (durée fixée
+   à ce moment-là), le saisir dans Mon offre (connecté en titulaire) ou l'envoyer par le central :
+   `Pharma.Cloud.Api.exe --ordre-activation --officine <code> --code <code> --auteur <nom>`.
+4. **Vente d'une option** : signer un nouveau code (packs `--packs A,D`, postes, scanners, `--fin` si abonnement) ; le plus récent l'emporte.
+
 ## Décisions
 
 | Date | Décision |
@@ -121,3 +147,6 @@ Faite à partir des 275 fonctionnalités de [fonctionnalites.md](fonctionnalites
 | 2026-11-26 | Q6 : écran **« Mon offre »** en lecture seule pour le titulaire (packs, quotas, dates de fin), champ de saisie d'un code d'activation, coordonnées de l'éditeur pour demander une option. |
 | 2026-11-26 | Q7 : l'activation est rangée dans la base répliquée (valable sur le 2e serveur après une bascule) ; la signature est contrôlée sur chaque serveur ; le central **transmet** une activation signée par l'éditeur, il ne peut pas en créer. |
 | 2026-11-26 | Q8 : pharmacies déjà installées : **tout reste ouvert pendant une période de transition** (code « tout compris » limité dans le temps), puis passage à leur offre réelle. **Durée de la transition : à définir.** |
+| 2026-11-26 | Liaison (Q3 précisée) : l'activation contient le **code de l'officine** (`officine_id`) **et son NIF** ; le NIF doit être saisi avant l'activation. |
+| 2026-11-26 | Clé de l'éditeur : **fichier chiffré par un mot de passe**, hors de tout dépôt, sur le PC de l'éditeur, avec une copie sur une clé USB rangée à part ; l'outil demande le mot de passe à chaque signature. |
+| 2026-11-26 | Transition (Q8 précisée) : **code de transition** « tout compris » signé, saisi par l'éditeur lors de la mise en place ou de la mise à jour, avec une date de fin choisie à ce moment-là. **Sans aucune activation valable : offre de base, 2 postes** ; une activation effacée ramène à l'offre de base, jamais à tout ouvert. |

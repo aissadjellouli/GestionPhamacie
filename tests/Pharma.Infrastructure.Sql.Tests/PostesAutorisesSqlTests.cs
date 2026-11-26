@@ -40,8 +40,8 @@ public sealed class PostesAutorisesSqlTests(CopieSql copie) : IClassFixture<Copi
     {
         var (sql, _) = await PreparerAsync();
         Assert.Equal(ReglagesPostes.ParDefaut, await sql.ReglagesAsync());
-        await sql.EnregistrerReglagesAsync(new ReglagesPostes("exige", 5, 30));
-        Assert.Equal(new ReglagesPostes("exige", 5, 30), await sql.ReglagesAsync());
+        await sql.EnregistrerReglagesAsync(new ReglagesPostes("exige", 30));
+        Assert.Equal(new ReglagesPostes("exige", 30), await sql.ReglagesAsync());
     }
 
     [FactSql]

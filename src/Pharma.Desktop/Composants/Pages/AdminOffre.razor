@@ -1,0 +1,145 @@
+@page "/admin/offre"
+@inject ApiClient Api
+@inject SessionPoste Session
+
+@* Mon offre (décisions du titulaire du 2026-11-26, docs/offre-et-options.md, script 172) : offre en vigueur en lecture seule (packs, postes,
+   échéance) et saisie d'un code d'activation signé par l'éditeur. Rien ne se règle ici : l'offre vient du code signé. Titulaire seul.
+   Écran fixe : seul l'historique défile dans son cadre. *@
+<div class="page admin">
+    <NavAdmin Actif="admin/offre" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Mon offre</h1>
+                <p class="sous-titre">Options et nombre de postes fixés par l’éditeur, par un code signé : ils ne se modifient ni ici ni dans la base</p>
+            </div>
+        </div>
+
+        @if (!Session.A("role.titulaire"))
+        {
+            <div class="erreur" role="alert">Écran réservé au pharmacien titulaire.</div>
+        }
+        else if (o is null)
+        {
+            @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> } else { <Chargement /> }
+        }
+        else
+        {
+            @if (message is not null) { <div class="succes" role="status">@message</div> }
+            else if (o.Alerte is not null) { <div class="info-bandeau texte-attention" role="status">@o.Alerte</div> }
+
+            <div class="offre-grille">
+                <section class="panneau offre-colonne" aria-labelledby="t-offre">
+                    <h2 id="t-offre">Offre en vigueur</h2>
+                    <dl class="offre-valeurs">
+                        <dt>État</dt>
+                        <dd><span class="pastille @(o.Etat == "base" ? "info" : o.Etat == "grace" ? "attention" : "ok")">@Etat(o)</span></dd>
+                        <dt>Postes</dt>
+                        <dd>
+                            <span class="@(o.PostesComptes > o.Postes ? "texte-attention" : "")">@o.PostesComptes autorisé(s) sur @o.Postes</span>
+                            · <a href="admin/postes">Postes autorisés</a>
+                        </dd>
+                        <dt>Scanners mobiles</dt>
+                        <dd>@o.ScannersMobiles</dd>
+                        <dt>Valable jusqu’au</dt>
+                        <dd>@(o.Fin is { } f ? f.ToString("dd/MM/yyyy") : o.Etat == "base" ? "—" : "sans limite")</dd>
+                        <dt>Code signé le</dt>
+                        <dd>@(o.SigneeLe is { } s ? Libelles.DateHeureLocale(s) : "—")</dd>
+                    </dl>
+                    @if (o.PostesComptes > o.Postes)
+                    {
+                        <p class="detail texte-attention" style="margin: 0">@o.PostesComptes postes sont déjà autorisés pour @o.Postes : aucun n’est retiré, mais aucun nouveau ne peut l’être.</p>
+                    }
+                    <h3 class="offre-sous-titre">Packs</h3>
+                    <ul class="offre-packs">
+                        @foreach (var p in o.TousLesPacks)
+                        {
+                            var inclus = o.Packs.Any(x => x.Code == p.Code);
+                            <li class="@(inclus ? "" : "offre-pack-absent")"><span class="pastille @(inclus ? "ok" : "info")">@p.Code</span> @p.Libelle@(inclus ? "" : " (non inclus)")</li>
+                        }
+                    </ul>
+                </section>
+
+                <section class="panneau offre-colonne" aria-labelledby="t-activer">
+                    <h2 id="t-activer">Saisir un code d’activation</h2>
+                    <p class="detail" style="margin: 0">
+                        Pour obtenir un code, donnez à l’éditeur ces deux informations :
+                        code de l’officine <strong style="font-family: monospace; user-select: all">@o.Officine</strong>
+                        et NIF <strong>@(string.IsNullOrWhiteSpace(o.Nif) ? "non saisi" : o.Nif)</strong>.
+                    </p>
+                    @if (string.IsNullOrWhiteSpace(o.Nif))
+                    {
+                        <p class="detail texte-attention" style="margin: 0">Saisissez d’abord le NIF de la pharmacie (Administration › <a href="admin/pharmacie">Pharmacie</a>) : un code est lié au NIF.</p>
+                    }
+                    <div class="champ">
+                        <label for="o-code" class="requis">Code d’activation</label>
+                        <textarea id="o-code" data-champ="code" rows="3" spellcheck="false" autocomplete="off" placeholder="PO1.…"
+                                  @bind="code" @bind:event="oninput"></textarea>
+                    </div>
+                    @if (erreur is not null) { <p class="detail texte-urgent" role="alert" style="margin: 0">@erreur</p> }
+                    <div><button type="button" class="btn btn-principal" disabled="@(enCours || string.IsNullOrWhiteSpace(code))" @onclick="ActiverAsync">Activer</button></div>
+
+                    <h3 class="offre-sous-titre">Codes enregistrés</h3>
+                    <div class="tableau-cadre" data-hauteur-min="90">
+                        <table class="tableau" style="min-width: 0">
+                            <thead><tr><th scope="col">Signé le</th><th scope="col">Reçu</th><th scope="col">Par</th><th scope="col">État</th></tr></thead>
+                            <tbody>
+                                @foreach (var h in o.Historique)
+                                {
+                                    <tr>
+                                        <td>@Libelles.Date(DateOnly.FromDateTime(h.SigneeLe.ToLocalTime()))</td>
+                                        <td>@Libelles.DateHeureLocale(h.SaisieLe)</td>
+                                        <td>@(h.Source == "central" ? "Serveur central" : h.SaisiePar ?? "—")</td>
+                                        <td>@if (h.RefuseeLe is not null) { <span class="texte-urgent" title="@h.MotifRefus">refusé</span> } else { <span>contrôlé</span> }</td>
+                                    </tr>
+                                }
+                                @if (o.Historique.Count == 0) { <tr><td colspan="4" class="offre-pack-absent">Aucun code saisi.</td></tr> }
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private OffreDto? o;
+    private string code = "";
+    private string? erreur, message;
+    private bool enCours;
+
+    private static string Etat(OffreDto o) => o.Etat switch
+    {
+        "active" => o.Transition ? "Période de transition (tout compris)" : "Offre activée",
+        "grace" => "Délai de grâce (offre échue)",
+        _ => "Offre de base"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.A("role.titulaire")) await ChargerAsync();
+    }
+
+    private async Task ChargerAsync()
+    {
+        var (d, e) = await Api.OffreAsync();
+        if (d is null) { erreur = e; return; }
+        o = d;
+    }
+
+    private async Task ActiverAsync()
+    {
+        (enCours, erreur, message) = (true, null, null);
+        try
+        {
+            // Saisie gardée après un refus (seul le mot de passe se ressaisit) : le code reste dans le champ
+            if (await Api.SaisirActivationOffreAsync(code.Trim()) is { } e) { erreur = e; return; }
+            code = "";
+            await ChargerAsync();
+            message = $"Code accepté : {Etat(o!)}, {o!.Postes} poste(s).";
+        }
+        finally { enCours = false; }
+    }
+}

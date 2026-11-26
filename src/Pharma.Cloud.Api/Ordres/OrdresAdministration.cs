@@ -18,6 +18,7 @@ namespace Pharma.Cloud.Api.Ordres;
 ///   --ordre-organismes --officine &lt;code&gt; --fichier &lt;organismes.json&gt; --auteur &lt;nom&gt;
 ///   --ordre-prestations --officine &lt;code&gt; --fichier &lt;prestations.json&gt; --auteur &lt;nom&gt;
 ///   --ordre-indications | --ordre-dci --officine &lt;code&gt; --fichier &lt;liste.txt : une ligne par élément&gt; --auteur &lt;nom&gt;
+///   --ordre-activation --officine &lt;code&gt; --code &lt;code signé par l'outil de l'éditeur&gt; --auteur &lt;nom&gt; (script central 044)
 ///   --annuler-ordre &lt;id&gt; --officine &lt;code&gt; --auteur &lt;nom&gt;
 ///   --expirer-ordres                                                                  tâche planifiée (chaque heure)
 /// </summary>
@@ -26,7 +27,8 @@ public static class OrdresAdministration
     public static readonly string[] Commandes =
         ["--ordres", "--ordre-essai", "--ordre-employe-creer", "--ordre-employe-modifier", "--ordre-employe-bloquer", "--ordre-employe-debloquer",
          "--ordre-droits-role", "--ordre-prix", "--annuler-ordre", "--expirer-ordres", "--importer-nomenclature", "--publier-nomenclature",
-         "--ordre-commande", "--ordre-classe-suivie", "--ordre-organismes", "--ordre-prestations", "--ordre-indications", "--ordre-dci"];
+         "--ordre-commande", "--ordre-classe-suivie", "--ordre-organismes", "--ordre-prestations", "--ordre-indications", "--ordre-dci",
+         "--ordre-activation"];
 
     public static bool Concerne(string commande) => Commandes.Contains(commande);
 
@@ -65,6 +67,11 @@ public static class OrdresAdministration
             _ => null
         };
     }
+
+    /// <summary>Code d'activation de --ordre-activation (forme contrôlée aussi par cloud_creer_ordre_activation).</summary>
+    public static string CodeActivation(string[] args) =>
+        Option(args, "--code") is { Length: > 0 } c && c.Trim().StartsWith("PO1.", StringComparison.Ordinal) ? c.Trim()
+            : throw new ArgumentException("Option --code <code d'activation> obligatoire (commence par PO1., produit par l'outil de l'éditeur).");
 
     /// <summary>Éléments d'un fichier texte (DCI, indications) : un par ligne, lignes vides et lignes commençant par # ignorées.</summary>
     private static List<string> NomsDci(string fichier)
@@ -121,6 +128,17 @@ public static class OrdresAdministration
             }
             if (args[0] == "--ordres") return await ListerAsync(db, Officine(args, false), args, sortie);
             if (args[0] == "--importer-nomenclature") return await ImporterNomenclatureAsync(db, args, sortie);
+            // Offre (script central 044) : --ordre-activation --officine <code> --code <code signé par l'outil de l'éditeur> --auteur <nom>.
+            // Le central transmet le code tel quel ; l'officine contrôle la signature, son code et son NIF.
+            if (args[0] == "--ordre-activation")
+            {
+                await using var cmd = db.CreateCommand("SELECT cloud_creer_ordre_activation($1, $2, $3)");
+                cmd.Parameters.AddWithValue(Officine(args, true)!.Value);
+                cmd.Parameters.AddWithValue(CodeActivation(args));
+                cmd.Parameters.AddWithValue(Auteur(args));
+                sortie.WriteLine($"Ordre créé : {await cmd.ExecuteScalarAsync()} (activation_offre) ; il descend à l'officine au prochain échange.");
+                return 0;
+            }
             if (args[0] == "--publier-nomenclature") return await PublierNomenclatureAsync(db, args, sortie);
             if (args[0] == "--annuler-ordre")
             {

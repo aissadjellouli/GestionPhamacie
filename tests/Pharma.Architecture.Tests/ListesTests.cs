@@ -26,6 +26,7 @@ public class ListesTests
         ["Mise/IntegriteJournaux.razor"] = (1, "journaux chaînés : bornés (un par journal protégé et clé de chaîne, 2026-11-16)"),
         ["Pages/AdminSecondServeur.razor"] = (1, "serveurs de l'officine : bornés par nature (le principal et le 2e serveur, 2026-11-16)"),
         ["Pages/AdminDroits.razor"] = (2, "utilisateurs : exception choisie le 2026-11-13 ; droits par rôle (bornés)"),
+        ["Pages/AdminOffre.razor"] = (1, "codes d'activation de l'offre : quelques-uns par an (un par renouvellement), script 172, 2026-11-26"),
         ["Mise/TauxTvaReglage.razor"] = (2, "taux de TVA (quelques taux) et catégories de produits (une dizaine) : bornés par nature, script 171, 2026-11-26"),
         ["Mise/ContenancesManquantes.razor"] = (1, "aperçu d’un import de contenances (2026-11-26) : fenêtre au-dessus de l’écran, 200 lignes "
             + "de chaque sorte au plus, dans son cadre défilant ; la liste des produits, elle, est paginée"),

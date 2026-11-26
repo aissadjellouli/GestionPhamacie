@@ -29,7 +29,7 @@ public class PostesAutorisesTests
         public long Unix => (long)MaintenantUtc.Subtract(DateTime.UnixEpoch).TotalSeconds;
     }
 
-    internal sealed class Depot : IPostesAutorisesDepot
+    internal sealed class Depot : IPostesAutorisesDepot, Pharma.Application.Offre.ILimitesOffre
     {
         public sealed class Ligne
         {
@@ -39,6 +39,9 @@ public class PostesAutorisesTests
 
         public List<Ligne> Lignes { get; } = [];
         public ReglagesPostes Reglages { get; set; } = ReglagesPostes.ParDefaut;
+        /// <summary>Maximum de postes de l'offre signée (script 172).</summary>
+        public int Maximum { get; set; } = 20;
+        public Task<int> MaximumPostesAsync(CancellationToken ct = default) => Task.FromResult(Maximum);
         public HashSet<string> Occupes { get; } = new(StringComparer.OrdinalIgnoreCase);
         public bool Panne { get; set; }
         public int LecturesCles { get; private set; }
@@ -512,7 +515,7 @@ public class PostesAutorisesTests
         var journal = new Journal();
         var alertes = new Alertes();
         var droits = new Droits();
-        return (new EnrolerPoste(depot, registre, journal, alertes, new AlertesPostes(horloge), horloge), new GererPostesAutorises(depot, registre, droits, journal, horloge),
+        return (new EnrolerPoste(depot, registre, journal, alertes, new AlertesPostes(horloge), horloge), new GererPostesAutorises(depot, registre, droits, journal, horloge, depot),
             depot, horloge, journal, alertes, droits);
     }
 
@@ -574,28 +577,29 @@ public class PostesAutorisesTests
         var (_, gerer, depot, _, _, _, _) = BancGestion();
         await gerer.AutoriserAsync(1, "CAISSE-1");
         Assert.Equal(PreuvePoste.NomPostePris, (await Assert.ThrowsAsync<RefusPosteException>(() => gerer.AutoriserAsync(1, "caisse-1"))).Code);
-        depot.Reglages = depot.Reglages with { MaximumPostes = 1 };
+        depot.Maximum = 1;
         await Assert.ThrowsAsync<Pharma.Domain.Commun.RegleMetierException>(() => gerer.AutoriserAsync(1, "CAISSE-2"));
         await Assert.ThrowsAsync<Pharma.Domain.Commun.RegleMetierException>(() => gerer.AutoriserAsync(1, "   "));
     }
 
     [Fact]
-    public async Task Baisser_le_maximum_sous_les_postes_comptes_avertit_sans_rien_retirer()
+    public async Task Le_maximum_vient_de_l_offre_et_une_offre_plus_petite_ne_retire_aucun_poste()
     {
         var (_, gerer, depot, _, _, _, _) = BancGestion();
         foreach (var n in new[] { "CAISSE-1", "CAISSE-2", "CAISSE-3" }) await gerer.AutoriserAsync(1, n);
 
-        var avertissement = await gerer.ModifierReglagesAsync(1, depot.Reglages with { MaximumPostes = 2 });
-        Assert.Equal(GererPostesAutorises.AvertissementMaximum(3, 2), avertissement);
-        Assert.Equal(3, depot.Lignes.Count(l => l.Statut != "revoque"));     // aucun poste retiré
+        // Offre ramenée à 2 postes (offre de base, script 172) : aucun poste retiré, aucun nouveau
+        depot.Maximum = 2;
+        Assert.Equal(3, depot.Lignes.Count(l => l.Statut != "revoque"));
         var refus = await Assert.ThrowsAsync<Pharma.Domain.Commun.RegleMetierException>(() => gerer.AutoriserAsync(1, "CAISSE-4"));
         Assert.Equal(GererPostesAutorises.MessageMaximumAtteint(2), refus.Message);
+        var (_, _, maximum, comptes) = await gerer.ReglagesAsync(1);
+        Assert.Equal((2, 3), (maximum, comptes));
 
-        // Relevé, baissé à égalité ou autre réglage : pas d'avertissement
-        Assert.Null(await gerer.ModifierReglagesAsync(1, depot.Reglages with { MaximumPostes = 3 }));
-        Assert.Null(await gerer.ModifierReglagesAsync(1, depot.Reglages with { MaximumPostes = 10 }));
-        Assert.Null(await gerer.ModifierReglagesAsync(1, depot.Reglages with { MaximumPostes = 3 }));
+        // Le réglage du titulaire ne touche plus au maximum
         Assert.Null(await gerer.ModifierReglagesAsync(1, depot.Reglages with { DureeCodeMinutes = 30 }));
+        depot.Maximum = 4;
+        await gerer.AutoriserAsync(1, "CAISSE-4");
     }
 
     [Fact]
@@ -639,7 +643,6 @@ public class PostesAutorisesTests
     {
         var (_, gerer, depot, _, journal, _, _) = BancGestion();
         await Assert.ThrowsAsync<Pharma.Domain.Commun.RegleMetierException>(() => gerer.ModifierReglagesAsync(1, ReglagesPostes.ParDefaut with { Mode = "ouvert" }));
-        await Assert.ThrowsAsync<Pharma.Domain.Commun.RegleMetierException>(() => gerer.ModifierReglagesAsync(1, ReglagesPostes.ParDefaut with { MaximumPostes = 0 }));
         await Assert.ThrowsAsync<Pharma.Domain.Commun.RegleMetierException>(() => gerer.ModifierReglagesAsync(1, ReglagesPostes.ParDefaut with { DureeCodeMinutes = 61 }));
         await gerer.ModifierReglagesAsync(1, ReglagesPostes.ParDefaut with { Mode = PreuvePoste.ModeExige });
         Assert.Equal(PreuvePoste.ModeExige, depot.Reglages.Mode);
