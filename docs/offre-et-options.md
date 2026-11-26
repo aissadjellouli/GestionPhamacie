@@ -136,14 +136,21 @@ boutons d'action ne sont pas grisés : le bandeau prévient, le serveur refuse.
 
 ### Mise en service (à faire une fois par l'éditeur)
 
-1. **Générer la clé de l'éditeur** sur le PC de l'éditeur, hors de tout dépôt :
-   `dotnet run --project src\Pharma.Editeur -- generer-cle --dossier <dossier protégé>` (mot de passe demandé deux fois, 12 caractères au
-   moins). Copier `cle-editeur.pem` sur une clé USB rangée à part. **Sans ce fichier ou sans son mot de passe, plus aucun code ne peut être
-   signé** (il faudrait une nouvelle clé et une nouvelle version du programme).
-2. **Intégrer la clé publique** (contenu de `cle-editeur-publique.txt`) dans `src/Pharma.Application/Offre/ActivationOffre.cs`
-   (`CleEditeur.PubliqueBase64`), puis livrer cette version. **Tant que cette constante est vide, aucun code n'est accepté : toutes les
-   pharmacies sont à l'offre de base (2 postes, aucun pack : écrans des packs A à H fermés)** ; les postes déjà autorisés restent, seules
-   les nouvelles autorisations sont refusées. Bases de développement et d'essai comprises : leur saisir un code de transition.
+> Procédure détaillée, pas à pas : [procedure-cle-editeur.md](procedure-cle-editeur.md). **Clés créées et intégrées le 2026-11-26.**
+
+1. **Générer DEUX clés** (« go clé de secours », 2026-11-26) sur le PC de l'éditeur, **jamais sur le serveur d'une officine**, hors de
+   tout dépôt, dans deux dossiers différents et avec **deux mots de passe différents** (12 caractères au moins chacun) :
+   `dotnet run --project src\Pharma.Editeur -- generer-cle --dossier <dossier de la clé principale>` puis la même commande avec
+   `--dossier <dossier de la clé de secours>`. Ranger chaque fichier `cle-editeur.pem` sur sa propre clé USB, dans deux lieux différents,
+   et noter les deux mots de passe à part. La clé principale signe ; la clé de secours ne sert que si la principale est perdue ou volée.
+   Une clé ne se régénère jamais à l'identique.
+2. **Intégrer les deux clés publiques** (contenu de chaque `cle-editeur-publique.txt`) dans `src/Pharma.Application/Offre/ActivationOffre.cs` :
+   `CleEditeur.PrincipaleBase64` et `CleEditeur.SecoursBase64`, puis livrer cette version. **Tant que les deux sont vides, aucun code n'est
+   accepté : toutes les pharmacies sont à l'offre de base (2 postes, aucun pack : écrans des packs A à H fermés)** ; les postes déjà
+   autorisés restent, seules les nouvelles autorisations sont refusées. Bases de développement et d'essai comprises : leur saisir un code de
+   transition. **Clé principale perdue** : signer avec la clé de secours (aucune nouvelle version, aucun retour à l'offre de base), puis
+   générer une nouvelle clé de secours à la version suivante. **Clé principale volée** : signer avec la clé de secours et retirer la
+   principale de la liste à la version suivante (ses codes ne valent plus : nouveaux codes à signer pour les pharmacies concernées).
 3. **À chaque mise en place ou mise à jour d'une pharmacie** : relever son code d'officine et son NIF (Administration › Mon offre), signer un
    code de transition `signer --cle <cle-editeur.pem> --officine <code> --nif <NIF> --postes <n> --transition --fin AAAA-MM-JJ` (durée fixée
    à ce moment-là), le saisir dans Mon offre (connecté en titulaire) ou l'envoyer par le central :

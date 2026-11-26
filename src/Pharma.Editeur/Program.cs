@@ -41,7 +41,8 @@ public static class Program
 
               generer-cle  --dossier <dossier>
                   Crée la clé de signature : cle-editeur.pem (chiffrée par le mot de passe, à copier aussi sur une clé USB rangée à part)
-                  et cle-editeur-publique.txt (à intégrer au programme : CleEditeur.PubliqueBase64). Refuse d'écraser une clé existante.
+                  et cle-editeur-publique.txt (à intégrer au programme : CleEditeur.PrincipaleBase64, ou SecoursBase64 pour la clé de
+                  secours, générée dans un autre dossier avec un autre mot de passe). Refuse d'écraser une clé existante.
               cle-publique --cle <cle-editeur.pem>
                   Affiche la clé publique d'une clé existante.
               signer --cle <cle-editeur.pem> --officine <code de l'officine> --nif <NIF> --postes <n>
@@ -70,7 +71,7 @@ public static class Program
         File.WriteAllText(Path.Combine(dossier, FichierPublique), publique + Environment.NewLine);
         Console.WriteLine($"Clé créée : {fichier}");
         Console.WriteLine("Copiez ce fichier sur une clé USB rangée à part. Sans lui ou sans son mot de passe, plus aucun code ne peut être signé.");
-        Console.WriteLine($"Clé publique (à intégrer au programme, CleEditeur.PubliqueBase64) :{Environment.NewLine}{publique}");
+        Console.WriteLine($"Clé publique (à intégrer au programme : CleEditeur.PrincipaleBase64, ou SecoursBase64 pour la clé de secours) :{Environment.NewLine}{publique}");
         return 0;
     }
 

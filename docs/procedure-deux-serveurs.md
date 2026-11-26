@@ -10,6 +10,8 @@ Version de référence : 2026-11-25 (bascule automatique, vague 2 ; réplication
 
 ---
 
+> Fonctionnement de la promotion automatique (décision, délais, garde-fous, cas manuels, diagnostic) : [promotion-serveurs.md](promotion-serveurs.md).
+
 ## 0. Ce qu'on obtient
 
 - **Une seule base en écriture**, toujours : celle du PC serveur. Le 2e serveur en reçoit une copie **en continu** (réplication

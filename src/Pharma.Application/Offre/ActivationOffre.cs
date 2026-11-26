@@ -103,11 +103,15 @@ public static class CodeActivation
     /// <summary>Assemble le code à partir du contenu et de sa signature (outil de l'éditeur).</summary>
     public static string Composer(byte[] contenu, byte[] signature) => $"{Prefixe}.{Base64Url(contenu)}.{Base64Url(signature)}";
 
+    /// <summary>Lit un code et contrôle sa signature avec une seule clé publique (outil de l'éditeur, tests).</summary>
+    public static ActivationOffre Lire(string? code, byte[] clePublique) => Lire(code, clePublique.Length == 0 ? [] : [clePublique]);
+
     /// <summary>
-    /// Lit un code et contrôle sa signature avec la clé publique de l'éditeur (SubjectPublicKeyInfo). Lève
-    /// <see cref="ActivationInvalideException"/> si le code est illisible, si la signature est fausse ou si le contenu est hors limites.
+    /// Lit un code et contrôle sa signature avec les clés publiques de l'éditeur (SubjectPublicKeyInfo) : la principale et celle de secours ;
+    /// une seule suffit. Lève <see cref="ActivationInvalideException"/> si le code est illisible, si aucune clé ne reconnaît la signature ou
+    /// si le contenu est hors limites.
     /// </summary>
-    public static ActivationOffre Lire(string? code, byte[] clePublique)
+    public static ActivationOffre Lire(string? code, IReadOnlyList<byte[]> clesPubliques)
     {
         var texte = (code ?? "").Trim();
         if (texte.Length is 0 or > LongueurMax) throw new ActivationInvalideException("Code d’activation absent ou trop long.");
@@ -116,14 +120,16 @@ public static class CodeActivation
         byte[] contenu, signature;
         try { (contenu, signature) = (DeBase64Url(morceaux[1]), DeBase64Url(morceaux[2])); }
         catch (FormatException) { throw new ActivationInvalideException("Code d’activation illisible (caractères invalides)."); }
-        if (clePublique.Length == 0) throw new ActivationInvalideException("Clé de l’éditeur absente de ce programme : aucune activation ne peut être contrôlée.");
-        using (var ecdsa = ECDsa.Create())
+        if (clesPubliques.Count == 0) throw new ActivationInvalideException("Clé de l’éditeur absente de ce programme : aucune activation ne peut être contrôlée.");
+        var reconnue = false;
+        foreach (var cle in clesPubliques)
         {
-            try { ecdsa.ImportSubjectPublicKeyInfo(clePublique, out _); }
+            using var ecdsa = ECDsa.Create();
+            try { ecdsa.ImportSubjectPublicKeyInfo(cle, out _); }
             catch (CryptographicException) { throw new ActivationInvalideException("Clé de l’éditeur illisible dans ce programme."); }
-            if (!ecdsa.VerifyData(contenu, signature, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation))
-                throw new ActivationInvalideException("Signature fausse : ce code n’a pas été émis par l’éditeur ou a été modifié.");
+            if (reconnue = ecdsa.VerifyData(contenu, signature, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation)) break;
         }
+        if (!reconnue) throw new ActivationInvalideException("Signature fausse : ce code n’a pas été émis par l’éditeur ou a été modifié.");
         ContenuJson? c;
         try { c = JsonSerializer.Deserialize<ContenuJson>(contenu); }
         catch (JsonException) { throw new ActivationInvalideException("Contenu du code illisible."); }
@@ -153,13 +159,20 @@ public static class CodeActivation
 }
 
 /// <summary>
-/// Clé publique de l'éditeur (SubjectPublicKeyInfo, base64), intégrée au programme : elle ne se règle ni dans la base ni dans un fichier
-/// de configuration (sinon une pharmacie pourrait la remplacer par la sienne). Générée par « Pharma.Editeur generer-cle » ; la clé
-/// privée reste chez l'éditeur (fichier chiffré par mot de passe, hors de tout dépôt). Vide : aucune activation n'est acceptée (offre de base).
+/// Clés publiques de l'éditeur (SubjectPublicKeyInfo, base64), intégrées au programme : elles ne se règlent ni dans la base ni dans un
+/// fichier de configuration (sinon une pharmacie pourrait y mettre la sienne). Générées par « Pharma.Editeur generer-cle » ; les clés
+/// privées restent chez l'éditeur (fichiers chiffrés par mot de passe, hors de tout dépôt). Deux clés (« go clé de secours », 2026-11-26) :
+/// la principale signe ; la clé de secours (autre fichier, autre mot de passe, rangée ailleurs) sert si la principale est perdue ou volée,
+/// sans nouvelle version du programme ni retour des pharmacies à l'offre de base. Une clé volée est retirée de la liste à la version
+/// suivante. Liste vide : aucune activation n'est acceptée (offre de base).
 /// </summary>
 public static class CleEditeur
 {
-    public const string PubliqueBase64 = "";
+    /// <summary>Clé principale.</summary>
+    public const string PrincipaleBase64 = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEIFap+vOE6V59EFB8yq33IBtTMI/yoogZOFX+1iPRSrSKJ9cKnqllfWPYL0b3Bxhcw+0b8tgSfoeW8s8wp7UDuQ==";
+    /// <summary>Clé de secours.</summary>
+    public const string SecoursBase64 = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAESJ8zhsDh0KSL4YrkbDiFdJYdSu9LdRCGiO1BJQXA+0N5nsGOrsD5wz2VWAIION7bXXZndrIrVONbQAwII3EQFQ==";
 
-    public static byte[] Publique => PubliqueBase64.Length == 0 ? [] : Convert.FromBase64String(PubliqueBase64);
+    public static IReadOnlyList<byte[]> Publiques =>
+        new[] { PrincipaleBase64, SecoursBase64 }.Where(c => c.Length > 0).Select(Convert.FromBase64String).ToList();
 }

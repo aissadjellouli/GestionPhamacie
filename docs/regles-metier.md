@@ -2773,7 +2773,8 @@ Revue complète de la branche `develop` (caisse, stock, factures, sécurité, se
   `AutoriserAsync`), `src/Pharma.Infrastructure/Postes/PostesAutorisesSql.cs` (`CreerAsync`), `src/Pharma.Desktop/Composants/Pages/AdminPostes.razor`
 - **(2026-11-26) Offre de base et options : activation signée par l'éditeur** (décisions du titulaire, docs/offre-et-options.md, script 172,
   « go all lot ») : options (packs A à H) et quotas (postes, scanners mobiles) viennent d'un **code signé par l'éditeur** (ECDSA P-256 ; clé
-  privée chez l'éditeur seulement, fichier chiffré par mot de passe), contrôlé par l'API avec la clé publique **intégrée au programme**
+  privée chez l'éditeur seulement, fichier chiffré par mot de passe), contrôlé par l'API avec les clés publiques **intégrées au programme**
+  (principale et **clé de secours**, « go clé de secours » : une seule suffit)
   (jamais dans la base ni dans un fichier de réglage). Le code est **lié à la pharmacie** : code de l'officine ET NIF (comparé sans espaces,
   points ni tirets ; NIF à saisir avant). **Sans activation valable : offre de base, 2 postes** ; une activation effacée ou modifiée dans la
   base (signature fausse) ramène à l'offre de base, jamais à tout ouvert, avec une ligne au journal (`offre_activation_refusee`, une seule

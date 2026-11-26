@@ -86,14 +86,14 @@ public static class EtatsOffre
 /// l'éditeur, même officine, même NIF) et n'est pas échue depuis plus de 15 jours. Sans activation valable : offre de base, 2 postes ;
 /// une activation effacée ou modifiée dans la base ramène à l'offre de base, jamais à tout ouvert.
 /// </summary>
-public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge, byte[]? clePublique = null, CacheOffre? cache = null)
+public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge, IReadOnlyList<byte[]>? clesPubliques = null, CacheOffre? cache = null)
     : ILimitesOffre, IPacksOffre
 {
     /// <summary>Offre de base : 2 postes inclus (proposition du 2026-11-26, docs/offre-et-options.md).</summary>
     public const int PostesBase = 2;
     public const int GraceJours = 15, RappelJours = 30, RappelProcheJours = 7;
 
-    private readonly byte[] cle = clePublique ?? CleEditeur.Publique;
+    private readonly IReadOnlyList<byte[]> cles = clesPubliques ?? CleEditeur.Publiques;
 
     public async Task<int> MaximumPostesAsync(CancellationToken ct = default) => (await LireAsync(ct)).Postes;
 
@@ -107,7 +107,7 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
     /// <summary>Contrôle une activation pour CETTE pharmacie : signature, officine, NIF. Lève <see cref="ActivationInvalideException"/>.</summary>
     public ActivationOffre Controler(string code, IdentiteOffre identite)
     {
-        var a = CodeActivation.Lire(code, cle);
+        var a = CodeActivation.Lire(code, cles);
         if (a.Officine != identite.Officine)
             throw new ActivationInvalideException("Ce code a été émis pour une autre pharmacie (code de l’officine différent).");
         var nif = CodeActivation.NormaliserNif(identite.Nif);

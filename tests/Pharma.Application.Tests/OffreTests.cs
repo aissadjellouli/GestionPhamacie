@@ -55,7 +55,7 @@ public class OffreTests
     {
         var d = new Depot();
         var h = new HorlogeFixe(jour ?? Aujourdhui);
-        var o = new OffreCourante(d, h, Publique);
+        var o = new OffreCourante(d, h, [Publique]);
         var j = new JournalEspion();
         return (d, o, new GererOffre(d, o, new DroitsFactices { Titulaire = titulaire }, j, h), j);
     }
@@ -130,7 +130,7 @@ public class OffreTests
         var (d, _, g, _) = Banc();
         await g.SaisirAsync(1, Code(postes: 4, fin: fin));
 
-        async Task<EtatOffre> Le(DateOnly jour) => await new OffreCourante(d, new HorlogeFixe(jour), Publique).LireAsync();
+        async Task<EtatOffre> Le(DateOnly jour) => await new OffreCourante(d, new HorlogeFixe(jour), [Publique]).LireAsync();
         Assert.Contains("jusqu’au 20/12/2026 (24 jour(s))", (await Le(Aujourdhui)).Alerte);
         Assert.Null((await Le(new DateOnly(2026, 11, 1))).Alerte);
         var grace = await Le(new DateOnly(2026, 12, 30));
@@ -242,14 +242,14 @@ public class OffreTests
         var d = new Depot();
         var cache = new CacheOffre();
         var h = new HorlogeFixe(Aujourdhui);
-        var o = new OffreCourante(d, h, Publique, cache);
+        var o = new OffreCourante(d, h, [Publique], cache);
         var g = new GererOffre(d, o, new DroitsFactices { Titulaire = true }, new JournalEspion(), h);
         Assert.Equal(2, await o.MaximumPostesAsync());
         await g.SaisirAsync(1, Code(postes: 8));          // la saisie vide le cache
         Assert.Equal(8, await o.MaximumPostesAsync());
         d.Lignes.Clear();                                  // effacé dans la base : vu au plus tard une minute après
         Assert.Equal(8, await o.MaximumPostesAsync());
-        Assert.Equal(2, await new OffreCourante(d, h, Publique, new CacheOffre()).MaximumPostesAsync());
+        Assert.Equal(2, await new OffreCourante(d, h, [Publique], new CacheOffre()).MaximumPostesAsync());
     }
 
     [Fact]
@@ -273,9 +273,43 @@ public class OffreTests
     }
 
     [Fact]
+    public async Task La_cle_de_secours_signe_aussi_sans_que_l_offre_retombe_a_la_base()
+    {
+        using var secours = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var d = new Depot();
+        var h = new HorlogeFixe(Aujourdhui);
+        var o = new OffreCourante(d, h, [Publique, secours.ExportSubjectPublicKeyInfo()]);
+        var g = new GererOffre(d, o, new DroitsFactices { Titulaire = true }, new JournalEspion(), h);
+        await g.SaisirAsync(1, Code(postes: 4, emise: new DateTime(2026, 11, 20, 8, 0, 0, DateTimeKind.Utc)));
+        // Clé principale perdue : un code signé avec la clé de secours est accepté
+        await g.SaisirAsync(1, Code(postes: 7, emise: new DateTime(2026, 11, 25, 8, 0, 0, DateTimeKind.Utc), cle: secours));
+        Assert.Equal(7, await o.MaximumPostesAsync());
+        // Une clé inconnue de la liste : refusée
+        using var etrangere = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        Assert.Contains("Signature fausse", (await Assert.ThrowsAsync<RegleMetierException>(() =>
+            g.SaisirAsync(1, Code(emise: new DateTime(2026, 11, 26, 8, 0, 0, DateTimeKind.Utc), cle: etrangere)))).Message);
+        // Clé principale retirée de la liste (volée) : ses codes ne valent plus, ceux de la clé de secours restent
+        var sansPrincipale = new OffreCourante(d, h, [secours.ExportSubjectPublicKeyInfo()]);
+        Assert.Equal(7, await sansPrincipale.MaximumPostesAsync());
+    }
+
+    [Fact]
+    public void Les_cles_du_programme_sont_vides_ou_lisibles()
+    {
+        foreach (var cle in CleEditeur.Publiques)
+        {
+            using var e = ECDsa.Create();
+            e.ImportSubjectPublicKeyInfo(cle, out _);
+            Assert.Equal(256, e.KeySize);
+        }
+        Assert.True(CleEditeur.PrincipaleBase64 != CleEditeur.SecoursBase64 || CleEditeur.PrincipaleBase64.Length == 0,
+            "La clé de secours doit être une autre clé que la principale.");
+    }
+
+    [Fact]
     public void Sans_cle_publique_dans_le_programme_aucun_code_n_est_accepte()
     {
-        var e = Assert.Throws<ActivationInvalideException>(() => CodeActivation.Lire(Code(), []));
+        var e = Assert.Throws<ActivationInvalideException>(() => CodeActivation.Lire(Code(), Array.Empty<byte[]>()));
         Assert.Contains("Clé de l’éditeur absente", e.Message);
     }
 }
