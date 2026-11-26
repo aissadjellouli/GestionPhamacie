@@ -1,0 +1,233 @@
+@inject ApiClient Api
+@inject HistoriqueNavigation Historique
+
+@* Contenances des produits (décisions du titulaire du 2026-11-26) : Stock › Contenances et Administration › Contenances des produits.
+   « À compléter » (par défaut) : produits actifs sans contenance (la nomenclature ne la donne pas), les plus vendus sur 12 mois d'abord ;
+   « Toutes » : contenance actuelle, corrigée sur la ligne. Saisie : Entrée ou « Enregistrer » ; journal avant / après ; une contenance
+   changée entre-temps par un collègue n'est jamais écrasée. Fichier : la liste s'exporte (CSV, colonne Contenance à remplir) et un
+   fichier Excel ou CSV s'importe (aperçu d'abord ; « Corriger aussi » pour remplacer les contenances déjà renseignées). Liste paginée et
+   filtrée par le serveur ; seul le tableau défile. Saisie refusée : la valeur tapée reste dans son champ (règle de la saisie gardée). *@
+
+@if (erreur is not null) { <p class="detail texte-urgent" role="alert" data-champ="resultat" style="margin: 0">@erreur</p> }
+else if (message is not null) { <p class="detail texte-reussite" role="status" data-champ="resultat" style="margin: 0">@message</p> }
+
+<div class="filtres-liste" role="search" aria-label="Filtrer les contenances des produits">
+    <div class="champ" style="flex: 1 1 220px"><label for="cm-texte">Produit ou conditionnement</label>
+        <input id="cm-texte" type="search" autocomplete="off" placeholder="Ex. doliprane, B/30 ET B/60" value="@fTexte" @oninput="RechercheAsync" /></div>
+    <div class="champ" style="flex: 0 0 170px"><label for="cm-etat">Produits</label>
+        <select id="cm-etat" @bind="fEtat" @bind:after="PremierePageAsync">
+            <option value="">À compléter</option><option value="toutes">Toutes (corriger)</option>
+        </select></div>
+    @if (fTexte.Trim() != "" || fEtat != "") { <button type="button" class="btn" @onclick="ToutAfficherAsync">Filtres par défaut</button> }
+    <button type="button" class="btn" disabled="@enCours" @onclick="ExporterAsync" title="Liste des produits sans contenance, à remplir dans Excel puis à réimporter">Exporter la liste</button>
+    <button type="button" class="btn" data-champ="fichier" disabled="@enCours" @onclick="ChoisirFichierAsync">Importer un fichier…</button>
+</div>
+<section class="tableau-cadre" aria-label="Contenances des produits">
+    <table class="tableau" style="min-width: 0">
+        <thead><tr>
+            <th scope="col">Produit</th><th scope="col">Conditionnement</th><th scope="col" class="nombre">Vendues (12 mois)</th>
+            <th scope="col" class="nombre">Stock</th><th scope="col">Contenance (unités par boîte)</th>
+        </tr></thead>
+        <tbody>
+            @foreach (var p in liste)
+            {
+                var id = $"cm-{p.ProduitId}";
+                <tr>
+                    <td><span class="nom">@p.Nom</span>@if (Detail(p) is { Length: > 0 } d) { <br /><span class="detail">@d</span> }</td>
+                    <td>@(p.Conditionnement ?? "—")</td>
+                    <td class="nombre">@p.Vendues12Mois</td>
+                    <td class="nombre">@p.Stock</td>
+                    <td>
+                        <div style="display: flex; gap: 8px; align-items: center">
+                            @* aria-label plutôt qu'une étiquette « visuellement-cache » : positionnée en absolu, elle sortait du cadre défilant
+                               et allongeait la page (213 px à 1 366 × 768, mesuré le 2026-11-26) *@
+                            <input id="@id" aria-label="@($"Contenance de {p.Nom} (unités par boîte)")" type="number" min="1" max="10000" inputmode="numeric" style="width: 110px" data-champ="contenance"
+                                   value="@Saisie(p)" @oninput="e => saisies[p.ProduitId] = e.Value?.ToString() ?? string.Empty"
+                                   @onkeydown="e => ToucheAsync(e, p)" />
+                            <button type="button" class="btn" disabled="@(enCours || !Modifiee(p))"
+                                    @onclick="() => EnregistrerAsync(p)">@(p.Contenance is null ? "Enregistrer" : "Corriger")</button>
+                        </div>
+                    </td>
+                </tr>
+            }
+            @if (liste.Count == 0 && charge)
+            {
+                <tr><td colspan="5" class="vide">@(fTexte.Trim() == "" && fEtat == "" ? "Tous les produits actifs ont une contenance." : "Aucun produit pour ces filtres.")</td></tr>
+            }
+        </tbody>
+    </table>
+</section>
+<Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des contenances" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
+
+@if (apercu is { } a)
+{
+    <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-import-contenances">
+        <section class="panneau" style="max-width: 760px; width: 100%">
+            <h2 id="t-import-contenances">Import de « @nomFichier »</h2>
+            <p class="detail" style="margin: 0">
+                @a.Retenues.Count contenance(s) à enregistrer@(a.Retenues.Count(r => r.Avant is not null) is var c and > 0 ? $", dont {c} correction(s)" : "")
+                · @a.Ecartees.Count ligne(s) écartée(s) · @a.LignesVides ligne(s) sans contenance (ignorées). Rien n’est encore enregistré.
+            </p>
+            <div class="cadre-defilant" style="max-height: 320px" data-hauteur-min="120">
+                <table class="tableau" style="min-width: 0">
+                    <thead><tr><th scope="col">Ligne</th><th scope="col">Produit</th><th scope="col">Résultat</th></tr></thead>
+                    <tbody>
+                        @foreach (var r in a.Retenues.Take(200))
+                        {
+                            <tr><td>@r.Ligne</td><td>@r.Nom</td><td>@(r.Avant is { } av ? $"corrigée : {av} → {r.Contenance}" : $"complétée : {r.Contenance}")</td></tr>
+                        }
+                        @foreach (var e in a.Ecartees.Take(200))
+                        {
+                            <tr><td>@e.Ligne</td><td>@e.Produit</td><td class="texte-attention">écartée : @e.Motif</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (a.Retenues.Count + a.Ecartees.Count > 400) { <p class="detail" style="margin: 0">Seules les 200 premières lignes de chaque sorte sont affichées.</p> }
+            <div class="achats-ligne">
+                <label class="case" style="flex: 0 0 auto; align-self: center"><input type="checkbox" checked="@corrigerAussi" @onchange="ChangerCorrigerAsync" />
+                    <span>Corriger aussi les contenances déjà renseignées</span></label>
+                <button type="button" class="btn btn-principal" disabled="@(enCours || a.Retenues.Count == 0)" @onclick="EnregistrerImportAsync">Enregistrer @a.Retenues.Count contenance(s)</button>
+                <button type="button" class="btn" @onclick="() => apercu = null">Annuler</button>
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    private List<ContenanceManquanteDto> liste = [];
+    private readonly Dictionary<long, string> saisies = [];
+    private string fTexte = "", fEtat = "";
+    private string? erreur, message, nomFichier;
+    private byte[]? contenuFichier;
+    private ApercuImportContenancesDto? apercu;
+    private bool corrigerAussi;
+    private int total, page = 1, taille = Pagination.TailleParDefaut, frappe;
+    private bool enCours, charge;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Historique.Suivre("contenances-manquantes", e => { e.Mettre("texte", fTexte); e.Mettre("etat", fEtat); e.Mettre("page", page); e.Mettre("taille", taille); });
+        if (Historique.Restaurer("contenances-manquantes") is { } h)
+            (fTexte, fEtat, page, taille) = (h.Texte("texte") ?? "", h.Texte("etat") ?? "", h.Entier("page") ?? 1, h.Entier("taille") ?? taille);
+        await ChargerAsync(page, taille);
+    }
+
+    private static string Detail(ContenanceManquanteDto p) => string.Join(" · ", new[] { p.Forme, p.Dosage }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+    /// <summary>Valeur du champ : saisie en cours, sinon contenance actuelle (vide : à compléter).</summary>
+    private string Saisie(ContenanceManquanteDto p) => saisies.TryGetValue(p.ProduitId, out var s) ? s : p.Contenance?.ToString() ?? "";
+
+    private bool Modifiee(ContenanceManquanteDto p) => !string.IsNullOrWhiteSpace(Saisie(p)) && Saisie(p).Trim() != (p.Contenance?.ToString() ?? "");
+
+    private Task PremierePageAsync() => ChargerAsync(1, taille);
+
+    private async Task ChargerAsync(int numero, int nouvelleTaille)
+    {
+        var (p, e) = await Api.ContenancesManquantesAsync(fTexte.Trim() == "" ? null : fTexte.Trim(), numero, nouvelleTaille, fEtat == "toutes");
+        charge = true;
+        if (p is null) { erreur = e; return; }
+        (liste, total, page, taille) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille);
+        // Dernière page vidée par les saisies : revenir à la précédente
+        if (liste.Count == 0 && page > 1 && total > 0) await ChargerAsync(page - 1, taille);
+    }
+
+    private async Task RechercheAsync(ChangeEventArgs a)
+    {
+        fTexte = a.Value?.ToString() ?? "";
+        var n = ++frappe;
+        await Task.Delay(250);
+        if (n == frappe) await ChargerAsync(1, taille);
+    }
+
+    private Task ToutAfficherAsync() { (fTexte, fEtat) = ("", ""); return ChargerAsync(1, taille); }
+
+    private async Task ToucheAsync(KeyboardEventArgs e, ContenanceManquanteDto p)
+    {
+        if (e.Key is "Enter" && Modifiee(p)) await EnregistrerAsync(p);
+    }
+
+    private async Task EnregistrerAsync(ContenanceManquanteDto p)
+    {
+        if (enCours) return;
+        (erreur, message) = (null, null);
+        if (!int.TryParse(Saisie(p).Trim(), out var n) || n is < 1 or > 10000)
+        {
+            erreur = $"{p.Nom} : contenance = nombre entier d’unités par boîte, de 1 à 10000.";
+            return;
+        }
+        enCours = true;
+        try
+        {
+            if (await Api.EnregistrerContenanceAsync(p.ProduitId, n, p.Contenance) is { } e) { erreur = $"{p.Nom} : {e}"; return; }
+            saisies.Remove(p.ProduitId);
+            message = p.Contenance is { } avant
+                ? $"Contenance de {p.Nom} corrigée : {avant} → {n} unité{(n > 1 ? "s" : "")} par boîte."
+                : $"Contenance de {p.Nom} : {n} unité{(n > 1 ? "s" : "")} par boîte.";
+            await ChargerAsync(page, taille);
+        }
+        finally { enCours = false; }
+    }
+
+    /// <summary>Produits sans contenance, les plus vendus d'abord : ouvert dans Excel, colonne Contenance à remplir puis à réimporter.</summary>
+    private async Task ExporterAsync()
+    {
+        (enCours, erreur, message) = (true, null, null);
+        try
+        {
+            var (contenu, nom, e) = await Api.ExporterContenancesManquantesAsync();
+            if (e is not null || contenu is null) { erreur = e; return; }
+            Documents.OuvrirSurCePoste("Catalogue", nom!, contenu);
+            message = "Liste exportée : remplissez la colonne « Contenance », enregistrez le fichier, puis « Importer un fichier… ».";
+        }
+        catch (Exception ex) { erreur = $"Export impossible à ouvrir : {ex.Message}"; }
+        finally { enCours = false; }
+    }
+
+    private async Task ChoisirFichierAsync()
+    {
+        (erreur, message) = (null, null);
+        var chemin = Dialogues.ChoisirFichier("Fichier des contenances (Excel ou CSV)", "Tableaux|*.xlsx;*.csv;*.txt|Tous les fichiers|*.*");
+        if (chemin is null) return;
+        try { contenuFichier = await System.IO.File.ReadAllBytesAsync(chemin); }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException) { erreur = $"Fichier illisible : {ex.Message}"; return; }
+        nomFichier = System.IO.Path.GetFileName(chemin);
+        corrigerAussi = false;
+        await ApercuAsync();
+    }
+
+    private async Task ChangerCorrigerAsync(ChangeEventArgs e)
+    {
+        corrigerAussi = e.Value is true;
+        await ApercuAsync();
+    }
+
+    private async Task ApercuAsync()
+    {
+        if (contenuFichier is null || nomFichier is null) return;
+        enCours = true;
+        try
+        {
+            var (a, e) = await Api.ApercuImportContenancesAsync(new ImportContenancesFichierRequete(nomFichier, Convert.ToBase64String(contenuFichier), corrigerAussi));
+            if (a is null) { (erreur, apercu) = (e, null); return; }
+            apercu = a;
+        }
+        finally { enCours = false; }
+    }
+
+    private async Task EnregistrerImportAsync()
+    {
+        if (apercu is not { } a) return;
+        enCours = true;
+        try
+        {
+            var (r, e) = await Api.ImporterContenancesAsync(new ImportContenancesRequete(a.Retenues));
+            if (r is null) { erreur = e; return; }
+            message = $"Import de « {nomFichier} » : {r.Ecrites} contenance(s) enregistrée(s)"
+                      + (r.DejaRenseignees > 0 ? $", {r.DejaRenseignees} changée(s) entre-temps par un collègue (non écrasées)." : ".");
+            (apercu, contenuFichier) = (null, null);
+            await ChargerAsync(1, taille);
+        }
+        finally { enCours = false; }
+    }
+}

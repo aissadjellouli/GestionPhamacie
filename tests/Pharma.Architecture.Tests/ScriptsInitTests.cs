@@ -61,6 +61,12 @@ public partial class ScriptsInitTests
                 foreach (Match c in SuppressionColonne().Matches(alter.Groups[2].Value)) colonnes.Remove((table, c.Groups[1].Value.ToLowerInvariant()));
             }
 
+        // Script 101b (hors suite numérotée, décision du titulaire du 2026-11-26) : une base neuve naît sans la colonne obsolète
+        Assert.True(File.Exists(Path.Combine(BaseJetableM4.RacineDepot(), "database", "migration", "101b_suppression_num_facture_chifa.sql")),
+            "101b absent : vente.num_facture_chifa ne peut plus être retirée de init/schema.sql");
+        Assert.False(ColonneDansSchema("vente", "num_facture_chifa"), "vente.num_facture_chifa (supprimée par 101b) est encore dans init/schema.sql");
+        colonnes.Remove(("vente", "num_facture_chifa"));
+
         var manquantes = colonnes.Where(c => !ColonneDansSchema(c.Key.Table, c.Key.Colonne))
             .Select(c => $"{c.Key.Table}.{c.Key.Colonne} ({c.Value})").ToList();
         Assert.True(colonnes.Count > 0, "Aucune colonne ajoutée trouvée : l'analyse des scripts ne fonctionne plus.");

@@ -34,8 +34,8 @@ public class DecisionsTitulaire20261116Tests
     [InlineData("B/30 SACHETS", 30)]
     [InlineData("B/30 SACHETS DE 5 G", 30)]
     [InlineData("B/1FL", 1)]   // flacon : règle du script 139
-    [InlineData("FL/10ML", null)]
-    [InlineData("T/15G", null)]
+    [InlineData("FL/10ML", 1)]   // contenant seul : 1 depuis le script 169 (décision du 2026-11-26)
+    [InlineData("T/15G", 1)]
     [InlineData("B/0", null)]
     [InlineData("B/20000", null)]
     [InlineData("", null)]

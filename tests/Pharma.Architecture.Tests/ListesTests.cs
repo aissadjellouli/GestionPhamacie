@@ -26,6 +26,11 @@ public class ListesTests
         ["Mise/IntegriteJournaux.razor"] = (1, "journaux chaînés : bornés (un par journal protégé et clé de chaîne, 2026-11-16)"),
         ["Pages/AdminSecondServeur.razor"] = (1, "serveurs de l'officine : bornés par nature (le principal et le 2e serveur, 2026-11-16)"),
         ["Pages/AdminDroits.razor"] = (2, "utilisateurs : exception choisie le 2026-11-13 ; droits par rôle (bornés)"),
+        ["Mise/TauxTvaReglage.razor"] = (2, "taux de TVA (quelques taux) et catégories de produits (une dizaine) : bornés par nature, script 171, 2026-11-26"),
+        ["Mise/ContenancesManquantes.razor"] = (1, "aperçu d’un import de contenances (2026-11-26) : fenêtre au-dessus de l’écran, 200 lignes "
+            + "de chaque sorte au plus, dans son cadre défilant ; la liste des produits, elle, est paginée"),
+        ["Financements/FichePret.razor"] = (1, "remboursements anticipés d’un prêt (script 170, 2026-11-26) : quelques-uns au plus par prêt, "
+            + "bornés par nature (chacun diminue le capital restant dû)"),
         ["Pages/AdminNotifications.razor"] = (1, "destinataires des notifications (quelques personnes)"),
         ["Pages/AdminSynchronisation.razor"] = (5, "réglages communs proposés par le titulaire à distance (lot S7.4, 2026-11-21) : avant / après d'une proposition, 9 réglages au plus (panneau de la rubrique et fenêtre des ordres) ; "
             + "11 tables de réglages que le serveur central peut mutualiser : liste fermée, bornée par nature (2026-11-16, lot M7) ; "

@@ -57,7 +57,8 @@ public sealed class LireFicheProduit(IProduitsModification produits)
 /// Catégorie (2026-11-20) : modifiable ici avec le même droit ; passer en parapharmacie est refusé pour un produit de la nomenclature
 /// nationale, d'une classe autre que « libre », ou dont la classe vient d'être imposée (substance surveillée).
 /// </summary>
-public sealed class ModifierProduit(IProduitsModification produits, IPermissionService droits, IJournal journal, Surveillance.Surveiller? surveillance = null)
+public sealed class ModifierProduit(IProduitsModification produits, IPermissionService droits, IJournal journal, Surveillance.Surveiller? surveillance = null,
+    Fiscal.TauxTvaAutorises? tauxTva = null)
 {
     public async Task<string?> ExecuterAsync(FicheProduitModifiable saisie, long utilisateurId, CancellationToken ct = default)
     {
@@ -89,6 +90,8 @@ public sealed class ModifierProduit(IProduitsModification produits, IPermissionS
         if (f.TarifReference is <= 0) throw new RegleMetierException("Le tarif de référence doit être supérieur à 0.", "tarif_reference");
         if (f.Remboursable && f.TarifReference is null) throw new RegleMetierException("Un produit remboursable a besoin d’un tarif de référence.", "tarif_reference");
         if (f.TauxTva is < 0 or > 100) throw new RegleMetierException("Taux de TVA entre 0 et 100 %.", "tva");
+        // Taux de la liste (script 171) ; un taux déjà enregistré hors de la liste est gardé s'il ne change pas
+        if (tauxTva is not null) await tauxTva.ExigerAsync(f.TauxTva, actuel.TauxTva, "tva", ct);
         if (f.CodeBarre is { } code && code != actuel.CodeBarre)
         {
             if (code.Length == 14 && code[0] == '0') f = f with { CodeBarre = code = code[1..] };

@@ -140,7 +140,7 @@ public sealed class ConsulterFactures(IFactures factures, IPermissionService dro
 }
 
 /// <summary>Émission, rejet, correction, remplacement, avoir et suivi des factures clients (droit « factures.gerer »).</summary>
-public sealed class Facturation(IFactures factures, IPermissionService droits, IHorloge horloge, IJournal journal)
+public sealed class Facturation(IFactures factures, IPermissionService droits, IHorloge horloge, IJournal journal, Fiscal.TauxTvaAutorises? tauxTva = null)
 {
     public async Task<(long Id, string Numero)> EmettreAsync(DemandeFacture demande, long utilisateurId, CancellationToken ct = default)
     {
@@ -308,6 +308,8 @@ public sealed class Facturation(IFactures factures, IPermissionService droits, I
         var lignes = RegleFacture.DepuisVentes(dest, sources.Select(s => s.Ligne), mentions).ToList();
         if (ventes.FirstOrDefault(v => lignes.All(l => l.VenteId != v)) is var vide && vide != 0)
             throw new RegleMetierException($"La vente {sources.First(s => s.Ligne.VenteId == vide).Ligne.NumeroVente} n’a rien à facturer pour cette part.");
+        // Lignes libres : taux de la liste (script 171)
+        if (tauxTva is not null) foreach (var t in d.Libres.Select(l => l.TauxTva).Distinct()) await tauxTva.ExigerAsync(t, null, "tva", ct);
         lignes.AddRange(d.Libres.Select(l => RegleFacture.Libre(l.Designation, l.Quantite, l.PrixTtc, l.TauxTva)));
         RegleFacture.VerifierEmission(lignes);
 

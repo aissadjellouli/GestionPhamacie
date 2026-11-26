@@ -17,21 +17,35 @@ namespace Pharma.Application.Financements;
 /// </summary>
 public sealed record PretResume(long Id, long? CompteId, string Banque, string Reference, string? Objet, decimal Montant, DateOnly DatePret,
     string? Document, decimal CapitalRembourse, decimal ResteDu, decimal Utilise, int Echeances, int EcheancesPayees, int EchuesNonPayees,
-    DateOnly? ProchaineEcheance, decimal? ProchainMontant, string Employe, decimal? Taux = null, int? DureeMois = null, decimal? ProchaineAssurance = null)
+    DateOnly? ProchaineEcheance, decimal? ProchainMontant, string Employe, decimal? Taux = null, int? DureeMois = null, decimal? ProchaineAssurance = null,
+    bool EcheancierARemplacer = false, decimal CapitalAnticipe = 0)
 {
     public decimal AUtiliser => Montant - Utilise;
     /// <summary>Prêteur hors trésorerie : son argent n'entre dans aucun compte suivi, il ne sert que directement.</summary>
     public bool HorsTresorerie => CompteId is null;
 }
 
-/// <summary>Échéance d'un prêt ; PayeeLe / Moyen / Compte / ReferencePaiement : paiement confirmé par le titulaire, null sinon.</summary>
+/// <summary>
+/// Échéance d'un prêt ; PayeeLe / Moyen / Compte / ReferencePaiement : échéance entièrement payée (dernier paiement), null sinon.
+/// MontantPaye, CapitalPaye, ChargesPayees : déjà payé, même en partie (script 170) ; Reste : ce qui reste à payer.
+/// </summary>
 public sealed record EcheancePret(long Id, long PretId, string Pret, string Banque, int Rang, LigneEcheancier Ligne, DateOnly? PayeeLe = null,
-    string? Moyen = null, string? Compte = null, string? ReferencePaiement = null, string? Employe = null);
+    string? Moyen = null, string? Compte = null, string? ReferencePaiement = null, string? Employe = null,
+    decimal MontantPaye = 0, decimal CapitalPaye = 0, decimal ChargesPayees = 0)
+{
+    public decimal Reste => Ligne.Montant - MontantPaye;
+    /// <summary>Payée en partie seulement.</summary>
+    public bool Entamee => MontantPaye > 0 && PayeeLe is null;
+}
+
+/// <summary>Remboursement anticipé d'une partie du capital (script 170) : frais comptés en charges financières.</summary>
+public sealed record RemboursementAnticipe(long Id, DateOnly Date, decimal Capital, decimal Frais, string Moyen, string? Compte, string? Reference, string Employe);
 
 /// <summary>Usage d'un prêt ou d'un apport du titulaire. Usage : tresorerie, depense, reglement (facture d'un grossiste) ou traite.</summary>
 public sealed record UtilisationFinancement(long Id, string Source, long? PretId, string Usage, DateOnly Date, decimal Montant, string Libelle, string Employe);
 
-public sealed record PretDetail(PretResume Pret, IReadOnlyList<EcheancePret> Echeances, IReadOnlyList<UtilisationFinancement> Utilisations);
+public sealed record PretDetail(PretResume Pret, IReadOnlyList<EcheancePret> Echeances, IReadOnlyList<UtilisationFinancement> Utilisations,
+    IReadOnlyList<RemboursementAnticipe>? Anticipes = null);
 
 /// <summary>Filtres des prêts. Etat : en_cours (défaut : capital restant dû), rembourses, tous. Texte : référence, objet ou banque.</summary>
 public sealed record FiltrePrets(string Etat, string? Texte, long? CompteId)
@@ -76,9 +90,20 @@ public sealed record SourceDisponible(string Code, string Libelle, decimal? Disp
 public sealed record PretAEcrire(long? CompteId, string? Preteur, string Reference, string? Objet, decimal Montant, DateOnly DatePret, long UtilisateurId,
     decimal? Taux = null, int? DureeMois = null);
 
-/// <summary>Paiement d'une échéance. PartTiroir (espèces) : argent du tiroir de la caisse ouverte porté au coffre avant le paiement.</summary>
+/// <summary>
+/// Paiement d'une échéance. PartTiroir (espèces) : argent du tiroir de la caisse ouverte porté au coffre avant le paiement.
+/// Montant : payé cette fois (script 170, en une ou plusieurs fois) ; DejaPaye : déjà payé lu avant, relu sous verrou (un paiement
+/// simultané depuis un autre poste est refusé).
+/// </summary>
 public sealed record PaiementEcheanceAEcrire(long EcheanceId, DateOnly Date, string Moyen, long? CompteId, string? Reference, decimal PartTiroir,
-    long? SessionCaisseId, long UtilisateurId);
+    long? SessionCaisseId, long UtilisateurId, decimal Montant = 0, decimal DejaPaye = 0);
+
+/// <summary>
+/// Remboursement anticipé (script 170) : capital et frais sortis du coffre ou de la banque choisie. CapitalDejaRembourse : lu avant,
+/// relu sous verrou (un paiement simultané est refusé).
+/// </summary>
+public sealed record RemboursementAnticipeAEcrire(long PretId, DateOnly Date, decimal Capital, decimal Frais, string Moyen, long? CompteId, string? Reference,
+    decimal PartTiroir, long? SessionCaisseId, long UtilisateurId, decimal CapitalDejaRembourse);
 
 /// <summary>Usage tresorerie (argent versé sur le compte) ou depense (dépense payée, inscrite sur le compte avec l'entrée qui la couvre).</summary>
 public sealed record UtilisationAEcrire(SourceFinancement Source, string Usage, DateOnly Date, decimal Montant, long CompteId, string? Categorie,
@@ -99,7 +124,10 @@ public interface IFinancements
     /// <summary>Nom d'un prêteur hors trésorerie corrigé : ses colonnes d'import retenues sont reportées sur le nouveau nom.</summary>
     Task ModifierPretAsync(long id, PretAEcrire p, CancellationToken ct = default);
     Task JoindreDocumentAsync(long id, string chemin, CancellationToken ct = default);
-    /// <summary>Remplace les échéances non payées (les payées, en tête, restent telles quelles) par les lignes qui suivent.</summary>
+    /// <summary>
+    /// Remplace les échéances sans aucun paiement (celles payées, même en partie, restent en tête telles quelles) par les lignes qui
+    /// suivent ; lève « échéancier à remplacer » (script 170).
+    /// </summary>
     Task RemplacerEcheancierAsync(long pretId, int payees, IReadOnlyList<LigneEcheancier> lignes, CancellationToken ct = default);
     /// <summary>Colonnes retenues pour la banque de la trésorerie (<paramref name="compteId"/>), sinon pour le prêteur hors trésorerie.</summary>
     Task<CorrespondanceColonnes?> CorrespondanceAsync(long? compteId, string? preteur, CancellationToken ct = default);
@@ -112,6 +140,11 @@ public interface IFinancements
     /// solde du compte relu sous verrou, capital (remboursement) et charges financières (dépense) sortis du compte.
     /// </summary>
     Task<long> PayerEcheanceAsync(PaiementEcheanceAEcrire p, CancellationToken ct = default);
+    /// <summary>
+    /// Remboursement anticipé en une transaction (prêt verrouillé) : capital (remboursement) et frais (charges financières) sortis du compte ;
+    /// capital encore dû : prêt « échéancier à remplacer » ; tout le capital remboursé : échéances non payées retirées.
+    /// </summary>
+    Task<long> RembourserParAnticipationAsync(RemboursementAnticipeAEcrire r, CancellationToken ct = default);
     /// <summary>Entrée « financement » sur le compte (et dépense) ; prêt verrouillé : jamais plus que ce qui reste à employer.</summary>
     Task<long> UtiliserAsync(UtilisationAEcrire u, CancellationToken ct = default);
     Task<CompteTitulaire> CompteTitulaireAsync(FiltreCompteTitulaire filtre, DemandePage page, CancellationToken ct = default);
@@ -261,7 +294,7 @@ public sealed class EnregistrerEcheancier(IFinancements financements, IPermissio
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "contrôler un échéancier", ct);
         var detail = await financements.PretAsync(pretId, ct) ?? throw new RegleMetierException("Prêt introuvable.");
-        return [.. ControlePayees(detail, lignes), .. RegleEcheancier.Controler(detail.Pret.Montant, detail.Pret.DatePret, lignes)];
+        return [.. ControlePayees(detail, lignes), .. RegleEcheancier.Controler(detail.Pret.Montant, detail.Pret.DatePret, lignes, detail.Pret.CapitalAnticipe)];
     }
 
     public async Task ExecuterAsync(long pretId, IReadOnlyList<LigneEcheancier> lignes, long utilisateurId, CancellationToken ct = default)
@@ -270,8 +303,8 @@ public sealed class EnregistrerEcheancier(IFinancements financements, IPermissio
         var detail = await financements.PretAsync(pretId, ct) ?? throw new RegleMetierException("Prêt introuvable.");
         if (lignes.Count > LignesMax) throw new RegleMetierException($"Échéancier trop long ({LignesMax} lignes au plus).", "echeancier");
         if (ControlePayees(detail, lignes).FirstOrDefault() is { } a) throw new RegleMetierException(a.Message, "echeancier");
-        RegleEcheancier.Exiger(detail.Pret.Montant, detail.Pret.DatePret, lignes);
-        var payees = detail.Echeances.Count(e => e.PayeeLe is not null);
+        RegleEcheancier.Exiger(detail.Pret.Montant, detail.Pret.DatePret, lignes, detail.Pret.CapitalAnticipe);
+        var payees = detail.Echeances.Count(e => e.MontantPaye > 0);
         await financements.RemplacerEcheancierAsync(pretId, payees, lignes.Skip(payees).ToList(), ct);
         var cout = CoutEcheancier.De(lignes);
         await journal.EcrireAsync(utilisateurId, "echeancier_pret", "pret_bancaire", pretId,
@@ -334,13 +367,14 @@ public sealed class EnregistrerEcheancier(IFinancements financements, IPermissio
     /// <summary>Échéances déjà payées : elles restent en tête de l'échéancier, identiques (date et montants).</summary>
     private static IEnumerable<AnomalieEcheancier> ControlePayees(PretDetail detail, IReadOnlyList<LigneEcheancier> lignes)
     {
-        var payees = detail.Echeances.Where(e => e.PayeeLe is not null).OrderBy(e => e.Rang).ToList();
+        // Échéances payées, même en partie (script 170) : gardées en tête, identiques
+        var payees = detail.Echeances.Where(e => e.MontantPaye > 0).OrderBy(e => e.Rang).ToList();
         for (var i = 0; i < payees.Count; i++)
         {
             var p = payees[i].Ligne;
             if (i >= lignes.Count || lignes[i] with { CapitalRestant = p.CapitalRestant } != p)
                 yield return new AnomalieEcheancier(i + 1, "date",
-                    $"Ligne {i + 1} : l’échéance du {p.Date:dd/MM/yyyy} est déjà payée ; elle doit rester en tête, identique ({p.Montant:N2} DA).");
+                    $"Ligne {i + 1} : l’échéance du {p.Date:dd/MM/yyyy} est déjà {(payees[i].Entamee ? "payée en partie" : "payée")} ; elle doit rester en tête, identique ({p.Montant:N2} DA).");
         }
     }
 }
@@ -354,11 +388,14 @@ public sealed class PayerEcheancePret(IFinancements financements, ISessionsCaiss
     ITresorerie tresorerie)
 {
     public async Task<long> ExecuterAsync(long echeanceId, DateOnly? date, string? moyen, long? compteId, string? reference, decimal partTiroir,
-        long utilisateurId, string? poste, CancellationToken ct = default)
+        long utilisateurId, string? poste, CancellationToken ct = default, decimal? montant = null)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "confirmer le paiement d’une échéance de prêt", ct);
         var e = await financements.EcheanceAsync(echeanceId, ct) ?? throw new RegleMetierException("Échéance introuvable.");
         if (e.PayeeLe is not null) throw new RegleMetierException("Cette échéance est déjà payée : rechargez la liste.");
+        // En une ou plusieurs fois (script 170) : sans montant, ce qui reste ; charges couvertes d'abord, puis le capital
+        var aPayer = montant ?? e.Reste;
+        var (capital, charges) = RegleEcheancier.Imputer(e.Ligne, e.CapitalPaye, e.ChargesPayees, aPayer);
         var jour = date ?? horloge.Aujourdhui;
         if (jour > horloge.Aujourdhui) throw new RegleMetierException("La date du paiement ne peut pas être dans le futur.", "date");
         var m = moyen is "especes" or "cheque" or "virement" or "prelevement" ? moyen
@@ -375,7 +412,7 @@ public sealed class PayerEcheancePret(IFinancements financements, ISessionsCaiss
             if (partTiroir > 0) throw new RegleMetierException("Seul un paiement en espèces peut être complété par le tiroir de la caisse.", "tiroir");
         }
         else compteId = null;
-        if (partTiroir > e.Ligne.Montant) throw new RegleMetierException("Le complément pris dans le tiroir dépasse l’échéance.", "tiroir");
+        if (partTiroir > aPayer) throw new RegleMetierException("Le complément pris dans le tiroir dépasse le montant payé.", "tiroir");
 
         long? sessionId = null;
         if (partTiroir > 0)
@@ -388,13 +425,72 @@ public sealed class PayerEcheancePret(IFinancements financements, ISessionsCaiss
         }
 
         var id = await financements.PayerEcheanceAsync(new PaiementEcheanceAEcrire(echeanceId, jour, m, compteId,
-            string.IsNullOrWhiteSpace(reference) ? null : reference.Trim(), partTiroir, sessionId, utilisateurId), ct);
-        var (capital, charges) = RegleEcheancier.Parts(e.Ligne);
+            string.IsNullOrWhiteSpace(reference) ? null : reference.Trim(), partTiroir, sessionId, utilisateurId, aPayer, e.MontantPaye), ct);
         await journal.EcrireAsync(utilisateurId, "echeance_pret_payee", "echeance_pret", echeanceId,
             new Dictionary<string, object?>
             {
-                ["pret"] = e.Pret, ["banque"] = e.Banque, ["echeance"] = e.Ligne.Date, ["montant"] = e.Ligne.Montant, ["capital"] = capital,
-                ["charges_financieres"] = charges, ["assurance"] = e.Ligne.Assurance, ["date"] = jour, ["moyen"] = m, ["compte_id"] = compteId, ["part_tiroir"] = partTiroir
+                ["pret"] = e.Pret, ["banque"] = e.Banque, ["echeance"] = e.Ligne.Date, ["montant"] = e.Ligne.Montant, ["paye"] = aPayer,
+                ["reste"] = e.Reste - aPayer, ["capital"] = capital, ["charges_financieres"] = charges, ["assurance"] = e.Ligne.Assurance,
+                ["date"] = jour, ["moyen"] = m, ["compte_id"] = compteId, ["part_tiroir"] = partTiroir
+            }, null, ct);
+        return id;
+    }
+}
+
+/// <summary>
+/// Remboursement anticipé d'une partie du capital, confirmé par le titulaire (décision du 2026-11-26, script 170) : même moyens que le
+/// paiement d'une échéance (espèces du coffre complétées par le tiroir, chèque, virement, prélèvement : banque et référence) ; frais
+/// comptés en charges financières. Refusé tant qu'une échéance est payée en partie. Capital encore dû : les échéances non payées restent
+/// affichées mais ne se paient plus jusqu'à l'import du nouveau tableau de la banque ; tout le capital remboursé : elles sont retirées.
+/// </summary>
+public sealed class RembourserPretParAnticipation(IFinancements financements, ISessionsCaisse sessions, IPermissionService droits, IHorloge horloge,
+    IJournal journal, ITresorerie tresorerie)
+{
+    public async Task<long> ExecuterAsync(long pretId, DateOnly? date, decimal capital, decimal frais, string? moyen, long? compteId, string? reference,
+        decimal partTiroir, long utilisateurId, string? poste, CancellationToken ct = default)
+    {
+        await droits.ExigerTitulaireAsync(utilisateurId, "enregistrer un remboursement anticipé", ct);
+        var d = await financements.PretAsync(pretId, ct) ?? throw new RegleMetierException("Prêt introuvable.");
+        if (d.Echeances.FirstOrDefault(e => e.Entamee) is { } entamee)
+            throw new RegleMetierException($"L’échéance du {entamee.Ligne.Date:dd/MM/yyyy} est payée en partie : terminez d’abord son paiement.");
+        RegleRemboursementAnticipe.Verifier(capital, frais, d.Pret.ResteDu);
+        var jour = date ?? horloge.Aujourdhui;
+        if (jour > horloge.Aujourdhui) throw new RegleMetierException("La date du remboursement ne peut pas être dans le futur.", "date");
+        if (jour < d.Pret.DatePret) throw new RegleMetierException("La date du remboursement précède la date du prêt.", "date");
+        var m = moyen is "especes" or "cheque" or "virement" or "prelevement" ? moyen
+            : throw new RegleMetierException("Un remboursement se paie en espèces, par chèque, par virement ou par prélèvement.", "moyen");
+        if (partTiroir < 0 || !Arrondi.AuCentime(partTiroir))
+            throw new RegleMetierException("Le complément pris dans le tiroir se saisit au centime près, positif.", "tiroir");
+        if (m != "especes")
+        {
+            if (compteId is not > 0) throw new RegleMetierException("Choisissez la banque débitée.", "compte");
+            if (!(await tresorerie.ComptesAsync(ct)).Any(c => c.Id == compteId && c.Type == "banque" && c.Actif))
+                throw new RegleMetierException("La banque choisie n’existe plus ou n’est plus active.", "compte");
+            if (string.IsNullOrWhiteSpace(reference))
+                throw new RegleMetierException(m switch { "cheque" => "Indiquez le n° du chèque.", "virement" => "Indiquez la référence du virement.", _ => "Indiquez la référence du prélèvement." }, "reference");
+            if (partTiroir > 0) throw new RegleMetierException("Seul un paiement en espèces peut être complété par le tiroir de la caisse.", "tiroir");
+        }
+        else compteId = null;
+        if (partTiroir > capital + frais) throw new RegleMetierException("Le complément pris dans le tiroir dépasse le remboursement.", "tiroir");
+
+        long? sessionId = null;
+        if (partTiroir > 0)
+        {
+            var session = await sessions.SessionDuPosteAsync(PosteCaisse.Exiger(poste), ct)
+                          ?? throw new RegleMetierException("Ouvrez la caisse du poste pour prendre un complément dans le tiroir.", "tiroir");
+            var dansTiroir = session.FondCaisse + await sessions.VentesEspecesAsync(session.Id, ct);
+            if (partTiroir > dansTiroir) throw new RegleMetierException($"Le tiroir ne contient en principe que {dansTiroir:N2} DA.", "tiroir");
+            sessionId = session.Id;
+        }
+
+        var id = await financements.RembourserParAnticipationAsync(new RemboursementAnticipeAEcrire(pretId, jour, capital, frais, m, compteId,
+            string.IsNullOrWhiteSpace(reference) ? null : reference.Trim(), partTiroir, sessionId, utilisateurId, d.Pret.CapitalRembourse), ct);
+        var reste = d.Pret.ResteDu - capital;
+        await journal.EcrireAsync(utilisateurId, "pret_rembourse_anticipe", "pret_bancaire", pretId,
+            new Dictionary<string, object?>
+            {
+                ["pret"] = d.Pret.Reference, ["banque"] = d.Pret.Banque, ["capital"] = capital, ["frais"] = frais, ["reste_du"] = reste,
+                ["echeancier_a_remplacer"] = reste > 0, ["date"] = jour, ["moyen"] = m, ["compte_id"] = compteId, ["part_tiroir"] = partTiroir
             }, null, ct);
         return id;
     }

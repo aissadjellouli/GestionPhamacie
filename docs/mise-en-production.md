@@ -574,7 +574,7 @@ Dans l'ordre. Chaque réglage est fait dans l'application, par le titulaire ou s
 
 ### 11. Sauvegardes (avant toute vraie donnée)
 
-- [ ] **11.1** Choisir **un seul** mécanisme. **[À CONFIRMER : décision du titulaire.]**
+- [ ] **11.1** **Un seul** mécanisme : **(a), la sauvegarde de l'application** (décision du titulaire du 2026-11-26 : historique, alertes au titulaire, rotation des disques, test de restauration et écran de suivi). L'option (b) reste un **dépannage**, seulement si l'API ne peut plus démarrer, et jamais en même temps que (a).
   - (a) **Sauvegarde de l'application** : Administration, Sauvegardes. Elle copie la base sur le disque externe et dans `GED\Sauvegardes` (gardée 7 jours par défaut), et les documents de la GED sur le disque externe, dans son sous-dossier `GED` (nouveaux et modifiés seulement). Un disque absent n'empêche pas la copie dans la GED.
   - (b) **Script planifié** `scripts\sauvegarde_pharmacie.ps1`. Son en-tête indique : « Choisir ce script OU la sauvegarde automatique de l'application : pas les deux ».
   - Ne jamais garder les deux.
@@ -590,7 +590,7 @@ Dans l'ordre. Chaque réglage est fait dans l'application, par le titulaire ou s
   - Après chaque échange : « Sauvegarder maintenant » ; la sauvegarde complète le dossier `GED` du disque (documents nouveaux et modifiés).
   - Délai d'alerte : Administration › Sauvegardes, « Alerte si aucune sauvegarde sur le disque depuis (jours) », 7 par défaut (1 à 90). Le titulaire est prévenu (SMS si « SMS sauvegarde » est coché, et e-mail) quand aucune sauvegarde n'a réussi sur le disque depuis ce délai, même si la sauvegarde automatique est désactivée ; une alerte par période.
   - L'alerte lit le journal des sauvegardes de l'application ; le script planifié de l'option (b) y inscrit aussi chaque passage (réussie = copiée sur le disque externe, disque absent, échouée) : l'alerte fonctionne avec les deux options.
-- [ ] **11.3** Option (b) : installer le script. **Où** : PC serveur. **Compte** : administrateur Windows.
+- [ ] **11.3** Option (b), **dépannage seulement** (API arrêtée durablement ; à retirer du planificateur dès que l'API repart) : installer le script. **Où** : PC serveur. **Compte** : administrateur Windows.
   1. Créer le fichier de mot de passe (une seule ligne, mot de passe de `pharma_app` **dans le fichier seulement**) :
      `C:\ProgramData\PharmaOfficine\pgpass.conf`, contenu : `localhost:5432:<base>:pharma_app:<mot de passe>`.
   2. Limiter l'accès au compte qui lance la tâche :
@@ -691,8 +691,8 @@ Les publications étant autonomes (.NET inclus), Windows Update ne corrige **pas
 - [ ] **7.** Rôles déjà séparés (base déjà passée par `111b`) : méthode `SET ROLE`. **Où** : PC serveur. **Compte** : `postgres` avec `SET ROLE pharma_proprietaire`. Le script rejoue alors tous les scripts avec ce compte, dans la même session `psql` (`-c "SET ROLE pharma_proprietaire" -f <script>`) : il contrôle au départ que `SET ROLE` donne bien le rôle attendu.
   - **[À VÉRIFIER : cette méthode n'a pas encore été validée par un essai avec le compte `postgres`. À essayer sur une COPIE de la base (restaurée sous un autre nom) avant la production.]**
   - **Si échec** : « SET ROLE pharma_proprietaire n'a pas donné le rôle attendu » : ne pas continuer, voir le technicien.
-- [ ] **8.** Script `101b` (suppression de `num_facture_chifa`) : **jamais lancé par le script**, seulement sur décision du titulaire. **Où** : PC serveur. **Compte** : voir ci-dessous.
-  - `num_facture_chifa` est **conservée** (obsolète) par `101`. Sa suppression est le script **`101b`** (`database/migration/101b_suppression_num_facture_chifa.sql`), **écrit mais non exécuté** : opération **destructive et irréversible** (sauf restauration), **à ne lancer qu'après la validation explicite du titulaire**. Il n'est pas dans le dossier des scripts publiés (comme `111b`) : le prendre dans le dépôt. Sans la décision du titulaire, **ne rien lancer** : la colonne reste, sans effet sur le logiciel.
+- [ ] **8.** Script `101b` (suppression de `num_facture_chifa`) : **jamais lancé par le script** de mise à jour. **Décision du titulaire du 2026-11-26 : le passer** sur toute officine déjà installée avant cette date, une fois, en suivant la procédure ci-dessous (une base créée depuis `database\init` n'a jamais la colonne : rien à faire). Depuis le 2026-11-26, rejouer la suite ne recrée plus la colonne (scripts 007 et 101 protégés). **Où** : PC serveur. **Compte** : voir ci-dessous.
+  - `num_facture_chifa` est **conservée** (obsolète) par `101`. Sa suppression est le script **`101b`** (`database/migration/101b_suppression_num_facture_chifa.sql`), passé le 2026-11-26 sur `pharmacie_dev` et `pharmacie_test` (aucune valeur perdue) : opération **destructive et irréversible** (sauf restauration), **à ne lancer qu'après la validation explicite du titulaire**. Il n'est pas dans le dossier des scripts publiés (comme `111b`) : le prendre dans le dépôt. Sans la décision du titulaire, **ne rien lancer** : la colonne reste, sans effet sur le logiciel.
   - **Procédure `101b`** (dans cet ordre, seulement si le titulaire a dit « go ») :
     1. **Prérequis** : `101` exécuté, logiciel et API **arrêtés** (le script prend un verrou exclusif sur `vente`), aucune autre session ouverte sur la base.
     2. **Sauvegarde complète obligatoire** de la base (`pg_dump`, ou la sauvegarde de l'application), vérifiée lisible et copiée hors du PC serveur. Sans elle, ne pas continuer : l'opération est irréversible.

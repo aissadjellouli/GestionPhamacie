@@ -47,6 +47,12 @@ DECLARE
     n_copiees  int;
     n_identiques int;
 BEGIN
+    -- Colonne déjà supprimée par 101b (rejeu de la suite sur une base à jour) : plus rien à fusionner
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_schema = current_schema() AND table_name = 'vente' AND column_name = 'num_facture_chifa') THEN
+        RAISE NOTICE '101 fusion n° facture Chifa : colonne vente.num_facture_chifa déjà supprimée (101b), rien à fusionner';
+        RETURN;
+    END IF;
     -- 1. Conflits : les deux colonnes remplies et différentes
     INSERT INTO vente_chifa_facture_conflit (vente_id, num_facture_chifa, chifa_facture)
     SELECT v.id, btrim(v.num_facture_chifa), btrim(v.chifa_facture)
@@ -134,4 +140,11 @@ BEGIN
 END $$;
 
 COMMENT ON COLUMN vente.chifa_facture IS 'N° de la facture Chifa (8 chiffres) : seule colonne du n° de facture Chifa depuis le script 101 (volet repris, rattaché ou saisi)';
-COMMENT ON COLUMN vente.num_facture_chifa IS 'OBSOLÈTE (script 101, 2026-11-15) : remplacée par chifa_facture, plus lue ni écrite ; suppression prévue par le script 101b après validation du titulaire';
+-- Colonne déjà supprimée par 101b (rejeu de la suite sur une base à jour) : pas de commentaire à poser
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_schema = current_schema() AND table_name = 'vente' AND column_name = 'num_facture_chifa') THEN
+        COMMENT ON COLUMN vente.num_facture_chifa IS 'OBSOLÈTE (script 101, 2026-11-15) : remplacée par chifa_facture, plus lue ni écrite ; suppression prévue par le script 101b après validation du titulaire';
+    END IF;
+END $$;

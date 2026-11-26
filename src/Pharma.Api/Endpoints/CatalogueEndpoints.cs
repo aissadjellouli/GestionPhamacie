@@ -21,6 +21,45 @@ internal static class CatalogueEndpoints
                     c.Remplacant?.VersDto(), c.MoinsCher?.VersDto())).ToList()))
            .ExigerPermission(Permissions.CaisseVendre, Permissions.StockConsulter);
 
+        // Stock › Contenance manquante (2026-11-26) : saisie en lot, les produits vendus d'abord ; même droit que la fiche produit
+        api.MapGet("/catalogue/contenances-manquantes", async (string? recherche, int? page, int? taille, bool? toutes, GererContenancesManquantes gerer,
+                ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                var p = await gerer.ListerAsync(user.UtilisateurId(), recherche, Pharma.Application.Commun.DemandePage.Lire(page, taille), ct, toutes == true);
+                return Results.Ok(new PageDto<ContenanceManquanteDto>(p.Lignes.Select(c => new ContenanceManquanteDto(c.ProduitId, c.Nom, c.Forme, c.Dosage,
+                    c.Conditionnement, c.Vendues12Mois, c.Stock, c.Contenance)).ToList(), p.Total, p.Numero, p.Taille));
+            })
+           .ExigerPermission(Permissions.CatalogueCreer);
+        // Import de contenances (2026-11-26) : export de la liste à remplir, aperçu d'un fichier, enregistrement des lignes retenues
+        api.MapGet("/catalogue/contenances-manquantes/export", async (ImporterContenances importer, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.File(await importer.ExporterAsync(user.UtilisateurId(), ct), "text/csv; charset=utf-8", "contenances_manquantes.csv"))
+           .ExigerPermission(Permissions.CatalogueCreer);
+        api.MapPost("/catalogue/contenances-manquantes/import/apercu", async (ImportContenancesFichierRequete r, ImporterContenances importer,
+                ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                byte[] contenu;
+                try { contenu = Convert.FromBase64String(r.ContenuBase64); }
+                catch (FormatException) { throw new Pharma.Domain.Commun.RegleMetierException("Fichier illisible.", "fichier"); }
+                var a = await importer.ApercuAsync(user.UtilisateurId(), r.NomFichier, contenu, ct, r.Corriger);
+                return Results.Ok(new ApercuImportContenancesDto(a.Retenues.Select(x => new ContenanceImporteeDto(x.Ligne, x.ProduitId, x.Nom, x.Contenance, x.Avant)).ToList(),
+                    a.Ecartees.Select(x => new LigneEcarteeDto(x.Ligne, x.Produit, x.Motif)).ToList(), a.LignesVides));
+            })
+           .ExigerPermission(Permissions.CatalogueCreer);
+        api.MapPost("/catalogue/contenances-manquantes/import", async (ImportContenancesRequete r, ImporterContenances importer, ClaimsPrincipal user,
+                CancellationToken ct) =>
+            {
+                var (ecrites, deja) = await importer.EnregistrerAsync(user.UtilisateurId(), r.Lignes.Select(l => (l.ProduitId, l.Contenance, l.Avant)).ToList(), ct);
+                return Results.Ok(new ImportContenancesResultatDto(ecrites, deja));
+            })
+           .ExigerPermission(Permissions.CatalogueCreer);
+        api.MapPut("/catalogue/produits/{id:long}/contenance", async (long id, ContenanceSaisieDto d, GererContenancesManquantes gerer, ClaimsPrincipal user,
+                CancellationToken ct) =>
+            {
+                await gerer.EnregistrerAsync(user.UtilisateurId(), id, d.Contenance, ct, d.Avant);
+                return Results.NoContent();
+            })
+           .ExigerPermission(Permissions.CatalogueCreer);
+
         // Création d'un produit absent du catalogue (fiche Stock ou réception)
         // Catégories de produits et classement d'un produit (catégorie, liste d'un psychotrope pour son SHP)
         api.MapGet("/categories-produits", async (ListerCategoriesProduits lister, CancellationToken ct) =>

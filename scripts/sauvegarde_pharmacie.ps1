@@ -1,8 +1,10 @@
 # =====================================================================
 # Sauvegarde automatique de la base PostgreSQL de l'officine
 # A planifier chaque soir via le Planificateur de taches Windows.
-# Choisir ce script OU la sauvegarde automatique de l'application
-# (Administration, Sauvegardes) : pas les deux.
+# DEPANNAGE SEULEMENT (decision du titulaire du 2026-11-26) : la sauvegarde
+# de l'officine est celle de l'application (Administration, Sauvegardes).
+# Ce script ne sert que si l'API ne peut plus demarrer ; jamais les deux
+# a la fois : le retirer du planificateur des que l'API repart.
 #
 # Mot de passe : jamais dans ce script. Creer une fois le fichier
 #   C:\ProgramData\PharmaOfficine\pgpass.conf

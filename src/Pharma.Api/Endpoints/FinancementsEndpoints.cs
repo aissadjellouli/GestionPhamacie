@@ -27,7 +27,8 @@ internal static class FinancementsEndpoints
             {
                 var d = await c.PretAsync(user.UtilisateurId(), id, ct);
                 return Results.Ok(new PretDetailDto(VersDto(d.Pret), d.Echeances.Select(VersDto).ToList(),
-                    d.Utilisations.Select(u => new UtilisationFinancementDto(u.Id, u.Source, u.PretId, u.Usage, u.Date, u.Montant, u.Libelle, u.Employe)).ToList()));
+                    d.Utilisations.Select(u => new UtilisationFinancementDto(u.Id, u.Source, u.PretId, u.Usage, u.Date, u.Montant, u.Libelle, u.Employe)).ToList(),
+                    (d.Anticipes ?? []).Select(a => new RemboursementAnticipeDto(a.Id, a.Date, a.Capital, a.Frais, a.Moyen, a.Compte, a.Reference, a.Employe)).ToList()));
             });
 
         f.MapPost("/prets", async (PretRequete r, EnregistrerPret e, ClaimsPrincipal user, CancellationToken ct) =>
@@ -96,7 +97,13 @@ internal static class FinancementsEndpoints
         f.MapPost("/echeances/{id:long}/paiement", async (long id, PaiementEcheanceRequete r, PayerEcheancePret payer, ClaimsPrincipal user,
                 HttpRequest requete, CancellationToken ct) =>
             Results.Ok(new IdentifiantDto(await payer.ExecuterAsync(id, r.Date, r.Moyen, r.CompteId, r.Reference, r.PartTiroir, user.UtilisateurId(),
-                requete.Poste(), ct))));
+                requete.Poste(), ct, r.Montant))));
+
+        // Remboursement anticipé d'une partie du capital (script 170)
+        f.MapPost("/prets/{id:long}/remboursement-anticipe", async (long id, RemboursementAnticipeRequete r, RembourserPretParAnticipation rembourser,
+                ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>
+            Results.Ok(new IdentifiantDto(await rembourser.ExecuterAsync(id, r.Date, r.Capital, r.Frais, r.Moyen, r.CompteId, r.Reference, r.PartTiroir,
+                user.UtilisateurId(), requete.Poste(), ct))));
 
         // Sources : apport du titulaire et prêts dont une part reste à employer
         f.MapGet("/sources", async (ConsulterFinancements c, ClaimsPrincipal user, CancellationToken ct) =>
@@ -130,10 +137,10 @@ internal static class FinancementsEndpoints
 
     private static PretDto VersDto(PretResume p) => new(p.Id, p.CompteId, p.Banque, p.Reference, p.Objet, p.Montant, p.DatePret, p.Document,
         p.CapitalRembourse, p.ResteDu, p.Utilise, p.Echeances, p.EcheancesPayees, p.EchuesNonPayees, p.ProchaineEcheance, p.ProchainMontant, p.Employe,
-        p.Taux, p.DureeMois, p.ProchaineAssurance);
+        p.Taux, p.DureeMois, p.ProchaineAssurance, p.EcheancierARemplacer, p.CapitalAnticipe);
 
     private static EcheancePretDto VersDto(EcheancePret e) => new(e.Id, e.PretId, e.Pret, e.Banque, e.Rang, VersDto(e.Ligne), e.PayeeLe, e.Moyen, e.Compte,
-        e.ReferencePaiement, e.Employe);
+        e.ReferencePaiement, e.Employe, e.MontantPaye, e.CapitalPaye, e.ChargesPayees);
 
     private static LigneEcheancierDto VersDto(LigneEcheancier l) =>
         new(l.Date, l.Capital, l.Interets, l.Tva, l.Marge, l.Montant, l.CapitalRestant, l.Assurance);

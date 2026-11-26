@@ -144,6 +144,7 @@ Décision du titulaire (2026-11-16, « ok proposition familles ») : `parametre_
 | `reglement_facture_client` | montante | mouvement_id, facture_id | - | - | |
 | `reglement_fournisseur` | montante | id | - | - | |
 | `regularisation_part_organisme` | montante | id | - | - | |
+| `remboursement_anticipe_pret` | montante | id | - | - | Script 170 : remboursement anticipé d'un prêt (capital, frais) |
 | `remboursement_titulaire` | montante | id | - | - | |
 | `remise_cheque_paiement` | montante | remise_id, paiement_id | - | - | |
 | `remise_cheques` | montante | id | - | - | |
@@ -198,6 +199,8 @@ Décision du titulaire (2026-11-16, « ok proposition familles ») : `parametre_
 | `organisme` | descendante | id | - | - | |
 | `parametre_gs1_ai` | descendante | code | - | - | |
 | `substance_surveillee` | descendante | motif | - | - | |
+| `taux_tva` | jamais | id | - | - | Script 171 : liste des taux de TVA de l'officine (réglage local) |
+| `taux_tva_categorie` | jamais | id | - | - | Script 171 : taux de TVA par défaut des catégories (réglage local) |
 | `type_prestation` | descendante | id | - | - | |
 | `wilaya` | descendante | code | - | - | |
 | `zone_psychotrope_wilaya` | descendante | wilaya | - | - | |

@@ -1,0 +1,26 @@
+@page "/admin/taux-tva"
+@inject SessionPoste Session
+
+@* Taux de TVA réglables (décision du titulaire du 2026-11-26, script 171) : liste des taux proposés à la saisie (produit, prestation, ligne
+   libre de facture) et taux proposé à la création d'un produit de chaque catégorie. Titulaire seul ; réglage local, jamais envoyé au
+   serveur central. Écran fixe : les deux tableaux défilent dans leur cadre. *@
+<div class="page admin">
+    <NavAdmin Actif="admin/taux-tva" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Taux de TVA</h1>
+                <p class="sous-titre">Taux proposés à la saisie d’un produit, d’une prestation ou d’une ligne libre de facture · un taux n’est jamais supprimé : désactivé, il n’est plus proposé · à faire valider par votre comptable</p>
+            </div>
+        </div>
+        @if (!Session.A("role.titulaire"))
+        {
+            <div class="erreur" role="alert">Écran réservé au pharmacien titulaire.</div>
+        }
+        else
+        {
+            <TauxTvaReglage />
+        }
+    </div>
+</div>

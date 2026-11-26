@@ -199,6 +199,7 @@ public static class DependencyInjection
         services.AddScoped<Financements.EnregistrerPret>();
         services.AddScoped<Financements.EnregistrerEcheancier>();
         services.AddScoped<Financements.PayerEcheancePret>();
+        services.AddScoped<Financements.RembourserPretParAnticipation>();
         services.AddScoped<Financements.UtiliserFinancement>();
         services.AddScoped<Financements.RembourserTitulaire>();
         services.AddScoped<Caisse.ConsulterCredits>();
@@ -224,6 +225,10 @@ public static class DependencyInjection
         services.AddScoped<Achats.EnregistrerGrossiste>();
         services.AddScoped<LireFicheProduit>();
         services.AddScoped<ModifierProduit>();
+        services.AddScoped<GererContenancesManquantes>();
+        services.AddScoped<ImporterContenances>();
+        services.AddScoped<Fiscal.GererTauxTva>();
+        services.AddScoped<Fiscal.TauxTvaAutorises>();
         services.AddScoped<Patients.ModifierMedecin>();
         services.AddScoped<Suivi.ModifierDelaiAlerteDettes>();
         services.AddScoped<Tresorerie.ConsulterTresorerie>();

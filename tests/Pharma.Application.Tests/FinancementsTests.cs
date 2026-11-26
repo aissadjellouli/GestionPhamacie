@@ -48,6 +48,8 @@ internal sealed class FinancementsEnMemoire : IFinancements
         Task.FromResult(new Page<EcheancePret>(Echeances, Echeances.Count, 1, p.Taille));
     public Task<EcheancePret?> EcheanceAsync(long id, CancellationToken ct = default) => Task.FromResult(Echeances.FirstOrDefault(e => e.Id == id));
     public Task<long> PayerEcheanceAsync(PaiementEcheanceAEcrire p, CancellationToken ct = default) { Paiements.Add(p); return Task.FromResult(50L); }
+    public List<RemboursementAnticipeAEcrire> Anticipes { get; } = [];
+    public Task<long> RembourserParAnticipationAsync(RemboursementAnticipeAEcrire r, CancellationToken ct = default) { Anticipes.Add(r); return Task.FromResult(80L); }
     public Task<long> UtiliserAsync(UtilisationAEcrire u, CancellationToken ct = default) { Utilisations.Add(u); return Task.FromResult(60L); }
     public Task<CompteTitulaire> CompteTitulaireAsync(FiltreCompteTitulaire f, DemandePage p, CancellationToken ct = default) =>
         Task.FromResult(new CompteTitulaire(SoldeTitulaire, SoldeTitulaire, 0, new Page<MouvementTitulaire>([], 0, 1, p.Taille)));
@@ -169,7 +171,7 @@ public class FinancementsTests
     public async Task Echeance_deja_payee_ou_date_future_refusee()
     {
         var f = new FinancementsEnMemoire();
-        f.Echeances[0] = f.Echeances[0] with { PayeeLe = new DateOnly(2026, 2, 10), Moyen = "especes" };
+        f.Echeances[0] = f.Echeances[0] with { PayeeLe = new DateOnly(2026, 2, 10), Moyen = "especes", MontantPaye = f.Echeances[0].Ligne.Montant };
         await Assert.ThrowsAsync<RegleMetierException>(() => Payer(f, new JournalEspion()).ExecuterAsync(100, null, "especes", null, null, 0, 1, "Caisse 1"));
         Assert.Equal("date", (await Assert.ThrowsAsync<RegleMetierException>(() =>
             Payer(f, new JournalEspion()).ExecuterAsync(101, Horloge.Aujourdhui.AddDays(1), "especes", null, null, 0, 1, "Caisse 1"))).Champ);
@@ -188,7 +190,7 @@ public class FinancementsTests
         Assert.Null(f.Remplace);
 
         // Première échéance payée : elle doit revenir identique, seules les suivantes sont remplacées
-        f.Echeances[0] = f.Echeances[0] with { PayeeLe = new DateOnly(2026, 2, 10), Moyen = "especes" };
+        f.Echeances[0] = f.Echeances[0] with { PayeeLe = new DateOnly(2026, 2, 10), Moyen = "especes", MontantPaye = f.Echeances[0].Ligne.Montant };
         var modifiee = lignes.ToList();
         modifiee[0] = modifiee[0] with { Interets = 2999, Montant = 103569 };
         Assert.Contains(await cas.ControlerAsync(5, modifiee, 1), a => a.Ligne == 1 && a.Message.Contains("déjà payée"));

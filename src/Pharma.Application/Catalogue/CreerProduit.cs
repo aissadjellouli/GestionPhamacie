@@ -44,7 +44,7 @@ public sealed record ProduitCree(long Id, string? Information = null);
 /// Parapharmacie (catégorie non médicament, 2026-11-20) : DCI, dosage et forme facultatifs ; refusée pour un n° de la nomenclature
 /// nationale, une classe autre que « libre » ou une DCI de substance surveillée (RegleProduit.ControlerCategorie).
 /// </summary>
-public sealed class CreerProduit(ICatalogueEcriture catalogue, IPermissionService droits, IJournal journal)
+public sealed class CreerProduit(ICatalogueEcriture catalogue, IPermissionService droits, IJournal journal, Fiscal.TauxTvaAutorises? tauxTva = null)
 {
     public async Task<ProduitCree> ExecuterAsync(FicheProduit saisie, long utilisateurId, CancellationToken ct = default)
     {
@@ -59,6 +59,7 @@ public sealed class CreerProduit(ICatalogueEcriture catalogue, IPermissionServic
         var medicament = await catalogue.CategorieMedicamentAsync(codeCategorie, ct)
             ?? throw new RegleMetierException("Catégorie inconnue : choisissez-en une de la liste.", "categorie");
         var f = RegleProduit.Normaliser(saisie with { Categorie = codeCategorie }, prixFacultatif: sansPrix, categorieMedicament: medicament);
+        if (tauxTva is not null) await tauxTva.ExigerAsync(f.TauxTva, null, "tva", ct);   // taux de la liste (script 171)
         if (!medicament)
             RegleProduit.ControlerCategorie(false, f.Classe.Code(), f.NumEnregistrement is { } numero && await catalogue.DansNomenclatureAsync(numero, ct));
 

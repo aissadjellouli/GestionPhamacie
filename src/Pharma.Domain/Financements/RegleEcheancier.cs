@@ -53,11 +53,13 @@ public sealed record AnomalieEcheancier(int Ligne, string Champ, string Message)
 /// <summary>
 /// Contrôles d'un échéancier avant son enregistrement (saisi, importé d'Excel ou de CSV, ou lu dans un PDF ou un scan) :
 /// chaque ligne au centime, capital + intérêts + TVA + marge + assurance = échéance ; dates strictement croissantes, pas avant le prêt ;
-/// capital restant dû jamais en hausse ; somme du capital = montant du prêt. Tant qu'une incohérence reste, l'enregistrement est refusé.
+/// capital restant dû jamais en hausse ; somme du capital (+ capital déjà remboursé par anticipation, script 170) = montant du prêt.
+/// Tant qu'une incohérence reste, l'enregistrement est refusé.
 /// </summary>
 public static class RegleEcheancier
 {
-    public static IReadOnlyList<AnomalieEcheancier> Controler(decimal montantPret, DateOnly datePret, IReadOnlyList<LigneEcheancier> lignes)
+    public static IReadOnlyList<AnomalieEcheancier> Controler(decimal montantPret, DateOnly datePret, IReadOnlyList<LigneEcheancier> lignes,
+        decimal capitalAnticipe = 0)
     {
         var anomalies = new List<AnomalieEcheancier>();
         if (lignes.Count == 0)
@@ -89,15 +91,17 @@ public static class RegleEcheancier
                 anomalies.Add(new(n, "capital_restant", $"Ligne {n} : le capital restant dû dépasse le montant du prêt."));
         }
         var capital = lignes.Sum(l => l.Capital);
-        if (capital != montantPret)
-            anomalies.Add(new(0, "capital", $"La somme du capital ({capital:N2} DA) diffère du montant du prêt ({montantPret:N2} DA) : écart {montantPret - capital:N2} DA."));
+        if (capital + capitalAnticipe != montantPret)
+            anomalies.Add(new(0, "capital", capitalAnticipe == 0
+                ? $"La somme du capital ({capital:N2} DA) diffère du montant du prêt ({montantPret:N2} DA) : écart {montantPret - capital:N2} DA."
+                : $"La somme du capital ({capital:N2} DA) et du capital remboursé par anticipation ({capitalAnticipe:N2} DA) diffère du montant du prêt ({montantPret:N2} DA) : écart {montantPret - capital - capitalAnticipe:N2} DA."));
         return anomalies;
     }
 
     /// <summary>Refuse l'échéancier tant qu'il reste une incohérence (message : la première, et le nombre des autres).</summary>
-    public static void Exiger(decimal montantPret, DateOnly datePret, IReadOnlyList<LigneEcheancier> lignes)
+    public static void Exiger(decimal montantPret, DateOnly datePret, IReadOnlyList<LigneEcheancier> lignes, decimal capitalAnticipe = 0)
     {
-        var anomalies = Controler(montantPret, datePret, lignes);
+        var anomalies = Controler(montantPret, datePret, lignes, capitalAnticipe);
         if (anomalies.Count == 0) return;
         var autres = anomalies.Count > 1 ? $" (et {anomalies.Count - 1} autre(s) incohérence(s))" : "";
         throw new RegleMetierException($"Échéancier incohérent : {anomalies[0].Message}{autres} Corrigez-le avant de l’enregistrer.", "echeancier");
@@ -105,6 +109,21 @@ public static class RegleEcheancier
 
     /// <summary>Paiement d'une échéance : le capital diminue la dette envers la banque ; intérêts, assurance, TVA et marge sont des charges financières.</summary>
     public static (decimal Capital, decimal Charges) Parts(LigneEcheancier l) => (l.Capital, l.Charges);
+
+    /// <summary>
+    /// Paiement d'une échéance, en une ou plusieurs fois (décision du titulaire du 2026-11-26, script 170) : chaque paiement couvre d'abord
+    /// les charges encore dues (intérêts, assurance, TVA, marge), puis le capital ; jamais plus que ce qui reste à payer sur l'échéance.
+    /// </summary>
+    public static (decimal Capital, decimal Charges) Imputer(LigneEcheancier l, decimal capitalDeja, decimal chargesDeja, decimal montant)
+    {
+        if (montant <= 0) throw new RegleMetierException("Le montant payé doit être supérieur à 0.", "montant");
+        if (!Arrondi.AuCentime(montant)) throw new RegleMetierException("Le montant payé se saisit au centime près (2 décimales au plus).", "montant");
+        var reste = l.Montant - capitalDeja - chargesDeja;
+        if (montant > reste)
+            throw new RegleMetierException($"Le montant payé dépasse ce qui reste à payer sur cette échéance ({Math.Max(reste, 0):N2} DA).", "montant");
+        var charges = Math.Min(montant, Math.Max(l.Charges - chargesDeja, 0));
+        return (montant - charges, charges);
+    }
 
     /// <summary>Capital restant dû après chaque échéance, calculé quand le tableau de la banque ne le donne pas.</summary>
     public static IReadOnlyList<decimal> Encours(decimal montantPret, IEnumerable<decimal> capitaux)
@@ -124,6 +143,23 @@ public static class RegleEcheancier
         "capital" => "capital", "interets" => "intérêts", "tva" => "TVA", "marge" => "marge", "assurance" => "assurance", "montant" => "échéance",
         _ => "capital restant dû"
     };
+}
+
+/// <summary>
+/// Remboursement anticipé d'une partie du capital (décision du titulaire du 2026-11-26, script 170) : capital au centime, supérieur à 0,
+/// jamais plus que le capital restant dû ; frais facultatifs (≥ 0, au centime), comptés en charges financières.
+/// </summary>
+public static class RegleRemboursementAnticipe
+{
+    public static void Verifier(decimal capital, decimal frais, decimal resteDu)
+    {
+        if (capital <= 0) throw new RegleMetierException("Le capital remboursé doit être supérieur à 0.", "capital");
+        if (!Arrondi.AuCentime(capital)) throw new RegleMetierException("Le capital se saisit au centime près (2 décimales au plus).", "capital");
+        if (capital > resteDu)
+            throw new RegleMetierException($"Le capital remboursé dépasse le capital restant dû ({Math.Max(resteDu, 0):N2} DA).", "capital");
+        if (frais < 0) throw new RegleMetierException("Les frais ne peuvent pas être négatifs.", "frais");
+        if (!Arrondi.AuCentime(frais)) throw new RegleMetierException("Les frais se saisissent au centime près (2 décimales au plus).", "frais");
+    }
 }
 
 /// <summary>

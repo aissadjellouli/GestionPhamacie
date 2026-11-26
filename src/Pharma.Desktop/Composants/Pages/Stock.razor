@@ -172,6 +172,7 @@
     }
 
     @if (rubrique == "modifier") { <ModificationProduit /> }
+    @if (rubrique == "contenance") { <ContenancesManquantes /> }
     @if (rubrique == "entrees") { <EntreesStock /> }
     @if (rubrique == "sortie") { <SortieStock LotInitial="Sortie" /> }
     @if (rubrique == "blocage") { <BlocageProduits /> }
@@ -194,6 +195,7 @@
         new("ensemble", "Vue d’ensemble", "Références, valeur du stock et lots à date à vérifier"),
         new("nouveau", "Nouveau produit", "Ajouter un produit au catalogue", Session.A("catalogue.creer")),
         new("modifier", "Modifier un produit", "Nom, DCI, dosage, forme, code-barres, prix, TVA, remboursement, activation", Session.A("catalogue.creer")),
+        new("contenance", "Contenances", "Unités par boîte : à compléter (les plus vendus d’abord) ou à corriger, à l’écran ou par un fichier", Session.A("catalogue.creer")),
         new("sortie", "Sortie de stock", "Périmés, boîtes cassées, dons et échantillons"),
         new("blocage", "Blocage des produits", "Produits bloqués à l’achat ou à la vente"),
         new("remises", "Remises automatiques", "Remise en % par produit ou par catégorie, sur une période, appliquée par la caisse")

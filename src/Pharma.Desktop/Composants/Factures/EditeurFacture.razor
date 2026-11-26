@@ -142,7 +142,7 @@
             <div class="champ" style="flex: 1 1 260px"><label>Désignation</label><input type="text" @bind="l.Designation" /></div>
             <div class="champ" style="flex: 0 0 90px"><label>Qté</label><input type="number" min="0.01" step="0.01" @bind="l.Quantite" /></div>
             <div class="champ" style="flex: 0 0 140px"><label>P.U. TTC (DA)</label><input type="number" min="0.01" step="0.01" @bind="l.Prix" /></div>
-            <div class="champ" style="flex: 0 0 100px"><label>TVA (%)</label><input type="number" min="0" max="100" step="0.01" @bind="l.Tva" /></div>
+            <div class="champ" style="flex: 0 0 150px"><label>TVA</label><ChoixTauxTva Id="@($"fl-tva-{libres.IndexOf(l)}")" Libelle="TVA de la ligne libre" @bind-Value="l.Tva" /></div>
             <button type="button" class="btn" @onclick="() => libres.Remove(l)">Retirer</button>
         </div>
     }

@@ -468,3 +468,23 @@ avec sa clé et le message « Vente reprise : son encaissement avait été inter
 **Rangement** : poste, API, relais et les PostgreSQL d'essai arrêtés (aucun port d'essai ouvert) ; rien créé sur le 5432. Copies de bases d'essai (`p`, `s`,
 `p2`, `s2`) **supprimées** le 2026-11-25 ; restent dans `C:\MesAtlassian\essai-sync` les programmes compilés, les lanceurs et les captures.
 **Reste** : la clé TPM du poste `CAISSE-SYNC` (suppression en administrateur).
+
+## 18. Essai réel des cas « égalité » et « isolement » avec deux postes (2026-11-26, « continue l'essai bascule »)
+
+**Montage** : serveur 1 (principal, PostgreSQL 5434, API 5083) et 2e serveur (veille, PostgreSQL 5435 en réplication, API 5082), chaque liaison
+passant par un relais coupable (fichier `coupe-<port>`) : réplication 5439, liaisons entre serveurs 5449 à 5452, poste A `CAISSE-SYNC` → serveur 1
+par 5447, poste B `CAISSE COMPTOIR 2` → serveur 1 par 5448. Les deux postes enrôlés (clés TPM, consentement Windows accepté) et connectés.
+Suivi toutes les 10 s : rôle des deux serveurs (`/api/healthcheck`), verdict de la vigie du 2e serveur, bandeaux et barre d'état des postes.
+
+**Cas égalité** (serveur 1 + poste B d'un côté, 2e serveur + poste A de l'autre : liaisons entre serveurs, réplication et relais du poste A coupés,
+4 min) : le 2e serveur reçoit le vote du poste A (`votes 1`) mais **reste en veille** pendant toute la durée, verdict
+`Attendre (poste_authentifie_joint_serveur1)` : un poste authentifié joint encore le serveur 1, donc pas de promotion. Le serveur 1 reste principal
+et n'est pas écarté (il voit la moitié des postes). Poste A : « Le serveur principal ne répond plus. Vérification… », barre « Serveur injoignable » ;
+poste B : « Connecté », sans interruption. Liaisons rétablies : verdict `Rester`, poste A « Connecté » en moins de 30 s.
+
+**Cas isolement** (toutes les liaisons du serveur 1 coupées, postes compris, 5 min) : à +21 s le 2e serveur a les **2 votes** ; à **+72 s** le
+serveur 1 s'écarte de lui-même, « Ce serveur est isolé (copie perdue et moins de la moitié des postes vus) : il passe en lecture seule, titulaire
+prévenu » (`/api/healthcheck` : `ecarte`) ; à **+103 s** le 2e serveur est **principal** (un relevé « muet » à +92 s pendant la promotion). Les
+deux postes affichent « Connecté · 2e serveur » sans intervention. Aucun moment avec deux principaux acceptant des écritures.
+
+**Constat** : les deux cas se comportent comme le prévoient les § 2 à 5 ; aucune correction de code.

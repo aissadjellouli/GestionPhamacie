@@ -27,7 +27,7 @@
 -- Réexécutable : rien n'est dupliqué ni écrasé (ON CONFLICT / NOT EXISTS).
 -- La nomenclature nationale s'importe ensuite dans Administration › Nomenclature
 -- (fichier database/data/NOMENCLATURE NATIONALE - VERSION ….xlsx).
--- Valeurs identiques à celles posées par les scripts 001 à 167 (167 : réglage parametre_postes (une ligne, défauts du schéma) et classement sync_table de poste_autorise et parametre_postes (jamais) ; 166 : classement sync_table de bascule_decision (jamais) ; 165 : classement sync_table de presence_poste (jamais) ; 164 : classement sync_table de bascule_promotion et bascule_saut (jamais) ; 163 : classement sync_table de serveur_ecarte (jamais) ; 162 : déconnexion après inactivité : défaut de colonne 15 minutes, posé par INSERT … DEFAULT VALUES ; 161 : aucune valeur de référentiel, index des clés étrangères ; 160 : aucune valeur de référentiel, message du titulaire à distance affiché sur les postes ; 159 : aucune valeur de référentiel, retour d'une vente régularisée « rendu au patient » ; 158 : aucune valeur de référentiel, retour d'une vente régularisée à la charge du patient et dettes du patient ; 157 : aucune valeur de référentiel, rapprochement d'un volet après un retour ; 156 : aucune valeur de référentiel, réglage des tâches laissées au poste : défaut de colonne « chiffre », posé par INSERT … DEFAULT VALUES ; 155 : aucune valeur de référentiel, retour partiel en tiers payant ; 154 : catégorie « parapharmacie » « Parapharmacie (à préciser) » ; 153 : règle d'alerte « traitement_en_cours » ; valeurs de départ
+-- Valeurs identiques à celles posées par les scripts 001 à 171 (171 : liste des taux de TVA (0 % « Exonéré », 19 % « Taux normal »), taux par défaut Médicament 0 % et Parapharmacie 19 %, classement sync_table de taux_tva et taux_tva_categorie (jamais) ; 170 : classement sync_table de remboursement_anticipe_pret (montante) ; 169 : aucune valeur de référentiel, contenance des produits remplie depuis la nomenclature (contenant seul, pilulier) ; 168 : aucune valeur de référentiel, réception en attente abandonnée par un autre employé au contrôle interne ; 167 : réglage parametre_postes (une ligne, défauts du schéma) et classement sync_table de poste_autorise et parametre_postes (jamais) ; 166 : classement sync_table de bascule_decision (jamais) ; 165 : classement sync_table de presence_poste (jamais) ; 164 : classement sync_table de bascule_promotion et bascule_saut (jamais) ; 163 : classement sync_table de serveur_ecarte (jamais) ; 162 : déconnexion après inactivité : défaut de colonne 15 minutes, posé par INSERT … DEFAULT VALUES ; 161 : aucune valeur de référentiel, index des clés étrangères ; 160 : aucune valeur de référentiel, message du titulaire à distance affiché sur les postes ; 159 : aucune valeur de référentiel, retour d'une vente régularisée « rendu au patient » ; 158 : aucune valeur de référentiel, retour d'une vente régularisée à la charge du patient et dettes du patient ; 157 : aucune valeur de référentiel, rapprochement d'un volet après un retour ; 156 : aucune valeur de référentiel, réglage des tâches laissées au poste : défaut de colonne « chiffre », posé par INSERT … DEFAULT VALUES ; 155 : aucune valeur de référentiel, retour partiel en tiers payant ; 154 : catégorie « parapharmacie » « Parapharmacie (à préciser) » ; 153 : règle d'alerte « traitement_en_cours » ; valeurs de départ
 -- des autres règles changées seulement sur une base où elles existent et n'ont jamais été modifiées, l'init n'en sème pas ;
 -- 152 n'ajoute aucune donnée de référence ; 151 : classement sync_table de integrite_prise_acte (montante), compteur_ticket_saut et sync_declaration_epoque (jamais) ; 095, 098, 099, 132, 134, 137, 138, 139, 142, 143, 148, 149 et 150 n'ajoutent aucune donnée de référence ; 141 : les 11 lignes de reglage_mutualise (mode local, aucun modèle) et le classement sync_table de reglage_mutualise ; 144 : classement sync_table de compteur_ticket (montante) ; 145 : classement de sync_ordre_recu (jamais) et sync_ordre_resultat (montante) ; 146 : classement de commande_ordre_central (jamais) ; 147 : chifa_code_produit et produit_indication passées montantes ; 140 : droit « sync.suivre » (titulaire) ; 096 : motifs du tiroir avec effet
 -- et détail, « Dépôt ou retrait d'espèces » désactivé ; 097 : motifs de la liste
@@ -77,6 +77,10 @@ INSERT INTO categorie_produit (code, libelle, medicament, ordre) VALUES
     ('paramedical', 'Paramédical (pansements, accessoires de soin)', false, 80),
     ('parapharmacie', 'Parapharmacie (à préciser)', false, 90)
 ON CONFLICT (code) DO NOTHING;
+
+-- Taux de TVA (171) : liste de départ 0 % et 19 % ; taux par défaut Médicament 0 % et Parapharmacie 19 %
+INSERT INTO taux_tva (taux, libelle) VALUES (0, 'Exonéré'), (19, 'Taux normal') ON CONFLICT (taux) DO NOTHING;
+INSERT INTO taux_tva_categorie (categorie_code, taux) VALUES ('medicament', 0), ('parapharmacie', 19) ON CONFLICT (categorie_code) DO NOTHING;
 
 -- ---------------------------------------------------------------------
 -- 3. Substances surveillées (classe proposée de la nomenclature)
@@ -503,6 +507,7 @@ INSERT INTO sync_table (nom_table, sens, cle_colonnes, colonnes_exclues, colonne
     ('reglement_facture_client', 'montante', '{mouvement_id,facture_id}', '{}', '{}', '{}', false, NULL),
     ('reglement_fournisseur', 'montante', '{id}', '{}', '{}', '{commentaire,motif_annulation}', false, NULL),
     ('regularisation_part_organisme', 'montante', '{id}', '{}', '{}', '{motif_annulation}', false, NULL),
+    ('remboursement_anticipe_pret', 'montante', '{id}', '{}', '{}', '{}', false, 'Remboursement anticipé d''un prêt, script 170'),
     ('remboursement_titulaire', 'montante', '{id}', '{}', '{}', '{libelle}', false, NULL),
     ('remise_automatique', 'bidirectionnelle', '{id}', '{}', '{}', '{motif}', false, NULL),
     ('remise_cheque_paiement', 'montante', '{remise_id,paiement_id}', '{}', '{}', '{}', false, NULL),
@@ -533,6 +538,8 @@ INSERT INTO sync_table (nom_table, sens, cle_colonnes, colonnes_exclues, colonne
     ('sync_pseudonyme', 'jamais', '{nature,cle_locale}', '{}', '{}', '{}', false, 'Correspondance personne <-> code : ne quitte jamais l''officine'),
     ('sync_sortie', 'jamais', '{id}', '{}', '{}', '{}', false, 'Synchronisation elle-même'),
     ('sync_table', 'jamais', '{nom_table}', '{}', '{}', '{}', false, 'Synchronisation elle-même'),
+    ('taux_tva', 'jamais', '{id}', '{}', '{}', '{}', false, 'Liste des taux de TVA de l''officine, script 171'),
+    ('taux_tva_categorie', 'jamais', '{id}', '{}', '{}', '{}', false, 'Taux de TVA par défaut des catégories de produits, script 171'),
     ('type_prestation', 'descendante', '{id}', '{}', '{}', '{}', false, NULL),
     ('utilisateur', 'bidirectionnelle', '{id}', '{mot_de_passe_hash,pin_hash,code_comptoir_essais,code_comptoir_bloque_jusqu,telephone,email,jetons_revoques_le}', '{}', '{}', false, 'Jamais de mot de passe ni de code comptoir'),
     ('utilisation_financement', 'montante', '{id}', '{}', '{}', '{libelle}', false, NULL),

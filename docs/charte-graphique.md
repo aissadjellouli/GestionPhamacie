@@ -102,7 +102,9 @@ vendeur)** : `/`, `/accueil`, `/caisse`, `/caisse/etat`, `/cloture`, `/stock`, `
 `/admin/profils-reprise` et `/admin/historique-chifa` (ajoutés le 2026-11-16, lot 4 : liste paginée et filtrée, seul le tableau défile,
 édition du profil dans une fenêtre `.voile` qui défile dans son cadre ; `/admin/historique-chifa` remesuré par la campagne du
 2026-11-20 ci-dessous ; reprise et profils de reprise à 1 366 × 768 : non mesurés, voir plus bas),
-`/admin/restauration`, `/admin/sauvegardes`, `/admin/seuils`, `/guide`, `/mon-code`, `/mot-de-passe`.
+`/admin/restauration`, `/admin/sauvegardes`, `/admin/seuils`, `/guide`, `/mon-code`, `/mot-de-passe` ; `/admin/contenances` (ajouté le
+2026-11-26 : 0 px aux deux tailles, clair et sombre, voir « Mesures du 2026-11-26 : Administration › Contenances des produits ») ;
+`/admin/taux-tva` (ajouté le 2026-11-26 : 0 px aux deux tailles, clair et sombre, voir « Mesures du 2026-11-26 : Administration › Taux de TVA »).
 **`/admin/postes` mesuré le 2026-11-24** (titulaire, clair et sombre, 1 536 × 890 et 1 366 × 768) : 0 px de défilement vertical et horizontal ; liste paginée et filtrée (statut, nom ou ordinateur), seul le tableau défile ; autorisation, code, renommage, révocation et passage en « exigé » dans une fenêtre `.voile`. Code d'autorisation affiché en 32 px (`.code-enrolement`, voulu pour être recopié sans erreur). Écran de connexion : bandeau `.info-bandeau` (transition) ou `.bandeau-attention` (exigé, révoqué), carte « Autoriser ce poste » ; 0 px.
 **`/admin/seuils?rubrique=produits` corrigé le 2026-11-18** (l'écran défilait de 75 px à 1 366 × 768, défaut déjà présent avant
 le filtre avec propositions : le tableau restait à son minimum de 240 px sous le choix du produit) : deux colonnes dans le panneau
@@ -758,3 +760,40 @@ séparés par un trait (`.postes-reglage`, bordure droite) ; la recherche cède 
 l'explication du mode passe en tête de la note du bas (gras). Mesuré sur le poste d'essai avec **4 postes** : **0 px** à 1 366 × 768 et
 1 536 × 890, clair et sombre, sans message, avec l'avertissement orange et avec un filtre actif ; tableau de 253 px à 1 366 × 768 (2 à
 3 lignes visibles), captures regardées.
+
+### Mesures du 2026-11-26 : prêts, paiement partiel et remboursement anticipé (script 170)
+
+Poste d'essai, base jetable, titulaire : Financements › Échéances à payer (champ « Montant payé », ligne « Payée en partie »), fiche d'un prêt
+(onglet « Remboursement anticipé… », état « échéancier à remplacer ») : **0 px** à 1 366 × 768 et 1 536 × 890, clair et sombre. Constat corrigé
+avant livraison : un bandeau « Remboursement anticipé enregistré… » au-dessus des onglets faisait déborder la fiche de 41 px à 1 366 × 768
+(tableau déjà à 140 px) ; l'avertissement prend la place du pied de la tuile « Mensualité » (`.tuile-pied.texte-attention`, orange : la règle
+`.tuile-pied`, déclarée après `.texte-attention`, l'emportait) et chaque échéance bloquée porte la pastille « Nouveau tableau à importer ».
+
+### Mesures du 2026-11-26 : Administration › Taux de TVA (`/admin/taux-tva`)
+
+Poste d'essai, base jetable, titulaire : liste des taux (ajout, libellé, actif) et taux par défaut des catégories côte à côte (`.tva-reglage`),
+chaque tableau dans son cadre : **0 px** à 1 366 × 768 et 1 536 × 890, clair et sombre. Constat corrigé avant livraison : placés sous les
+réglages fiscaux, ils faisaient déborder la page de 77 px à 1 366 × 768 (tableaux réduits à une ligne) : écran à part. Réglages fiscaux
+remesurés sans eux : 0 px. Fiche « Nouveau produit » avec la TVA en liste : 0 px à 1 366 × 768, clair et sombre.
+
+### Mesures du 2026-11-26 : Administration › Contenances des produits (`/admin/contenances`)
+
+Même écran que Stock › Contenances, avec le menu de l'Administration : filtres (recherche, « À compléter / Toutes »), « Exporter la liste »,
+« Importer un fichier… » sur une ligne ; **0 px** à 1 366 × 768 et 1 536 × 890, clair et sombre, en « À compléter » et en « Toutes » avec le
+message d'une correction. L'aperçu d'import est une fenêtre au-dessus de l'écran (`.voile`), tableau dans son cadre défilant (320 px au plus).
+
+### Mesures du 2026-11-26 : Stock › Contenance manquante
+
+Poste d'essai, base jetable, titulaire, 10 lignes : **0 px** à 1 366 × 768 et 1 536 × 890, clair et sombre, avec et sans message. Constat
+corrigé avant livraison : une étiquette `.visuellement-cache` par ligne (positionnée en absolu) sortait du cadre défilant du tableau et
+allongeait la page de 213 px (91 px à 1 536 × 890) ; remplacée par un `aria-label` sur le champ. **Règle** : dans un tableau défilant, jamais
+d'élément `.visuellement-cache` dans les lignes (le cadre n'est pas positionné) ; nommer le champ par `aria-label`.
+
+### Mesures du 2026-11-26 : tuiles navigables du poste (lot 1)
+
+Poste d'essai, base jetable (copie des données de démonstration), titulaire ; mesure après la fin du chargement (la base jetable est
+lente : une mesure faite pendant « Chargement… » ne voit aucune tuile). 1 366 × 768 et 1 536 × 890, clair et sombre : **0 px partout**.
+Accueil (18 tuiles), Alertes › Vue d'ensemble (8), Stock › Vue d'ensemble (3), Dettes et créances › Vue d'ensemble (3), État de la caisse
+(5, caisse ouverte), Financements › Compte du titulaire (3), fiche d'un prêt (5), Pilotage financier (6), Rapports (5) : **toutes
+navigables**. Non vues : tuiles de l'Inventaire (inventaire complet en cours et lots comptés nécessaires).
+

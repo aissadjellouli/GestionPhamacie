@@ -414,6 +414,10 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         GetAsync<PageDto<EcheancePretDto>?>("api/financements/echeances?" + Requete(("etat", etat), ("q", texte), ("page", page), ("taille", taille)), null);
     public async Task<string?> PayerEcheancePretAsync(long echeanceId, PaiementEcheanceRequete r) =>
         (await PostAsync<PaiementEcheanceRequete, IdentifiantDto>($"api/financements/echeances/{echeanceId}/paiement", r)).Item2;
+
+    /// <summary>Remboursement anticipé d'une partie du capital (script 170).</summary>
+    public async Task<string?> RembourserPretParAnticipationAsync(long pretId, RemboursementAnticipeRequete r) =>
+        (await PostAsync<RemboursementAnticipeRequete, IdentifiantDto>($"api/financements/prets/{pretId}/remboursement-anticipe", r)).Item2;
     public Task<(List<SourceFinancementDto>, string?)> SourcesFinancementAsync() => GetAsync<List<SourceFinancementDto>>("api/financements/sources", []);
     public async Task<string?> UtiliserFinancementAsync(UtilisationRequete r) =>
         (await PostAsync<UtilisationRequete, IdentifiantDto>("api/financements/utilisations", r)).Item2;
@@ -968,6 +972,14 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public async Task<string?> AdopterReglageAsync(string table, long versionModele) =>
         (await PostAsync<AdopterReglageRequete, object>($"api/reglages-mutualises/{Uri.EscapeDataString(table)}/adopter", new(versionModele))).Item2;
     public Task<(ParametreFiscalDto?, string?)> ParametreFiscalAsync() => GetAsync<ParametreFiscalDto?>("api/fiscal/parametres", null);
+
+    // Taux de TVA réglables (script 171)
+    public Task<(ListeTauxTvaDto?, string?)> TauxTvaAsync() => GetAsync<ListeTauxTvaDto?>("api/fiscal/taux-tva", null);
+    public async Task<string?> AjouterTauxTvaAsync(TauxTvaRequete r) => (await PostAsync<TauxTvaRequete, IdentifiantDto>("api/fiscal/taux-tva", r)).Item2;
+    public async Task<string?> ModifierTauxTvaAsync(long id, TauxTvaModificationRequete r) =>
+        (await EnvoyerCorpsAsync<TauxTvaModificationRequete, object>(HttpMethod.Put, $"api/fiscal/taux-tva/{id}", r)).Item2;
+    public async Task<string?> DefinirTauxTvaCategorieAsync(string code, decimal? taux) =>
+        (await EnvoyerCorpsAsync<TauxTvaDefautRequete, object>(HttpMethod.Put, $"api/fiscal/taux-tva/categories/{Uri.EscapeDataString(code)}", new(taux))).Item2;
     public async Task<string?> EnregistrerParametreFiscalAsync(ParametreFiscalDto d) =>
         (await EnvoyerCorpsAsync<ParametreFiscalDto, object>(HttpMethod.Put, "api/fiscal/parametres", d)).Item2;
     public Task<(ParametreTracabiliteDto?, string?)> ParametreTracabiliteAsync() => GetAsync<ParametreTracabiliteDto?>("api/tracabilite/parametres", null);
@@ -1700,6 +1712,23 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
 
     public Task<(PageDto<PosteAutoriseDto>?, string?)> PostesAutorisesAsync(string? statut, string? recherche, int page, int taille) =>
         GetAsync<PageDto<PosteAutoriseDto>?>("api/admin/postes?" + Requete(("statut", statut), ("recherche", recherche), ("page", page), ("taille", taille)), null);
+
+    // Stock › Contenance manquante (2026-11-26)
+    public Task<(PageDto<ContenanceManquanteDto>?, string?)> ContenancesManquantesAsync(string? recherche, int page, int taille, bool toutes = false) =>
+        GetAsync<PageDto<ContenanceManquanteDto>?>("api/catalogue/contenances-manquantes?" + Requete(("recherche", recherche), ("page", page), ("taille", taille),
+            ("toutes", toutes ? "true" : null)), null);
+
+    public Task<(byte[]?, string?, string?)> ExporterContenancesManquantesAsync() =>
+        FichierAsync(HttpMethod.Get, "api/catalogue/contenances-manquantes/export", "contenances_manquantes.csv");
+
+    public Task<(ApercuImportContenancesDto?, string?)> ApercuImportContenancesAsync(ImportContenancesFichierRequete r) =>
+        PostAsync<ImportContenancesFichierRequete, ApercuImportContenancesDto>("api/catalogue/contenances-manquantes/import/apercu", r);
+
+    public Task<(ImportContenancesResultatDto?, string?)> ImporterContenancesAsync(ImportContenancesRequete r) =>
+        PostAsync<ImportContenancesRequete, ImportContenancesResultatDto>("api/catalogue/contenances-manquantes/import", r);
+
+    public async Task<string?> EnregistrerContenanceAsync(long produitId, int? contenance, int? avant = null) =>
+        (await EnvoyerCorpsAsync<ContenanceSaisieDto, object>(HttpMethod.Put, $"api/catalogue/produits/{produitId}/contenance", new(contenance, avant))).Item2;
 
     public Task<(ReglagesPostesDto?, string?)> ReglagesPostesAsync() => GetAsync<ReglagesPostesDto?>("api/admin/postes/reglages", null);
 

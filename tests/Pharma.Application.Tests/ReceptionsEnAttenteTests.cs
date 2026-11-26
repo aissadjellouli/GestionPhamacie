@@ -95,6 +95,26 @@ public class ReceptionsEnAttenteTests
     }
 
     [Fact]
+    public async Task Abandon_par_un_autre_employe_note_qui_l_avait_mise_en_attente_et_calcule_les_anomalies_aussitot()
+    {
+        // Script 168 (décision du titulaire du 2026-11-26) : l'anomalie se lève en base depuis le journal ; ici, l'identifiant noté et le calcul
+        var surveillance = new SurveillanceEnMemoire();
+        var journal = new JournalEspion();
+        var cas = new GererReceptionsEnAttente(new ReceptionsEnAttenteEnMemoire(), new MobileEnMemoire(), journal, new DroitsFactices(),
+            new Pharma.Application.Surveillance.Surveiller(surveillance));
+        var duCollegue = await cas.MettreEnAttenteAsync(null, 7, "BL 1", "reception", 1, "{}", null);
+        var aMoi = await cas.MettreEnAttenteAsync(null, 8, "BL 2", "reception", 1, "{}", null);
+
+        await cas.SupprimerAsync(aMoi, 8);
+        Assert.Equal(8L, journal.Details[0]["mise_en_attente_par_id"]);
+        Assert.Empty(surveillance.Calculs);          // sa propre réception : rien à calculer
+
+        await cas.SupprimerAsync(duCollegue, 8);
+        Assert.Equal(7L, journal.Details[1]["mise_en_attente_par_id"]);
+        Assert.Single(surveillance.Calculs);
+    }
+
+    [Fact]
     public async Task Au_plus_vingt_receptions_en_attente_et_jamais_vide()
     {
         var (cas, _, _) = Creer();

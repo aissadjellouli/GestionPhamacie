@@ -1,0 +1,60 @@
+@inject ApiClient Api
+
+@* Taux de TVA choisi dans la liste (script 171, Administration › Réglages fiscaux) au lieu d'être tapé. Un taux déjà enregistré hors de la
+   liste (ou désactivé) reste proposé, marqué « hors liste » : rien n'est changé tant qu'on ne le change pas. *@
+@* Nom du champ écrit en clair (refus du serveur « tva » ou « taux_tva » : champ en rouge, contrôlé par ChampsObligatoiresTests) *@
+@if (Champ == "taux_tva")
+{
+    <select id="@Id" data-champ="taux_tva" aria-label="@Libelle" disabled="@Desactive" value="@Valeur(Value)" @onchange="ChangerAsync">@Options</select>
+}
+else
+{
+    <select id="@Id" data-champ="tva" aria-label="@Libelle" disabled="@Desactive" value="@Valeur(Value)" @onchange="ChangerAsync">@Options</select>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Id { get; set; } = "";
+    [Parameter] public string Champ { get; set; } = "tva";
+    [Parameter] public string? Libelle { get; set; }
+    [Parameter] public bool Desactive { get; set; }
+    [Parameter] public decimal Value { get; set; }
+    [Parameter] public EventCallback<decimal> ValueChanged { get; set; }
+
+    private ListeTauxTvaDto? liste;
+
+    private RenderFragment Options => __builder =>
+    {
+        foreach (var t in Proposes)
+        {
+            <option value="@Valeur(t.Taux)">@Texte(t.Taux) %@(t.Libelle is { } l ? $" · {l}" : "")</option>
+        }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        (liste, _) = await Api.TauxTvaAsync();
+    }
+
+    /// <summary>Taux actifs, plus la valeur actuelle si elle n'en fait pas partie (hors liste ou désactivée).</summary>
+    private IEnumerable<(decimal Taux, string? Libelle)> Proposes
+    {
+        get
+        {
+            var actifs = (liste?.Taux ?? []).Where(t => t.Actif).Select(t => (t.Taux, (string?)t.Libelle)).ToList();
+            if (actifs.All(a => a.Taux != Value)) actifs.Add((Value, liste is null ? null : "hors liste"));
+            return actifs.OrderBy(a => a.Taux);
+        }
+    }
+
+    private static string Texte(decimal taux) => taux.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"));
+    private static string Valeur(decimal taux) => taux.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+
+    private async Task ChangerAsync(ChangeEventArgs e)
+    {
+        if (decimal.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var v))
+        {
+            Value = v;
+            await ValueChanged.InvokeAsync(v);
+        }
+    }
+}

@@ -15,7 +15,11 @@ namespace Pharma.Application.Catalogue;
 /// par le nombre (« B/01 FL » = 1, « B/10FL. DE 20ML » = 10, « B/50CART. DE 1,8ML » = 50), et la taille peut s'écrire « /5ML » ou « (5ML) » (« B/20AMP./5ML » = 20).
 /// Tout autre texte (« B/1+1 », « B/30 ET B/90 »,
 /// « FL/10ML », « T/15G », « B/5 AMPOULES EN POLYPROPYLENE », « B/10 DE 2ML », « B/1FL. DE PDRE. », « B/FL 15 ML »…) est considéré comme vide : rien n'est deviné.
-/// Le motif est recopié tel quel dans database/migration/139_contenance_flacons_seringues_stylos.sql (fonction contenance_depuis_conditionnement ; test d'alignement).
+/// Règle du 2026-11-26, script 169 (décision du titulaire, lot 2 point 5) : un contenant seul, sans nombre de contenants, compte pour 1
+/// (« FL/120ML », « FL./20DOSES », « F/30ML », « FLACON DE 100ML », « T/30G », « TUBE/30G », « B/FL 15 ML », « B/TUBE DE 30G ») ; un pilulier
+/// compte ses unités (« PILULIER/30 », « PILULIER DE 30 » = 30). Plusieurs présentations (« B/30 ET B/60 », « B/28+7 ») restent vides.
+/// Les trois motifs sont recopiés tels quels dans database/migration/169_contenance_contenant_seul_pilulier.sql (fonction
+/// contenance_depuis_conditionnement ; test d'alignement).
 /// </summary>
 public static partial class ContenanceProduit
 {
@@ -25,13 +29,22 @@ public static partial class ContenanceProduit
     [GeneratedRegex(@"^\s*(?:B|BTE|BOITE|BOÎTE)\s*(?:/|\s+DE\s+)\s*([0-9]{1,5})(?:\s*(?:SACHETS?(?:(?:\s+|-)DOSES?)?|SACH|SCH|AMPOULES?|AMPS?|AMP\.?\s+BUV|CPR?S?|CP\.?\s+EFF|COMPRIM[EÉ]S?(?:\s+EFFERVESCENTS?)?|G[EÉ]LULES?|SUPPOSITOIRES?|SUPPO|OVULES?|CAPSULES?|PATCH(?:E?S)?|DISPOSITIFS?\s+TRANSDERMIQUES?|UNIDOSES?|R[EÉ]CIPIENTS\s+UNIDOSES|FLACONS?|FLC|FL|(?:SERINGUES?|SERING\.?|SERIN|SER)(?:\s*PR[EÉ][\s-]*REMPL[A-ZÉÈ]*\.?)?|STYLOS?(?:\s*PR[EÉ][\s-]*REMPL[A-ZÉÈ]*\.?)?|CART(?:OUCHES?)?|POCHES?|TUBES?)\.?(?:\s*(?:DE\s*|/\s*)?[0-9]+(?:[.,][0-9]+)?\s*(?:ML|MG|G|L)|\s*\(\s*[0-9]+(?:[.,][0-9]+)?\s*(?:ML|MG|G|L)\s*\))?)?\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex Boite();
 
+    /// <summary>Contenant seul (flacon, tube) suivi de sa taille : 1 (script 169).</summary>
+    [GeneratedRegex(@"^\s*(?:B\s*/\s*)?(?:FL\.?|FLC|FLACON|F|T|TUBE)\s*(?:/|\s+DE\s+|\s)\s*[0-9]+(?:[.,][0-9]+)?\s*(?:ML|MG|G|L|DOSES?)\.?\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ContenantSeul();
+
+    /// <summary>Pilulier de N unités : N (script 169).</summary>
+    [GeneratedRegex(@"^\s*PILULIER\s*(?:/|\s+DE\s+)\s*([0-9]{1,5})\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex Pilulier();
+
     /// <summary>Nombre d'unités lu dans un conditionnement de la nomenclature, ou null si le texte n'est pas analysable.</summary>
     public static int? DepuisConditionnement(string? conditionnement)
     {
         if (string.IsNullOrWhiteSpace(conditionnement)) return null;
         var m = Boite().Match(conditionnement);
-        if (!m.Success || !int.TryParse(m.Groups[1].Value, out var n)) return null;
-        return n is >= Minimum and <= Maximum ? n : null;
+        if (!m.Success) m = Pilulier().Match(conditionnement);
+        if (m.Success) return int.TryParse(m.Groups[1].Value, out var n) && n is >= Minimum and <= Maximum ? n : null;
+        return ContenantSeul().IsMatch(conditionnement) ? 1 : null;
     }
 
     /// <summary>

@@ -92,7 +92,8 @@ public class ChangementUtilisateurCaisseTests
         Assert.DoesNotContain("display: none", fiche);
         // Tableaux : 140 px acceptés ; parties longues (formulaire, emploi de l'argent, saisie de l'échéancier) en cadre défilant
         Assert.Equal(2, Compter(fiche, "<div class=\"tableau-cadre\" data-hauteur-min=\"140\">"));
-        Assert.Equal(2, Compter(fiche, "<div class=\"cadre-defilant\" data-hauteur-min=\"160\">"));
+        // Script 170 : onglet « Remboursement anticipé » (formulaire et historique) dans son propre cadre défilant
+        Assert.Equal(3, Compter(fiche, "<div class=\"cadre-defilant\" data-hauteur-min=\"160\">"));
         var editer = fiche[fiche.IndexOf("case \"editer\":", StringComparison.Ordinal)..fiche.IndexOf("case \"usages\":", StringComparison.Ordinal)];
         Assert.Contains("<div class=\"cadre-defilant cadre-unique\" data-hauteur-min=\"160\">", editer);
         var css = Lire("Pharma.Desktop", "wwwroot", "css", "app.css");

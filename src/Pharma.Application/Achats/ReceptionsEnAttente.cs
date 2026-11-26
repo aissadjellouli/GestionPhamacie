@@ -31,7 +31,8 @@ public interface IReceptionsEnAttente
 /// écarts (achats.valider_ecart, qui voit déjà facturé et compté) — jamais par la personne qui saisira la facture sans voir le compté.
 /// Ainsi un comptage n'est jamais bloqué si son auteur ne revient pas.
 /// </summary>
-public sealed class GererReceptionsEnAttente(IReceptionsEnAttente attente, IMobile mobile, IJournal journal, IPermissionService droits)
+public sealed class GererReceptionsEnAttente(IReceptionsEnAttente attente, IMobile mobile, IJournal journal, IPermissionService droits,
+    Surveillance.Surveiller? surveiller = null)
 {
     public const int Max = 20;
     public const int TailleMax = 500_000;
@@ -66,7 +67,11 @@ public sealed class GererReceptionsEnAttente(IReceptionsEnAttente attente, IMobi
         r.Mode is not ("comptage" or "recompte") || r.EmployeId == utilisateurId
         || await droits.APermissionAsync(utilisateurId, Permissions.AchatsValiderEcart, ct);
 
-    /// <summary>Abandon : les scans du mobile reviennent en attente d'import ; inscrit au journal (qui, quand, quel BL).</summary>
+    /// <summary>
+    /// Abandon : les scans du mobile reviennent en attente d'import ; inscrit au journal (qui, quand, quel BL, qui l'avait mise en
+    /// attente, par son identifiant). Abandonnée par un autre employé que celui qui l'avait mise en attente : anomalie du contrôle
+    /// interne (script 168, décision du titulaire du 2026-11-26), calculée aussitôt.
+    /// </summary>
     public async Task SupprimerAsync(long id, long utilisateurId, CancellationToken ct = default)
     {
         if (utilisateurId <= 0) throw new RegleMetierException("Abandon d’une réception en attente : employé inconnu.");
@@ -77,6 +82,7 @@ public sealed class GererReceptionsEnAttente(IReceptionsEnAttente attente, IMobi
         var remis = scans.Count > 0 ? await mobile.RemettreEnAttenteAsync(scans, ct) : 0;
         await journal.EcrireAsync(utilisateurId, "reception_attente_abandonnee", "reception_attente", id,
             new Dictionary<string, object?> { ["libelle"] = libelle, ["mode"] = r.Mode, ["lignes"] = r.Lignes, ["mise_en_attente_par"] = r.Employe,
-                ["scans_mobile_remis"] = remis }, null, ct);
+                ["mise_en_attente_par_id"] = r.EmployeId, ["scans_mobile_remis"] = remis }, null, ct);
+        if (r.EmployeId != utilisateurId && surveiller is not null) await surveiller.ExecuterAsync(ct);
     }
 }

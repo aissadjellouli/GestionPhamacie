@@ -16,14 +16,21 @@ namespace Pharma.Infrastructure.Financements;
 /// </summary>
 public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
 {
+    // Script 170 : échéancier à remplacer et capital remboursé par anticipation lus à part (les vues gardent leurs colonnes)
     private const string ColonnesPret = """
         id, compte_id, banque, reference, objet, montant, date_pret, document, capital_rembourse, reste_du, utilise, echeances, echeances_payees,
-        echues_non_payees, prochaine_echeance, prochain_montant, employe, taux, duree_mois, prochaine_assurance
+        echues_non_payees, prochaine_echeance, prochain_montant, employe, taux, duree_mois, prochaine_assurance,
+        (SELECT pb.echeancier_a_remplacer FROM pret_bancaire pb WHERE pb.id = v_pret_bancaire_complet.id),
+        COALESCE((SELECT sum(ra.capital) FROM remboursement_anticipe_pret ra WHERE ra.pret_id = v_pret_bancaire_complet.id), 0)
         """;
 
+    // Script 170 : déjà payé de chaque échéance (même en partie)
     private const string ColonnesEcheance = """
         id, pret_id, pret, banque, rang, date_echeance, capital, interets, tva, marge, montant, capital_restant, date_paiement, moyen, compte, reference, employe,
-        assurance
+        assurance,
+        COALESCE((SELECT x.montant_paye FROM v_echeance_pret_paye x WHERE x.echeance_id = v_echeance_pret_complete.id), 0),
+        COALESCE((SELECT x.capital_paye FROM v_echeance_pret_paye x WHERE x.echeance_id = v_echeance_pret_complete.id), 0),
+        COALESCE((SELECT x.charges_payees FROM v_echeance_pret_paye x WHERE x.echeance_id = v_echeance_pret_complete.id), 0)
         """;
 
     public async Task<Page<PretResume>> PretsAsync(FiltrePrets filtre, DemandePage page, CancellationToken ct = default)
@@ -41,7 +48,7 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
         cmd.Parameters.Add(Long(filtre.CompteId));
         cmd.Parameters.Add(Texte(filtre.Texte));
         Lecture.PaginationSql.Parametres(cmd, page);
-        return await Lecture.PaginationSql.LireAsync(cmd, page, 20, LirePret, ct);
+        return await Lecture.PaginationSql.LireAsync(cmd, page, 22, LirePret, ct);
     }
 
     public async Task<PretDetail?> PretAsync(long id, CancellationToken ct = default)
@@ -74,7 +81,20 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
                 utilisations.Add(new UtilisationFinancement(r.GetInt64(0), r.GetString(1), r.IsDBNull(2) ? null : r.GetInt64(2), r.GetString(3),
                     r.GetFieldValue<DateOnly>(4), r.GetDecimal(5), r.GetString(6), r.GetString(7)));
         }
-        return new PretDetail(pret, echeances, utilisations);
+        var anticipes = new List<RemboursementAnticipe>();
+        await using (var cmd = db.CreateCommand("""
+            SELECT a.id, a.date_paiement, a.capital, a.frais, a.moyen, c.nom, a.reference, u.nom_complet
+            FROM remboursement_anticipe_pret a JOIN utilisateur u ON u.id = a.utilisateur_id LEFT JOIN compte_tresorerie c ON c.id = a.compte_id
+            WHERE a.pret_id = $1 ORDER BY a.date_paiement DESC, a.id DESC
+            """))
+        {
+            cmd.Parameters.AddWithValue(id);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            while (await r.ReadAsync(ct))
+                anticipes.Add(new RemboursementAnticipe(r.GetInt64(0), r.GetFieldValue<DateOnly>(1), r.GetDecimal(2), r.GetDecimal(3), r.GetString(4),
+                    Txt(r, 5), Txt(r, 6), r.GetString(7)));
+        }
+        return new PretDetail(pret, echeances, utilisations, anticipes);
     }
 
     public async Task<long> CreerPretAsync(PretAEcrire p, CancellationToken ct = default)
@@ -186,6 +206,12 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
             cmd.Parameters.AddWithValue(pretId);
             await cmd.ExecuteNonQueryAsync(ct);
         }
+        // Nouveau tableau de la banque importé : les échéances se paient de nouveau (script 170)
+        await using (var cmd = new NpgsqlCommand("UPDATE pret_bancaire SET echeancier_a_remplacer = false WHERE id = $1", cx, tx))
+        {
+            cmd.Parameters.AddWithValue(pretId);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
         var rang = payees;
         foreach (var l in lignes)
         {
@@ -272,7 +298,7 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
         cmd.Parameters.AddWithValue(filtre.Aujourdhui);
         cmd.Parameters.Add(Texte(filtre.Texte));
         Lecture.PaginationSql.Parametres(cmd, page);
-        return await Lecture.PaginationSql.LireAsync(cmd, page, 18, LireEcheance, ct);
+        return await Lecture.PaginationSql.LireAsync(cmd, page, 21, LireEcheance, ct);
     }
 
     public async Task<EcheancePret?> EcheanceAsync(long id, CancellationToken ct = default)
@@ -288,15 +314,19 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
         await using var cx = await db.OpenConnectionAsync(ct);
         await using var tx = await cx.BeginTransactionAsync(ct);
 
-        // Prêt verrouillé (puis l'échéance) : deux confirmations simultanées ne paient pas deux fois, l'échéancier ne change pas entre-temps
+        // Prêt verrouillé (puis l'échéance) : deux confirmations simultanées ne paient pas deux fois, l'échéancier ne change pas entre-temps.
+        // Déjà payé relu sous verrou (script 170 : une échéance se paie en une ou plusieurs fois).
         string pret;
-        DateOnly dateEcheance, datePret;
-        decimal capital, charges, montant;
+        DateOnly datePret;
+        LigneEcheancier ligne;
+        decimal capitalDeja, chargesDeja;
         await using (var cmd = new NpgsqlCommand("""
-            SELECT e.pret_id, p.reference, e.date_echeance, e.capital, e.interets + e.tva + e.marge + e.assurance, e.montant, p.date_pret, e.rang,
-                   EXISTS (SELECT 1 FROM paiement_echeance_pret x WHERE x.echeance_id = e.id),
+            SELECT p.reference, p.date_pret, p.echeancier_a_remplacer, e.date_echeance, e.capital, e.interets, e.tva, e.marge, e.montant, e.capital_restant,
+                   e.assurance,
+                   COALESCE((SELECT sum(x.capital_paye) FROM paiement_echeance_pret x WHERE x.echeance_id = e.id), 0),
+                   COALESCE((SELECT sum(x.charges_payees) FROM paiement_echeance_pret x WHERE x.echeance_id = e.id), 0),
                    EXISTS (SELECT 1 FROM echeance_pret a WHERE a.pret_id = e.pret_id AND a.rang < e.rang
-                           AND NOT EXISTS (SELECT 1 FROM paiement_echeance_pret x WHERE x.echeance_id = a.id))
+                           AND COALESCE((SELECT sum(x.montant) FROM paiement_echeance_pret x WHERE x.echeance_id = a.id), 0) < a.montant)
             FROM echeance_pret e JOIN pret_bancaire p ON p.id = e.pret_id
             WHERE e.id = $1 FOR UPDATE OF p, e
             """, cx, tx))
@@ -304,12 +334,18 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
             cmd.Parameters.AddWithValue(p.EcheanceId);
             await using var r = await cmd.ExecuteReaderAsync(ct);
             if (!await r.ReadAsync(ct)) throw new RegleMetierException("Cette échéance est introuvable.");
-            if (r.GetBoolean(8)) throw new RegleMetierException("Cette échéance vient d’être payée depuis un autre poste : rechargez la liste.");
-            if (r.GetBoolean(9)) throw new RegleMetierException("Une échéance plus ancienne de ce prêt n’est pas payée : payez-la d’abord.");
-            (pret, dateEcheance, capital, charges, montant, datePret) = (r.GetString(1), r.GetFieldValue<DateOnly>(2), r.GetDecimal(3),
-                r.GetDecimal(4), r.GetDecimal(5), r.GetFieldValue<DateOnly>(6));
+            (pret, datePret) = (r.GetString(0), r.GetFieldValue<DateOnly>(1));
+            if (r.GetBoolean(2))
+                throw new RegleMetierException("Un remboursement anticipé a été enregistré sur ce prêt : importez d’abord le nouveau tableau de la banque.");
+            ligne = new LigneEcheancier(r.GetFieldValue<DateOnly>(3), r.GetDecimal(4), r.GetDecimal(5), r.GetDecimal(6), r.GetDecimal(7), r.GetDecimal(8),
+                r.GetDecimal(9), r.GetDecimal(10));
+            (capitalDeja, chargesDeja) = (r.GetDecimal(11), r.GetDecimal(12));
+            if (capitalDeja + chargesDeja >= ligne.Montant) throw new RegleMetierException("Cette échéance vient d’être payée depuis un autre poste : rechargez la liste.");
+            if (capitalDeja + chargesDeja != p.DejaPaye) throw new RegleMetierException("Un paiement de cette échéance vient d’être enregistré depuis un autre poste : rechargez la liste.");
+            if (r.GetBoolean(13)) throw new RegleMetierException("Une échéance plus ancienne de ce prêt n’est pas payée : payez-la d’abord.");
         }
         if (p.Date < datePret) throw new RegleMetierException("La date du paiement précède la date du prêt.", "date");
+        var (capital, charges) = RegleEcheancier.Imputer(ligne, capitalDeja, chargesDeja, p.Montant);
 
         long compte;
         long? versementId = null;
@@ -322,9 +358,10 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
         }
         else compte = p.CompteId!.Value;
         // Découvert accepté sur une banque (décision du titulaire) ; le coffre ne paie jamais plus qu'il ne contient
-        await SoldeTresorerie.ExigerPourEcheanceAsync(cx, tx, compte, montant, ct, p.Moyen == "especes" ? " : complétez avec l’argent du tiroir de la caisse" : null);
+        await SoldeTresorerie.ExigerPourEcheanceAsync(cx, tx, compte, p.Montant, ct, p.Moyen == "especes" ? " : complétez avec l’argent du tiroir de la caisse" : null);
 
-        var libelle = $"Échéance du {dateEcheance:dd/MM/yyyy} · prêt {pret}";
+        var partiel = capitalDeja + chargesDeja + p.Montant < ligne.Montant || capitalDeja + chargesDeja > 0;
+        var libelle = $"Échéance du {ligne.Date:dd/MM/yyyy} · prêt {pret}{(partiel ? " (paiement partiel)" : "")}";
         long? mouvementCapital = capital > 0
             ? await MouvementAsync(cx, tx, compte, p.Date, "sortie", capital, "remboursement_financement", null, libelle + " (capital)", p.Reference, p.UtilisateurId, ct)
             : null;
@@ -337,8 +374,8 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
         long id;
         await using (var cmd = new NpgsqlCommand("""
             INSERT INTO paiement_echeance_pret (echeance_id, date_paiement, moyen, compte_id, reference, part_tiroir, versement_id,
-                                                mouvement_capital_id, mouvement_charges_id, utilisateur_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id
+                                                mouvement_capital_id, mouvement_charges_id, utilisateur_id, montant, capital_paye, charges_payees)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id
             """, cx, tx))
         {
             cmd.Parameters.AddWithValue(p.EcheanceId);
@@ -351,14 +388,94 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
             cmd.Parameters.Add(Long(mouvementCapital));
             cmd.Parameters.Add(Long(mouvementCharges));
             cmd.Parameters.AddWithValue(p.UtilisateurId);
-            try
-            {
-                id = (long)(await cmd.ExecuteScalarAsync(ct))!;
-            }
-            catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
-            {
-                throw new RegleMetierException("Cette échéance vient d’être payée depuis un autre poste : rechargez la liste.");
-            }
+            cmd.Parameters.AddWithValue(p.Montant);
+            cmd.Parameters.AddWithValue(capital);
+            cmd.Parameters.AddWithValue(charges);
+            id = (long)(await cmd.ExecuteScalarAsync(ct))!;
+        }
+        await tx.CommitAsync(ct);
+        return id;
+    }
+
+    public async Task<long> RembourserParAnticipationAsync(RemboursementAnticipeAEcrire a, CancellationToken ct = default)
+    {
+        await using var cx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cx.BeginTransactionAsync(ct);
+
+        // Prêt et ses échéances verrouillés : capital remboursé relu, aucune échéance payée en partie
+        string pret;
+        decimal montantPret, capitalRembourse;
+        await using (var cmd = new NpgsqlCommand("""
+            SELECT p.reference, p.montant,
+                   COALESCE((SELECT sum(x.capital_paye) FROM paiement_echeance_pret x JOIN echeance_pret e ON e.id = x.echeance_id WHERE e.pret_id = p.id), 0)
+                   + COALESCE((SELECT sum(r.capital) FROM remboursement_anticipe_pret r WHERE r.pret_id = p.id), 0),
+                   EXISTS (SELECT 1 FROM echeance_pret e WHERE e.pret_id = p.id
+                           AND COALESCE((SELECT sum(x.montant) FROM paiement_echeance_pret x WHERE x.echeance_id = e.id), 0) BETWEEN 0.01 AND e.montant - 0.01)
+            FROM pret_bancaire p WHERE p.id = $1 FOR UPDATE
+            """, cx, tx))
+        {
+            cmd.Parameters.AddWithValue(a.PretId);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            if (!await r.ReadAsync(ct)) throw new RegleMetierException("Ce prêt est introuvable.");
+            (pret, montantPret, capitalRembourse) = (r.GetString(0), r.GetDecimal(1), r.GetDecimal(2));
+            if (capitalRembourse != a.CapitalDejaRembourse)
+                throw new RegleMetierException("Un paiement de ce prêt vient d’être enregistré depuis un autre poste : rechargez le prêt.");
+            if (r.GetBoolean(3)) throw new RegleMetierException("Une échéance de ce prêt est payée en partie : terminez d’abord son paiement.");
+        }
+        RegleRemboursementAnticipe.Verifier(a.Capital, a.Frais, montantPret - capitalRembourse);
+
+        long compte;
+        long? versementId = null;
+        if (a.Moyen == "especes")
+        {
+            compte = await ReglementsFournisseursSql.CoffreAsync(cx, tx, ct);
+            if (a.PartTiroir > 0)
+                versementId = await VerserTiroirAsync(cx, tx, compte, a.Date, a.PartTiroir, a.SessionCaisseId!.Value,
+                    $"remboursement anticipé du prêt {pret}", a.UtilisateurId, ct);
+        }
+        else compte = a.CompteId!.Value;
+        await SoldeTresorerie.ExigerPourEcheanceAsync(cx, tx, compte, a.Capital + a.Frais, ct,
+            a.Moyen == "especes" ? " : complétez avec l’argent du tiroir de la caisse" : null);
+
+        var libelle = $"Remboursement anticipé · prêt {pret}";
+        var mouvementCapital = await MouvementAsync(cx, tx, compte, a.Date, "sortie", a.Capital, "remboursement_financement", null, libelle + " (capital)",
+            a.Reference, a.UtilisateurId, ct);
+        // Frais : charges financières, comme les intérêts (décision du titulaire du 2026-11-26)
+        long? mouvementFrais = a.Frais > 0
+            ? await MouvementAsync(cx, tx, compte, a.Date, "sortie", a.Frais, "depense", RegleTresorerie.ChargesFinancieres, libelle + " (frais)",
+                a.Reference, a.UtilisateurId, ct)
+            : null;
+
+        long id;
+        await using (var cmd = new NpgsqlCommand("""
+            INSERT INTO remboursement_anticipe_pret (pret_id, date_paiement, capital, frais, moyen, compte_id, reference, part_tiroir, versement_id,
+                                                     mouvement_capital_id, mouvement_frais_id, utilisateur_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id
+            """, cx, tx))
+        {
+            cmd.Parameters.AddWithValue(a.PretId);
+            cmd.Parameters.AddWithValue(a.Date);
+            cmd.Parameters.AddWithValue(a.Capital);
+            cmd.Parameters.AddWithValue(a.Frais);
+            cmd.Parameters.AddWithValue(a.Moyen);
+            cmd.Parameters.Add(Long(a.Moyen == "especes" ? null : a.CompteId));
+            cmd.Parameters.Add(Texte(a.Reference));
+            cmd.Parameters.AddWithValue(a.PartTiroir);
+            cmd.Parameters.Add(Long(versementId));
+            cmd.Parameters.AddWithValue(mouvementCapital);
+            cmd.Parameters.Add(Long(mouvementFrais));
+            cmd.Parameters.AddWithValue(a.UtilisateurId);
+            id = (long)(await cmd.ExecuteScalarAsync(ct))!;
+        }
+
+        // Capital encore dû : échéances non payées bloquées jusqu'au nouveau tableau ; tout remboursé : elles sont retirées
+        var solde = montantPret - capitalRembourse - a.Capital == 0;
+        await using (var cmd = new NpgsqlCommand(solde
+            ? "DELETE FROM echeance_pret e WHERE e.pret_id = $1 AND NOT EXISTS (SELECT 1 FROM paiement_echeance_pret x WHERE x.echeance_id = e.id)"
+            : "UPDATE pret_bancaire SET echeancier_a_remplacer = true WHERE id = $1", cx, tx))
+        {
+            cmd.Parameters.AddWithValue(a.PretId);
+            await cmd.ExecuteNonQueryAsync(ct);
         }
         await tx.CommitAsync(ct);
         return id;
@@ -569,12 +686,13 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
     private static PretResume LirePret(NpgsqlDataReader r) => new(r.GetInt64(0), r.IsDBNull(1) ? null : r.GetInt64(1), r.GetString(2), r.GetString(3), Txt(r, 4), r.GetDecimal(5),
         r.GetFieldValue<DateOnly>(6), Txt(r, 7), r.GetDecimal(8), r.GetDecimal(9), r.GetDecimal(10), r.GetInt32(11), r.GetInt32(12), r.GetInt32(13),
         r.IsDBNull(14) ? null : r.GetFieldValue<DateOnly>(14), r.IsDBNull(15) ? null : r.GetDecimal(15), r.GetString(16),
-        r.IsDBNull(17) ? null : r.GetDecimal(17), r.IsDBNull(18) ? null : r.GetInt32(18), r.IsDBNull(19) ? null : r.GetDecimal(19));
+        r.IsDBNull(17) ? null : r.GetDecimal(17), r.IsDBNull(18) ? null : r.GetInt32(18), r.IsDBNull(19) ? null : r.GetDecimal(19),
+        !r.IsDBNull(20) && r.GetBoolean(20), r.GetDecimal(21));
 
     private static EcheancePret LireEcheance(NpgsqlDataReader r) => new(r.GetInt64(0), r.GetInt64(1), r.GetString(2), r.GetString(3), r.GetInt32(4),
         new LigneEcheancier(r.GetFieldValue<DateOnly>(5), r.GetDecimal(6), r.GetDecimal(7), r.GetDecimal(8), r.GetDecimal(9), r.GetDecimal(10), r.GetDecimal(11),
             r.GetDecimal(17)),
-        r.IsDBNull(12) ? null : r.GetFieldValue<DateOnly>(12), Txt(r, 13), Txt(r, 14), Txt(r, 15), Txt(r, 16));
+        r.IsDBNull(12) ? null : r.GetFieldValue<DateOnly>(12), Txt(r, 13), Txt(r, 14), Txt(r, 15), Txt(r, 16), r.GetDecimal(18), r.GetDecimal(19), r.GetDecimal(20));
 
     private static string? Txt(NpgsqlDataReader r, int i) => r.IsDBNull(i) ? null : r.GetString(i);
     private static NpgsqlParameter Texte(string? v) => new() { Value = (object?)v ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text };

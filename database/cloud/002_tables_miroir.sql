@@ -1644,6 +1644,9 @@ ALTER TABLE public."paiement_echeance_pret" ADD COLUMN IF NOT EXISTS "mouvement_
 ALTER TABLE public."paiement_echeance_pret" ADD COLUMN IF NOT EXISTS "mouvement_charges_id" bigint;
 ALTER TABLE public."paiement_echeance_pret" ADD COLUMN IF NOT EXISTS "utilisateur_id" bigint;
 ALTER TABLE public."paiement_echeance_pret" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."paiement_echeance_pret" ADD COLUMN IF NOT EXISTS "montant" numeric(12,2);
+ALTER TABLE public."paiement_echeance_pret" ADD COLUMN IF NOT EXISTS "capital_paye" numeric(12,2);
+ALTER TABLE public."paiement_echeance_pret" ADD COLUMN IF NOT EXISTS "charges_payees" numeric(12,2);
 ALTER TABLE public."paiement_echeance_pret" ADD COLUMN IF NOT EXISTS sync_chargement integer;
 ALTER TABLE public."paiement_echeance_pret" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."paiement_echeance_pret" ENABLE ROW LEVEL SECURITY;
@@ -1651,7 +1654,7 @@ ALTER TABLE public."paiement_echeance_pret" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."paiement_echeance_pret";
 CREATE POLICY cloisonnement ON public."paiement_echeance_pret" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
 GRANT SELECT, INSERT, UPDATE, DELETE ON public."paiement_echeance_pret" TO pharma_cloud_api;
-INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('paiement_echeance_pret', '{id}', '{id,echeance_id,date_paiement,moyen,compte_id,reference,part_tiroir,versement_id,mouvement_capital_id,mouvement_charges_id,utilisateur_id,cree_le,officine_id}')
+INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('paiement_echeance_pret', '{id}', '{id,echeance_id,date_paiement,moyen,compte_id,reference,part_tiroir,versement_id,mouvement_capital_id,mouvement_charges_id,utilisateur_id,cree_le,officine_id,montant,capital_paye,charges_payees}')
     ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
 
 CREATE TABLE IF NOT EXISTS public."paiement_effet" (
@@ -2069,6 +2072,7 @@ ALTER TABLE public."pret_bancaire" ADD COLUMN IF NOT EXISTS "cree_le" timestamp 
 ALTER TABLE public."pret_bancaire" ADD COLUMN IF NOT EXISTS "preteur" text;
 ALTER TABLE public."pret_bancaire" ADD COLUMN IF NOT EXISTS "taux" numeric(7,4);
 ALTER TABLE public."pret_bancaire" ADD COLUMN IF NOT EXISTS "duree_mois" integer;
+ALTER TABLE public."pret_bancaire" ADD COLUMN IF NOT EXISTS "echeancier_a_remplacer" boolean;
 ALTER TABLE public."pret_bancaire" ADD COLUMN IF NOT EXISTS sync_chargement integer;
 ALTER TABLE public."pret_bancaire" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
 ALTER TABLE public."pret_bancaire" ENABLE ROW LEVEL SECURITY;
@@ -2076,7 +2080,7 @@ ALTER TABLE public."pret_bancaire" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."pret_bancaire";
 CREATE POLICY cloisonnement ON public."pret_bancaire" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
 GRANT SELECT, INSERT, UPDATE, DELETE ON public."pret_bancaire" TO pharma_cloud_api;
-INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('pret_bancaire', '{id}', '{id,compte_id,reference,objet,montant,date_pret,document,utilisateur_id,cree_le,preteur,taux,duree_mois,officine_id}')
+INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('pret_bancaire', '{id}', '{id,compte_id,reference,objet,montant,date_pret,document,utilisateur_id,cree_le,preteur,taux,duree_mois,officine_id,echeancier_a_remplacer}')
     ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
 
 CREATE TABLE IF NOT EXISTS public."produit" (
@@ -2420,6 +2424,37 @@ DROP POLICY IF EXISTS cloisonnement ON public."regularisation_part_organisme";
 CREATE POLICY cloisonnement ON public."regularisation_part_organisme" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
 GRANT SELECT, INSERT, UPDATE, DELETE ON public."regularisation_part_organisme" TO pharma_cloud_api;
 INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('regularisation_part_organisme', '{id}', '{id,vente_id,organisme_id,part_organisme_vente,part_organisme_chifa,ecart,sort,montant_patient,montant_dette_diminuee,montant_a_rendre,montant_pharmacie,credit_mouvement_id,utilisateur_id,valide_par,cree_le,statut,annulee_le,annulee_par,motif_annulation,annulation_credit_mouvement_id,annulation_dette_annulee,annulation_trop_paye_impute,annulation_rembourse,annulation_mouvement_tiroir_id,officine_id,part_organisme_rendue_avant}')
+    ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
+
+CREATE TABLE IF NOT EXISTS public."remboursement_anticipe_pret" (
+    officine_id uuid NOT NULL,
+    "id" bigint NOT NULL,
+    sync_epoque integer NOT NULL,
+    sync_numero bigint NOT NULL,
+    sync_recu_le timestamp with time zone DEFAULT now() NOT NULL,
+    PRIMARY KEY (officine_id, "id")
+);
+ALTER TABLE public."remboursement_anticipe_pret" ADD COLUMN IF NOT EXISTS "pret_id" bigint;
+ALTER TABLE public."remboursement_anticipe_pret" ADD COLUMN IF NOT EXISTS "date_paiement" date;
+ALTER TABLE public."remboursement_anticipe_pret" ADD COLUMN IF NOT EXISTS "capital" numeric(12,2);
+ALTER TABLE public."remboursement_anticipe_pret" ADD COLUMN IF NOT EXISTS "frais" numeric(12,2);
+ALTER TABLE public."remboursement_anticipe_pret" ADD COLUMN IF NOT EXISTS "moyen" text;
+ALTER TABLE public."remboursement_anticipe_pret" ADD COLUMN IF NOT EXISTS "compte_id" bigint;
+ALTER TABLE public."remboursement_anticipe_pret" ADD COLUMN IF NOT EXISTS "reference" text;
+ALTER TABLE public."remboursement_anticipe_pret" ADD COLUMN IF NOT EXISTS "part_tiroir" numeric(12,2);
+ALTER TABLE public."remboursement_anticipe_pret" ADD COLUMN IF NOT EXISTS "versement_id" bigint;
+ALTER TABLE public."remboursement_anticipe_pret" ADD COLUMN IF NOT EXISTS "mouvement_capital_id" bigint;
+ALTER TABLE public."remboursement_anticipe_pret" ADD COLUMN IF NOT EXISTS "mouvement_frais_id" bigint;
+ALTER TABLE public."remboursement_anticipe_pret" ADD COLUMN IF NOT EXISTS "utilisateur_id" bigint;
+ALTER TABLE public."remboursement_anticipe_pret" ADD COLUMN IF NOT EXISTS "cree_le" timestamp with time zone;
+ALTER TABLE public."remboursement_anticipe_pret" ADD COLUMN IF NOT EXISTS sync_chargement integer;
+ALTER TABLE public."remboursement_anticipe_pret" ADD COLUMN IF NOT EXISTS sync_absente_le timestamp with time zone;
+ALTER TABLE public."remboursement_anticipe_pret" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."remboursement_anticipe_pret" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS cloisonnement ON public."remboursement_anticipe_pret";
+CREATE POLICY cloisonnement ON public."remboursement_anticipe_pret" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
+GRANT SELECT, INSERT, UPDATE, DELETE ON public."remboursement_anticipe_pret" TO pharma_cloud_api;
+INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('remboursement_anticipe_pret', '{id}', '{id,pret_id,date_paiement,capital,frais,moyen,compte_id,reference,part_tiroir,versement_id,mouvement_capital_id,mouvement_frais_id,utilisateur_id,cree_le,officine_id}')
     ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
 
 CREATE TABLE IF NOT EXISTS public."remboursement_titulaire" (
@@ -2852,7 +2887,6 @@ ALTER TABLE public."vente" ADD COLUMN IF NOT EXISTS "montant_total" numeric(12,2
 ALTER TABLE public."vente" ADD COLUMN IF NOT EXISTS "part_organisme" numeric(12,2);
 ALTER TABLE public."vente" ADD COLUMN IF NOT EXISTS "part_patient" numeric(12,2);
 ALTER TABLE public."vente" ADD COLUMN IF NOT EXISTS "statut" text;
-ALTER TABLE public."vente" ADD COLUMN IF NOT EXISTS "num_facture_chifa" text;
 ALTER TABLE public."vente" ADD COLUMN IF NOT EXISTS "session_caisse_id" bigint;
 ALTER TABLE public."vente" ADD COLUMN IF NOT EXISTS "remise_pct" numeric(5,2);
 ALTER TABLE public."vente" ADD COLUMN IF NOT EXISTS "montant_remise" numeric(12,2);
@@ -2890,7 +2924,7 @@ ALTER TABLE public."vente" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS cloisonnement ON public."vente";
 CREATE POLICY cloisonnement ON public."vente" USING (officine_id = cloud_officine_courante()) WITH CHECK (officine_id = cloud_officine_courante());
 GRANT SELECT, INSERT, UPDATE, DELETE ON public."vente" TO pharma_cloud_api;
-INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('vente', '{id}', '{id,numero,date_vente,utilisateur_id,patient_id,ordonnance_id,type,organisme_id,bordereau_id,montant_total,part_organisme,part_patient,statut,num_facture_chifa,session_caisse_id,remise_pct,montant_remise,taux_tiers_payant,reste_saisi,chifa_facture,chifa_date,remise_additionnee,montant_don,cle_encaissement,canal_organisme,remis_a_patient_id,pour_patient_id,chifa_date_ordonnance,chifa_rattache_le,chifa_rattache_par,chifa_ecart_motif,chifa_ecart_detail,chifa_ecart_part_organisme,chifa_attente_motif_code,chifa_attente_motif_texte,centre_payeur_id,chifa_date_soins,chifa_saisi_par,chifa_majoration_code,chifa_majoration_montant,chifa_exclue_le,chifa_exclue_par,chifa_exclusion_motif_code,chifa_exclusion_texte,officine_id}')
+INSERT INTO cloud_table_miroir (nom_table, cle, colonnes) VALUES ('vente', '{id}', '{id,numero,date_vente,utilisateur_id,patient_id,ordonnance_id,type,organisme_id,bordereau_id,montant_total,part_organisme,part_patient,statut,session_caisse_id,remise_pct,montant_remise,taux_tiers_payant,reste_saisi,chifa_facture,chifa_date,remise_additionnee,montant_don,cle_encaissement,canal_organisme,remis_a_patient_id,pour_patient_id,chifa_date_ordonnance,chifa_rattache_le,chifa_rattache_par,chifa_ecart_motif,chifa_ecart_detail,chifa_ecart_part_organisme,chifa_attente_motif_code,chifa_attente_motif_texte,centre_payeur_id,chifa_date_soins,chifa_saisi_par,chifa_majoration_code,chifa_majoration_montant,chifa_exclue_le,chifa_exclue_par,chifa_exclusion_motif_code,chifa_exclusion_texte,officine_id}')
     ON CONFLICT (nom_table) DO UPDATE SET cle = EXCLUDED.cle, colonnes = EXCLUDED.colonnes;
 
 CREATE TABLE IF NOT EXISTS public."vente_chifa_facture_conflit" (

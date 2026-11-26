@@ -108,6 +108,9 @@ public static class DependencyInjection
         services.AddSingleton<Pharma.Application.Achats.IDocumentsAccordSms, DocumentsPdf>();
         services.AddScoped<Pharma.Application.Catalogue.ISubstitution, Achats.SubstitutionSql>();
         services.AddScoped<IProduitsModification, ProduitsModificationSql>();
+        services.AddScoped<IContenancesManquantes, Catalogue.ContenancesManquantesSql>();
+        services.AddScoped<IContenancesImport, Catalogue.ContenancesManquantesSql>();
+        services.AddScoped<Pharma.Application.Fiscal.ITauxTva, Fiscal.TauxTvaSql>();
         services.AddScoped<Pharma.Application.Essai.IRetoursEssai, Securite.RetoursEssaiSql>();
         services.AddScoped<IEmplacements, EmplacementsSql>();
         services.AddScoped<Pharma.Application.Referentiels.IMotifsReglables, Referentiels.MotifsReglablesSql>();

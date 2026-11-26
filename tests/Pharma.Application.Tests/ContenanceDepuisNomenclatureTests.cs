@@ -4,7 +4,7 @@ using Pharma.Application.Catalogue;
 namespace Pharma.Application.Tests;
 
 /// <summary>
-/// Scripts 134 à 139 (contenance inscrite depuis la nomenclature) : la règle SQL doit donner le même résultat que la proposition
+/// Scripts 134 à 139 et 169 (contenance inscrite depuis la nomenclature) : la règle SQL doit donner le même résultat que la proposition
 /// de la fiche produit (ContenanceProduit). Mêmes exemples que database/tests/134_contenance_sachets_ampoules_tests.sql et 137_contenance_unite_taille_unitaire_tests.sql et 139_contenance_flacons_seringues_stylos_tests.sql.
 /// </summary>
 public class ContenanceDepuisNomenclatureTests
@@ -13,7 +13,7 @@ public class ContenanceDepuisNomenclatureTests
     {
         { "B/30", 30 }, { "B/030", 30 }, { "BOITE DE 20", 20 }, { "boîte de 14", 14 }, { " b / 012 ", 12 }, { "BTE/28", 28 },
         { "B/1000", 1000 }, { "B/5000", 5000 },
-        { "B/1+1", null }, { "B/30 ET B/90", null }, { "FL/10ML", null }, { "T/15G", null }, { "B/2 FL DE 100 ML", 2 },
+        { "B/1+1", null }, { "B/30 ET B/90", null }, { "FL/10ML", 1 }, { "T/15G", 1 }, { "B/2 FL DE 100 ML", 2 },
         { "B/1FL. DE PDRE.", null },
         { "B/30 SACHETS", 30 }, { "B/20 SACH.", 20 }, { "B/10 SACHETS-DOSES", 10 }, { "B/6 AMP.", 6 }, { "B/10 AMP BUV", 10 },
         { "B/5 AMPOULES", 5 }, { "B/30 CP", 30 }, { "B/20CPR", 20 }, { "B/20 COMPRIMÉS EFFERVESCENTS", 20 }, { "B/30 GELULES", 30 },
@@ -28,19 +28,31 @@ public class ContenanceDepuisNomenclatureTests
         { "B/6 Seringues préremplies", 6 }, { "B/1 SERIN PRE REMPLI DE 0,30 ML", 1 }, { "B/05 STYLOS PREREMPLIS DE 3ML", 5 }, { "B/01 STYLO", 1 }, { "B/50CART. DE 1,8ML", 50 },
         { "BOITE DE 05 CARTOUCHES DE 3ML", 5 }, { "B/04 POCHES DE 2L", 4 }, { "B/01 TUBE DE 50G", 1 }, { "B/1AMP. (5ML)", 1 }, { "B/10 FL (1 MG)", 10 }, { "B/1 AMP/5ML", 1 },
         { "B/1500 FLACONS", 1500 },
-        { "FL/05ML", null }, { "F/125ML", null }, { "B/FL 15 ML", null }, { "B/1FL. DE PDRE. + 1FL. DE SOLVT.", null }, { "B/01 FL. DE PDRE.", null }, { "B/01 FL DE 60", null },
+        // Script 169 (2026-11-26) : contenant seul = 1, pilulier = ses unités ; plusieurs présentations restent vides
+        { "FL/120ML", 1 }, { "FL./120ML", 1 }, { "FL/120 ML", 1 }, { "FL/20DOSES", 1 }, { "FL./20 DOSES", 1 }, { "FL/30G", 1 }, { "FLACON DE 100ML", 1 },
+        { "B/TUBE DE 30G", 1 }, { "PILULIER DE 60", 60 }, { "B/30 ET B/60", null }, { "B/28+7", null }, { "BIDON DE 5L EN PEHD", null }, { "100 ML", null },
+        { "FL/05ML", 1 }, { "F/125ML", 1 }, { "B/FL 15 ML", 1 }, { "B/1FL. DE PDRE. + 1FL. DE SOLVT.", null }, { "B/01 FL. DE PDRE.", null }, { "B/01 FL DE 60", null },
         { "BOITE DE 1 FLACON CONTENANT 500 MG DE POUDRE", null }, { "B/1FL DE 30ML+ PIPETTE GRADUEE EN ML (2ml)", null }, { "B/01STYLO. PREREMPLI DE 0,5ML (CARTOUCHE BI COMPARTIMENTEE)+UNE AIGUILLE", null },
-        { "B/10FL ET B/20FL", null }, { "B/60 GELULE + INHALATEUR", null }, { "BOITE D'UN FLACON", null }, { "POCHE DE 500ML", null }, { "B/400G", null }, { "TUBE/30G", null }, { "PILULIER/30", null },
+        { "B/10FL ET B/20FL", null }, { "B/60 GELULE + INHALATEUR", null }, { "BOITE D'UN FLACON", null }, { "POCHE DE 500ML", null }, { "B/400G", null }, { "TUBE/30G", 1 }, { "PILULIER/30", 30 },
         { "B/1FL. DE PDRE. + 1AMP. DE 2ML", null }, { "B/1 SERINGUE PRE-REMPLIE DE 1ML", 1 }, { "B/2 FL DE 100 ML", 2 }, { "B/1500 AMP DE 2ML", 1500 }, { "B/1 SERINGUE", 1 }, { "B/0", null }, { "", null }, { null, null },
     };
 
-    /// <summary>Motif PostgreSQL à jour (script 139, fonction contenance_depuis_conditionnement ; entre « FROM ' » et « ' »), sans l'option « (?i) » de tête.</summary>
-    private static Regex MotifDuScript()
+    /// <summary>
+    /// Fonction contenance_depuis_conditionnement à jour (script 169) rejouée en C# : COALESCE(motif « boîte », motif « pilulier »,
+    /// 1 si le motif « contenant seul » est reconnu). Motifs lus dans le script, sans l'option « (?i) » de tête.
+    /// </summary>
+    private static int? ParScript(string conditionnement)
     {
-        var sql = File.ReadAllText(Path.Combine(Racine(), "database", "migration", "139_contenance_flacons_seringues_stylos.sql"));
-        var m = Regex.Match(sql, @"substring\(p_conditionnement FROM '\(\?i\)([^']+)'\)");
-        Assert.True(m.Success, "motif introuvable dans le script 139");
-        return new Regex(m.Groups[1].Value, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        var sql = File.ReadAllText(Path.Combine(Racine(), "database", "migration", "169_contenance_contenant_seul_pilulier.sql"));
+        var nombres = Regex.Matches(sql, @"substring\(p_conditionnement FROM '\(\?i\)([^']+)'\)");
+        var seul = Regex.Match(sql, @"p_conditionnement ~\* '([^']+)'");
+        Assert.True(nombres.Count == 2 && seul.Success, "motifs introuvables dans le script 169");
+        foreach (Match motif in nombres)
+        {
+            var m = new Regex(motif.Groups[1].Value, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Match(conditionnement);
+            if (m.Success) return int.Parse(m.Groups[1].Value) is var n and >= ContenanceProduit.Minimum and <= ContenanceProduit.Maximum ? n : null;
+        }
+        return new Regex(seul.Groups[1].Value, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).IsMatch(conditionnement) ? 1 : null;
     }
 
     [Theory]
@@ -48,8 +60,7 @@ public class ContenanceDepuisNomenclatureTests
     public void Le_motif_du_script_donne_la_valeur_proposee_par_la_fiche(string? conditionnement, int? attendu)
     {
         Assert.Equal(attendu, ContenanceProduit.DepuisConditionnement(conditionnement));
-        var m = conditionnement is null ? null : MotifDuScript().Match(conditionnement);
-        int? parScript = m is { Success: true } && int.Parse(m.Groups[1].Value) is var n and >= ContenanceProduit.Minimum and <= ContenanceProduit.Maximum ? n : null;
+        int? parScript = conditionnement is null ? null : ParScript(conditionnement);
         Assert.Equal(attendu, parScript);
     }
 

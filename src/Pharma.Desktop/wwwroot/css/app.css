@@ -584,6 +584,11 @@ label.requis::after, .etiquette-champ.requis::after { content: " *"; color: var(
 .rapport-filtres { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .rapport-colonnes { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 16px; }
 .tuile-pied { font-size: 13px; color: var(--texte-2); }
+/* Avertissement dans le pied d'une tuile (prêt : échéancier à remplacer, 2026-11-26) : orange comme .texte-attention */
+.tuile-pied.texte-attention { color: var(--attention); font-weight: 600; }
+/* Réglages fiscaux › taux de TVA (script 171) : liste des taux et taux par défaut des catégories côte à côte, chaque tableau dans son cadre */
+.tva-reglage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.tva-colonne { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 /* Histogramme : colonnes fines, extrémité arrondie, une seule ligne de base, grille discrète */
 .histogramme { display: flex; gap: 8px; height: 240px; }
 /* Synthèse du tableau de bord financier : histogramme abaissé en fenêtre basse (1366 × 768, 2026-11-20), l’écran ne défile pas */

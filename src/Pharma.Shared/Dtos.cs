@@ -1083,6 +1083,33 @@ public sealed record CoordonneesContactDto(string? Telephone, string? Email, str
 /// <summary>Une page de résultats : Total compte toutes les lignes qui répondent aux filtres, pas seulement celles de la page.</summary>
 public sealed record PageDto<T>(IReadOnlyList<T> Lignes, int Total, int Numero, int Taille);
 
+/// <summary>Écran Stock › Contenance manquante (2026-11-26) : produit actif sans contenance, boîtes vendues sur 12 mois et en stock.</summary>
+public sealed record ContenanceManquanteDto(long ProduitId, string Nom, string? Forme, string? Dosage, string? Conditionnement, int Vendues12Mois, int Stock,
+    int? Contenance = null);
+
+/// <summary>Contenance saisie dans l'écran Contenances (entier de 1 à 10000) ; Avant : valeur affichée (vide : produit à compléter).</summary>
+public sealed record ContenanceSaisieDto(int? Contenance, int? Avant = null);
+
+/// <summary>Import de contenances (2026-11-26) : aperçu d'un fichier Excel ou CSV, rien n'est écrit.</summary>
+public sealed record ImportContenancesFichierRequete(string NomFichier, string ContenuBase64, bool Corriger = false);
+public sealed record ContenanceImporteeDto(int Ligne, long ProduitId, string Nom, int Contenance, int? Avant = null);
+public sealed record LigneEcarteeDto(int Ligne, string Produit, string Motif);
+public sealed record ApercuImportContenancesDto(IReadOnlyList<ContenanceImporteeDto> Retenues, IReadOnlyList<LigneEcarteeDto> Ecartees, int LignesVides);
+/// <summary>Contenances retenues par l'aperçu, à écrire (jamais sur un produit qui en a une).</summary>
+public sealed record ImportContenancesRequete(IReadOnlyList<ContenanceImporteeDto> Lignes);
+public sealed record ImportContenancesResultatDto(int Ecrites, int DejaRenseignees);
+
+/// <summary>Taux de TVA de la liste (script 171) ; Produits : nombre de produits qui l'utilisent.</summary>
+public sealed record TauxTvaDto(long Id, decimal Taux, string Libelle, bool Actif, int Produits);
+/// <summary>Taux proposé à la création d'un produit de la catégorie ; null : à choisir.</summary>
+public sealed record TauxTvaCategorieDto(string Code, string Libelle, decimal? Taux);
+/// <summary>Taux enregistré sur des produits ou des prestations sans être dans la liste (signalé, jamais modifié).</summary>
+public sealed record TauxHorsListeDto(decimal Taux, int Produits);
+public sealed record ListeTauxTvaDto(IReadOnlyList<TauxTvaDto> Taux, IReadOnlyList<TauxTvaCategorieDto> Categories, IReadOnlyList<TauxHorsListeDto> HorsListe);
+public sealed record TauxTvaRequete(decimal Taux, string? Libelle);
+public sealed record TauxTvaModificationRequete(string? Libelle, bool Actif);
+public sealed record TauxTvaDefautRequete(decimal? Taux);
+
 // ---- Restauration (super admin) ----
 public sealed record SauvegardeDisponibleDto(string Fichier, string Emplacement, DateTime Date, long Taille);
 /// <summary>Base en service, disque externe des sauvegardes (branché ?), copie de la GED, sauvegardes restaurables (plus récente d'abord).</summary>

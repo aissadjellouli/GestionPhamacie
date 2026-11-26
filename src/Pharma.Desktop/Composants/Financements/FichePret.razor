@@ -28,8 +28,17 @@ else
             @* Mensualité : montant de la prochaine échéance non payée, assurance comprise (tiré de l'échéancier) *@
             <button type="button" class="tuile tuile-lien" aria-pressed="@(vue == "echeancier" && filtreEcheances == "a_payer" ? "true" : "false")" title="Ouvre l’échéancier filtré sur les échéances à payer"
                     @onclick='() => VoirEcheances("a_payer")'><span class="tuile-libelle">Mensualité</span><span class="tuile-valeur">@(p.ProchainMontant is { } m ? Libelles.Dinars(m, 2) : "—")</span>
+                @* Script 170 : après un remboursement anticipé, l'avertissement prend la place du pied de la tuile (un bandeau faisait déborder
+                   la fiche de 41 px à 1 366 × 768, mesuré le 2026-11-26) *@
+                @if (p.EcheancierARemplacer)
+                {
+                    <span class="tuile-pied texte-attention" data-champ="echeancier_a_remplacer">Remboursement anticipé : importez le nouveau tableau de la banque avant de payer</span>
+                }
+                else
+                {
                 <span class="tuile-pied">@(p.ProchainMontant is null ? (p.Echeances == 0 ? "échéancier à saisir" : "aucune échéance à payer")
-                    : $"prochaine échéance{(p.ProchaineEcheance is { } pe ? $" le {pe:dd/MM/yyyy}" : "")}{(p.ProchaineAssurance is > 0 ? $" · dont assurance {Libelles.Dinars(p.ProchaineAssurance.Value, 2)}" : "")}")</span></button>
+                    : $"prochaine échéance{(p.ProchaineEcheance is { } pe ? $" le {pe:dd/MM/yyyy}" : "")}{(p.ProchaineAssurance is > 0 ? $" · dont assurance {Libelles.Dinars(p.ProchaineAssurance.Value, 2)}" : "")}")</span>
+                }</button>
             <button type="button" class="tuile tuile-lien" aria-pressed="@(vue == "echeancier" && filtreEcheances == "a_payer" ? "true" : "false")" title="Ouvre l’échéancier filtré sur les échéances restant à payer"
                     @onclick='() => VoirEcheances("a_payer")'><span class="tuile-libelle">Capital restant dû</span><span class="tuile-valeur">@Libelles.Dinars(p.ResteDu, 2)</span>
                 <span class="tuile-pied">@p.EcheancesPayees échéance(s) payée(s) sur @p.Echeances</span></button>
@@ -48,7 +57,7 @@ else
             <button type="button" role="tab" class="puce" aria-selected="@(vue == code ? "true" : "false")" @onclick="() => Ouvrir(code)">@libelle</button>
         }
         <a class="btn" href="financements?rubrique=prets">← Liste des prêts</a>
-        @if (vue is not ("modifier" or "employer" or "editer" or "usages"))
+        @if (vue is not ("modifier" or "employer" or "editer" or "usages" or "anticipe"))
         {
             @* Écran fixe (2026-11-15) : filtre et saisie de l'échéancier sur la ligne des onglets, le tableau garde la place *@
             <div class="champ" role="search" aria-label="Filtrer l’échéancier" style="flex: 0 0 200px; margin-left: auto">
@@ -145,6 +154,60 @@ else
             <Pagination Total="UsagesFiltres.Count()" Numero="pageUsages" Taille="tailleUsages" Libelle="Pages des usages du prêt" OnChange="x => (pageUsages, tailleUsages) = (x.Numero, x.Taille)" />
             break;
 
+        case "anticipe":
+            @* Remboursement anticipé (script 170) : capital et frais (charges financières), mêmes moyens que le paiement d'une échéance *@
+            <div class="cadre-defilant" data-hauteur-min="160">
+            <section class="panneau" aria-labelledby="t-anticipe">
+                <h2 id="t-anticipe">Remboursement anticipé · capital restant dû @Libelles.Dinars(p.ResteDu, 2)</h2>
+                <p class="detail" style="margin: 0">Le capital remboursé diminue la dette envers @p.Banque ; les frais de la banque sont des charges financières, comme les intérêts. S’il reste du capital, importez ensuite le nouveau tableau de la banque.</p>
+                <div class="achats-ligne">
+                    <div class="champ" style="flex: 0 0 160px"><label for="ra-capital" class="requis">Capital remboursé (DA)</label>
+                        <input id="ra-capital" data-champ="capital" type="number" min="0.01" step="0.01" @bind="raCapital" @bind:after="ProposerTiroirAnticipe" /></div>
+                    <div class="champ" style="flex: 0 0 130px"><label for="ra-frais">Frais (DA)</label>
+                        <input id="ra-frais" data-champ="frais" type="number" min="0" step="0.01" @bind="raFrais" @bind:after="ProposerTiroirAnticipe" /></div>
+                    <div class="champ" style="flex: 0 0 160px"><label for="ra-date" class="requis">Date</label>
+                        <input id="ra-date" data-champ="date" type="date" max="@DateTime.Today.ToString("yyyy-MM-dd")" @bind="raDate" /></div>
+                    <div class="champ" style="flex: 0 0 160px"><label for="ra-moyen" class="requis">Payé par</label>
+                        <select id="ra-moyen" data-champ="moyen" @bind="raMoyen" @bind:after="ProposerTiroirAnticipe">
+                            <option value="especes">Espèces</option><option value="cheque">Chèque</option>
+                            <option value="virement">Virement</option><option value="prelevement">Prélèvement</option>
+                        </select></div>
+                    @if (raMoyen != "especes")
+                    {
+                        <div class="champ" style="flex: 1 1 170px"><label for="ra-compte" class="requis">Banque débitée</label>
+                            <select id="ra-compte" data-champ="compte" @bind="raCompte">
+                                <option value="0">— choisir la banque —</option>
+                                @foreach (var b in Comptes.Where(c => c.Type == "banque" && c.Actif)) { <option value="@b.Id">@b.Nom</option> }
+                            </select></div>
+                        <div class="champ" style="flex: 1 1 150px"><label for="ra-ref" class="requis">@(raMoyen switch { "cheque" => "N° du chèque", "virement" => "Référence du virement", _ => "Référence du prélèvement" })</label>
+                            <input id="ra-ref" data-champ="reference" type="text" @bind="raReference" @bind:event="oninput" /></div>
+                    }
+                    else
+                    {
+                        <div class="champ" style="flex: 0 0 170px"><label for="ra-tiroir">Pris dans le tiroir (DA)</label>
+                            <input id="ra-tiroir" data-champ="tiroir" type="number" min="0" step="0.01" @bind="raTiroir" /></div>
+                    }
+                </div>
+                <div class="achats-ligne">
+                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="RembourserParAnticipationAsync">Enregistrer le remboursement</button>
+                </div>
+            </section>
+            @if (d.Anticipes is { Count: > 0 } anticipes)
+            {
+                <table class="tableau" style="min-width: 0">
+                    <thead><tr><th scope="col">Date</th><th scope="col" class="nombre">Capital</th><th scope="col" class="nombre">Frais</th><th scope="col">Payé par</th><th scope="col">Par</th></tr></thead>
+                    <tbody>
+                        @foreach (var a in anticipes)
+                        {
+                            <tr><td>@a.Date.ToString("dd/MM/yyyy")</td><td class="nombre">@Libelles.Dinars(a.Capital, 2)</td><td class="nombre">@Libelles.Dinars(a.Frais, 2)</td>
+                                <td>@MoyenEnClair(a.Moyen)@(a.Compte is { } cpt ? $" ({cpt})" : "")</td><td>@a.Employe</td></tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            </div>
+            break;
+
         default:
             <div class="tableau-cadre" data-hauteur-min="140">
                 <table class="tableau">
@@ -165,6 +228,8 @@ else
                                 <td class="nombre">@Libelles.Dinars(l.CapitalRestant, 2)</td>
                                 <td>
                                     @if (e.PayeeLe is { } le) { <span class="pastille ok">Payée le @le.ToString("dd/MM/yyyy")</span> }
+                                    else if (e.Entamee) { <span class="pastille attention">Payée en partie · reste @Libelles.Dinars(e.Reste, 2)</span> }
+                                    else if (p.EcheancierARemplacer) { <span class="pastille attention" title="Remboursement anticipé : importez le nouveau tableau de la banque">Nouveau tableau à importer</span> }
                                     else if (l.Date < DateOnly.FromDateTime(DateTime.Today)) { <a class="pastille urgent" href="financements?rubrique=echeances">Échue, non payée</a> }
                                     else if (l.Date.DayNumber - DateOnly.FromDateTime(DateTime.Today).DayNumber <= 7) { <a class="pastille attention" href="financements?rubrique=echeances">À payer sous peu</a> }
                                 </td>
@@ -198,7 +263,8 @@ else
     [Parameter] public EventCallback OnModifie { get; set; }
 
     private static readonly (string, string)[] Vues =
-        [("echeancier", "Échéancier"), ("usages", "Usages de l’argent"), ("employer", "Employer l’argent…"), ("modifier", "Prêt et document…")];
+        [("echeancier", "Échéancier"), ("usages", "Usages de l’argent"), ("employer", "Employer l’argent…"), ("anticipe", "Remboursement anticipé…"),
+         ("modifier", "Prêt et document…")];
 
     private PretDetailDto? detail;
     private long chargeId;
@@ -212,6 +278,12 @@ else
     private int? dureeMois;
     private DateOnly datePret;
     private bool enCours;
+    // Remboursement anticipé (script 170)
+    private decimal raCapital, raFrais, raTiroir;
+    private DateOnly raDate = DateOnly.FromDateTime(DateTime.Today);
+    private string raMoyen = "especes";
+    private long raCompte;
+    private string? raReference;
 
     private IEnumerable<EcheancePretDto> EcheancesFiltrees => (detail?.Echeances ?? []).Where(e => filtreEcheances switch
     {
@@ -285,6 +357,37 @@ else
             if (await Api.JoindreDocumentPretAsync(PretId, chemin) is { } e) { erreur = e; return; }
             message = $"Document joint : GED du serveur, {chemin}.";
             await ChargerAsync();
+        }
+        finally { enCours = false; }
+    }
+
+    private static string MoyenEnClair(string m) => m switch
+    {
+        "especes" => "Espèces", "cheque" => "Chèque", "virement" => "Virement", _ => "Prélèvement"
+    };
+
+    /// <summary>Espèces : le coffre d'abord ; ce qui manque est proposé pris dans le tiroir.</summary>
+    private void ProposerTiroirAnticipe() =>
+        raTiroir = raMoyen == "especes" && Comptes.FirstOrDefault(c => c.Type == "coffre") is { } cf ? Math.Max(0, raCapital + raFrais - Math.Max(cf.Solde, 0)) : 0;
+
+    private async Task RembourserParAnticipationAsync()
+    {
+        (erreur, message) = (null, null);
+        if (raMoyen != "especes" && raCompte == 0) { erreur = "Choisissez la banque débitée."; return; }
+        if (raMoyen != "especes" && string.IsNullOrWhiteSpace(raReference)) { erreur = "Indiquez la référence du paiement."; return; }
+        enCours = true;
+        try
+        {
+            var e = await Api.RembourserPretParAnticipationAsync(PretId, new RemboursementAnticipeRequete(raDate, raCapital, raFrais, raMoyen,
+                raMoyen == "especes" ? null : raCompte, raMoyen == "especes" ? null : raReference, raMoyen == "especes" ? raTiroir : 0));
+            if (e is not null) { erreur = e; return; }
+            var reste = (detail?.Pret.ResteDu ?? 0) - raCapital;
+            message = reste > 0
+                ? $"Remboursement anticipé de {Libelles.Dinars(raCapital, 2)} enregistré : importez maintenant le nouveau tableau de la banque (reste dû {Libelles.Dinars(reste, 2)})."
+                : $"Remboursement anticipé de {Libelles.Dinars(raCapital, 2)} enregistré : le prêt est entièrement remboursé.";
+            (raCapital, raFrais, raTiroir, raReference) = (0, 0, 0, null);
+            await ChargerAsync();
+            await OnModifie.InvokeAsync();
         }
         finally { enCours = false; }
     }

@@ -27,6 +27,28 @@ Vue d'ensemble courte (point d'avancement) : [reste-a-faire-synthese.md](reste-a
 
 ## Décisions en attente du titulaire
 
+- **Lot 2, réponses du titulaire (2026-11-26)** :
+  - **Antibiotiques (214 DCI)** : chercher une source sur le net. Constat : aucune liste officielle algérienne par DCI trouvée ; la liste actuelle
+    vient de motifs de noms (script 117). Recommandation : classification **AWaRe 2023 de l'OMS** (environ 300 antibiotiques avec code ATC et
+    groupe Accès / Surveillance / Réserve), limitée aux DCI présentes dans la nomenclature nationale. **En attente du « go ».**
+  - **Contenance** : chercher sur le net. Constat (listes publiques de la nomenclature, aucune définition officielle trouvée) : « B/ » = boîte,
+    suivi du nombre d'unités ; « FL » = flacon (« B/10 FL DE 5 ML » = 10 flacons ; « B/01 FL DE PDRE + 01 FL DE SOLV » = 1 flacon à reconstituer).
+    Constat du 2026-11-26 : **« B/N FL » et « B/N SERINGUE » donnent déjà N depuis le script 139** (2026-11-16). Restent 3 253 produits sans
+    contenance (76 vendus dans l'année) : surtout un flacon seul « FL/120ML » (597), un tube « T/30G » (317), plusieurs présentations
+    « B/30 ET B/60 » (280), « B/28+7 » (108). **Fait (« 5 OK »)** : script 169 (contenant seul = 1, pilulier = N ; 1 408 produits remplis
+    sur dev et test, restent 1 845 dont 58 vendus dans l'année) et écran Stock › Contenance manquante (les plus vendus d'abord).
+  - **TVA** : **décidé et fait le 2026-11-26** (script 171, « go TVA ») : liste 0 % et 19 %, défauts Médicament 0 % et Parapharmacie 19 %,
+    Administration › Taux de TVA, choix dans la liste sur la fiche produit, la prestation et la facture. Taux des autres catégories : à valider
+    par le comptable.
+  - **Sauvegarde, un seul mécanisme** : **décidé : la sauvegarde de l'application** ; le script planifié ne sert qu'en dépannage. Fait (doc et en-tête du script).
+  - **Script 101b** : **décidé (« 8 A ») et fait** : colonne retirée de `database/init/schema.sql`, 101b passé sur `pharmacie_dev` et
+    `pharmacie_test` (sauvegardes `…_avant_101b_…`, aucune valeur perdue) ; scripts 007 et 101 protégés : rejouer la suite ne recrée plus la
+    colonne (constat du test de rejeu). Reste : le passer sur la pharmacie pilote si elle est installée avant le 2026-11-26.
+  - **Abandon d'une réception en attente** : **décidé** : anomalie du contrôle interne quand celui qui abandonne n'est pas celui qui a mis en
+    attente. **Fait le 2026-11-26 (script 168).**
+  - **Prêts** : **décidé et fait le 2026-11-26** (script 170) : échéance payée en partie (charges d'abord) et remboursement anticipé (frais en
+    charges financières, échéances bloquées jusqu'au nouveau tableau) ; renégociation = nouveau prêt qui solde l'ancien.
+
 - [ ] **GED : protection des documents** (recommandation validée le 2026-11-18 ; **alerte à 7 jours codée et rotation de deux disques écrite dans mise-en-production.md le 2026-11-18**, script 148 ; reste la sauvegarde chiffrée au central avec le lot 9 ; le script planifié `sauvegarde_pharmacie.ps1` inscrit désormais ses passages au journal des sauvegardes) : GED consultable au central ou non, sauvegarde chiffrée hors de l'officine (après le lot 9), rotation de deux disques pour une officine à un seul serveur, alerte « pas de sauvegarde sur disque externe ». Détail et recommandation : [ged-protection-a-decider.md](ged-protection-a-decider.md).
 
 - [ ] **Écrans de vente** :
@@ -41,7 +63,7 @@ Vue d'ensemble courte (point d'avancement) : [reste-a-faire-synthese.md](reste-a
 - [ ] **Démo** : tranché le 2026-11-19 : « préparation démo cloud » (Dockerfile, docker-compose local, mode démo) ; « go » reçu le 2026-11-20 ; étape 0 (API utilisable sous Linux) faite le 2026-11-20 ; étapes 1 et 2 écrites (2026-11-20 et 2026-11-21), premier démarrage réel en attente de Docker : [demo-cloud.md](demo-cloud.md).
 - [ ] **Script 111b** (séparation des rôles PostgreSQL) : à passer par le titulaire avec un superutilisateur ; sans lui, une falsification est détectée mais pas empêchée (voir `docs/securite-et-droits.md`).
 - [x] **Réglages communs aux officines** : tranché le 2026-11-16 : « imposé » ou « proposé » est décidé par l'administrateur du serveur central, rien n'est figé dans le logiciel ; précisé le même jour : choix par table, changement tracé au central et dans l'officine, valeur imposée qui remplace la valeur locale (ancienne valeur au journal, titulaire prévenu). Reste à réaliser (fin du lot S3, `docs/conception-synchronisation.md` § 16).
-- [ ] **Ancienne colonne `num_facture_chifa`** : le script `101b` est **écrit et testé sur copies jetables** (`database/migration/101b_suppression_num_facture_chifa.sql`) ; la **décision d'exécution reste en attente** du titulaire (destructif, sauvegarde obligatoire, procédure : `docs/mise-en-production.md`, étape 8). Le jour de l'exécution : retirer la colonne de `database/init/schema.sql` (colonne et son commentaire dans `vente`) et régénérer `database/cloud/002_tables_miroir.sql`.
+- [x] **Ancienne colonne `num_facture_chifa`** (fait le 2026-11-26 : 101b passé sur dev et test, colonne retirée de l'init, voir plus haut) : le script `101b` est **écrit et testé sur copies jetables** (`database/migration/101b_suppression_num_facture_chifa.sql`) ; la **décision d'exécution reste en attente** du titulaire (destructif, sauvegarde obligatoire, procédure : `docs/mise-en-production.md`, étape 8). Le jour de l'exécution : retirer la colonne de `database/init/schema.sql` (colonne et son commentaire dans `vente`) et régénérer `database/cloud/002_tables_miroir.sql`.
 - [ ] **Note « Pharma : de quoi s'agit-il »** (section « Questions pour la V2 » ci-dessous) : à reformuler ou supprimer.
 - [ ] **Messages de démo sur `pharmacie_dev`** : purge proposée (seule `pharmacie_test` a été purgée) ; jamais sans validation explicite.
 - [ ] **Message du commit `6f971e8`** : il cite un nom de tiers ; réécriture facultative, l'historique étant déjà poussé.
@@ -83,7 +105,7 @@ Vue d'ensemble courte (point d'avancement) : [reste-a-faire-synthese.md](reste-a
 - [ ] Fichiers de l'autorité de certification d'essai restés dans un dossier temporaire de travail : à effacer.
 - [ ] 1 à 3 échecs de connexion sécurisée (TLS) sous forte charge : cause non examinée.
 - [x] Contenance, les deux produits non remplis (2026-11-16) : cause trouvée, ce n'étaient pas des erreurs du motif. « ENERMAG » (« B/20AMP.AUTOCASSABLES », unité suivie d'un complément) et « GEOLAX » (« B/10 SACH. ET B/20 SACH. », deux nombres) sont exclus par la règle du script 134, C# et SQL donnent le même résultat. Les 4 019 cas douteux sont classés dans `docs/regles-metier.md` (règle « script 137 ») : le script 137 en remplit 246 (unité de délivrance suivie de sa taille, « B/5 AMP. DE 2ML »), 3 773 restent vides, aucune autre extension n'est sûre. Script 137 validé par le titulaire le 2026-11-16 (« garder 137 »).
-- [ ] Contenance : valeur proposée en grisé sur la fiche produit à vérifier à l'écran (non fait) ; décider si les conditionnements « B/N FL », « B/N SERINGUE » (854 produits) doivent donner N, et si une saisie en lot (écran « Contenance manquante ») est utile pour les 3 773 restants.
+- [ ] Contenance : valeur proposée en grisé sur la fiche produit à vérifier à l'écran (non fait). « B/N FL » / « B/N SERINGUE » (script 139), contenant seul et pilulier (script 169) et écran « Contenance manquante » : faits (2026-11-26).
 - [ ] Contrôles à l'écran non tracés : écran Synchronisation (libellé « Banque » allongé), bordereaux, « Durée du traitement » à la caisse, bandeau « produit redevenu disponible », parcours du 15/11 (majoration au rapprochement, annulation « rendu en espèces », ticket PDF).
 - [ ] Étape 2 « Correspondance » de la reprise : défilement non mesuré (il faut une vraie base).
 - [ ] Origine des écritures du 16/11 entre 03:01 et 03:03 dans `pharmacie_test` (scellement, intégrité, `patient_modifie`).
@@ -95,7 +117,7 @@ Vue d'ensemble courte (point d'avancement) : [reste-a-faire-synthese.md](reste-a
   - à vérifier : colonnes exactes des annexes 12 et 13 du décret 19-379 (modifié par le 21-196) pour les psychotropes ;
   - retrait des périmés (Alertes, « Retirer du stock ») : pas encore de sortie de stock ; le registre l'inscrira en « destruction » dès qu'elle existera ;
   - registre papier coté et paraphé : demander à la DSP de wilaya si le registre informatisé imprimé est accepté tel quel.
-- [ ] **Rapports et retours** : une vente annulée sort des chiffres de son jour d’origine ; un retour client n’est pas encore déduit du chiffre d’affaires des rapports (à afficher en ligne « retours » ou à déduire : à décider).
+- [x] **Rapports et retours** : une vente annulée sort des chiffres de son jour d’origine ; un retour client est déduit du chiffre d’affaires des rapports et du pilotage (constaté le 2026-11-26 : regles-metier.md, « Le chiffre d’affaires est TTC, remises déduites, et net des retours »).
 - [x] **Retour partiel en tiers payant** (option A du titulaire, 2026-11-21, script 155) : permis avant tout dépôt (part organisme des boîtes rendues retirée de la créance), refusé après dépôt ; liste « Retours à corriger dans CHIFA-Officine » (Finances › Chifa). Restes :
   - [x] mention « Part organisme retirée : X DA » (et « facture à corriger dans CHIFA-Officine ») sur la ligne du retour du ticket réimprimé, imprimé et PDF (2026-11-21) ;
   - [ ] procédure de la CNAS pour une vente déjà déposée (questions dans [chifa.md](chifa.md), « Retour d’un médicament remboursé ») ; d’ici là, refus dans le logiciel ;
@@ -194,7 +216,7 @@ récemment »). Restent :
 - [ ] **Tableaux d'amortissement réels** : aucun exemple d'une banque algérienne n'a été fourni. Obtenir de chaque banque du titulaire un tableau (Excel, CSV ou PDF) pour vérifier l'import : colonnes, ligne d'en-tête, format des dates et des montants, lignes de total, PDF scanné ou texte. La correspondance des colonnes est réglée par le titulaire et retenue par banque ; la lecture d'un PDF ou d'un scan est approximative et toujours vérifiée.
 - [ ] **Capital restant dû** : selon la banque, le tableau peut l'indiquer avant ou après l'échéance ; le logiciel le reprend tel quel (contrôle : jamais en hausse). Si une banque l'indique avant l'échéance, préciser s'il faut le recalculer.
 - [x] **Prêt d'une banque qui n'est pas un compte de la trésorerie**. (Tranché et livré le 2026-11-14, script 079 : « Autre prêteur (nom) », nom saisi librement ; son argent n'entre dans aucun compte suivi et ne sert que directement — facture, traite, dépense ; échéances payées depuis le compte choisi ; colonnes d'import retenues par prêteur.)
-- [ ] **Remboursement anticipé, renégociation, échéance payée en partie** : non prévus (une échéance se paie en entier, dans l'ordre). À préciser si besoin.
+- [x] **Remboursement anticipé, renégociation, échéance payée en partie** : fait le 2026-11-26 (script 170), voir regles-metier.md « Paiement des échéances ».
 - [ ] **Dettes des financements dans Dettes et créances** : montrées au titulaire seul (prudence) ; à dire si un employé qui gère la trésorerie doit les voir.
 
 ## À vérifier sur le terrain
@@ -225,7 +247,7 @@ récemment »). Restent :
 
 **Points ouverts de ces livraisons**
 - [x] Facture et retour fournisseur laissés au changement d'utilisateur : gardés dans un fichier chiffré du poste (`%LOCALAPPDATA%\PharmaOfficine\taches-laissees.dat`), relus au redémarrage (2026-11-21, décision du titulaire ; regles-metier.md).
-- [ ] Abandon d'une réception en attente : inscrit au journal des actions ; à décider s'il doit aussi lever une anomalie dans le Contrôle interne.
+- [x] Abandon d'une réception en attente : anomalie du contrôle interne quand un autre employé l'abandonne (décidé et fait le 2026-11-26, script 168).
 - [ ] Mise en évidence des boutons au survol en thème clair : préciser ce qui ne convient pas (« pareil que sombre »).
 - [x] Vente mise en attente au changement d'utilisateur : si le serveur est injoignable à ce moment-là, le panier est perdu sans signalement (la session est déjà fermée). Corrigé (2026-11-21) : mise en attente attendue avant la fermeture de la session ; échec → fenêtre bloquante « Réessayer » / « Rester sur la vente », panier resté affiché (regles-metier.md « Aucun panier perdu en silence »). À essayer serveur coupé.
 
@@ -264,7 +286,7 @@ récemment »). Restent :
 
 Points que `docs/mise-en-production.md` ne peut pas trancher sans le titulaire ou le développeur (marqués **[À CONFIRMER]** dans le manuel) :
 
-- [ ] Sauvegardes : un seul mécanisme, sauvegarde de l'application ou script planifié `scripts/sauvegarde_pharmacie.ps1` (son en-tête dit « pas les deux »). Régler aussi ses variables `D:\` et `E:\`.
+- [x] Sauvegardes : un seul mécanisme, **la sauvegarde de l'application** (décision du titulaire du 2026-11-26) ; le script planifié `scripts/sauvegarde_pharmacie.ps1` ne sert qu'en dépannage (mise-en-production.md, étape 11).
 - [ ] Script `101b` (suppression de `num_facture_chifa`) : écrit et testé ; reste la décision d'exécution du titulaire (procédure dans `docs/mise-en-production.md`, étape 8).
 - [ ] Conflits de n° de facture Chifa (script 101) : bloquent-ils la remise en service ?
 - [x] HTTPS sur le 2e serveur et le PC de secours : une seule autorité par pharmacie (PFX protégé au coffre), certificats des autres PC signés par elle (`-CertificatPourAutrePc`, `-Importer`, `-RestaurerAutorite`), procédures dans `docs/mise-en-production.md` (parcours A 4.6, C 8, D 6, F2 bis, F6, F7). Essai de chaîne en mémoire (`CertificatsHttpsTests`) ; script jamais exécuté en réel (à essayer sur le terrain).

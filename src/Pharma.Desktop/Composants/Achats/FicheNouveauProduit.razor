@@ -41,7 +41,7 @@
     </div>
     @if (!Medicament)
     {
-        <div class="info-bandeau" role="status">Parapharmacie : DCI, dosage et forme facultatifs, classe « Libre » ; TVA proposée @TvaParapharmacie % (modifiable). À la caisse, une remise (et non un don).</div>
+        <div class="info-bandeau" role="status">Parapharmacie : DCI, dosage et forme facultatifs, classe « Libre » ; TVA : taux par défaut de la catégorie (modifiable). À la caisse, une remise (et non un don).</div>
     }
     @if (choisi is not null)
     {
@@ -88,7 +88,7 @@
         <div class="champ" style="flex: 1 1 180px"><label for="p-cb">Code-barres (facultatif)</label><input id="p-cb" data-champ="code_barre" type="text" inputmode="numeric" @bind="codeBarre" /></div>
         <div class="champ" style="flex: 1 1 160px@(PrixDebloque ? null : "; opacity: .6")" title="@(PrixDebloque ? null : MentionPrix)"><label for="p-tarif" class="@(remboursable ? "requis" : null)">Tarif de référence (DA)@(PrixDebloque ? null : " : à faire valider par un ayant droit")</label><input id="p-tarif" disabled="@(!PrixDebloque)" data-champ="tarif_reference" type="number" min="0" step="0.01" @ref="champTarif" @bind="tarif"
             class="@Obligatoire.Classe(TarifManque)" aria-invalid="@Obligatoire.Aria(TarifManque)" /></div>
-        <div class="champ" style="flex: 0 0 110px"><label for="p-tva">TVA (%)</label><input id="p-tva" data-champ="tva" type="number" min="0" max="100" step="0.01" @bind="tva" /></div>
+        <div class="champ" style="flex: 0 0 110px"><label for="p-tva">TVA</label><ChoixTauxTva Id="p-tva" @bind-Value="tva" /></div>
         <div class="champ" style="flex: 0 0 200px"><label for="p-min">Seuil d’alerte (boîtes)</label><input id="p-min" data-champ="stock_minimum" type="number" min="0" placeholder="automatique" @bind="stockMin" /></div>
         <label class="case" style="align-self: center@(PrixDebloque ? null : "; opacity: .6")" title="@(PrixDebloque ? null : MentionPrix)"><input type="checkbox" disabled="@(!PrixDebloque)" @bind="remboursable" /><span>Remboursable@(PrixDebloque ? null : " (à faire valider par un ayant droit)")</span></label>
     </div>
@@ -147,19 +147,17 @@
 
     /// <summary>Catégorie choisie : médicament (vrai par défaut, catégorie inconnue comprise) ou parapharmacie.</summary>
     private bool Medicament => categories.FirstOrDefault(c => c.Code == categorie)?.Medicament ?? true;
-    /// <summary>TVA proposée pour la parapharmacie (modifiable) : taux à confirmer par le titulaire.</summary>
-    private const decimal TvaParapharmacie = 19m;
-    private bool tvaProposee;
+    /// <summary>Taux de TVA (script 171) : taux proposé par catégorie (Administration › Réglages fiscaux).</summary>
+    private ListeTauxTvaDto? tauxTva;
 
-    /// <summary>Parapharmacie : classe libre et TVA proposée (si aucune n'est saisie) ; retour au médicament : la TVA proposée est retirée.</summary>
+    /// <summary>
+    /// Parapharmacie : classe libre. TVA : le taux par défaut de la catégorie (Administration › Réglages fiscaux, script 171) remplace la
+    /// TVA ; catégorie sans taux par défaut : la TVA saisie est gardée.
+    /// </summary>
     private void CategorieChangee()
     {
-        if (!Medicament)
-        {
-            (classe, listePsychotrope) = ("libre", "");
-            if (tva == 0) (tva, tvaProposee) = (TvaParapharmacie, true);
-        }
-        else if (tvaProposee && tva == TvaParapharmacie) (tva, tvaProposee) = (0, false);
+        if (!Medicament) (classe, listePsychotrope) = ("libre", "");
+        if (tauxTva?.Categories.FirstOrDefault(c => c.Code == categorie)?.Taux is { } defaut) tva = defaut;
     }
     // Un seul droit pour toute saisie de prix (prix.modifier, décision du titulaire du 2026-11-15) : sans ce droit, les champs de prix
     // sont grisés ; laissés vides, le produit est créé sans prix (invendable jusqu'à ce qu'un ayant droit fixe son prix) ; remplis,
@@ -190,6 +188,8 @@
     {
         (codeBarre, nom) = (CodeBarreInitial, NomInitial);
         if ((await Api.CategoriesProduitsAsync()) is ({ Count: > 0 } liste, null)) categories = liste;
+        (tauxTva, _) = await Api.TauxTvaAsync();
+        CategorieChangee();
     }
 
     // Nomenclature nationale : la fiche est remplie depuis le médicament choisi
@@ -273,7 +273,8 @@
     {
         (nom, dci, dosage, forme, codeBarre, prix, tarif, tva, stockMin, remboursable) = (null, null, null, null, null, 0, null, 0, null, false);
         (classe, categorie, listePsychotrope, choisi, erreur, controle) = ("libre", "medicament", "", null, null, false);
-        (nomenclatureVide, accordPrix, tvaProposee) = (false, null, false);
+        (nomenclatureVide, accordPrix) = (false, null);
+        if (tauxTva?.Categories.FirstOrDefault(c => c.Code == categorie)?.Taux is { } defaut) tva = defaut;   // taux par défaut (script 171)
         champNomenclature?.Afficher("");
     }
 }

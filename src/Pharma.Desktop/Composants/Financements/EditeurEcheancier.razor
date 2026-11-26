@@ -170,7 +170,8 @@
 
     protected override void OnInitialized()
     {
-        lignes = Echeances.OrderBy(e => e.Rang).Select(e => LigneEdition.De(e.Ligne, e.PayeeLe is not null)).ToList();
+        // Échéances payées, même en partie (script 170) : gardées en tête, non modifiables
+        lignes = Echeances.OrderBy(e => e.Rang).Select(e => LigneEdition.De(e.Ligne, e.MontantPaye > 0)).ToList();
         Historique.Suivre("editeur-echeancier", e => { e.Mettre("seules", anomaliesSeules); e.Mettre("page", pageLignes); e.Mettre("taille", tailleLignes); });
         if (Historique.Restaurer("editeur-echeancier") is { } r)
             (anomaliesSeules, pageLignes, tailleLignes) = (r.Oui("seules"), r.Entier("page") ?? 1, r.Entier("taille") ?? tailleLignes);
@@ -200,9 +201,12 @@
 
     private void CalculerEncours()
     {
+        // Capital remboursé par anticipation (script 170) : déduit avant la première échéance non payée
         var reste = Pret.Montant;
+        var anticipeDeduit = false;
         foreach (var l in lignes)
         {
+            if (!l.Payee && !anticipeDeduit) { reste -= Pret.CapitalAnticipe; anticipeDeduit = true; }
             reste -= l.Capital;
             if (!l.Payee) l.CapitalRestant = Math.Max(reste, 0);
         }

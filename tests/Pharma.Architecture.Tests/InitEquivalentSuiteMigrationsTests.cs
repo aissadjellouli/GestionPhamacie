@@ -70,6 +70,8 @@ public class InitEquivalentSuiteMigrationsTests
                 parSuite.Executer(["-f", temporaire]);
             }
             parSuite.Executer(["-f", ScriptsRejouablesTests.Chemin(fuseau)]);   // déjà dans la suite : rejeu sans effet, même état que creer_base_officine.ps1
+            // L'init est dans l'état d'après 101b (colonne obsolète vente.num_facture_chifa absente, décision du titulaire du 2026-11-26)
+            parSuite.Executer(["-f", ScriptsRejouablesTests.Chemin(Path.Combine(racine, "database", "migration", "101b_suppression_num_facture_chifa.sql"))]);
 
             parInit.Executer(["-f", ScriptsRejouablesTests.Chemin(init)]);
             parInit.Executer(["-f", ScriptsRejouablesTests.Chemin(fuseauInit)]);

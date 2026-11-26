@@ -21,7 +21,7 @@ public interface ITypesPrestation
 /// Types de prestation : liste paginée et filtrée (tout employé qui vend : recherche à la caisse) ; ajout, modification et désactivation
 /// avec le droit de créer au catalogue (catalogue.creer, D-9). Jamais de suppression. Journalisé (type_prestation_cree / _modifie).
 /// </summary>
-public sealed class TypesPrestation(ITypesPrestation types, IPermissionService droits, IJournal journal)
+public sealed class TypesPrestation(ITypesPrestation types, IPermissionService droits, IJournal journal, Fiscal.TauxTvaAutorises? tauxTvaAutorises = null)
 {
     public async Task<Page<TypePrestation>> ListerAsync(bool? actif, string? recherche, DemandePage page, long utilisateurId, CancellationToken ct = default)
     {
@@ -39,6 +39,8 @@ public sealed class TypesPrestation(ITypesPrestation types, IPermissionService d
         TypePrestation? avant = null;
         if (id is { } i)
             avant = await types.LireAsync(i, ct) ?? throw new RegleMetierException("Prestation introuvable.", "prestation");
+        // Taux de la liste (script 171) ; un taux déjà enregistré hors de la liste est gardé s'il ne change pas
+        if (tauxTvaAutorises is not null) await tauxTvaAutorises.ExigerAsync(tauxTva, avant?.TauxTva, "taux_tva", ct);
         var nouvelId = await types.EnregistrerAsync(id, c, l, prix, tauxTva, actif, remboursable, tarif, ct);
         await journal.EcrireAsync(utilisateurId, id is null ? "type_prestation_cree" : "type_prestation_modifie", "type_prestation", nouvelId,
             new Dictionary<string, object?>

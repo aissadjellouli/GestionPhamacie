@@ -24,8 +24,15 @@ END $$;
 ALTER TABLE lot ADD COLUMN IF NOT EXISTS bloque        boolean NOT NULL DEFAULT false;
 ALTER TABLE lot ADD COLUMN IF NOT EXISTS motif_blocage text;
 
--- Numéro de la facture Chifa_Officine correspondant à la vente
-ALTER TABLE vente ADD COLUMN IF NOT EXISTS num_facture_chifa text;
+-- Numéro de la facture Chifa_Officine correspondant à la vente (obsolète depuis le script 101, supprimée par 101b)
+-- Rejeu sur une base où le script 101 est déjà passé (table vente_chifa_facture_conflit présente) : jamais recréée, pour que le
+-- rejeu de toute la suite (mise à jour d'une officine) n'annule pas le script 101b (constat du 2026-11-26).
+DO $$
+BEGIN
+    IF to_regclass('vente_chifa_facture_conflit') IS NULL THEN
+        ALTER TABLE vente ADD COLUMN IF NOT EXISTS num_facture_chifa text;
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------
 -- 2. Réglages de traçabilité (activés une fois le stock étiqueté)

@@ -1,8 +1,9 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 167 appliqués dans l'ordre (vérifié :
--- même structure). Pour une base déjà installée, rejouer TOUTE la suite
+-- Équivaut aux scripts database/migration/001 à 171 appliqués dans l'ordre (vérifié :
+-- même structure), puis au script 101b (colonne obsolète vente.num_facture_chifa absente :
+-- décision du titulaire du 2026-11-26 ; une base neuve n'a jamais besoin de 101b). Pour une base déjà installée, rejouer TOUTE la suite
 -- database/migration depuis le script 001 (mettre_a_jour_base_officine.ps1), jamais ce fichier ni un script isolé.
 --
 -- Base vide uniquement (créée vide, ou après clean.sql). S'arrête sans rien
@@ -12,7 +13,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 167 ; à régénérer à chaque nouveau script.
+-- par les scripts 001 à 171 ; à régénérer à chaque nouveau script.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -1164,8 +1165,11 @@ $$;
 CREATE FUNCTION public.contenance_depuis_conditionnement(p_conditionnement text) RETURNS integer
     LANGUAGE sql IMMUTABLE
     AS $_$
-    -- motif de ContenanceProduit.Boite(), recopié tel quel (test ContenanceDepuisNomenclatureTests)
-    SELECT substring(p_conditionnement FROM '(?i)^\s*(?:B|BTE|BO[IÎiî]TE)\s*(?:/|\s+DE\s+)\s*([0-9]{1,5})(?:\s*(?:SACHETS?(?:(?:\s+|-)DOSES?)?|SACH|SCH|AMPOULES?|AMPS?|AMP\.?\s+BUV|CPR?S?|CP\.?\s+EFF|COMPRIM[EÉeé]S?(?:\s+EFFERVESCENTS?)?|G[EÉeé]LULES?|SUPPOSITOIRES?|SUPPO|OVULES?|CAPSULES?|PATCH(?:E?S)?|DISPOSITIFS?\s+TRANSDERMIQUES?|UNIDOSES?|R[EÉeé]CIPIENTS\s+UNIDOSES|FLACONS?|FLC|FL|(?:SERINGUES?|SERING\.?|SERIN|SER)(?:\s*PR[EÉeé][\s-]*REMPL[A-Za-zÉéÈè]*\.?)?|STYLOS?(?:\s*PR[EÉeé][\s-]*REMPL[A-Za-zÉéÈè]*\.?)?|CART(?:OUCHES?)?|POCHES?|TUBES?)\.?(?:\s*(?:DE\s*|/\s*)?[0-9]+(?:[.,][0-9]+)?\s*(?:ML|MG|G|L)|\s*\(\s*[0-9]+(?:[.,][0-9]+)?\s*(?:ML|MG|G|L)\s*\))?)?\s*$')::int
+    -- motifs de ContenanceProduit (Boite, Pilulier, ContenantSeul), recopiés tels quels (test ContenanceDepuisNomenclatureTests)
+    SELECT COALESCE(
+        substring(p_conditionnement FROM '(?i)^\s*(?:B|BTE|BO[IÎiî]TE)\s*(?:/|\s+DE\s+)\s*([0-9]{1,5})(?:\s*(?:SACHETS?(?:(?:\s+|-)DOSES?)?|SACH|SCH|AMPOULES?|AMPS?|AMP\.?\s+BUV|CPR?S?|CP\.?\s+EFF|COMPRIM[EÉeé]S?(?:\s+EFFERVESCENTS?)?|G[EÉeé]LULES?|SUPPOSITOIRES?|SUPPO|OVULES?|CAPSULES?|PATCH(?:E?S)?|DISPOSITIFS?\s+TRANSDERMIQUES?|UNIDOSES?|R[EÉeé]CIPIENTS\s+UNIDOSES|FLACONS?|FLC|FL|(?:SERINGUES?|SERING\.?|SERIN|SER)(?:\s*PR[EÉeé][\s-]*REMPL[A-Za-zÉéÈè]*\.?)?|STYLOS?(?:\s*PR[EÉeé][\s-]*REMPL[A-Za-zÉéÈè]*\.?)?|CART(?:OUCHES?)?|POCHES?|TUBES?)\.?(?:\s*(?:DE\s*|/\s*)?[0-9]+(?:[.,][0-9]+)?\s*(?:ML|MG|G|L)|\s*\(\s*[0-9]+(?:[.,][0-9]+)?\s*(?:ML|MG|G|L)\s*\))?)?\s*$')::int,
+        substring(p_conditionnement FROM '(?i)^\s*PILULIER\s*(?:/|\s+DE\s+)\s*([0-9]{1,5})\s*$')::int,
+        CASE WHEN p_conditionnement ~* '^\s*(?:B\s*/\s*)?(?:FL\.?|FLC|FLACON|F|T|TUBE)\s*(?:/|\s+DE\s+|\s)\s*[0-9]+(?:[.,][0-9]+)?\s*(?:ML|MG|G|L|DOSES?)\.?\s*$' THEN 1 END)
 $_$;
 
 
@@ -3501,6 +3505,36 @@ $$;
 
 
 --
+-- Name: surveillance_candidats_receptions(date); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.surveillance_candidats_receptions(p_jour date) RETURNS TABLE(o_type text, o_niveau text, o_utilisateur_id bigint, o_jour date, o_cle text, o_message text, o_notification text, o_valeur numeric)
+    LANGUAGE sql STABLE
+    AS $$
+    SELECT 'reception_abandonnee', 'attention', j.utilisateur_id, p_jour, j.enregistrement_id::text,
+           format('%s a abandonné la réception en attente « %s » (%s ligne(s)) mise en attente par %s, le %s à %s.',
+                  u.nom_complet, j.details->>'libelle', COALESCE(j.details->>'lignes', '?'), COALESCE(j.details->>'mise_en_attente_par', '?'),
+                  to_char(p_jour, 'DD/MM/YYYY'), to_char(j.cree_le, 'HH24:MI')),
+           format('%s : réception « %s » d''un collègue abandonnée le %s.', u.nom_complet, j.details->>'libelle', to_char(p_jour, 'DD/MM')),
+           COALESCE((j.details->>'lignes')::numeric, 0)
+    FROM journal_audit j
+    JOIN utilisateur u ON u.id = j.utilisateur_id
+    WHERE j.action = 'reception_attente_abandonnee'
+      AND j.cree_le::date = p_jour
+      AND j.enregistrement_id IS NOT NULL
+      AND j.details ? 'mise_en_attente_par_id'
+      AND (j.details->>'mise_en_attente_par_id')::bigint <> j.utilisateur_id;
+$$;
+
+
+--
+-- Name: FUNCTION surveillance_candidats_receptions(p_jour date); Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON FUNCTION public.surveillance_candidats_receptions(p_jour date) IS 'Contrôle interne (script 168) : réception en attente abandonnée par un autre employé que celui qui l''avait mise en attente, une anomalie par réception';
+
+
+--
 -- Name: surveillance_candidats_tiroir(date); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3538,7 +3572,8 @@ BEGIN
     FOR c IN SELECT * FROM surveillance_candidats(p_jour)
              UNION ALL SELECT * FROM surveillance_candidats_achats(p_jour)
              UNION ALL SELECT * FROM surveillance_candidats_comptes(p_jour)
-             UNION ALL SELECT * FROM surveillance_candidats_tiroir(p_jour) LOOP
+             UNION ALL SELECT * FROM surveillance_candidats_tiroir(p_jour)
+             UNION ALL SELECT * FROM surveillance_candidats_receptions(p_jour) LOOP
         v_id := NULL;
         SELECT a.id, a.niveau INTO v_id, v_ancien FROM alerte_surveillance a
         WHERE a.type = c.o_type AND COALESCE(a.utilisateur_id, 0) = COALESCE(c.o_utilisateur_id, 0) AND a.jour = c.o_jour AND a.cle = c.o_cle;
@@ -6024,7 +6059,7 @@ CREATE TABLE public.alerte_surveillance (
     officine_id uuid DEFAULT public.officine_courante() NOT NULL,
     CONSTRAINT alerte_surveillance_niveau_check CHECK ((niveau = ANY (ARRAY['attention'::text, 'urgent'::text]))),
     CONSTRAINT alerte_surveillance_statut_check CHECK ((statut = ANY (ARRAY['nouvelle'::text, 'traitee'::text]))),
-    CONSTRAINT ck_alerte_surveillance_type CHECK ((type = ANY (ARRAY['lignes_retirees'::text, 'tiroir'::text, 'attentes_abandonnees'::text, 'hors_horaires'::text, 'remises'::text, 'remises_patient'::text, 'ajustements'::text, 'casses'::text, 'echantillons'::text, 'boites_fantomes'::text, 'sensibles_en_retard'::text, 'ecart_reception'::text, 'reception_meme_personne'::text, 'retour_sans_avoir'::text, 'avoir_incomplet'::text, 'credit_nouveau_patient'::text, 'credits_employe'::text, 'credit_sans_remboursement'::text, 'autorisations_valideur'::text, 'autorisations_employe'::text, 'postes_simultanes'::text, 'baisses_prix'::text, 'sorties_tiroir'::text])))
+    CONSTRAINT ck_alerte_surveillance_type CHECK ((type = ANY (ARRAY['lignes_retirees'::text, 'tiroir'::text, 'attentes_abandonnees'::text, 'hors_horaires'::text, 'remises'::text, 'remises_patient'::text, 'ajustements'::text, 'casses'::text, 'echantillons'::text, 'boites_fantomes'::text, 'sensibles_en_retard'::text, 'ecart_reception'::text, 'reception_meme_personne'::text, 'retour_sans_avoir'::text, 'avoir_incomplet'::text, 'credit_nouveau_patient'::text, 'credits_employe'::text, 'credit_sans_remboursement'::text, 'autorisations_valideur'::text, 'autorisations_employe'::text, 'postes_simultanes'::text, 'baisses_prix'::text, 'sorties_tiroir'::text, 'reception_abandonnee'::text])))
 );
 
 
@@ -9179,6 +9214,10 @@ CREATE TABLE public.paiement_echeance_pret (
     utilisateur_id bigint NOT NULL,
     cree_le timestamp with time zone DEFAULT now() NOT NULL,
     officine_id uuid DEFAULT public.officine_courante() NOT NULL,
+    montant numeric(12,2) NOT NULL,
+    capital_paye numeric(12,2) NOT NULL,
+    charges_payees numeric(12,2) NOT NULL,
+    CONSTRAINT ck_paiement_echeance_pret_parts CHECK (((montant > (0)::numeric) AND (capital_paye >= (0)::numeric) AND (charges_payees >= (0)::numeric) AND ((capital_paye + charges_payees) = montant))),
     CONSTRAINT paiement_echeance_pret_check CHECK (((moyen = 'especes'::text) OR ((compte_id IS NOT NULL) AND (reference IS NOT NULL)))),
     CONSTRAINT paiement_echeance_pret_check1 CHECK (((part_tiroir = (0)::numeric) OR ((moyen = 'especes'::text) AND (versement_id IS NOT NULL)))),
     CONSTRAINT paiement_echeance_pret_moyen_check CHECK ((moyen = ANY (ARRAY['especes'::text, 'cheque'::text, 'virement'::text, 'prelevement'::text]))),
@@ -9191,6 +9230,27 @@ CREATE TABLE public.paiement_echeance_pret (
 --
 
 COMMENT ON TABLE public.paiement_echeance_pret IS 'Échéance de prêt payée, confirmée par le titulaire : capital (remboursement_financement) et charges financières (intérêts, assurance, TVA, marge : dépense) sortis du coffre ou de la banque choisie';
+
+
+--
+-- Name: COLUMN paiement_echeance_pret.montant; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.paiement_echeance_pret.montant IS 'Montant de ce paiement (script 170) : une échéance peut être payée en plusieurs fois';
+
+
+--
+-- Name: COLUMN paiement_echeance_pret.capital_paye; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.paiement_echeance_pret.capital_paye IS 'Part capital de ce paiement (script 170) : charges couvertes d''abord, puis le capital';
+
+
+--
+-- Name: COLUMN paiement_echeance_pret.charges_payees; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.paiement_echeance_pret.charges_payees IS 'Part charges financières de ce paiement (intérêts, assurance, TVA, marge ; script 170)';
 
 
 --
@@ -10063,6 +10123,7 @@ CREATE TABLE public.pret_bancaire (
     taux numeric(7,4),
     duree_mois integer,
     officine_id uuid DEFAULT public.officine_courante() NOT NULL,
+    echeancier_a_remplacer boolean DEFAULT false NOT NULL,
     CONSTRAINT pret_bancaire_duree_mois_check CHECK (((duree_mois >= 1) AND (duree_mois <= 600))),
     CONSTRAINT pret_bancaire_montant_check CHECK ((montant > (0)::numeric)),
     CONSTRAINT pret_bancaire_preteur_check CHECK ((((compte_id IS NOT NULL) AND (preteur IS NULL)) OR ((compte_id IS NULL) AND (btrim(preteur) <> ''::text)))),
@@ -10103,6 +10164,13 @@ COMMENT ON COLUMN public.pret_bancaire.taux IS 'Taux annuel du contrat, en % (0 
 --
 
 COMMENT ON COLUMN public.pret_bancaire.duree_mois IS 'Durée du contrat en mois (1 à 600) ; facultative ; saisie, jamais recalculée';
+
+
+--
+-- Name: COLUMN pret_bancaire.echeancier_a_remplacer; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.pret_bancaire.echeancier_a_remplacer IS 'Remboursement anticipé enregistré (script 170) : échéances non payées bloquées jusqu''à l''import du nouveau tableau de la banque';
 
 
 --
@@ -10820,6 +10888,56 @@ COMMENT ON COLUMN public.regularisation_part_organisme.part_organisme_rendue_ava
 
 ALTER TABLE public.regularisation_part_organisme ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
     SEQUENCE NAME public.regularisation_part_organisme_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: remboursement_anticipe_pret; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.remboursement_anticipe_pret (
+    id bigint NOT NULL,
+    pret_id bigint NOT NULL,
+    date_paiement date NOT NULL,
+    capital numeric(12,2) NOT NULL,
+    frais numeric(12,2) DEFAULT 0 NOT NULL,
+    moyen text NOT NULL,
+    compte_id bigint,
+    reference text,
+    part_tiroir numeric(12,2) DEFAULT 0 NOT NULL,
+    versement_id bigint,
+    mouvement_capital_id bigint,
+    mouvement_frais_id bigint,
+    utilisateur_id bigint NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    officine_id uuid DEFAULT public.officine_courante() NOT NULL,
+    CONSTRAINT ck_remboursement_anticipe_pret_moyen CHECK (((moyen = 'especes'::text) OR ((compte_id IS NOT NULL) AND (reference IS NOT NULL)))),
+    CONSTRAINT ck_remboursement_anticipe_pret_tiroir CHECK (((part_tiroir = (0)::numeric) OR ((moyen = 'especes'::text) AND (versement_id IS NOT NULL)))),
+    CONSTRAINT remboursement_anticipe_pret_capital_check CHECK ((capital > (0)::numeric)),
+    CONSTRAINT remboursement_anticipe_pret_frais_check CHECK ((frais >= (0)::numeric)),
+    CONSTRAINT remboursement_anticipe_pret_moyen_check CHECK ((moyen = ANY (ARRAY['especes'::text, 'cheque'::text, 'virement'::text, 'prelevement'::text]))),
+    CONSTRAINT remboursement_anticipe_pret_part_tiroir_check CHECK ((part_tiroir >= (0)::numeric))
+);
+
+
+--
+-- Name: TABLE remboursement_anticipe_pret; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.remboursement_anticipe_pret IS 'Remboursement anticipé d''une partie du capital d''un prêt (script 170) : capital (remboursement_financement) et frais (dépense « charges financières ») sortis du coffre ou de la banque choisie';
+
+
+--
+-- Name: remboursement_anticipe_pret_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.remboursement_anticipe_pret ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.remboursement_anticipe_pret_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -11915,6 +12033,60 @@ ALTER TABLE public.sync_sortie ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY 
 
 
 --
+-- Name: taux_tva; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.taux_tva (
+    id bigint NOT NULL,
+    taux numeric(5,2) NOT NULL,
+    libelle character varying(60) NOT NULL,
+    actif boolean DEFAULT true NOT NULL,
+    cree_le timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT taux_tva_libelle_check CHECK ((btrim((libelle)::text) <> ''::text)),
+    CONSTRAINT taux_tva_taux_check CHECK (((taux >= (0)::numeric) AND (taux <= (100)::numeric)))
+);
+
+
+--
+-- Name: TABLE taux_tva; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.taux_tva IS 'Taux de TVA proposés à la saisie (produit, prestation, ligne libre de facture), réglés par le titulaire ; jamais supprimés, désactivés (script 171)';
+
+
+--
+-- Name: taux_tva_categorie; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.taux_tva_categorie (
+    categorie_code text NOT NULL,
+    taux numeric(5,2) NOT NULL,
+    modifie_le timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: TABLE taux_tva_categorie; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.taux_tva_categorie IS 'Taux de TVA proposé à la création d''un produit de la catégorie (script 171) ; catégorie absente : taux à choisir';
+
+
+--
+-- Name: taux_tva_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.taux_tva ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.taux_tva_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: type_prestation; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -12162,7 +12334,6 @@ CREATE TABLE public.vente (
     part_organisme numeric(12,2) DEFAULT 0 NOT NULL,
     part_patient numeric(12,2) DEFAULT 0 NOT NULL,
     statut text DEFAULT 'en_cours'::text NOT NULL,
-    num_facture_chifa text,
     session_caisse_id bigint,
     remise_pct numeric(5,2) DEFAULT 0 NOT NULL,
     montant_remise numeric(12,2) DEFAULT 0 NOT NULL,
@@ -12216,13 +12387,6 @@ CREATE TABLE public.vente (
     CONSTRAINT vente_taux_tiers_payant_check CHECK (((taux_tiers_payant >= (0)::numeric) AND (taux_tiers_payant <= (100)::numeric))),
     CONSTRAINT vente_type_check CHECK ((type = ANY (ARRAY['libre'::text, 'tiers_payant'::text])))
 );
-
-
---
--- Name: COLUMN vente.num_facture_chifa; Type: COMMENT; Schema: public; Owner: -
---
-
-COMMENT ON COLUMN public.vente.num_facture_chifa IS 'OBSOLÈTE (script 101, 2026-11-15) : remplacée par chifa_facture, plus lue ni écrite ; suppression prévue par le script 101b après validation du titulaire';
 
 
 --
@@ -12769,17 +12933,51 @@ CREATE VIEW public.v_echeance_pret AS
     e.marge,
     e.montant,
     e.capital_restant,
-    pe.date_paiement,
-    pe.moyen,
-    pe.compte_id,
-    cp.nom AS compte,
-    pe.reference,
-    pe.part_tiroir,
-    u.nom_complet AS employe
-   FROM (((((public.echeance_pret e
+        CASE
+            WHEN (x.paye >= e.montant) THEN pe.date_paiement
+            ELSE NULL::date
+        END AS date_paiement,
+        CASE
+            WHEN (x.paye >= e.montant) THEN pe.moyen
+            ELSE NULL::text
+        END AS moyen,
+        CASE
+            WHEN (x.paye >= e.montant) THEN pe.compte_id
+            ELSE NULL::bigint
+        END AS compte_id,
+        CASE
+            WHEN (x.paye >= e.montant) THEN cp.nom
+            ELSE NULL::text
+        END AS compte,
+        CASE
+            WHEN (x.paye >= e.montant) THEN pe.reference
+            ELSE NULL::text
+        END AS reference,
+    (
+        CASE
+            WHEN (x.paye >= e.montant) THEN x.tiroir
+            ELSE NULL::numeric
+        END)::numeric(12,2) AS part_tiroir,
+        CASE
+            WHEN (x.paye >= e.montant) THEN u.nom_complet
+            ELSE NULL::text
+        END AS employe
+   FROM ((((((public.echeance_pret e
      JOIN public.pret_bancaire p ON ((p.id = e.pret_id)))
      LEFT JOIN public.compte_tresorerie c ON ((c.id = p.compte_id)))
-     LEFT JOIN public.paiement_echeance_pret pe ON ((pe.echeance_id = e.id)))
+     LEFT JOIN LATERAL ( SELECT sum(a.montant) AS paye,
+            sum(a.part_tiroir) AS tiroir
+           FROM public.paiement_echeance_pret a
+          WHERE (a.echeance_id = e.id)) x ON (true))
+     LEFT JOIN LATERAL ( SELECT a.date_paiement,
+            a.moyen,
+            a.compte_id,
+            a.reference,
+            a.utilisateur_id
+           FROM public.paiement_echeance_pret a
+          WHERE (a.echeance_id = e.id)
+          ORDER BY a.date_paiement DESC, a.id DESC
+         LIMIT 1) pe ON (true))
      LEFT JOIN public.compte_tresorerie cp ON ((cp.id = pe.compte_id)))
      LEFT JOIN public.utilisateur u ON ((u.id = pe.utilisateur_id)));
 
@@ -12822,7 +13020,12 @@ CREATE VIEW public.v_pret_bancaire AS
      JOIN public.utilisateur u ON ((u.id = p.utilisateur_id)))
      LEFT JOIN LATERAL ( SELECT count(*) AS nombre,
             count(v.date_paiement) AS payees,
-            sum(v.capital) FILTER (WHERE (v.date_paiement IS NOT NULL)) AS capital_paye,
+            (COALESCE(( SELECT sum(a.capital_paye) AS sum
+                   FROM (public.paiement_echeance_pret a
+                     JOIN public.echeance_pret b ON ((b.id = a.echeance_id)))
+                  WHERE (b.pret_id = p.id)), (0)::numeric) + COALESCE(( SELECT sum(r.capital) AS sum
+                   FROM public.remboursement_anticipe_pret r
+                  WHERE (r.pret_id = p.id)), (0)::numeric)) AS capital_paye,
             count(*) FILTER (WHERE ((v.date_paiement IS NULL) AND (v.date_echeance < CURRENT_DATE))) AS echues
            FROM public.v_echeance_pret v
           WHERE (v.pret_id = p.id)) e ON (true));
@@ -12896,6 +13099,27 @@ CREATE VIEW public.v_echeance_pret_complete AS
     e.assurance
    FROM (public.v_echeance_pret v
      JOIN public.echeance_pret e ON ((e.id = v.id)));
+
+
+--
+-- Name: v_echeance_pret_paye; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.v_echeance_pret_paye AS
+ SELECT echeance_id,
+    sum(montant) AS montant_paye,
+    sum(capital_paye) AS capital_paye,
+    sum(charges_payees) AS charges_payees,
+    (count(*))::integer AS paiements
+   FROM public.paiement_echeance_pret a
+  GROUP BY echeance_id;
+
+
+--
+-- Name: VIEW v_echeance_pret_paye; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON VIEW public.v_echeance_pret_paye IS 'Déjà payé de chaque échéance de prêt (script 170) : montant, capital, charges, nombre de paiements';
 
 
 --
@@ -13211,11 +13435,10 @@ CREATE VIEW public.v_pret_bancaire_complet AS
     p.taux,
     p.duree_mois,
     ( SELECT e.assurance
-           FROM public.echeance_pret e
-          WHERE ((e.pret_id = v.id) AND (NOT (EXISTS ( SELECT 1
-                   FROM public.paiement_echeance_pret x
-                  WHERE (x.echeance_id = e.id)))))
-          ORDER BY e.rang
+           FROM (public.v_echeance_pret x
+             JOIN public.echeance_pret e ON ((e.id = x.id)))
+          WHERE ((x.pret_id = v.id) AND (x.date_paiement IS NULL))
+          ORDER BY x.rang
          LIMIT 1) AS prochaine_assurance
    FROM (public.v_pret_bancaire v
      JOIN public.pret_bancaire p ON ((p.id = v.id)));
@@ -14811,14 +15034,6 @@ ALTER TABLE ONLY public.organisme
 
 
 --
--- Name: paiement_echeance_pret paiement_echeance_pret_echeance_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.paiement_echeance_pret
-    ADD CONSTRAINT paiement_echeance_pret_echeance_id_key UNIQUE (echeance_id);
-
-
---
 -- Name: paiement_echeance_pret paiement_echeance_pret_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -15179,6 +15394,14 @@ ALTER TABLE ONLY public.regularisation_part_organisme
 
 
 --
+-- Name: remboursement_anticipe_pret remboursement_anticipe_pret_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.remboursement_anticipe_pret
+    ADD CONSTRAINT remboursement_anticipe_pret_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: remboursement_titulaire remboursement_titulaire_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -15448,6 +15671,30 @@ ALTER TABLE ONLY public.sync_sortie
 
 ALTER TABLE ONLY public.sync_table
     ADD CONSTRAINT sync_table_pkey PRIMARY KEY (nom_table);
+
+
+--
+-- Name: taux_tva_categorie taux_tva_categorie_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.taux_tva_categorie
+    ADD CONSTRAINT taux_tva_categorie_pkey PRIMARY KEY (categorie_code);
+
+
+--
+-- Name: taux_tva taux_tva_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.taux_tva
+    ADD CONSTRAINT taux_tva_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: taux_tva taux_tva_taux_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.taux_tva
+    ADD CONSTRAINT taux_tva_taux_key UNIQUE (taux);
 
 
 --
@@ -16564,6 +16811,13 @@ CREATE INDEX ix_mouvement_tiroir_session ON public.mouvement_tiroir USING btree 
 
 
 --
+-- Name: ix_paiement_echeance_pret_echeance; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_paiement_echeance_pret_echeance ON public.paiement_echeance_pret USING btree (echeance_id);
+
+
+--
 -- Name: ix_patient_assure_principal; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -16641,6 +16895,48 @@ CREATE INDEX ix_produit_dci ON public.produit USING btree (dci_id);
 
 
 --
+-- Name: ix_remboursement_anticipe_pret_compte; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_remboursement_anticipe_pret_compte ON public.remboursement_anticipe_pret USING btree (compte_id);
+
+
+--
+-- Name: ix_remboursement_anticipe_pret_mouvement_capital; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_remboursement_anticipe_pret_mouvement_capital ON public.remboursement_anticipe_pret USING btree (mouvement_capital_id);
+
+
+--
+-- Name: ix_remboursement_anticipe_pret_mouvement_frais; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_remboursement_anticipe_pret_mouvement_frais ON public.remboursement_anticipe_pret USING btree (mouvement_frais_id);
+
+
+--
+-- Name: ix_remboursement_anticipe_pret_pret; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_remboursement_anticipe_pret_pret ON public.remboursement_anticipe_pret USING btree (pret_id);
+
+
+--
+-- Name: ix_remboursement_anticipe_pret_utilisateur; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_remboursement_anticipe_pret_utilisateur ON public.remboursement_anticipe_pret USING btree (utilisateur_id);
+
+
+--
+-- Name: ix_remboursement_anticipe_pret_versement; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_remboursement_anticipe_pret_versement ON public.remboursement_anticipe_pret USING btree (versement_id);
+
+
+--
 -- Name: ix_remise_auto_categorie; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -16715,6 +17011,13 @@ CREATE INDEX ix_sync_sortie_en_attente_ordre ON public.sync_sortie USING btree (
 --
 
 CREATE INDEX ix_sync_sortie_lot ON public.sync_sortie USING btree (epoque, lot_numero) WHERE (lot_numero IS NOT NULL);
+
+
+--
+-- Name: ix_taux_tva_categorie_taux; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_taux_tva_categorie_taux ON public.taux_tva_categorie USING btree (taux);
 
 
 --
@@ -20087,6 +20390,54 @@ ALTER TABLE ONLY public.regularisation_part_organisme
 
 
 --
+-- Name: remboursement_anticipe_pret remboursement_anticipe_pret_compte_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.remboursement_anticipe_pret
+    ADD CONSTRAINT remboursement_anticipe_pret_compte_id_fkey FOREIGN KEY (compte_id) REFERENCES public.compte_tresorerie(id);
+
+
+--
+-- Name: remboursement_anticipe_pret remboursement_anticipe_pret_mouvement_capital_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.remboursement_anticipe_pret
+    ADD CONSTRAINT remboursement_anticipe_pret_mouvement_capital_id_fkey FOREIGN KEY (mouvement_capital_id) REFERENCES public.mouvement_tresorerie(id);
+
+
+--
+-- Name: remboursement_anticipe_pret remboursement_anticipe_pret_mouvement_frais_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.remboursement_anticipe_pret
+    ADD CONSTRAINT remboursement_anticipe_pret_mouvement_frais_id_fkey FOREIGN KEY (mouvement_frais_id) REFERENCES public.mouvement_tresorerie(id);
+
+
+--
+-- Name: remboursement_anticipe_pret remboursement_anticipe_pret_pret_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.remboursement_anticipe_pret
+    ADD CONSTRAINT remboursement_anticipe_pret_pret_id_fkey FOREIGN KEY (pret_id) REFERENCES public.pret_bancaire(id);
+
+
+--
+-- Name: remboursement_anticipe_pret remboursement_anticipe_pret_utilisateur_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.remboursement_anticipe_pret
+    ADD CONSTRAINT remboursement_anticipe_pret_utilisateur_id_fkey FOREIGN KEY (utilisateur_id) REFERENCES public.utilisateur(id);
+
+
+--
+-- Name: remboursement_anticipe_pret remboursement_anticipe_pret_versement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.remboursement_anticipe_pret
+    ADD CONSTRAINT remboursement_anticipe_pret_versement_id_fkey FOREIGN KEY (versement_id) REFERENCES public.mouvement_tresorerie(id);
+
+
+--
 -- Name: remboursement_titulaire remboursement_titulaire_compte_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -20396,6 +20747,22 @@ ALTER TABLE ONLY public.sync_ordre_recu
 
 ALTER TABLE ONLY public.sync_ordre_resultat
     ADD CONSTRAINT sync_ordre_resultat_ordre_id_fkey FOREIGN KEY (ordre_id) REFERENCES public.sync_ordre_recu(id);
+
+
+--
+-- Name: taux_tva_categorie taux_tva_categorie_categorie_code_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.taux_tva_categorie
+    ADD CONSTRAINT taux_tva_categorie_categorie_code_fkey FOREIGN KEY (categorie_code) REFERENCES public.categorie_produit(code);
+
+
+--
+-- Name: taux_tva_categorie taux_tva_categorie_taux_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.taux_tva_categorie
+    ADD CONSTRAINT taux_tva_categorie_taux_fkey FOREIGN KEY (taux) REFERENCES public.taux_tva(taux);
 
 
 --

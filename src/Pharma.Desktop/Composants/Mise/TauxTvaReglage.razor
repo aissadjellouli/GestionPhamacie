@@ -1,0 +1,144 @@
+@inject ApiClient Api
+
+@* Taux de TVA réglables (décision du titulaire du 2026-11-26, script 171), dans Administration › Réglages fiscaux (titulaire) : liste des
+   taux proposés à la saisie (produit, prestation, ligne libre de facture), jamais supprimés (désactivés), et taux proposé à la création
+   d'un produit de chaque catégorie. Les taux déjà enregistrés hors de la liste sont signalés, jamais modifiés. Chaque changement est
+   inscrit au journal. Les deux tableaux défilent dans leur cadre (écran fixe). *@
+
+@if (erreur is not null) { <p class="detail texte-urgent" role="alert" data-champ="taux" style="margin: 0">@erreur</p> }
+else if (message is not null) { <p class="detail texte-reussite" role="status" style="margin: 0">@message</p> }
+@if (liste?.HorsListe is { Count: > 0 } hors)
+{
+    <p class="detail texte-attention" role="status" style="margin: 0">
+        Taux enregistrés hors de la liste : @string.Join(", ", hors.Select(h => $"{Texte(h.Taux)} % ({h.Produits} produit(s) ou prestation(s))")) — gardés tels quels ;
+        ajoutez ces taux à la liste ou corrigez les fiches.
+    </p>
+}
+
+<div class="tva-reglage">
+    <section class="panneau tva-colonne" aria-labelledby="t-taux-tva">
+        <h2 id="t-taux-tva">Taux de TVA</h2>
+        <div class="achats-ligne">
+            <div class="champ" style="flex: 0 0 110px"><label for="tva-taux" class="requis">Taux (%)</label>
+                <input id="tva-taux" data-champ="taux" type="number" min="0" max="100" step="0.01" @bind="nouveauTaux" /></div>
+            <div class="champ" style="flex: 1 1 160px"><label for="tva-libelle" class="requis">Libellé</label>
+                <input id="tva-libelle" data-champ="libelle" type="text" maxlength="60" placeholder="Ex. Taux réduit" @bind="nouveauLibelle" @bind:event="oninput" /></div>
+            <button type="button" class="btn" disabled="@(enCours || nouveauTaux is null || string.IsNullOrWhiteSpace(nouveauLibelle))" @onclick="AjouterAsync">Ajouter</button>
+        </div>
+        <div class="tableau-cadre" data-hauteur-min="120">
+            <table class="tableau" style="min-width: 0">
+                <thead><tr><th scope="col" class="nombre">Taux</th><th scope="col">Libellé</th><th scope="col" class="nombre">Produits</th><th scope="col">Actif</th><th scope="col"><span class="visuellement-cache">Action</span></th></tr></thead>
+                <tbody>
+                    @foreach (var t in liste?.Taux ?? [])
+                    {
+                        var s = Saisie(t);
+                        <tr>
+                            <td class="nombre"><strong>@Texte(t.Taux) %</strong></td>
+                            <td><input aria-label="@($"Libellé du taux {Texte(t.Taux)} %")" type="text" maxlength="60" style="width: 100%" value="@s.Libelle"
+                                       @oninput="e => s.Libelle = e.Value?.ToString() ?? string.Empty" /></td>
+                            <td class="nombre">@t.Produits</td>
+                            <td><input aria-label="@($"Taux {Texte(t.Taux)} % actif")" type="checkbox" checked="@s.Actif" @onchange="e => s.Actif = e.Value is true" /></td>
+                            <td><button type="button" class="lien-bouton" disabled="@(enCours || (s.Libelle == t.Libelle && s.Actif == t.Actif))" @onclick="() => ModifierAsync(t)">Enregistrer</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="panneau tva-colonne" aria-labelledby="t-taux-categories">
+        <h2 id="t-taux-categories">Taux proposé à la création d’un produit</h2>
+        <div class="tableau-cadre" data-hauteur-min="120">
+            <table class="tableau" style="min-width: 0">
+                <thead><tr><th scope="col">Catégorie</th><th scope="col">Taux par défaut</th></tr></thead>
+                <tbody>
+                    @foreach (var c in liste?.Categories ?? [])
+                    {
+                        <tr>
+                            <td>@c.Libelle</td>
+                            <td>
+                                <select aria-label="@($"Taux par défaut de {c.Libelle}")" data-champ="taux_categorie" disabled="@enCours"
+                                        value="@(c.Taux is { } v ? Valeur(v) : "")" @onchange="e => DefinirDefautAsync(c, e.Value?.ToString())">
+                                    <option value="">— à choisir —</option>
+                                    @foreach (var t in (liste?.Taux ?? []).Where(x => x.Actif || x.Taux == c.Taux))
+                                    {
+                                        <option value="@Valeur(t.Taux)">@Texte(t.Taux) % · @t.Libelle</option>
+                                    }
+                                </select>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+@code {
+    private sealed class Ligne { public string Libelle { get; set; } = ""; public bool Actif { get; set; } }
+
+    private ListeTauxTvaDto? liste;
+    private readonly Dictionary<long, Ligne> saisies = [];
+    private decimal? nouveauTaux;
+    private string nouveauLibelle = "";
+    private string? erreur, message;
+    private bool enCours;
+
+    protected override Task OnInitializedAsync() => ChargerAsync();
+
+    private async Task ChargerAsync()
+    {
+        var (l, e) = await Api.TauxTvaAsync();
+        if (l is null) { erreur = e; return; }
+        liste = l;
+        saisies.Clear();
+    }
+
+    private Ligne Saisie(TauxTvaDto t)
+    {
+        if (!saisies.TryGetValue(t.Id, out var s)) saisies[t.Id] = s = new Ligne { Libelle = t.Libelle, Actif = t.Actif };
+        return s;
+    }
+
+    private static string Texte(decimal taux) => taux.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo("fr-FR"));
+    private static string Valeur(decimal taux) => taux.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+
+    private async Task AjouterAsync()
+    {
+        if (nouveauTaux is not { } t) return;
+        (enCours, erreur, message) = (true, null, null);
+        try
+        {
+            if (await Api.AjouterTauxTvaAsync(new TauxTvaRequete(t, nouveauLibelle)) is { } e) { erreur = e; return; }
+            message = $"Taux {Texte(t)} % ajouté à la liste.";
+            (nouveauTaux, nouveauLibelle) = (null, "");
+            await ChargerAsync();
+        }
+        finally { enCours = false; }
+    }
+
+    private async Task ModifierAsync(TauxTvaDto t)
+    {
+        var s = Saisie(t);
+        (enCours, erreur, message) = (true, null, null);
+        try
+        {
+            if (await Api.ModifierTauxTvaAsync(t.Id, new TauxTvaModificationRequete(s.Libelle, s.Actif)) is { } e) { erreur = e; return; }
+            message = $"Taux {Texte(t.Taux)} % enregistré{(s.Actif ? "" : " : désactivé, il n’est plus proposé")}.";
+            await ChargerAsync();
+        }
+        finally { enCours = false; }
+    }
+
+    private async Task DefinirDefautAsync(TauxTvaCategorieDto c, string? valeur)
+    {
+        decimal? taux = decimal.TryParse(valeur, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
+        (enCours, erreur, message) = (true, null, null);
+        try
+        {
+            if (await Api.DefinirTauxTvaCategorieAsync(c.Code, taux) is { } e) { erreur = e; await ChargerAsync(); return; }
+            message = taux is { } t ? $"{c.Libelle} : {Texte(t)} % proposé à la création d’un produit." : $"{c.Libelle} : taux à choisir à la création.";
+            await ChargerAsync();
+        }
+        finally { enCours = false; }
+    }
+}

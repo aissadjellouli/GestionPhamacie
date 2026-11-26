@@ -58,6 +58,33 @@ internal static class ReglagesMutualisesEndpoints
             })
            .ExigerTitulaire();
 
+        // Taux de TVA réglables (script 171) : liste lue par tout employé connecté (formulaires), réglée par le titulaire
+        api.MapGet("/fiscal/taux-tva", async (Pharma.Application.Fiscal.GererTauxTva g, CancellationToken ct) =>
+            {
+                var l = await g.ListerAsync(ct);
+                return Results.Ok(new ListeTauxTvaDto(l.Taux.Select(t => new TauxTvaDto(t.Id, t.Taux, t.Libelle, t.Actif, t.Produits)).ToList(),
+                    l.Categories.Select(c => new TauxTvaCategorieDto(c.Code, c.Libelle, c.Taux)).ToList(),
+                    l.HorsListe.Select(h => new TauxHorsListeDto(h.Taux, h.Produits)).ToList()));
+            })
+           .ExigerConnexion();
+        api.MapPost("/fiscal/taux-tva", async (TauxTvaRequete r, Pharma.Application.Fiscal.GererTauxTva g, ClaimsPrincipal user, CancellationToken ct) =>
+                Results.Ok(new IdentifiantDto(await g.AjouterAsync(user.UtilisateurId(), r.Taux, r.Libelle, ct))))
+           .ExigerTitulaire();
+        api.MapPut("/fiscal/taux-tva/{id:long}", async (long id, TauxTvaModificationRequete r, Pharma.Application.Fiscal.GererTauxTva g, ClaimsPrincipal user,
+                CancellationToken ct) =>
+            {
+                await g.ModifierAsync(user.UtilisateurId(), id, r.Libelle, r.Actif, ct);
+                return Results.NoContent();
+            })
+           .ExigerTitulaire();
+        api.MapPut("/fiscal/taux-tva/categories/{code}", async (string code, TauxTvaDefautRequete r, Pharma.Application.Fiscal.GererTauxTva g,
+                ClaimsPrincipal user, CancellationToken ct) =>
+            {
+                await g.DefinirDefautAsync(user.UtilisateurId(), code, r.Taux, ct);
+                return Results.NoContent();
+            })
+           .ExigerTitulaire();
+
         api.MapGet("/tracabilite/parametres", async (ConsulterParametreTracabilite c, CancellationToken ct) =>
             {
                 var p = await c.ExecuterAsync(ct);

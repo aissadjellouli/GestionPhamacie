@@ -1,0 +1,17 @@
+@page "/admin/contenances"
+
+@* Contenances des produits (décision du titulaire du 2026-11-26) : compléter ou corriger le nombre d'unités par boîte, à l'écran ou par un
+   fichier (Excel ou CSV). Même écran que Stock › Contenances ; droit de créer au catalogue. Écran fixe : seul le tableau défile. *@
+<div class="page admin">
+    <NavAdmin Actif="admin/contenances" />
+
+    <div class="admin-contenu">
+        <div class="titre-page">
+            <div>
+                <h1>Contenances des produits</h1>
+                <p class="sous-titre">Nombre d’unités par boîte : sert aux contrôles des psychotropes (durée × contenance) et aux alertes. À compléter quand la nomenclature ne le donne pas, à corriger s’il est faux.</p>
+            </div>
+        </div>
+        <ContenancesManquantes />
+    </div>
+</div>
