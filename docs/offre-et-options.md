@@ -27,6 +27,8 @@ pharmacie. L'API vérifie cette signature avec la clé publique intégrée à so
 
 ## Questions ouvertes
 
+> Réponses du titulaire du 2026-11-26 : voir « Décisions » en fin de document (reste ouvert : durée de la transition, Q8).
+
 1. **Qui est le super admin** : l'éditeur du logiciel ou quelqu'un de la pharmacie ? Si la clé privée est chez la pharmacie, la signature
    ne protège plus rien.
 2. **Comment l'activation arrive** :
@@ -111,3 +113,11 @@ Faite à partir des 275 fonctionnalités de [fonctionnalites.md](fonctionnalites
 |---|---|
 | 2026-11-26 | Des fonctionnalités deviendront des options vendues à part, activées à la demande ; une offre de base est livrée à toutes les pharmacies. |
 | 2026-11-26 | Le maximum de postes autorisés est fixé par le super admin, sans possibilité de le modifier dans la base. |
+| 2026-11-26 | Q1 : le super admin est **l'éditeur du logiciel** ; la clé privée qui signe les activations reste chez l'éditeur, jamais chez la pharmacie. |
+| 2026-11-26 | Q2 : pharmacie reliée au **serveur central** : c'est le central qui gère et transmet l'activation signée ; sinon, **code signé** saisi sur place (produit par un outil gardé chez l'éditeur). |
+| 2026-11-26 | Q3 : l'activation est **liée à une pharmacie précise** (son identifiant dans l'activation signée) : une activation recopiée ailleurs est refusée. |
+| 2026-11-26 | Q4 : signature absente ou fausse : **retour à l'offre de base** (options fermées, maximum de postes ramené à 2), titulaire prévenu, inscrit au journal ; une vente en cours n'est jamais interrompue. |
+| 2026-11-26 | Q5 : activation **définitive ou limitée dans le temps** (date de fin facultative dans l'activation) ; à l'échéance : titulaire prévenu 30 puis 7 jours avant, délai de grâce de 15 jours, puis option fermée (écran masqué ou en lecture seule), **aucune donnée effacée**. |
+| 2026-11-26 | Q6 : écran **« Mon offre »** en lecture seule pour le titulaire (packs, quotas, dates de fin), champ de saisie d'un code d'activation, coordonnées de l'éditeur pour demander une option. |
+| 2026-11-26 | Q7 : l'activation est rangée dans la base répliquée (valable sur le 2e serveur après une bascule) ; la signature est contrôlée sur chaque serveur ; le central **transmet** une activation signée par l'éditeur, il ne peut pas en créer. |
+| 2026-11-26 | Q8 : pharmacies déjà installées : **tout reste ouvert pendant une période de transition** (code « tout compris » limité dans le temps), puis passage à leur offre réelle. **Durée de la transition : à définir.** |
