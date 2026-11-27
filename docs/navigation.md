@@ -194,3 +194,17 @@ livraison en cours de saisie la **met en attente sur le serveur** (« Réception
 
 L'écran « Stock » du domaine Stock s'appelle **« Gestion du stock »** (décision du titulaire du 2026-11-27) : le menu ne montre plus
 « STOCK › Stock › Produits ». Sa première rubrique s'appelle **« Liste des produits »**. Adresse (`/stock`), raccourci (⇧ S) et droits inchangés.
+
+## Menu de gauche sans titre racine (2026-11-27)
+
+Décision du titulaire (« la racine ne sert à rien », puis « go, même logique pour les autres écrans ») : le menu de gauche ne commence
+plus par un titre qui l'enveloppe en entier et répète le domaine ou l'écran.
+
+- **Domaines à plusieurs écrans** (Stock, Finances, Patients, Pilotage) : plus de titre « STOCK », « FINANCES »… ; le menu commence par
+  les écrans du domaine (le domaine reste en surbrillance dans le menu du haut ; nom accessible du menu inchangé).
+- **Accueil** : plus de titre « Accueil » ; les rubriques (Aujourd'hui, Écarts de caisse, Alertes non envoyées) directement.
+- **Gardés** (vrais groupes, plusieurs par menu) : Comptoir, Opérations et Caisse (caisse) ; thèmes de l'Administration ; À recevoir et
+  À payer (Dettes) ; Alertes ouvertes (Alertes du jour, sous « Vue d'ensemble ») ; Commandes, Réceptions, Retours (Achats) ; Activité,
+  Pertes et dons (Rapports) ; Anomalies, Pertes et vigilance, Réglages (Contrôle interne) ; l'écran affiché déplié avec ses rubriques.
+- Test : `ChevronsMenusTests.Aucun_titre_racine_au_nom_du_domaine_ou_de_l_accueil`. Mesures : Accueil, Gestion du stock, Factures,
+  Dettes, Patients, Rapports, Contrôle interne, clair et sombre, 1 366 × 768 et 1 536 × 890 : page et menu à 0 px.

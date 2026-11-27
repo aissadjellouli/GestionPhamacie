@@ -9,8 +9,8 @@
    des droits de gestion (Domaines.Accueil) ; le vendeur arrive directement sur la Caisse. *@
 <div class="page avec-menu">
     <NavDomaine Libelle="Accueil">
-        @* Groupe repliable (GroupeMenu, 2026-11-27) : chevron « › » replié, « ⌄ » déplié *@
-        <GroupeMenu Cle="accueil" Titre="Accueil" ContientActif="true">
+        @* Pas de titre racine « Accueil » (décision du titulaire du 2026-11-27 : un titre qui enveloppe tout le menu et répète le nom de
+           l'écran ne sert à rien) : les rubriques directement *@
             <a href="accueil" class="@(rubrique == "jour" ? "active" : null)" aria-current="@(rubrique == "jour" ? "page" : null)">Aujourd’hui</a>
             @if (Titulaire)
             {
@@ -19,7 +19,6 @@
                 <a href="accueil?rubrique=non-envoyees" class="@(rubrique == "non-envoyees" ? "active" : null)" aria-current="@(rubrique == "non-envoyees" ? "page" : null)">
                     <span>Alertes non envoyées</span>@if (nbNonEnvoyees > 0) { <span class="compteur" aria-label="@($"{nbNonEnvoyees} alerte(s) non vue(s)")">@nbNonEnvoyees</span> }</a>
             }
-        </GroupeMenu>
     </NavDomaine>
 
     <div class="contenu-rubrique">

@@ -54,6 +54,20 @@ public partial class ChevronsMenusTests
         Assert.True(ecarts.Count == 0, "Titre de groupe non cliquable (utiliser GroupeMenu) : " + string.Join(", ", ecarts));
     }
 
+    /// <summary>
+    /// Pas de titre racine qui enveloppe tout le menu et répète le domaine ou l'écran (décision du titulaire du 2026-11-27 : « la racine
+    /// ne sert à rien ») : le menu d'un domaine commence par ses écrans, celui de l'accueil par ses rubriques.
+    /// </summary>
+    [Fact]
+    public void Aucun_titre_racine_au_nom_du_domaine_ou_de_l_accueil()
+    {
+        var composants = Path.Combine(BaseJetableM4.RacineDepot(), "src", "Pharma.Desktop", "Composants");
+        var nav = File.ReadAllText(Path.Combine(composants, "Mise", "NavDomaine.razor"));
+        Assert.DoesNotContain("Cle=\"@($\"domaine:", nav);
+        Assert.DoesNotContain("Titre=\"@domaine.Libelle\"", nav);
+        Assert.DoesNotContain("Titre=\"Accueil\"", File.ReadAllText(Path.Combine(composants, "Pages", "Accueil.razor")));
+    }
+
     [Fact]
     public void Le_titre_d_une_rubrique_repliable_est_un_bouton_accessible()
     {
@@ -66,7 +80,7 @@ public partial class ChevronsMenusTests
         Assert.Contains("Etat.Choisir(", groupe);   // état gardé tant que le poste est ouvert (EtatMenus)
         // Les menus qui avaient des groupes passent par le composant commun
         foreach (var f in new[] { "Mise/NavDomaine.razor", "Mise/NavAdmin.razor", "Mise/NavControleInterne.razor", "Caisse/NavCaisse.razor",
-                     "Pages/Accueil.razor", "Pages/Achats.razor", "Pages/Alertes.razor", "Pages/Dettes.razor", "Pages/Rapports.razor" })
+                     "Pages/Achats.razor", "Pages/Alertes.razor", "Pages/Dettes.razor", "Pages/Rapports.razor" })
             Assert.True(File.ReadAllText(Path.Combine(BaseJetableM4.RacineDepot(), "src", "Pharma.Desktop", "Composants", f)).Contains("<GroupeMenu "),
                 $"{f} : groupes sans GroupeMenu");
     }

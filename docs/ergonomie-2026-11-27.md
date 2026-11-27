@@ -90,3 +90,5 @@ Mesures réelles de l'état « après ergonomie » (avant menus repliables et pr
 - **Correction de méthode** : la première série de 64 mesures avait pris certains écrans **pendant leur chargement** (Dettes notamment) et
   ne mesurait pas le défilement du menu de gauche. Série refaite le même soir en attendant la fin du chargement et en mesurant aussi le
   menu : **16 écrans × clair et sombre × 2 tailles = 64 mesures, page et menu à 0 px** (après le passage des compteurs de Dettes sur une ligne).
+- **Titre racine retiré** (décision du titulaire, même soir) : plus de « STOCK », « FINANCES »… ni « Accueil » en tête du menu de gauche ;
+  détail dans [navigation.md](navigation.md), « Menu de gauche sans titre racine ». 28 mesures (7 écrans) : page et menu à 0 px.

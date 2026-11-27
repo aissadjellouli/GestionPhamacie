@@ -676,7 +676,7 @@ Les publications étant autonomes (.NET inclus), Windows Update ne corrige **pas
     dotnet publish src\Pharma.Desktop -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Poste"
     ```
   - Copier `<dossier de livraison>` (les scripts numérotés y sont **à plat** dans `Api\database\`, l'init dans `Api\database\init\` : `Pharma.Api.csproj`) et le dossier `scripts` du dépôt sur la clé USB. Les scripts d'administrateur (`111b`, `163b`, `166b`) sont dans `Api\database\init\` du dossier publié : rien à copier à part.
-  - **Attendu** : `Api\Pharma.Api.exe`, le **dernier script numéroté** dans `Api\database\` (`172_activation_offre.sql` à ce jour : le numéro le plus haut de `database\migration` du dépôt), `Api\database\init\111b_roles_integrite.sql` et `Poste\Pharma.Desktop.exe` sont présents sur la clé.
+  - **Attendu** : `Api\Pharma.Api.exe`, le **dernier script numéroté** dans `Api\database\` (`174_postes_preuve_exigee.sql` à ce jour : le numéro le plus haut de `database\migration` du dépôt), `Api\database\init\111b_roles_integrite.sql` et `Poste\Pharma.Desktop.exe` sont présents sur la clé.
 - [ ] **2.** Si l'officine est synchronisée avec le serveur central : **mettre le serveur central à jour d'abord** (parcours E, étape 10), puis l'officine.
 - [ ] **3.** Arrêter le service. **Où** : PC serveur. **Compte** : administrateur Windows. Le script de l'étape 4 refuse de travailler si le service tourne.
   ```powershell

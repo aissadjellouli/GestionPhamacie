@@ -14,9 +14,10 @@
     }
     else
     {
-        @* Rubriques repliables homogènes (2026-11-27) : le nom du domaine et l'écran affiché déplié sont des boutons qui replient ou
-           déplient leurs entrées (GroupeMenu) ; un écran replié reste un lien vers l'écran *@
-        <GroupeMenu Cle="@($"domaine:{domaine.Libelle}")" Titre="@domaine.Libelle" ContientActif="@(ecran is not null)">
+        @* Rubriques repliables homogènes (2026-11-27) : l'écran affiché déplié est un bouton qui replie ou déplie ses rubriques
+           (GroupeMenu) ; un écran replié reste un lien vers l'écran. Pas de titre racine au nom du domaine (décision du titulaire du
+           2026-11-27 : « la racine ne sert à rien ») : le domaine est déjà en surbrillance dans le menu du haut ; le menu garde son nom
+           accessible (aria-label). *@
             @foreach (var e in ecrans)
             {
                 var attente = Compteurs.Ecran(e.Lien);
@@ -32,7 +33,6 @@
                     <a href="@e.Lien" class="@(e == ecran ? "active" : null)" aria-current="@(e == ecran ? "page" : null)">@if (e.AvecRubriques) {<span class="chevron-menu" aria-hidden="true"></span>}@e.Libelle@Compteur(attente)</a>
                 }
             }
-        </GroupeMenu>
     }
 </nav>
 
