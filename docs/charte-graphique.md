@@ -823,6 +823,9 @@ navigables**. Non vues : tuiles de l'Inventaire (inventaire complet en cours et 
 - **Menu du haut** : la lettre du raccourci (⇧ lettre, petit cadre) est toujours affichée **sous** le nom du domaine (elle ne prend aucune
   largeur ; remplace « lettres masquées sous 1 850 px ») ; « Réglages » sous l'icône ⚙.
 - **Tableaux compacts** (`.tableau-compact`) : une ligne par élément, information secondaire en petit sur la même ligne, actions en fin de
-  ligne. **Écart ouvert** : 14 px au lieu de 15 px pour les cellules, à trancher à l'essai réel.
+  ligne. **Règle (tranchée le 2026-11-27)** : cellules en **14 px** pour ces listes denses seulement (plus de lignes visibles sans
+  défilement, lisibilité vérifiée à l'essai réel) ; tous les autres tableaux restent en 15 px.
 - **Pastille `.pastille.neutre`** (gris) : statut sans gravité (« Pas en stock »).
-- **Écart ouvert** : compteurs à 0 masqués dans le menu de Dettes et créances, alors que `.compteur.neutre` s'affiche même à zéro ailleurs.
+- **Compteurs des menus (tranché le 2026-11-27)** : affichés **même à 0**, en `.compteur.neutre` (gris) ; le rouge (`.compteur`) seulement pour
+  des alertes réelles. Dans un menu étroit (Dettes et créances), libellé et compteur restent sur une ligne : compteur aligné à droite,
+  libellé coupé par « … », texte entier dans l'infobulle.

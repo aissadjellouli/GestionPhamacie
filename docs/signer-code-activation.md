@@ -126,6 +126,7 @@ dans l'officine au prochain échange.
 | « Clé de l'éditeur absente de ce programme » | Version du logiciel trop ancienne : mettre à jour |
 | « Code plus ancien que l'activation en place » | Un code plus récent est déjà saisi : signer un nouveau code |
 | « Ce serveur n'est pas déclaré dans le code de l'offre : demandez un nouveau code à l'éditeur avec l'empreinte … » | Le code ne liste pas l'empreinte de ce serveur : re-signer avec l'empreinte affichée |
+| « Clé de ce serveur présente mais illisible par le compte de l'API … » | L'API tourne sans droits d'administrateur (ex. Visual Studio) : la lancer en service ou en administrateur. **Ne pas recréer la clé** (l'empreinte changerait) |
 | « Clé de ce serveur absente : créez-la … » | Créer la clé du serveur (`Pharma.Api.exe --creer-cle-serveur`, en administrateur), puis re-signer avec son empreinte |
 | « Code échu depuis le … » | Date de fin et grâce passées (comptées au jour effectif : reculer l'horloge n'y change rien) : signer un nouveau code |
 | « Ce code est déjà enregistré. » | Rien à faire : il est déjà en place |

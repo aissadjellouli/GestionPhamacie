@@ -91,7 +91,8 @@
                         }
                         else
                         {
-                            <strong class="texte-attention">clé absente (Pharma.Api.exe --creer-cle-serveur, en administrateur)</strong>
+                            @* Clé présente mais illisible par le compte de l'API (AlerteCle) ou réellement absente (essai réel du 2026-11-27) *@
+                            <strong class="texte-attention">@(o.AlerteCle is { } illisible ? illisible : "clé absente (Pharma.Api.exe --creer-cle-serveur, en administrateur)")</strong>
                         }.
                     </p>
                     @if (copie is not null) { <p class="detail texte-reussite" role="status" style="margin: 0">@copie</p> }

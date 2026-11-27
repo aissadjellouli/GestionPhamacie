@@ -103,7 +103,8 @@ public sealed class CacheOffre
 /// <param name="EmpreinteServeur">Empreinte normalisée de la clé de CE serveur, null si la clé est absente.</param>
 /// <param name="AlerteServeur">Code version 1 en vigueur (« non lié au serveur ») ; sinon null (serveur non déclaré : dans <paramref name="Alerte"/>).</param>
 /// <param name="AlerteHorloge">Horloge du serveur reculée de plus d'une heure, ou en avance de plus de 2 jours, sur la date plancher ; sinon null.</param>
-/// <param name="AlerteCle">Clé de CE serveur logicielle (non protégée par le TPM) : avertissement court, sans blocage ; sinon null.</param>
+/// <param name="AlerteCle">Clé de CE serveur logicielle (non protégée par le TPM), ou présente mais illisible par le compte de l'API :
+/// avertissement court, sans blocage ; sinon null.</param>
 public sealed record EtatOffre(string Etat, IReadOnlyList<string> Packs, int Postes, int ScannersMobiles, DateOnly? Fin, bool Transition,
     DateTime? EmiseLeUtc, string? Alerte, DateOnly? Jour = null, string? EmpreinteServeur = null, string? AlerteServeur = null,
     string? AlerteHorloge = null, string? AlerteCle = null);
@@ -153,9 +154,16 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
     /// <summary>Message de Mon offre pour un code version 1 (toujours accepté).</summary>
     public const string MessageNonLie = "Code non lié au serveur : demandez un nouveau code à l’éditeur (avec l’empreinte de ce serveur).";
 
-    /// <summary>Message d'un code version 2 qui ne déclare pas ce serveur (ou clé du serveur absente).</summary>
-    public static string MessageServeurNonDeclare(string? empreinte) => empreinte is null
-        ? "Clé de ce serveur absente : créez-la (Pharma.Api.exe --creer-cle-serveur, en administrateur), puis demandez un nouveau code à l’éditeur avec son empreinte (Pharma.Api.exe --empreinte-serveur)."
+    /// <summary>
+    /// Clé du serveur présente mais illisible par le compte de l'API (essai réel du 2026-11-27 : API lancée sans droits d'administrateur) ;
+    /// surtout ne pas la recréer : un nouveau code serait lié à une autre empreinte.
+    /// </summary>
+    public const string MessageCleIllisible =
+        "Clé de ce serveur présente mais illisible par le compte de l’API : lancez l’API en service ou en administrateur (ne recréez pas la clé).";
+
+    /// <summary>Message d'un code version 2 qui ne déclare pas ce serveur (ou clé du serveur absente, ou illisible).</summary>
+    public static string MessageServeurNonDeclare(string? empreinte, bool accesRefuse = false) => empreinte is null
+        ? accesRefuse ? MessageCleIllisible : "Clé de ce serveur absente : créez-la (Pharma.Api.exe --creer-cle-serveur, en administrateur), puis demandez un nouveau code à l’éditeur avec son empreinte (Pharma.Api.exe --empreinte-serveur)."
         : $"Ce serveur n’est pas déclaré dans le code de l’offre : demandez un nouveau code à l’éditeur avec l’empreinte {EmpreinteServeur.Afficher(empreinte)}.";
 
     /// <summary>Preuve de détention de la clé de ce serveur pour un code version 2 (null : code version 1, rien à prouver).</summary>
@@ -219,7 +227,8 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
             alerteHorloge = MessageHorlogeAvance(pa, date.ServeurUtc);
         }
         var empreinte = PreuveCleServeur.Empreinte(cleServeur);
-        var alerteCle = empreinte is not null && CleMaterielle() is false ? MessageCleLogicielle : null;
+        var alerteCle = empreinte is not null ? (CleMaterielle() is false ? MessageCleLogicielle : null)
+            : CleIllisible() ? MessageCleIllisible : null;
         string? refus = null, alerteServeur = null;
         foreach (var e in await depot.ListerAsync(ct))
         {
@@ -239,7 +248,7 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
             {
                 // Point 5 (matériel) : serveur non déclaré ou clé absente → chemin d'une activation refusée, après 15 jours de grâce depuis la
                 // première constatation (refusee_le, noté une fois au journal)
-                var motif = MessageServeurNonDeclare(preuve.Empreinte);
+                var motif = MessageServeurNonDeclare(preuve.Empreinte, CleIllisible());
                 await depot.SignalerRefusAsync(e.Id, motif, ct);
                 var depuis = e.RefuseeLeUtc is { } r ? DateOnly.FromDateTime(r.ToLocalTime()) : aujourdhui;
                 var finGrace = depuis.AddDays(GraceJours);
@@ -280,6 +289,13 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
     public static string MessageHorlogeAvance(DateTime plancherUtc, DateTime serveurUtc) =>
         $"L’horloge de ce serveur est en avance de {(int)(serveurUtc - plancherUtc).TotalDays} jour(s) sur la dernière date enregistrée "
         + $"({DateTime.SpecifyKind(plancherUtc, DateTimeKind.Utc).ToLocalTime():dd/MM/yyyy HH:mm}) : vérifiez-la avant d’encaisser.";
+
+    /// <summary>Clé du serveur présente mais illisible par ce compte (jamais d'exception).</summary>
+    public bool CleIllisible()
+    {
+        try { return cleServeur?.AccesRefuse() ?? false; }
+        catch (System.Security.Cryptography.CryptographicException) { return false; }
+    }
 
     private bool? CleMaterielle()
     {
@@ -383,7 +399,7 @@ public sealed class GererOffre(IActivationsOffreDepot depot, OffreCourante offre
         catch (ActivationInvalideException x) { throw new RegleMetierException(x.Message, "code"); }
         // Point 5 (matériel) : un code version 2 qui ne déclare pas ce serveur n'est pas pris (rien ne change dans l'offre en vigueur)
         if (offre.ProuverServeur(a) is { Autorisee: false } preuve)
-            throw new RegleMetierException(OffreCourante.MessageServeurNonDeclare(preuve.Empreinte), "code");
+            throw new RegleMetierException(OffreCourante.MessageServeurNonDeclare(preuve.Empreinte, offre.CleIllisible()), "code");
         var enVigueur = await offre.LireAsync(ct);
         // Jour effectif (point 5, horloge) : reculer l'horloge ne rend pas valable un code échu
         if (a.Fin is { } fin && OffreCourante.JoursAvantFermeture(fin, enVigueur.Jour ?? horloge.Aujourdhui) < 0)

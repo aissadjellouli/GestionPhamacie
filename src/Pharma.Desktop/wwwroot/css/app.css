@@ -1251,6 +1251,10 @@ label .touche-caisse { color: var(--texte-2); border-color: var(--bordure-champ)
 .nav-laterale:has(.nav-dettes) .nav-rubriques { gap: 0; }
 .nav-laterale:has(.nav-dettes) .nav-rubriques a.nav-dettes { padding-top: 4px; padding-bottom: 4px; line-height: 1.3; }
 .nav-laterale:has(.nav-dettes) .nav-rubriques a.nav-dettes.sous-rubrique { padding-left: 30px; }
+/* Compteurs affichés même à 0 (2026-11-27) : libellé et compteur sur UNE ligne (compteur à droite, libellé coupé, texte entier dans l'infobulle) */
+a.nav-dettes { display: flex; align-items: center; gap: 6px; }
+a.nav-dettes .nav-dettes-libelle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+a.nav-dettes .compteur { margin-left: auto; flex: none; }
 .nav-laterale:has(.nav-dettes) .nav-groupe-titre:not(:first-child) { margin-top: 6px; margin-bottom: 0; }
 .nav-laterale:has(.nav-dettes) .nav-resume.compact { margin-top: 4px; padding-top: 6px; }
 

@@ -61,6 +61,23 @@ public sealed class CleServeurCng : ICleServeurLocale
         return null;
     }
 
+    /// <summary>Code Windows « Accès refusé » (NTE_PERM) : la clé existe, mais ce compte ne peut pas la lire (constaté le 2026-11-27 ;
+    /// une clé inexistante donne NTE_BAD_KEYSET, 0x80090016).</summary>
+    public const int AccesRefuseHResult = unchecked((int)0x80090010);
+
+    /// <summary>Clé présente dans un fournisseur mais illisible par ce compte (droits SYSTEM et Administrateurs seulement).</summary>
+    public bool AccesRefuse()
+    {
+        if (Ouvrir() is { } o) { o.Cle.Dispose(); return false; }
+        foreach (var f in Fournisseurs)
+        {
+            try { CngKey.Exists(Nom, f, CngKeyOpenOptions.MachineKey); }
+            catch (CryptographicException e) when (e.HResult == AccesRefuseHResult) { return true; }
+            catch (CryptographicException) { /* fournisseur absent : suivant */ }
+        }
+        return false;
+    }
+
     public byte[]? ClePublique()
     {
         if (Ouvrir() is not { } o) return null;
@@ -165,6 +182,15 @@ public sealed class CleServeurFichier(string fichier) : ICleServeurLocale
 
     /// <summary>Toujours logicielle (faux) ; null si le fichier est absent ou illisible.</summary>
     public bool? Materielle() => ClePublique() is null ? null : false;
+
+    /// <summary>Fichier présent mais illisible par ce compte (droits 600 d'un autre utilisateur).</summary>
+    public bool AccesRefuse()
+    {
+        if (!File.Exists(fichier)) return false;
+        try { using var f = File.OpenRead(fichier); return false; }
+        catch (UnauthorizedAccessException) { return true; }
+        catch (IOException) { return false; }
+    }
 
     public InfoCleServeur CreerSiAbsente()
     {

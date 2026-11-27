@@ -220,7 +220,10 @@ signature du programme par un certificat de code protégerait contre cela.
   constatation**, puis le code suit le chemin d'une activation refusée (activation précédente valable, sinon offre de base).
 - **Codes version 1** : acceptés ; Mon offre affiche « Code non lié au serveur : demandez un nouveau code à l'éditeur ». L'outil de l'éditeur
   exige `--serveur` (1 à 3) et `lire` affiche les serveurs autorisés.
-- **Mon offre** : empreinte de CE serveur avec un bouton « Copier », à côté du code de l'officine et du NIF (« clé absente » sinon).
+- **Mon offre** : empreinte de CE serveur avec un bouton « Copier », à côté du code de l'officine et du NIF (« clé absente » sinon ; **clé présente mais illisible** par le compte de l'API, par exemple
+  API lancée sans droits d'administrateur : « Clé de ce serveur présente mais illisible par le compte de l'API : lancez l'API en service ou
+  en administrateur (ne recréez pas la clé) », même message à la saisie et dans `--empreinte-serveur` ; Windows répond alors « Accès refusé »,
+  `0x80090010`, au lieu de « jeu de clés inexistant », `0x80090016` ; correction du 2026-11-27 après l'essai réel).
 
 **Horloge (b)** :
 - **Date plancher** = la plus grande de : la dernière date du journal fiscal (`max(survenu_le)` et `enregistre_le` de la dernière ligne de

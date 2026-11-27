@@ -53,7 +53,7 @@
 - **Patients en attente** : raison sous « Noter la demande » grisé ; aide du champ produit « Nom, DCI ou scan ».
 - **Trésorerie** : carte entière cliquable vers les mouvements du compte ; un titre par carte ; « Caisses à verser ».
 - **Financements** : un seul bouton « Nouveau prêt », vert quand la liste est vide.
-- **Dettes et créances** : compteurs à 0 masqués dans le menu (écart à la charte à trancher), MDN écrit en clair dans l'infobulle.
+- **Dettes et créances** : compteurs affichés même à 0 en gris neutre, alignés à droite (décision du 2026-11-27), MDN écrit en clair dans l'infobulle.
 - **Rapports › Synthèse** : « dont honoraires (SHP) » avec infobulle ; bloc replié « Comment sont calculés ces chiffres ? » ; « Exporter en Excel ».
 - **Contrôle interne** : cartes resserrées, titre = nom + type d'anomalie.
 
@@ -67,9 +67,10 @@
 - **Mon offre** : bouton « Copier » à côté du code de l'officine et du NIF ; packs « ✓ Inclus » ou « Non inclus ».
 - **Alertes et seuils** : « Période de ventes prise en compte (jours) » ; « Modifications non enregistrées » dès qu'un champ change.
 
-## Points encore ouverts
-- **Taille du texte des tableaux compacts** : 14 px au lieu des 15 px de la charte. À trancher à l'essai réel (nombre de lignes visibles).
-- **Compteurs à 0 masqués dans le menu de Dettes** : la charte dit de les afficher même à zéro. À trancher.
+## Écarts de charte tranchés (2026-11-27, « le mieux pour toi » du titulaire)
+- **Tableaux compacts** : 14 px gardés pour ces listes denses, inscrits dans la charte ; les autres tableaux restent en 15 px.
+- **Compteurs du menu de Dettes** : affichés même à 0 (gris neutre), comme la charte le prévoit ; libellé et compteur sur une ligne,
+  compteur à droite, libellé coupé par « … » si besoin (texte entier dans l'infobulle) : le menu ne défile pas à 1 366 × 768.
 
 ## Vérifications faites
 Mesures réelles de l'état « après ergonomie » (avant menus repliables et preuve exigée) : 28 écrans × clair et sombre × 1 366 × 768 et
@@ -86,3 +87,6 @@ Mesures réelles de l'état « après ergonomie » (avant menus repliables et pr
   rubriques repliables vérifiées au clic (Administration › Équipe, Stock › Gestion du stock) ; **16 écrans × clair et sombre × 1 366 × 768
   et 1 536 × 890 = 64 mesures, toutes à 0 px** (Accueil, Gestion du stock, Caisse, Factures, Registre, Patients, Trésorerie, Dettes,
   Financements, Rapports, Contrôle interne, Utilisateurs, Postes autorisés, Mon offre, Sauvegardes, Alertes et seuils).
+- **Correction de méthode** : la première série de 64 mesures avait pris certains écrans **pendant leur chargement** (Dettes notamment) et
+  ne mesurait pas le défilement du menu de gauche. Série refaite le même soir en attendant la fin du chargement et en mesurant aussi le
+  menu : **16 écrans × clair et sombre × 2 tailles = 64 mesures, page et menu à 0 px** (après le passage des compteurs de Dettes sur une ligne).

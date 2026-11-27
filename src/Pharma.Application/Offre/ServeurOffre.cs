@@ -22,6 +22,12 @@ public interface ICleServeur
 
     /// <summary>Vrai si la clé est protégée par le TPM, faux si c'est une clé logicielle, null si elle est absente ou si on ne sait pas.</summary>
     bool? Materielle() => null;
+
+    /// <summary>
+    /// Vrai si la clé EXISTE mais que le compte qui fait tourner l'API n'a pas le droit de la lire (API lancée sans droits d'administrateur, par
+    /// exemple depuis Visual Studio : la clé n'est lisible que par SYSTEM et les Administrateurs). Ne pas la recréer (essai réel du 2026-11-27).
+    /// </summary>
+    bool AccesRefuse() => false;
 }
 
 /// <summary>

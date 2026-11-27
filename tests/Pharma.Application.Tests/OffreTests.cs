@@ -89,6 +89,9 @@ public class OffreTests
         /// <summary>Protection annoncée de la clé (null : inconnue, comme une doublure qui ne le dit pas).</summary>
         public bool? EstMaterielle { get; set; }
         public bool? Materielle() => EstMaterielle;
+        /// <summary>Clé présente mais illisible par ce compte (API lancée sans droits d'administrateur).</summary>
+        public bool Illisible { get; set; }
+        public bool AccesRefuse() => Illisible;
         public List<byte[]> Defis { get; } = [];
         public string Empreinte => EmpreinteServeur.Calculer(ClePublique()!);
         public byte[]? ClePublique() => PubliqueAnnoncee ?? Cle?.ExportSubjectPublicKeyInfo();
@@ -600,6 +603,27 @@ public class OffreTests
         Assert.Contains("Clé de ce serveur absente", sansCle.Alerte);
         Assert.Null(sansCle.EmpreinteServeur);
         Assert.Contains("Clé de ce serveur absente", OffreCourante.MessageServeurNonDeclare(null));
+    }
+
+    [Fact]
+    public async Task Cle_presente_mais_illisible_message_distinct_sans_inviter_a_la_recreer()
+    {
+        // Essai réel du 2026-11-27 : API lancée sans droits d'administrateur (Visual Studio), clé TPM présente mais « Accès refusé »
+        var (d, _, g, _) = Banc();
+        await g.SaisirAsync(1, Code(postes: 7, packs: ["A", "B"], serveurs: [ServeurLocal.Empreinte]));
+        var illisible = new CleServeurFactice { Cle = null, Illisible = true };
+        var e = await new OffreCourante(d, new HorlogeFixe(Aujourdhui), [Publique], cleServeur: illisible).LireAsync();
+        Assert.Equal(EtatsOffre.Grace, e.Etat);
+        Assert.Null(e.EmpreinteServeur);
+        Assert.Equal(OffreCourante.MessageCleIllisible, e.AlerteCle);
+        Assert.Contains("illisible", e.Alerte);
+        Assert.DoesNotContain("créez-la", e.Alerte);
+        Assert.Contains("ne recréez pas", OffreCourante.MessageServeurNonDeclare(null, accesRefuse: true));
+
+        // Clé réellement absente : message de création inchangé, aucune alerte de clé
+        var absente = await new OffreCourante(d, new HorlogeFixe(Aujourdhui), [Publique], cleServeur: new CleServeurFactice { Cle = null }).LireAsync();
+        Assert.Contains("Clé de ce serveur absente", absente.Alerte);
+        Assert.Null(absente.AlerteCle);
     }
 
     [Fact]

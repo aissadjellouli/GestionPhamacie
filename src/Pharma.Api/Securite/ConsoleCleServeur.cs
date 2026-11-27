@@ -33,6 +33,12 @@ public static class ConsoleCleServeur
             }
             if (cle.Lire() is not { } lue)
             {
+                if (cle.AccesRefuse())
+                {
+                    erreurs.WriteLine("La clé de ce serveur existe, mais ce compte n’a pas le droit de la lire : relancez la commande en administrateur. "
+                                      + "Ne la recréez pas (un nouveau code d’activation serait nécessaire).");
+                    return 1;
+                }
                 erreurs.WriteLine($"Aucune clé sur ce serveur : créez-la avec Pharma.Api.exe {ArgumentCreer} (invite de commandes en administrateur).");
                 return 1;
             }

@@ -366,7 +366,8 @@ par le TPM) et les codes d'activation **version 2** ne valent que sur les serveu
 
 - **La clé n'est lisible que par SYSTEM et les administrateurs** (en production, l'API tourne en service LocalSystem).
 - **API lancée depuis Visual Studio (sans droits d'administrateur)** : l'API démarre et tout fonctionne (connexion, caisse, écrans),
-  **sauf la clé du serveur**, qu'elle ne peut pas lire. Conséquences : Mon offre affiche « clé absente » ; un code version 2 est refusé à la
+  **sauf la clé du serveur**, qu'elle ne peut pas lire. Conséquences : Mon offre affiche « Clé de ce serveur présente mais illisible par le compte de l'API » (et `--empreinte-serveur` le dit
+  aussi ; message juste depuis le 2026-11-27, avant : « clé absente ») ; un code version 2 est refusé à la
   saisie, ou passe en délai de grâce s'il est déjà enregistré. Les codes **version 1** (sans serveur, ex. bases de l'éditeur) restent
   acceptés avec l'avertissement « Code non lié au serveur ». Constaté le 2026-11-27.
 - **Pour essayer l'offre liée au serveur** (clé, empreinte, code version 2) : lancer **Visual Studio en administrateur**, ou l'API

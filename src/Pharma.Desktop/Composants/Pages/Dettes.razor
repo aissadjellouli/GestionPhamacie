@@ -228,15 +228,16 @@
 
 @code {
     // Ergonomie 2026-11-27 (propositions 8 et 31) : menu resserré (classe nav-dettes, app.css) pour tenir sans défilement à
-    // 1 366 × 768 ; compteurs à 0 masqués (écart voulu à « .compteur.neutre affiché même à zéro » : menu plus calme) ;
+    // 1 366 × 768 ; compteurs affichés même à 0, en gris neutre (charte : « .compteur.neutre affiché même à zéro », décision du 2026-11-27 ;
+    // le rouge seulement pour des alertes réelles) ;
     // sigle MDN écrit en clair dans l'infobulle
     private RenderFragment LienDettes(RubriqueDettes r) => __builder =>
     {
         var alerte = r.Id == "alertes";
         var nombre = suivi is null ? (int?)null : alerte ? suivi.Alertes.Sum(a => a.Nombre) : r.Liste ? Lignes(suivi, Filtre(r.Id)).Count() : null;
         <a href="@(r.Id == "synthese" ? "dettes" : $"dettes?onglet={r.Id}")" class="nav-dettes @(r.SousRubrique ? "sous-rubrique" : null) @(r.Id == rubrique ? "active" : null)"
-           aria-current="@(r.Id == rubrique ? "page" : null)" title="@r.Infobulle">
-            @r.Libelle@if (nombre is { } n && n > 0) { <span class="@(alerte ? "compteur" : "compteur neutre")" aria-label="@($"{n} ligne(s)")">@n</span> }
+           aria-current="@(r.Id == rubrique ? "page" : null)" title="@(r.Infobulle ?? r.Libelle)">
+            <span class="nav-dettes-libelle">@r.Libelle</span>@if (nombre is { } n) { <span class="@(alerte && n > 0 ? "compteur" : "compteur neutre")" aria-label="@($"{n} ligne(s)")">@n</span> }
         </a>
     };
 
