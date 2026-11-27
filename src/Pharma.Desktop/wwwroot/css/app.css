@@ -68,6 +68,8 @@ input, select, button { font: inherit; }
 .nav { display: flex; flex-wrap: wrap; gap: 2px; flex: 1 1 400px; justify-content: center; }
 @media (min-width: 1200px) { .nav { flex-wrap: nowrap; } }
 .nav a, .nav .nav-inactif { padding: 10px 12px; border-radius: 8px; font-size: 14px; font-weight: 500; color: rgba(255, 255, 255, 0.9); text-decoration: none; white-space: nowrap; text-transform: uppercase; letter-spacing: 0.04em; }
+/* PC non autorisé (titulaire, Administration seulement, décision du 2026-11-27) : mention à la place des domaines, sans hauteur ajoutée */
+.nav .pc-non-autorise { align-self: center; padding: 6px 12px; border-radius: 8px; background: var(--attention-fond); color: var(--attention); font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .nav a.active { color: #FFFFFF; background: rgba(255, 255, 255, 0.16); font-weight: 600; box-shadow: inset 0 -3px 0 var(--ambre); border-radius: 8px 8px 0 0; }
 .nav a:hover:not(.active) { color: #FFFFFF; background: rgba(255, 255, 255, 0.10); }
 .nav .nav-inactif { color: rgba(255, 255, 255, 0.42); cursor: not-allowed; }
@@ -207,7 +209,7 @@ h3 { margin: 0; font-size: 15px; font-weight: 600; }
 /* ---- Filtres (puces) ---------------------------------------------------- */
 .filtres { display: flex; flex-wrap: wrap; gap: 8px; }
 .puce { height: 44px; padding: 0 16px; border-radius: 999px; font-size: 14px; cursor: pointer; background: var(--surface); color: var(--texte-3); border: 1px solid var(--bordure-champ); }
-.puce[aria-pressed="true"] { background: var(--accent); color: #FFFFFF; border-color: var(--accent); font-weight: 500; }
+.puce[aria-pressed="true"], .puce[aria-selected="true"] { background: var(--accent); color: #FFFFFF; border-color: var(--accent); font-weight: 500; }
 
 /* ---- Cartes, pastilles -------------------------------------------------- */
 .carte { background: var(--surface); border: 1px solid var(--bordure); border-radius: 12px; padding: 18px 20px; }
@@ -253,7 +255,7 @@ input:disabled, select:disabled, textarea:disabled { background: var(--surface-2
 :is(.btn, .puce):is(:hover, :focus-visible):not(:disabled):not([aria-disabled="true"]) {
   border-color: var(--accent-texte); color: var(--accent-texte); background: color-mix(in srgb, var(--accent-texte) 12%, var(--surface));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-texte) 28%, transparent), 0 2px 8px rgba(0, 0, 0, 0.18); outline: none; }
-:is(.btn-principal, .puce[aria-pressed="true"]):is(:hover, :focus-visible):not(:disabled) {
+:is(.btn-principal, .puce[aria-pressed="true"], .puce[aria-selected="true"]):is(:hover, :focus-visible):not(:disabled) {
   background: color-mix(in srgb, var(--accent) 78%, #000000); border-color: color-mix(in srgb, var(--accent) 78%, #000000); color: #FFFFFF; }
 .btn-danger:is(:hover, :focus-visible):not(:disabled) { background: color-mix(in srgb, var(--urgent-vif) 82%, #000000); color: #FFFFFF;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--urgent-vif) 30%, transparent), 0 2px 8px rgba(0, 0, 0, 0.18); }
@@ -1142,3 +1144,215 @@ fieldset.panneau:disabled { opacity: 0.85; }
 .postes-barre .champ > input { min-width: 0; width: 100%; }
 .code-enrolement { margin: 8px 0; text-align: center; font-size: 32px; font-weight: 600; letter-spacing: 4px; color: var(--accent-texte); }
 .autorisation-poste { display: flex; flex-direction: column; gap: 12px; }
+
+/* ---- Ergonomie 2026-11-27, lot listes ---- */
+/* Tableaux compacts (proposition 2 : Stock › Produits, Factures, Achats › Bons, Registre, Étiquettes) : une ligne par élément à
+   1 366 × 768 (7 à 8 lignes visibles), information secondaire en petit sur la même ligne, actions en fin de ligne, jamais de
+   défilement horizontal. La colonne « principal » prend la place qui reste et coupe son texte par « … » (complet en infobulle) ;
+   .coupe borne une autre cellule. Les en-têtes peuvent passer sur deux lignes, les cellules jamais. */
+.tableau.tableau-compact { min-width: 0; font-size: 14px; }
+.tableau.tableau-compact td { padding: 7px 8px; white-space: nowrap; line-height: 1.35; }
+.tableau.tableau-compact th { padding: 8px; line-height: 1.25; }
+.tableau.tableau-compact th:first-child, .tableau.tableau-compact td:first-child { padding-left: 12px; }
+.tableau.tableau-compact tfoot th, .tableau.tableau-compact tfoot td { white-space: normal; }
+.tableau.tableau-compact .principal { width: 100%; max-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tableau.tableau-compact .detail { font-size: 12.5px; }
+.tableau.tableau-compact .nom + .detail, .tableau.tableau-compact .lien-contact + .detail, .tableau.tableau-compact .lien + .detail,
+.tableau.tableau-compact strong + .detail, .tableau.tableau-compact .code-emplacement + .detail { margin-left: 6px; }
+.tableau.tableau-compact .pastille { padding: 2px 8px; }
+.tableau.tableau-compact span + .pastille { margin-left: 6px; }
+.tableau.tableau-compact .lien-contact { white-space: nowrap; }
+/* Nom cliquable (contact, produit) dans la colonne principale : coupé lui-même par « … » (un bouton ne l'est pas par sa cellule) */
+.tableau.tableau-compact .principal .lien-contact { max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+.coupe { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.coupe.coupe-xs { max-width: 110px; }
+.coupe.coupe-s { max-width: 150px; }
+.coupe.coupe-m { max-width: 200px; }
+/* Rangement ouvert dans une ligne du Stock : formulaire temporaire, la ligne s'agrandit le temps de la saisie */
+.tableau.tableau-compact .rangement-ligne { display: flex; flex-direction: column; gap: 6px; min-width: 200px; white-space: normal; }
+.rangement-ligne > div { display: flex; gap: 6px; }
+/* Statut « Pas en stock » (proposition 7) : neutre, ni alerte ni « Normal » */
+.pastille.neutre { background: var(--surface-2); color: var(--texte-2); border: 1px solid var(--bordure); }
+/* Registre : colonnes regroupées, il tient sans défilement horizontal à 1 366 px (l'ancienne largeur minimale de 1 100 px tombe) */
+.tableau.tableau-registre.tableau-compact { min-width: 0; }
+.tableau.tableau-compact .actions-ligne { width: 1%; }
+.tableau.tableau-compact .actions-ligne .lien-bouton + .lien-bouton, .tableau.tableau-compact .actions-ligne .pastille + .lien-bouton { margin-left: 10px; }
+/* Étiquettes internes : EtiquetagerLots est partagé avec l'Inventaire ; resserré seulement dans ce cadre (sans effet sur la mise en page) */
+.tableaux-compacts { display: contents; }
+.tableaux-compacts .tableau th, .tableaux-compacts .tableau td { padding: 6px 10px; white-space: nowrap; }
+.tableaux-compacts .tableau td.nom { white-space: normal; }
+.tableaux-compacts .tableau input[type=number] { height: 34px; }
+.tableaux-compacts .tableau .btn { height: 34px; padding: 0 14px; }
+/* Contrôle interne › À examiner : cartes resserrées (niveau, titre et date sur une ligne, puis le message) */
+.cartes-compactes > .carte.alerte { padding: 10px 16px; gap: 8px 16px; }
+.cartes-compactes .alerte-corps { gap: 4px; }
+.cartes-compactes .alerte-titre { font-size: 15px; }
+.cartes-compactes .alerte-detail { font-size: 13.5px; line-height: 1.4; }
+.cartes-compactes .btn { height: 36px; }
+/* Fichier des patients : fenêtre « Nouveau patient » (proposition 14), mêmes champs que la fiche de la caisse */
+.fenetre-nouveau-patient { width: min(620px, 96vw); display: flex; flex-direction: column; gap: 10px; }
+.fiche-medecin > .fiche-pleine-largeur { grid-column: 1 / -1; }
+
+/* ---- Ergonomie 2026-11-27, lot caisse ---- */
+/* Raccourcis de la caisse affichés à l'écran (proposition 3) : petit cadre comme « Ctrl K » de l'en-tête, couleur du texte qui
+   l'entoure (gris dans un libellé, blanc sur la puce choisie), jamais plus gros que lui */
+.touche-caisse { display: inline-block; margin-left: 4px; padding: 0 4px; border: 1px solid currentColor; border-radius: 4px; font-size: 11px;
+  font-weight: 500; line-height: 15px; letter-spacing: 0; text-transform: none; white-space: nowrap; vertical-align: 1px; }
+label .touche-caisse { color: var(--texte-2); border-color: var(--bordure-champ); }
+/* Puce de paiement : la touche à côté du libellé, ou dessous quand la colonne est étroite (1 366 × 768) ; hauteur de 44 px gardée */
+.modes-paiement .puce { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; align-content: center; column-gap: 0; row-gap: 1px; line-height: 1.1; }
+.modes-paiement .puce .touche-caisse { font-size: 10px; line-height: 13px; }
+/* Quantité tapée avant le scan (« 3 * ») : rappelée dans le libellé du panier */
+.quantite-prefixe { margin-left: 6px; color: var(--accent-texte); font-weight: 600; }
+/* Raison du bouton « Encaisser » grisé, en clair sous lui (proposition 4) */
+.raison-encaisser { margin: 0; font-size: 13px; line-height: 1.35; color: var(--texte-2); text-align: center; flex-shrink: 0; }
+/* Ouvrir la caisse (proposition 5) : panneau étroit en haut à gauche de la zone, à côté du menu de la caisse */
+.ouverture-caisse { max-width: 460px; }
+.ouverture-caisse .champ .detail { font-variant-numeric: tabular-nums; }
+/* Rubriques de la caisse sans objet tant qu'elle est fermée (propositions 5 et 12) : grisées, raison en petit dessous */
+.nav-rubriques .nav-inactif-caisse { display: flex; flex-direction: column; padding: 7px 12px 7px 36px; }
+.nav-rubriques .nav-inactif-caisse .detail { font-size: 12px; color: var(--texte-inactif); }
+/* État vide commun d'État de la caisse et de la clôture (proposition 12) : neutre, jamais en rouge */
+.caisse-fermee { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; max-width: 640px; }
+.caisse-fermee h2 { margin: 0; }
+.caisse-fermee .detail { margin: 0; }
+
+/* ---- Ergonomie 2026-11-27, lot P3 ---- */
+/* Puces de période rapide (proposition 29, composant PeriodeRapide) : à côté de « Du / Au », même hauteur que les champs (44 px),
+   resserrées pour rester sur la ligne des filtres à 1 366 px */
+.periode-rapide { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-end; }
+.periode-rapide .puce { padding: 0 12px; white-space: nowrap; }
+/* Rapports : « 7 jours » et « 30 jours » ajoutés à la ligne des périodes, qui garde ses trois groupes sur une ligne à 1 366 px */
+.rapport-filtres .puce { padding: 0 12px; white-space: nowrap; }
+.rapport-filtres .filtres { gap: 6px; }
+/* Rapports › Synthèse : note « Comment sont calculés ces chiffres ? » repliée (proposition 27) ; ouverte, elle défile dans son cadre */
+.note-calcul > summary { width: fit-content; cursor: pointer; color: var(--accent-texte); font-weight: 500; }
+.note-calcul > summary:is(:hover, :focus-visible) { text-decoration: underline; text-underline-offset: 3px; outline: none; }
+.note-calcul-corps { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; max-height: 28vh; overflow-y: auto; }
+.tuile-pied abbr[title] { text-decoration: underline dotted; cursor: help; }
+/* Trésorerie › Comptes et soldes (proposition 25) : carte = bouton vers les mouvements du compte (même rendu que les tuiles
+   navigables : bordure verte au survol et au clavier) ; « Modifier » à part, sous le bouton */
+.tuiles.cartes-comptes { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+.carte.carte-compte { display: flex; flex-direction: column; gap: 4px; padding: 0; }
+.carte.carte-compte.inactif { opacity: .6; }
+.carte-compte-ouvrir { display: grid; gap: 4px; width: 100%; padding: 18px 20px 4px; margin: 0; border: 0; border-radius: 12px 12px 0 0;
+  background: none; font: inherit; color: var(--texte); text-align: left; cursor: pointer; }
+.carte-compte-ouvrir:focus-visible { outline: none; }
+.carte.carte-compte:has(.carte-compte-ouvrir:is(:hover, :focus-visible)) { border-color: var(--accent-texte); box-shadow: 0 0 0 1px var(--accent-texte); }
+.carte.carte-compte.carte-choisie:has(.carte-compte-ouvrir:is(:hover, :focus-visible)) { box-shadow: 0 0 0 1px var(--accent-texte), inset 3px 0 0 var(--ambre); }
+.carte-compte-titre { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; }
+.carte-compte-ouvrir .tuile-aller { font-size: 13px; font-weight: 600; color: var(--accent-texte); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+.carte-compte-modifier { align-self: flex-start; margin: 0 20px 14px; }
+/* Dettes et créances (propositions 8 et 31) : menu de gauche resserré pour tenir sans défilement à 1 366 × 768, sans retirer
+   d'entrée (écrans du domaine, rubriques, résumé) ; limité à ce menu (liens marqués nav-dettes) */
+.nav-laterale:has(.nav-dettes) { gap: 0; }
+.nav-laterale:has(.nav-dettes) > a { padding-top: 6px; padding-bottom: 6px; line-height: 1.3; }
+.nav-laterale:has(.nav-dettes) > .nav-ecran-ouvert { padding-top: 6px; padding-bottom: 2px; line-height: 1.3; }
+.nav-laterale:has(.nav-dettes) .nav-rubriques { gap: 0; }
+.nav-laterale:has(.nav-dettes) .nav-rubriques a.nav-dettes { padding-top: 4px; padding-bottom: 4px; line-height: 1.3; }
+.nav-laterale:has(.nav-dettes) .nav-rubriques a.nav-dettes.sous-rubrique { padding-left: 30px; }
+.nav-laterale:has(.nav-dettes) .nav-groupe-titre:not(:first-child) { margin-top: 6px; margin-bottom: 0; }
+.nav-laterale:has(.nav-dettes) .nav-resume.compact { margin-top: 4px; padding-top: 6px; }
+
+/* ---- Ergonomie 2026-11-27, lot navigation ---- */
+/* N° 6 : lettre du raccourci (⇧ lettre, petit cadre) toujours affichée, SOUS le nom du domaine : elle ne prend aucune largeur à
+   l'en-tête (mesuré : 1 366 et 1 536 px, nom d'employé long et « ← Tableau de bord financier » entiers ; en-tête de 72 px au lieu de 73) */
+.largeur-1850 .entete .nav .touche, .entete .nav .touche { display: block; position: absolute; left: 50%; bottom: 3px; transform: translateX(-50%);
+  padding: 0 3px; font-size: 10px; line-height: 13px; }
+.entete .nav a:has(> .touche) { position: relative; padding-top: 2px; padding-bottom: 16px; }
+/* N° 9 : « Réglages » écrit sous l'icône ⚙ de l'Administration */
+.entete .nav-icone.avec-libelle { display: inline-flex; flex-direction: column; align-items: center; gap: 1px; font-size: 20px; line-height: 1; padding: 3px 6px; }
+.entete .nav-icone .libelle-icone { font-size: 11px; font-weight: 600; line-height: 14px; }
+/* Fenêtre très étroite (étape 4) : lettres et mot « Réglages » masqués (infobulles et raccourcis gardés) */
+.largeur-1250 .entete .nav .touche, .largeur-1250 .entete .nav-icone .libelle-icone { display: none; }
+
+/* N° 8 : menus de gauche resserrés pour tenir sans défiler à 1 366 × 768 (Achats : 592 px pour 598 permis ; Stock : 472 ;
+   Administration, thème ouvert le plus long, Synchronisation : 546). Les menus qui ont leurs propres règles (Dettes) les gardent. */
+:is(.admin-nav, .nav-laterale) a, .nav-laterale .nav-inactif { padding-top: 4px; padding-bottom: 4px; line-height: 20px; }
+.nav-laterale .nav-ecran-ouvert { padding-top: 4px; line-height: 20px; }
+:is(.admin-nav, .nav-laterale) .nav-groupe-titre { margin-top: 6px; line-height: 16px; }
+.admin-nav a.sous-rubrique { padding-top: 3px; padding-bottom: 3px; line-height: 18px; }
+.admin-nav, .nav-laterale { gap: 1px; }
+.nav-laterale > a.sous-rubrique { padding-left: 20px; }
+/* Administration : écrans groupés par thème repliable (NavAdmin) ; le thème de l'écran affiché est ouvert */
+.admin-nav .nav-theme { display: flex; align-items: center; gap: 8px; width: 100%; margin: 0; padding: 5px 12px; border: none; border-radius: 6px; background: none;
+  font: inherit; font-size: 12px; font-weight: 600; line-height: 16px; letter-spacing: .03em; text-transform: uppercase; text-align: left; color: var(--texte-2); cursor: pointer; }
+.admin-nav .nav-theme:is(:hover, :focus-visible) { color: var(--accent-texte); background: var(--accent-clair); outline: none; }
+.admin-nav .nav-theme.theme-actif { color: var(--accent-texte); }
+.admin-nav .chevron-theme { flex: none; width: 6px; height: 6px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg);
+  transition: transform 0.15s ease; }
+.admin-nav .nav-theme[aria-expanded="true"] .chevron-theme { transform: translateY(-2px) rotate(45deg); }
+@media (prefers-reduced-motion: reduce) { .admin-nav .chevron-theme { transition: none; } }
+.admin-nav .nav-theme ~ a:not(.sous-rubrique) { padding-left: 20px; padding-right: 8px; }
+.admin-nav .nav-theme ~ a.sous-rubrique { padding-left: 30px; }
+.admin-nav .nav-theme ~ .nav-groupe-titre { margin: 2px 12px 0 20px; }
+
+/* N° 23 : bouton grisé lisible (contraste AA en clair et en sombre : --texte-2 sur --surface-2, plus d'opacité 0,5), bord en pointillé ;
+   la raison est écrite à côté (.raison-grise) */
+.btn:disabled, .btn[aria-disabled="true"] { opacity: 1; background: var(--surface-2); color: var(--texte-2); border: 1px dashed var(--bordure-champ); box-shadow: none; }
+:is(.lien, .lien-bouton):disabled { color: var(--texte-2); }
+.raison-grise { font-size: 13px; color: var(--texte-2); align-self: center; }
+.raison-grise.texte-attention { color: var(--attention); font-weight: 600; }
+.ligne-bouton-raison { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+
+/* N° 6 : carte « Raccourcis clavier » de l'aide (caisse) : touche dans un petit cadre à gauche, action à droite */
+.carte-raccourcis { border: 1px solid var(--bordure); border-radius: 8px; padding: 10px 12px; background: var(--surface-2); }
+.carte-raccourcis h3 { margin: 0 0 6px; font-size: 14px; font-weight: 600; color: var(--texte); }
+.carte-raccourcis dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 10px; margin: 0; font-size: 13px; }
+.carte-raccourcis dt { margin: 0; }
+.carte-raccourcis dd { margin: 0; color: var(--texte-3); }
+.carte-raccourcis kbd { display: inline-block; min-width: 18px; padding: 0 5px; border: 1px solid var(--bordure-champ); border-radius: 4px; background: var(--surface);
+  font: inherit; font-size: 12px; font-weight: 600; line-height: 18px; text-align: center; color: var(--texte); white-space: nowrap; }
+
+/* N° 15 : confirmation courte avant d'effacer un code comptoir (dans la cellule) */
+.confirmation-ligne { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+
+/* N° 18 : Sauvegardes : bouton dans le bandeau jaune, « Enregistrer » sous ses réglages, détails techniques repliés */
+.bandeau-avec-action { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.bandeau-avec-action .btn { flex: none; height: 36px; }
+.ligne-enregistrer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.details-technicien summary { cursor: pointer; font-size: 13px; color: var(--texte-2); }
+.details-technicien summary:focus-visible { outline: 2px solid var(--accent-texte); outline-offset: 2px; border-radius: 4px; }
+.details-technicien p { margin: 6px 0 0; }
+
+/* N° 21 : Mon offre : « Inclus » ou « Non inclus » écrit à droite de chaque pack */
+.offre-pack-libelle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.offre-pack-etat { margin-left: auto; flex: none; font-size: 13px; font-weight: 600; white-space: nowrap; }
+
+/* ---- Chevron des menus dépliables, à tout niveau (décision du titulaire du 2026-11-27) ----
+   « › » replié, « ⌄ » déplié ; même dessin que le chevron des thèmes de l'Administration (.chevron-theme) */
+.chevron-menu { display: inline-block; flex: none; width: 6px; height: 6px; margin: 0 8px 1px 0; border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor; transform: rotate(-45deg); vertical-align: middle; transition: transform .15s ease; }
+.chevron-menu.ouvert { transform: translateY(-2px) rotate(45deg); }
+@media (prefers-reduced-motion: reduce) { .chevron-menu { transition: none; } }
+
+/* ---- Menus : rubriques repliables homogènes (2026-11-27) ----
+   Décision du titulaire : toute rubrique qui a des sous-rubriques est un bouton qui les replie ou les déplie, chevron « › » replié,
+   « ⌄ » déplié (composant GroupeMenu, comme les thèmes de l'Administration). Les hauteurs sont celles des anciens titres de groupe
+   (.nav-groupe-titre, .nav-ecran-ouvert) : le menu ne grandit pas (Achats et Dettes tiennent juste à 1 366 × 768). */
+.groupe-menu-titre { display: flex; align-items: center; width: 100%; box-sizing: border-box; margin: 0; border: none; border-radius: 6px;
+  background: none; font: inherit; text-align: left; color: var(--texte-2); cursor: pointer; }
+.groupe-menu-titre .chevron-menu { margin: 0 8px 0 0; }
+:is(.admin-nav, .nav-laterale) .groupe-menu-titre:is(:hover, :focus-visible) { color: var(--accent-texte); background: var(--accent-clair); }
+:is(.admin-nav, .nav-laterale) .groupe-menu-titre:focus-visible { outline: 2px solid var(--accent-texte); outline-offset: -2px; }
+.groupe-menu-titre.groupe-actif { color: var(--accent-texte); }
+/* Sous-rubriques : sans boîte propre, elles restent des enfants du menu (mêmes écarts) ; repliées : masquées */
+.groupe-menu-contenu { display: contents; }
+.groupe-menu-contenu[hidden] { display: none; }
+/* Titre de groupe (petites capitales grises) : 6 + 16 + 2 px, 1 + 16 + 1 px en tête du menu (comme .nav-groupe-titre) */
+.groupe-menu-titre.titre-groupe { padding: 6px 12px 2px; font-size: 12px; font-weight: 600; line-height: 16px; letter-spacing: .06em; text-transform: uppercase; }
+.groupe-menu-titre.titre-groupe:first-child { padding-top: 1px; padding-bottom: 1px; }
+.nav-rubriques .groupe-menu-titre.titre-groupe { padding-left: 24px; }
+/* Écran affiché déplié (NavDomaine) : 14 px, gras, en vert (comme .nav-ecran-ouvert) */
+.groupe-menu-titre.titre-ecran { padding: 4px 12px; font-size: 14px; font-weight: 600; line-height: 20px; color: var(--accent-texte); }
+/* Liens rangés dans un groupe : mêmes retraits qu'avant le regroupement */
+.nav-laterale > .groupe-menu-contenu > a.sous-rubrique { padding-left: 20px; }
+/* Dettes et créances (menu resserré) : mêmes hauteurs qu'avant */
+.nav-laterale:has(.nav-dettes) > .groupe-menu-contenu > a { padding-top: 6px; padding-bottom: 6px; line-height: 1.3; }
+.nav-laterale:has(.nav-dettes) .groupe-menu-titre.titre-ecran { padding-top: 6px; padding-bottom: 2px; line-height: 1.3; }
+.nav-laterale:has(.nav-dettes) .groupe-menu-titre.titre-groupe:not(:first-child) { padding-top: 5px; padding-bottom: 1px; }
+/* Administration : thème (.nav-theme garde son rendu), écrans du thème et écran affiché déplié (1 + 16 + 1 px) */
+.admin-nav .nav-theme.groupe-menu-titre { gap: 0; }
+.admin-nav .nav-theme + .groupe-menu-contenu a:not(.sous-rubrique) { padding-left: 20px; padding-right: 8px; }
+.admin-nav .nav-theme + .groupe-menu-contenu a.sous-rubrique { padding-left: 30px; }
+.admin-nav .nav-theme + .groupe-menu-contenu .groupe-menu-titre.titre-groupe { padding: 1px 8px 1px 20px; }

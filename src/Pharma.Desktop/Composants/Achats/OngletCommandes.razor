@@ -124,17 +124,19 @@
             <div class="champ" style="flex: 0 0 150px; min-width: 0"><label for="fc-au">Au</label><input id="fc-au" type="date" @bind="fAu" @bind:after="PremierePageAsync" /></div>
             @if (FiltreActif) { <button type="button" class="btn" @onclick="EffacerFiltresAsync">Tout afficher</button> }
         </div>
+        @* Tableau compact (ergonomie 2026-11-27, proposition 2) : une ligne par bon, nombre de lignes en petit à côté du n°,
+           montant sans retour à la ligne, nom du grossiste coupé par « … » si besoin (complet en infobulle) *@
         <section class="tableau-cadre" aria-label="Bons de commande">
-            <table class="tableau" style="min-width: 0">
-                <thead><tr><th scope="col">Bon</th><th scope="col">Grossiste</th><th scope="col">Date</th>@if (VoitPrix) { <th scope="col">Montant HT</th> }<th scope="col">Statut</th></tr></thead>
+            <table class="tableau tableau-compact">
+                <thead><tr><th scope="col">Bon</th><th scope="col" class="principal">Grossiste</th><th scope="col">Date</th>@if (VoitPrix) { <th scope="col" class="nombre">Montant HT</th> }<th scope="col">Statut</th></tr></thead>
                 <tbody>
                     @foreach (var c in commandes)
                     {
                         <tr class="ligne-cliquable @(detail?.Entete.Id == c.Id ? "choisie" : null)" @onclick="() => OuvrirAsync(c.Id)">
-                            <td><button type="button" class="lien" @onclick="() => OuvrirAsync(c.Id)" @onclick:stopPropagation="true">@c.Numero</button><br /><span class="detail">@c.NombreLignes ligne(s)@(c.AuteurCentral is null ? "" : " · serveur central")</span></td>
-                            <td><LienContact Type="grossiste" Id="c.FournisseurId" Nom="@c.Fournisseur" /></td>
+                            <td><button type="button" class="lien" @onclick="() => OuvrirAsync(c.Id)" @onclick:stopPropagation="true">@c.Numero</button><span class="detail" title="@($"{c.NombreLignes} ligne(s){(c.AuteurCentral is null ? "" : " · créé par le serveur central")}")">@c.NombreLignes l.@(c.AuteurCentral is null ? "" : " · central")</span></td>
+                            <td class="principal" title="@c.Fournisseur"><LienContact Type="grossiste" Id="c.FournisseurId" Nom="@c.Fournisseur" /></td>
                             <td>@Libelles.DateLocale(c.Date)</td>
-                            @if (VoitPrix) { <td>@Libelles.Dinars(c.MontantHt, 2)</td> }
+                            @if (VoitPrix) { <td class="nombre">@Libelles.Dinars(c.MontantHt, 2)</td> }
                             <td><span class="pastille @Libelles.ClasseStatutCommande(c.Statut)">@Libelles.StatutCommande(c.Statut)</span></td>
                         </tr>
                     }

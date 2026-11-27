@@ -9,20 +9,23 @@
    Découpé en rubriques avec le menu vertical de l'Administration ; la rubrique est dans l'adresse (dettes?onglet=…). *@
 <div class="page avec-menu">
     <NavDomaine Libelle="Rubriques des dettes et créances">
-        @foreach (var r in Rubriques.Where(r => Session.A("role.titulaire") || !RubriquesTitulaire.Contains(r.Id)))
+        @* Groupes repliables (GroupeMenu, 2026-11-27) : un titre de groupe replie ou déplie les sous-rubriques qui le suivent,
+           chevron « › » replié, « ⌄ » déplié ; les rubriques hors groupe (Vue d'ensemble, Alertes, Tout) restent des liens *@
+        @{ var entrees = Rubriques.Where(r => Session.A("role.titulaire") || !RubriquesTitulaire.Contains(r.Id)).ToList(); }
+        @for (var i = 0; i < entrees.Count; i++)
         {
-            @if (r.Groupe is { } g)
+            var r = entrees[i];
+            if (r.Groupe is { } g)
             {
-                <span class="nav-groupe-titre">@g</span>
+                var membres = entrees.Skip(i + 1).TakeWhile(x => x.Groupe is null && x.SousRubrique).ToList();
+                <GroupeMenu Cle="@($"dettes:{g}")" Titre="@g" ContientActif="@membres.Any(x => x.Id == rubrique)">
+                    @foreach (var m in membres) { @LienDettes(m) }
+                </GroupeMenu>
+                i += membres.Count;
             }
             else
             {
-                var alerte = r.Id == "alertes";
-                var nombre = suivi is null ? (int?)null : alerte ? suivi.Alertes.Sum(a => a.Nombre) : r.Liste ? Lignes(suivi, Filtre(r.Id)).Count() : null;
-                <a href="@(r.Id == "synthese" ? "dettes" : $"dettes?onglet={r.Id}")" class="@(r.SousRubrique ? "sous-rubrique" : null) @(r.Id == rubrique ? "active" : null)"
-                   aria-current="@(r.Id == rubrique ? "page" : null)">
-                    @r.Libelle@if (nombre is { } n && (!alerte || n > 0)) { <span class="@(alerte ? "compteur" : "compteur neutre")" aria-label="@($"{n} ligne(s)")">@n</span> }
-                </a>
+                @LienDettes(r)
             }
         }
         @if (suivi is { } t)
@@ -165,6 +168,7 @@
             </div>
             <div class="champ" style="flex: 0 0 160px"><label for="fd-du">Due depuis le</label><input id="fd-du" type="date" @bind="fDu" @bind:after="PremierePageAsync" /></div>
             <div class="champ" style="flex: 0 0 160px"><label for="fd-au">Jusqu’au</label><input id="fd-au" type="date" @bind="fAu" @bind:after="PremierePageAsync" /></div>
+            <PeriodeRapide Du="fDu" Au="fAu" Libelle="Période où la somme est devenue due" OnChoisie="p => { (fDu, fAu) = (p.Du, p.Au); return PremierePageAsync(); }" />
             @if (FiltreActif) { <button type="button" class="btn" @onclick="EffacerFiltresAsync">Tout afficher</button> }
         </div>
 
@@ -223,8 +227,24 @@
 </div>
 
 @code {
+    // Ergonomie 2026-11-27 (propositions 8 et 31) : menu resserré (classe nav-dettes, app.css) pour tenir sans défilement à
+    // 1 366 × 768 ; compteurs à 0 masqués (écart voulu à « .compteur.neutre affiché même à zéro » : menu plus calme) ;
+    // sigle MDN écrit en clair dans l'infobulle
+    private RenderFragment LienDettes(RubriqueDettes r) => __builder =>
+    {
+        var alerte = r.Id == "alertes";
+        var nombre = suivi is null ? (int?)null : alerte ? suivi.Alertes.Sum(a => a.Nombre) : r.Liste ? Lignes(suivi, Filtre(r.Id)).Count() : null;
+        <a href="@(r.Id == "synthese" ? "dettes" : $"dettes?onglet={r.Id}")" class="nav-dettes @(r.SousRubrique ? "sous-rubrique" : null) @(r.Id == rubrique ? "active" : null)"
+           aria-current="@(r.Id == rubrique ? "page" : null)" title="@r.Infobulle">
+            @r.Libelle@if (nombre is { } n && n > 0) { <span class="@(alerte ? "compteur" : "compteur neutre")" aria-label="@($"{n} ligne(s)")">@n</span> }
+        </a>
+    };
+
     /// <summary>Menu vertical : rubriques et titres de groupe (Groupe non nul), dans l'ordre d'affichage.</summary>
-    private sealed record RubriqueDettes(string Id, string Libelle, string SousTitre, bool Liste = false, bool SousRubrique = false, string? Groupe = null);
+    private sealed record RubriqueDettes(string Id, string Libelle, string SousTitre, bool Liste = false, bool SousRubrique = false, string? Groupe = null,
+        string? Infobulle = null);
+    /// <summary>MDN écrit en clair une fois : infobulle du menu et sous-titre de la rubrique (nom de l'organisme, database/init/seed_referentiel.sql).</summary>
+    private const string Mdn = "MDN : ministère de la Défense nationale (militaires)";
     private static readonly RubriqueDettes[] Rubriques =
     [
         new("synthese", "Vue d’ensemble", "Ce qui est dû à la pharmacie et ce qu’elle doit, par ancienneté"),
@@ -232,8 +252,11 @@
         new("", "", "", Groupe: "À recevoir"),
         new("patient", "Patients", "Ventes à crédit non soldées et dette antérieure des patients", true, true),
         new("facture", "Factures clients", "Factures clients (patients, entreprises, organismes) restant à encaisser", true, true),
-        new("bordereau", "Bordereaux Chifa / MDN", "Bordereaux déposés pas encore soldés (alerte au-delà du délai de paiement réglé) et rejets à traiter", true, true),
-        new("chifa_a_deposer", "Ventes Chifa à déposer", "Ventes Chifa / MDN sur aucun bordereau (alerte au-delà du délai de dépôt réglé)", true, true),
+        // Sous-titres sur une ligne à 1 366 px : le seuil d'alerte passe dans l'infobulle du menu
+        new("bordereau", "Bordereaux Chifa / MDN", "Bordereaux Chifa et MDN (ministère de la Défense nationale) déposés pas encore soldés, et rejets à traiter",
+            true, true, Infobulle: $"Bordereaux déposés pas encore soldés (alerte au-delà du délai de paiement réglé) · {Mdn}"),
+        new("chifa_a_deposer", "Ventes Chifa à déposer", "Ventes Chifa et MDN (ministère de la Défense nationale) sur aucun bordereau, alerte au-delà du délai de dépôt réglé",
+            true, true, Infobulle: $"Ventes sur aucun bordereau (alerte au-delà du délai de dépôt réglé) · {Mdn}"),
         new("", "", "", Groupe: "À payer"),
         new("grossiste", "Grossistes", "Factures des grossistes non réglées et ancien solde hors factures", true, true),
         new("effet", "Traites à payer", "Traites remises aux grossistes : à venir, ou échues sans paiement confirmé", true, true),

@@ -10,16 +10,29 @@ public static class Domaines
     /// <summary>Écran d'un domaine. <paramref name="Chemins"/> : chemins (sans « / » initial) qui le désignent, sous-chemins compris.</summary>
     public sealed record Ecran(string Libelle, string Lien, string[] Chemins, string[] Droits, string? Raison = null)
     {
+        /// <summary>
+        /// L'écran a des rubriques : il se déplie dans le menu de gauche quand il est affiché (chevron « › » replié, « ⌄ » déplié, à tout niveau :
+        /// décision du titulaire du 2026-11-27). Liste fermée ci-dessous, contrôlée par un test (chaque écran qui fournit des rubriques à NavDomaine).
+        /// </summary>
+        public bool AvecRubriques => EcransAvecRubriques.Contains(Lien);
+
         /// <summary>Aucun droit demandé, ou l'un des droits donnés ; un écran « à venir » (Raison) n'est jamais permis.</summary>
         public bool Permis(SessionPoste s) => Raison is null && (Droits.Length == 0 || Droits.Any(s.A));
         public bool Designe(string chemin) => Chemins.Any(c => c == "" ? chemin == "" : chemin == c || chemin.StartsWith(c + "/", StringComparison.Ordinal));
     }
 
+    /// <summary>Écrans dont la page fournit des rubriques au menu de gauche (NavDomaine avec contenu).</summary>
+    public static readonly IReadOnlySet<string> EcransAvecRubriques = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "", "stock", "inventaire", "stock/registre", "tresorerie", "dettes", "financements", "rapports", "pilotage-financier", "surveillance"
+    };
+
     /// <summary>Domaine du menu du haut. <paramref name="Touche"/> : raccourci Ctrl + Maj + lettre.</summary>
     public sealed record Domaine(string Id, string Libelle, char Touche, IReadOnlyList<Ecran> Ecrans)
     {
         public IEnumerable<Ecran> Permis(SessionPoste s) => Ecrans.Where(e => e.Permis(s));
-        public bool Visible(SessionPoste s) => Permis(s).Any();
+        /// <summary>PC non autorisé (titulaire, Administration seulement) : aucun domaine, le menu du haut se réduit à « Réglages ».</summary>
+        public bool Visible(SessionPoste s) => !s.AdministrationSeule && Permis(s).Any();
         /// <summary>Premier écran permis : celui qu'ouvre le domaine dans le menu du haut.</summary>
         public string? Lien(SessionPoste s) => Permis(s).FirstOrDefault()?.Lien;
     }
@@ -30,7 +43,8 @@ public static class Domaines
         new("stock", "Stock", 'S',
         [
             new("Alertes", "", [""], []),
-            new("Stock", "stock", ["stock"], []),
+            // « Gestion du stock » (décision du titulaire du 2026-11-27 ; première rubrique renommée « Liste des produits ») : plus de « STOCK › Stock › Produits » ; adresse inchangée
+            new("Gestion du stock", "stock", ["stock"], []),
             new("Inventaire", "inventaire", ["inventaire"], []),
             new("Registre des psychotropes", "stock/registre", ["stock/registre"], ["psychotropes.registre"]),
             new("Étiquettes internes", "stock/etiquettes", ["stock/etiquettes"], ["stock.consulter", "achats.receptionner"]),
@@ -84,5 +98,7 @@ public static class Domaines
     public static bool ATableauDeBord(SessionPoste s) => DroitsDeGestion.Any(s.A);
 
     /// <summary>Écran d'arrivée après la connexion et au clic sur le logo.</summary>
-    public static string Accueil(SessionPoste s) => ATableauDeBord(s) || !s.A("caisse.vendre") ? "accueil" : "caisse";
+    /// <remarks>PC non autorisé (titulaire, Administration seulement) : Postes autorisés.</remarks>
+    public static string Accueil(SessionPoste s) =>
+        s.AdministrationSeule ? AdministrationSeule.Accueil : ATableauDeBord(s) || !s.A("caisse.vendre") ? "accueil" : "caisse";
 }

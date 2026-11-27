@@ -5,6 +5,13 @@ public interface IJournal
 {
     Task EcrireAsync(long utilisateurId, string action, string? tableCible, long? enregistrementId,
         IReadOnlyDictionary<string, object?> details, string? permissionCode, CancellationToken ct = default);
+
+    /// <summary>
+    /// Entrée sans utilisateur local (utilisateur_id NULL) : action venue du serveur central (ordre), jamais d'un employé. Seul JournalSql
+    /// l'écrit ; sans implémentation (doublures de tests), rien.
+    /// </summary>
+    Task EcrireSansUtilisateurAsync(string action, string? tableCible, long? enregistrementId, IReadOnlyDictionary<string, object?> details,
+        CancellationToken ct = default) => Task.CompletedTask;
 }
 
 /// <summary>

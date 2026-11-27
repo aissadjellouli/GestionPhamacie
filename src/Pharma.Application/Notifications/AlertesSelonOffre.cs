@@ -39,5 +39,5 @@ public sealed class AlertesTitulaireSelonOffre(IAlertesTitulaire alertes, IPacks
     public Task SynchronisationAsync(string objet, string detail, string sms, CancellationToken ct = default) => alertes.SynchronisationAsync(objet, detail, sms, ct);
     public Task ReglagesImposesAsync(IReadOnlyList<Reglages.ReglageImpose> tables, CancellationToken ct = default) => alertes.ReglagesImposesAsync(tables, ct);
     public Task SecondServeurAsync(string objet, string detail, string sms, CancellationToken ct = default) => alertes.SecondServeurAsync(objet, detail, sms, ct);
-    public Task OffreAsync(string objet, string detail, string sms, CancellationToken ct = default) => alertes.OffreAsync(objet, detail, sms, ct);
+    public Task<int> OffreAsync(string objet, string detail, string sms, CancellationToken ct = default) => alertes.OffreAsync(objet, detail, sms, ct);
 }

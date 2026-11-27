@@ -71,8 +71,8 @@ public sealed class RelaisVeille(IHttpClientFactory fabrique, SignatureInterServ
         // En-tête X-Pharma-Poste : nom encodé URL par le poste, décodé ici en forme canonique (NomPoste) ; signé sous sa forme ASCII encodée
         if (!req.Headers.TryGetValue(PresencePostesMiddleware.EnTete, out var valeur) || valeur.Count != 1
             || NomPoste.DepuisEnTete(valeur[0]) is not { } poste) return false;
-        // Liste des postes autorisés (modes « transition » et « exige ») : nom du poste PROUVÉ par sa signature (clé publique de la copie répliquée) ;
-        // preuve fausse : jamais relayée ; sans preuve : relayée seulement en mode « transition », sous le nom annoncé (le serveur 1 revérifie tout)
+        // Liste des postes autorisés : nom du poste PROUVÉ par sa signature (clé publique de la copie répliquée) ; preuve toujours exigée (script 174,
+        // le mode vaut toujours « exige ») : preuve fausse ou absente, jamais relayée (branches « transition » gardées, jamais prises)
         if (ctx.RequestServices.GetService<Pharma.Application.Postes.RegistrePostesAutorises>() is { } registre
             && await registre.ModeAsync(ct) is var mode && mode != Pharma.Shared.PreuvePoste.ModeInactif)
         {

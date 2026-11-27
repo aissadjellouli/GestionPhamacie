@@ -312,7 +312,8 @@ else if (attenteSync is { Affiche: true, Depuis: { } depuisSync })
         injoignableDepuis = serveurJoignable == false ? injoignableDepuis ?? DateTime.Now : null;
         // Mode démonstration : relu à chaque tour complet (une erreur garde l'état connu : la mention ne disparaît pas sur un incident)
         if (serveurJoignable == true && (complet || demo is null) && await Api.EtatDemoAsync() is ({ } d, null)) demo = d;
-        if (complet && serveurJoignable == true && Session.EstConnecte)
+        // PC non autorisé (titulaire, Administration seulement, décision du 2026-11-27) : ni état du poste, ni synchronisation, ni compteurs (refusés)
+        if (complet && serveurJoignable == true && Session.EstConnecte && !Session.AdministrationSeule)
         {
             var (e, erreur) = await Api.EtatPosteAsync();
             if (erreur is null) etat = e;

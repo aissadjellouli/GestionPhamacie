@@ -179,6 +179,56 @@ public class OrdresCentrauxTests
             new ConfirmerOrdreCentral(depot, executer, droits, horloge, motDePasse), new RefuserOrdreCentral(depot, droits, motDePasse), seuils, moteur);
     }
 
+    private sealed class PacksFactices(bool g) : Pharma.Application.Offre.IPacksOffre
+    {
+        public Task<bool> InclusAsync(string pack, CancellationToken ct = default) => Task.FromResult(g || pack != Pharma.Application.Offre.PacksOffre.MultiOfficines);
+        public Task<int> ScannersMobilesAsync(CancellationToken ct = default) => Task.FromResult(0);
+    }
+
+    [Fact]
+    public async Task Sans_le_pack_G_seule_l_activation_de_l_offre_est_traitee_les_autres_ordres_attendent()
+    {
+        // Décision du titulaire du 2026-11-27 (point 3) : les ordres descendent sans G, seul « activation_offre » est traité ; les autres restent en
+        // attente sans alerte, expirent d'eux-mêmes, et leur confirmation est refusée « option non incluse »
+        var m = Monter();
+        var sansG = new PacksFactices(false);
+        var auto = new AppliquerOrdresCentraux(m.Depot, ExecuterPourEssai(m), new Horloge(Maintenant), m.Alertes, packs: sansG);
+        var bloquer = Ordre(TypesOrdre.EmployeBloquer, "3", """{"role":"vendeur","actif":true}""");
+        var activation = Ordre(TypesOrdre.ActivationOffre, donnees: """{"code":"PO1.x.y"}""");
+        var perime = Ordre(TypesOrdre.Essai, expire: Maintenant.AddMinutes(-1));
+        m.Depot.Ordres.AddRange([bloquer, activation, perime]);
+
+        await auto.ExecuterAsync();
+        Assert.Equal(StatutsOrdre.AAppliquer, m.Depot.Statut(bloquer.Id));          // laissé en attente
+        Assert.NotEqual(StatutsOrdre.AAppliquer, m.Depot.Statut(activation.Id));    // traité (appliqué ou refusé selon le code)
+        Assert.Equal(StatutsOrdre.Expire, m.Depot.Statut(perime.Id));               // expire de lui-même, résultat noté
+        Assert.DoesNotContain(m.Alertes.Objets, o => o.Contains("expiré") || o.Contains("bloqué"));
+        Assert.Null(m.Admin.Modifie);
+
+        // Ordre déjà « à confirmer » (reçu avec G) : confirmation refusée sans G
+        var creer = Ordre(TypesOrdre.EmployeCreer) with { Statut = StatutsOrdre.AConfirmer };
+        m.Depot.Ordres.Add(creer);
+        var confirmer = new ConfirmerOrdreCentral(m.Depot, ExecuterPourEssai(m), new DroitsFactices("admin.utilisateurs") { Titulaire = true },
+            new Horloge(Maintenant), packs: sansG);
+        await Assert.ThrowsAsync<Pharma.Application.Offre.OptionNonIncluseException>(() => confirmer.ExecuterAsync(creer.Id, "Provisoire123", 1));
+        Assert.Equal(StatutsOrdre.AConfirmer, m.Depot.Statut(creer.Id));
+
+        // Avec G : l'ordre en attente s'applique
+        await new AppliquerOrdresCentraux(m.Depot, ExecuterPourEssai(m), new Horloge(Maintenant), m.Alertes, packs: new PacksFactices(true)).ExecuterAsync();
+        Assert.Equal(StatutsOrdre.Applique, m.Depot.Statut(bloquer.Id));
+    }
+
+    /// <summary>Exécuteur minimal (mêmes doublures que <see cref="Monter"/>) pour les essais avec une offre.</summary>
+    private static ExecuterOrdreCentral ExecuterPourEssai((Depot Depot, UtilisateursEnMemoire Admin, Alertes Alertes, JournalEspion Journal, AppliquerOrdresCentraux Auto,
+        ConfirmerOrdreCentral Confirmer, RefuserOrdreCentral Refuser, SeuilsEnMemoire Seuils, MoteurEspion Moteur) m)
+    {
+        var droits = new DroitsFactices("admin.utilisateurs") { Titulaire = true };
+        return new ExecuterOrdreCentral(m.Admin, new CreerUtilisateur(m.Admin, new HacheurFactice(), m.Journal, droits),
+            new ModifierUtilisateur(m.Admin, new HacheurFactice(), m.Journal, droits), new EnregistrerDroits(m.Admin, m.Journal), m.Depot.Produits, m.Depot,
+            new Pharma.Application.Catalogue.ImporterNomenclature(new LecteurFactice(200), m.Depot.Nomenclature, droits, m.Journal), m.Depot.Referentiels,
+            m.Depot.Achats, m.Depot.Organismes, m.Depot.Listes, horloge: new Horloge(Maintenant));
+    }
+
     [Fact]
     public async Task Essai_et_blocage_appliques_tout_de_suite_le_blocage_previent_le_titulaire()
     {

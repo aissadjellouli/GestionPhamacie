@@ -258,6 +258,70 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
         finally { verrou.Rendre(); }
     }
 
+    /// <summary>Table de la file des résultats d'ordres (script 145) : seule envoyée sans le pack G.</summary>
+    public const string TableResultatsOrdres = "sync_ordre_resultat";
+
+    /// <summary>
+    /// Voie réduite sans le pack G (décision du titulaire du 2026-11-27, point 3) : la synchronisation est arrêtée, mais l'officine relève encore
+    /// les éléments descendants (échange léger : ordres du central, dont l'activation de l'offre ; réglages rangés dans la base sans être appliqués)
+    /// et, si <paramref name="envoyerResultats"/>, envoie les résultats d'ordres SEULS (lots formés des seules lignes « sync_ordre_resultat » ; les
+    /// autres lignes restent en file pour le jour où le pack G revient). Aucun chargement complet, aucune déclaration d'époque, aucun contrôle de
+    /// retour en arrière (rien n'est posé qui suspendrait l'encaissement), aucun renouvellement du certificat. Un lot refusé est une erreur simple,
+    /// reprise au passage suivant. Un lot déjà formé avant la fin du pack (données autorisées alors) part avant, dans l'ordre des n°.
+    /// </summary>
+    public async Task<ResultatEnvoi> ExecuterSansPackAsync(DateTime maintenantUtc, bool envoyerResultats, CancellationToken ct = default)
+    {
+        if (!verrou.Prendre()) return new(0, ArretEnCours, null);
+        try { return await PasserSansPackAsync(maintenantUtc, envoyerResultats, ct); }
+        finally { verrou.Rendre(); }
+    }
+
+    private async Task<ResultatEnvoi> PasserSansPackAsync(DateTime maintenantUtc, bool envoyerResultats, CancellationToken ct)
+    {
+        var p = await depot.ParametresAsync(ct);
+        if (p.BaseEnLectureSeule) return new(0, ArretLectureSeule, null);
+        if (!p.Active) return new(0, ArretDesactivee, null);
+        if (string.IsNullOrWhiteSpace(p.Adresse)) return new(0, ArretSansAdresse, null);
+        var cert = certificat.Lire();
+        if (p.InscriteLe is null || cert is null || p.OfficineId is not { } officine) return new(0, ArretNonActivee, null);
+        if (cert.EcheanceUtc <= maintenantUtc) return await ErreurAsync(0, "Certificat de synchronisation échu : nouveau code d'activation nécessaire.", true, ct);
+        var accuses = 0;
+        try
+        {
+            (versionDescendante, erreurDescendante) = (p.DescendantVersion, null);
+            await EchangerDescendantsAsync(p.Adresse, ct);
+            if (envoyerResultats)
+            {
+                interdites = (await depot.ParametresAsync(ct)).ColonnesInterdites ?? [];
+                await constitution.ConstituerAsync(10, ct, [TableResultatsOrdres]);
+                foreach (var lot in await depot.LotsNonAccusesAsync(20, ct))
+                {
+                    var a = await DeposerAsync(p.Adresse, officine, lot, ct);
+                    if (a.Statut is not (StatutsLotSync.Accepte or StatutsLotSync.DejaRecu))
+                        return await ErreurAsync(accuses, $"Lot {lot.Epoque}/{lot.Numero} des résultats d'ordres non accepté par le serveur central ({a.Statut}) : "
+                            + "nouvel essai au prochain passage.", false, ct);
+                    await depot.EnregistrerAccuseAsync(lot.Epoque, lot.Numero, ct);
+                    accuses++;
+                }
+            }
+            await depot.NoterEnvoiAsync(erreurDescendante, ct);
+            await depot.NoterPassageAsync(null, ct);
+            return new(accuses, null, null);
+        }
+        catch (LotIncoherentException e) { return await ErreurAsync(accuses, e.Message, true, ct); }
+        catch (ServeurCentralException e) { return await ErreurAsync(accuses, e.Message, e.Definitif, ct, e.Quota); }
+        catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            var message = e switch
+            {
+                HttpRequestException => "Serveur central injoignable : " + e.Message,
+                TaskCanceledException => "Serveur central injoignable (délai dépassé).",
+                _ => $"Erreur technique d'envoi ({e.GetType().Name}) : voir le journal du serveur."
+            };
+            return await ErreurAsync(accuses, message, false, ct);
+        }
+    }
+
     private async Task<ResultatEnvoi> PasserAsync(DateTime maintenantUtc, int maxLots, CancellationToken ct)
     {
         var p = await depot.ParametresAsync(ct);

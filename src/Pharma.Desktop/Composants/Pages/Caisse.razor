@@ -16,7 +16,9 @@
 @* Écran fixe (docs/charte-graphique.md) : colonne d'actions de caisse à gauche (NavCaisse), une partie à la fois dans l'adresse :
    la vente (caisse), l'annulation ou le retour (caisse?rubrique=annulation), le règlement d'un crédit (caisse?rubrique=credit).
    Passer d'une partie à l'autre garde le panier ; le panier défile dans son cadre. *@
-<div class="page @(erreurEtat is null && etat?.SessionId is not null ? "avec-menu" : null)" style="padding-top: 24px">
+@* Ergonomie (2026-11-27) : le menu de la caisse reste affiché avant l'ouverture ; les rubriques qui exigent une caisse ouverte y sont
+   grisées avec la raison (NavCaisse, CaisseOuverte) *@
+<div class="page @(erreurEtat is null && etat is not null ? "avec-menu" : null)" style="padding-top: 24px">
     @if (erreurEtat is not null)
     {
         <div class="erreur" role="alert">@erreurEtat</div>
@@ -27,16 +29,25 @@
     }
     else if (etat.SessionId is null)
     {
-        <section class="panneau" style="max-width: 460px" aria-labelledby="t-ouvrir">
+        <NavCaisse Actif="caisse" CaisseOuverte="false" />
+        <div class="contenu-rubrique">
+        @* Ouverture au clavier (2026-11-27) : curseur dans le fond, Entrée = « Ouvrir la caisse » ; le montant est rappelé avec le
+           séparateur de milliers (le champ numérique ne l'affiche pas). Fond proposé : celui réglé par le titulaire (Administration ›
+           Caisse) ; un champ vidé laisse le serveur prendre ce même fond réglé. *@
+        <section class="panneau ouverture-caisse" aria-labelledby="t-ouvrir">
             <h2 id="t-ouvrir">Ouvrir la caisse</h2>
             <p class="sous-titre">Comptez le fond de caisse avant la première vente. La caisse reste à votre nom jusqu’à la clôture.</p>
             <div class="champ">
-                <label for="fond">Fond de caisse (DA)</label>
-                <input id="fond" type="number" min="0" step="1" @bind="fondCaisse" />
+                <label for="fond">Fond de caisse (DA) <span class="touche-caisse" title="Entrée : ouvrir la caisse">Entrée</span></label>
+                <input id="fond" type="number" min="0" step="1" autofocus @ref="champFond" @bind="fondCaisse" @bind:event="oninput" @onkeydown="ToucheFondAsync"
+                       aria-describedby="fond-rappel" />
+                <span id="fond-rappel" class="detail">@(fondCaisse is { } f ? $"Fond compté : {Libelles.Dinars(f, 2)}" : $"Champ vide : le fond réglé ({Libelles.Dinars(etat.FondCaisseDefaut, 2)}) sera pris")
+                    · fond réglé par le titulaire : @Libelles.Dinars(etat.FondCaisseDefaut, 2)</span>
             </div>
             @if (erreurOuverture is not null) { <div class="erreur" role="alert">@erreurOuverture</div> }
             <button type="button" class="btn btn-principal btn-large" disabled="@enCours" @onclick="OuvrirAsync">Ouvrir la caisse</button>
         </section>
+        </div>
     }
     else
     {
@@ -241,8 +252,19 @@
                 <!-- 1 · Panier : recherche du produit, mise en attente, ventes en attente du poste (gardées sur le serveur) -->
                 <div class="ligne-scan">
                     <div class="champ recherche">
-                        <label for="scan">1 · Panier@(lignes.Count > 0 ? $" · {NombreProduits} produit(s), {lignes.Where(l => !l.EstPrestation).Sum(l => l.Quantite)} boîte(s){(lignes.Any(l => l.EstPrestation) ? $", {lignes.Where(l => l.EstPrestation).Sum(l => l.Quantite)} prestation(s)" : "")}" : "") <span class="detail">F7</span></label>
-                        <input id="scan" data-champ="volet_chifa" class="grand" type="search" placeholder="Scanner ou rechercher un produit : nom, DCI, code-barres" autofocus autocomplete="off"
+                        <label for="scan">1 · Panier@(lignes.Count > 0 ? $" · {NombreProduits} produit(s), {lignes.Where(l => !l.EstPrestation).Sum(l => l.Quantite)} boîte(s){(lignes.Any(l => l.EstPrestation) ? $", {lignes.Where(l => l.EstPrestation).Sum(l => l.Quantite)} prestation(s)" : "")}" : "") <span class="touche-caisse">F7</span>
+                            @* Quantité au clavier (2026-11-27) : « 3 * » tapé avant le scan ou la recherche ; + et − sur la dernière ligne, champ vide *@
+                            @if (QuantiteSaisie > 1)
+                            {
+                                <strong class="quantite-prefixe" role="status">× @QuantiteSaisie au prochain produit</strong>
+                            }
+                            else
+                            {
+                                <span class="touche-caisse" title="Tapez 3 * avant le scan ou la recherche : 3 boîtes du produit">3 *</span>
+                                <span class="touche-caisse" title="Champ vide : + ou − du pavé numérique change la quantité de la dernière ligne ajoutée">+ −</span>
+                            }
+                        </label>
+                        <input id="scan" data-champ="volet_chifa" class="grand" type="search" placeholder="Scanner ou rechercher un produit : nom, DCI, code-barres" autofocus autocomplete="off" @ref="champScan"
                                role="combobox" aria-autocomplete="list" aria-expanded="@(suggestions.Count > 0 ? "true" : "false")" aria-controls="scan-liste"
                                aria-activedescendant="@(ActifScan >= 0 ? $"scan-opt-{ActifScan}" : null)"
                                @bind="texte" @bind:event="oninput" @bind:after="RechercherApresSaisieAsync" @onkeydown="ToucheAsync" />
@@ -264,7 +286,7 @@
                                         @if (p.Stock > 0)
                                         {
                                             <button type="button" id="@($"scan-opt-{optProduit}")" role="option" aria-selected="@(optProduit == ActifScan ? "true" : "false")"
-                                                    class="@(optProduit == ActifScan ? "actif" : null)" @onclick="() => AjouterAsync(p.Id, p.NomCommercial, c.PrixServi)">
+                                                    class="@(optProduit == ActifScan ? "actif" : null)" @onclick="() => AjouterAsync(p.Id, p.NomCommercial, c.PrixServi, QuantiteSaisie)">
                                                 <span>
                                                     <strong>@p.NomCommercial</strong><br />
                                                     <span class="detail">@p.Dci @p.Dosage · stock @p.Stock@(Libelles.EstSousRegistre(p.Classe) ? " · ordonnance" : "")</span>
@@ -275,7 +297,7 @@
                                             {
                                                 @* Étiquette sans le nom du médicament (même produit) : le laboratoire seulement (2026-11-14) *@
                                                 <button type="button" id="@($"scan-opt-{optAutre}")" role="option" aria-selected="@(optAutre == ActifScan ? "true" : "false")"
-                                                        class="suggestion-equivalent @(optAutre == ActifScan ? "actif" : null)" title="@m.NomCommercial" @onclick="() => AjouterAsync(m.ProduitId, m.NomCommercial, m.PrixPublic)">
+                                                        class="suggestion-equivalent @(optAutre == ActifScan ? "actif" : null)" title="@m.NomCommercial" @onclick="() => AjouterAsync(m.ProduitId, m.NomCommercial, m.PrixPublic, QuantiteSaisie)">
                                                     <span>Moins cher · <strong>@(m.Laboratoire ?? "autre laboratoire")</strong> · stock @m.Stock</span>
                                                     <span>@Libelles.Dinars(m.PrixPublic, 2) (− @Libelles.Dinars(c.PrixServi - m.PrixPublic, 2))</span>
                                                 </button>
@@ -293,7 +315,7 @@
                                             @if (c.Remplacant is { } r)
                                             {
                                                 <button type="button" id="@($"scan-opt-{optAutre}")" role="option" aria-selected="@(optAutre == ActifScan ? "true" : "false")"
-                                                        class="suggestion-equivalent @(optAutre == ActifScan ? "actif" : null)" @onclick="() => AjouterAsync(r.ProduitId, r.NomCommercial, r.PrixPublic)">
+                                                        class="suggestion-equivalent @(optAutre == ActifScan ? "actif" : null)" @onclick="() => AjouterAsync(r.ProduitId, r.NomCommercial, r.PrixPublic, QuantiteSaisie)">
                                                     <span>Remplaçant : <strong>@r.NomCommercial</strong>@(r.Exact ? "" : r.ListeBlanche ? " (liste blanche du pharmacien)" : $" ({r.Dosage} {r.Forme}, à valider par le pharmacien)")@(r.FabricationLocale ? " · fabriqué en Algérie" : "") · stock @r.Stock</span>
                                                     <span>@Libelles.Dinars(r.PrixPublic, 2)</span>
                                                 </button>
@@ -1077,7 +1099,7 @@
             </section>
 
             <!-- 3 · Paiement -->
-            <aside class="panneau colonne-laterale reglement" aria-label="Paiement" inert="@(renvoi is not null)">
+            <aside class="panneau colonne-laterale reglement" aria-label="Paiement" inert="@(renvoi is not null)" @onkeydown="TouchePaiement">
                 <strong>3 · Paiement</strong>
                 @if (tiersPayant)
                 {
@@ -1177,11 +1199,12 @@
                 <div class="filtres modes-paiement" role="group" aria-label="Mode de paiement">
                     @foreach (var (code, libelle) in Modes)
                     {
-                        <button type="button" class="puce" aria-pressed="@(mode == code ? "true" : "false")" @onclick="() => mode = code">@libelle</button>
+                        @* Touche du mode sur la puce (2026-11-27), même petit cadre que « Ctrl K » *@
+                        <button type="button" class="puce" aria-pressed="@(mode == code ? "true" : "false")" aria-keyshortcuts="@TouchesModes[code]" @onclick="() => mode = code">@libelle <span class="touche-caisse">@TouchesModes[code]</span></button>
                     }
                     @* Crédit : un mode comme les autres (2026-11-15), grisé sans patient ; la raison au survol *@
                     <button type="button" class="puce" aria-pressed="@(mode == "credit" ? "true" : "false")" disabled="@(patient is null)"
-                            title="@(patient is null ? "Choisissez d’abord le patient à qui la vente est accordée" : "Mettre la vente au crédit du patient")" @onclick="@(() => mode = "credit")">Crédit</button>
+                            title="@(patient is null ? "Choisissez d’abord le patient à qui la vente est accordée" : "Mettre la vente au crédit du patient")" aria-keyshortcuts="@TouchesModes["credit"]" @onclick="@(() => mode = "credit")">Crédit <span class="touche-caisse">@TouchesModes["credit"]</span></button>
                 </div>
                 @* Avoir du patient (script 106) : affiché dès que le patient est choisi ; combinable avec espèces, carte ou chèque *@
                 @if (AvoirDisponible)
@@ -1235,8 +1258,9 @@
                        comptage aveugle de la caisse) *@
                     <div class="paiement-especes">
                         <div class="champ">
-                            <label for="recu">Montant reçu (DA)</label>
+                            <label for="recu">Montant reçu (DA) <span class="touche-caisse" title="Entrée : encaisser (comme F12)">Entrée</span></label>
                             <input id="recu" type="number" min="0" step="1" @bind="montantRecu" @bind:event="oninput" placeholder="Obligatoire" data-champ="montant_recu"
+                                   @ref="champRecu" @onkeydown="ToucheRecuAsync"
                                    class="@Obligatoire.Classe(RecuInsuffisant)" aria-describedby="@(RecuInsuffisant ? "recu-manque" : null)" />
                             @* En rouge sans bulle ni déplacement du curseur pendant la frappe (charte « Erreurs de saisie ») *@
                             @if (RecuCourt)
@@ -1287,9 +1311,15 @@
 
                 @if (erreurEncaissement is not null) { <div class="erreur" role="alert">@erreurEncaissement</div> }
                 <span class="espace"></span>
-                <button type="button" class="btn btn-principal btn-large" disabled="@(!PeutEncaisserMode)" title="@RaisonBlocageMode" @onclick="() => EncaisserAsync(mode)">
+                <button type="button" class="btn btn-principal btn-large" disabled="@(!PeutEncaisserMode)" title="@RaisonBlocageMode" @onclick="() => EncaisserAsync(mode)"
+                        aria-describedby="@(!PeutEncaisserMode && RaisonBlocageMode is not null ? "raison-encaisser" : null)">
                     @(mode == "credit" ? "Mettre en crédit (F12)" : "Encaisser (F12)")
                 </button>
+                @* Raison du bouton grisé écrite en clair sous lui (2026-11-27), plus seulement au survol *@
+                @if (!PeutEncaisserMode && RaisonBlocageMode is { } raisonBlocage)
+                {
+                    <p id="raison-encaisser" class="raison-encaisser" role="status">@raisonBlocage</p>
+                }
             </aside>
         </div>
         }
@@ -1363,11 +1393,25 @@
 
     private static readonly (string, string)[] Modes = [("especes", "Espèces"), ("carte", "Carte"), ("cheque", "Chèque")];
 
+    /// <summary>
+    /// Touche de chaque mode de paiement (2026-11-27), affichée sur sa puce. F5 à F8 et F12 sont déjà pris par la caisse, F1 est
+    /// laissée à l'aide, F3 (recherche dans la page) et F10 (touche système de Windows) sont évitées : F2, F4, F9 et F11, de gauche
+    /// à droite comme les puces.
+    /// </summary>
+    internal static readonly IReadOnlyDictionary<string, string> TouchesModes = new Dictionary<string, string>
+    {
+        ["especes"] = "F2", ["carte"] = "F4", ["cheque"] = "F9", ["credit"] = "F11"
+    };
+
     // Caisse
     private EtatCaisseDto? etat;
     private string? erreurEtat, erreurOuverture;
-    private decimal fondCaisse;
+    /// <summary>Fond saisi à l'ouverture ; vide (null) : le serveur prend le fond réglé par le titulaire.</summary>
+    private decimal? fondCaisse;
     private bool enCours;
+    // Ouverture de la caisse au clavier (2026-11-27) : curseur placé dans « Fond de caisse » à l'apparition du panneau
+    private ElementReference champFond;
+    private bool focaliserFond;
 
     // Panier
     private string texte = "";
@@ -1926,10 +1970,14 @@
     {
         // F12 n'encaisse que depuis la vente elle-même : jamais derrière une rubrique (annulation, crédit), l'ordonnance agrandie,
         // la caméra ou le formulaire d'un nouveau patient
-        if (rubrique != "" || imageAgrandie || cameraOuverte || nouveauPatient) return;
+        if (etat?.SessionId is null || rubrique != "" || imageAgrandie || cameraOuverte || nouveauPatient) return;
         if (PeutEncaisserMode) await EncaisserAsync(mode);
         else
         {
+            // Ergonomie (2026-11-27) : le curseur va sur ce qui manque. Panier vide : la recherche produit ; espèces sans montant reçu
+            // suffisant (et rien d'autre à renseigner avant) : « Montant reçu ». Patient, médecin, porteur, durée et Chifa : bulles ci-dessous.
+            if (lignes.Count == 0) focaliserScan = true;
+            else if (RaisonBlocage is null && RecuInsuffisant) focaliserRecu = true;
             if (PatientManquant) alerterPatient = true;   // la bulle « À renseigner » s'ouvre seulement maintenant
             if (MedecinManquant && !PatientManquant) alerterMedecin = true;          // une bulle à la fois : le patient d’abord
             if (PorteurIncomplet && !PatientManquant && !MedecinManquant) alerterPorteur = true;   // puis le porteur
@@ -1946,10 +1994,18 @@
         (etat, erreurEtat) = await Api.EtatCaisseAsync();
         if (etat is not null) fondCaisse = etat.FondCaisseDefaut;
         if (etat?.SessionId is not null) await ChargerAttentesAsync();
+        else if (etat is not null) focaliserFond = true;
+    }
+
+    /// <summary>Entrée dans « Fond de caisse » : ouvre la caisse, comme le bouton.</summary>
+    private async Task ToucheFondAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await OuvrirAsync();
     }
 
     private async Task OuvrirAsync()
     {
+        if (enCours) return;   // Entrée répétée ou clic pendant l'envoi : une seule ouverture
         enCours = true;
         (_, erreurOuverture) = await Api.OuvrirCaisseAsync(Poste.Poste, fondCaisse);
         enCours = false;
@@ -1962,9 +2018,17 @@
     private async Task RechercherApresSaisieAsync()
     {
         listeActif = null;   // toute frappe (scan compris) annule la proposition mise en avant par les flèches
+        // + ou − traité comme quantité de la dernière ligne (ToucheAsync) : le signe ne reste pas dans la recherche
+        if (signeAEffacer && texte is "+" or "-")
+        {
+            (signeAEffacer, texte) = (false, "");
+            await JS.InvokeVoidAsync("pharma.fixerValeur", champScan, "");
+            return;
+        }
+        signeAEffacer = false;
         var numero = ++requete;
         if (texte.Length > 0) (bandeau, bandeauProduit) = (null, null);   // nouvelle recherche : l'explication précédente n'a plus lieu d'être
-        if (texte.Trim().Length < 2) { suggestions = []; return; }
+        if (TexteRecherche.Trim().Length < 2) { suggestions = []; return; }
         await Task.Delay(DelaiSaisie);
         if (numero == requete) await RechercherAsync();
     }
@@ -1975,9 +2039,9 @@
     private async Task RechercherAsync()
     {
         var numero = ++requete;
-        if (texte.Trim().Length < 2) { suggestions = []; return; }
+        if (TexteRecherche.Trim().Length < 2) { suggestions = []; return; }
         // Une ligne de plus que l'affichage : elle signale qu'il reste d'autres résultats (2026-11-15)
-        var (trouves, err) = await Api.RechercherAuComptoirAsync(texte, SuggestionsMax + 1);
+        var (trouves, err) = await Api.RechercherAuComptoirAsync(TexteRecherche, SuggestionsMax + 1);
         if (numero != requete) return;   // une frappe plus récente a déjà relancé la recherche
         // Proposition mise en avant par les flèches pendant la recherche : gardée si elle figure dans la nouvelle réponse (même
         // produit, même nom), sinon plus rien n'est mis en avant ; Entrée garde alors son rôle (volet Chifa, boîte, 1er produit)
@@ -2018,6 +2082,24 @@
     private async Task ToucheAsync(KeyboardEventArgs e)
     {
         if (e.Key == "Escape") { (suggestions, listeActif) = ([], null); return; }
+        // Touche d'un mode de paiement (F2, F4, F9, F11) : la vente se finit sans souris
+        if (ToucheMode(e)) return;
+        // Champ vide : + et − du pavé numérique changent la quantité de la dernière ligne ajoutée (2026-11-27). Pavé seulement : une
+        // douchette tape ses caractères avec les touches principales (un code peut commencer par « + »). Le signe tapé est retiré du
+        // champ juste après (RechercherApresSaisieAsync) ; jamais sous 1 au clavier : on retire une ligne avec son bouton.
+        if (e.Code is "NumpadAdd" or "NumpadSubtract" && texte.Length == 0 && !e.CtrlKey && !e.AltKey)
+        {
+            signeAEffacer = true;
+            if (DerniereLigneModifiable() is { } derniere)
+            {
+                var delta = e.Code == "NumpadAdd" ? 1 : -1;
+                if (delta < 0 && derniere.Quantite <= 1) return;
+                if (delta > 0 && derniere.EstPrestation && derniere.Quantite >= 99) return;   // même plafond que le bouton +
+                ligneAVoir = derniere;
+                await ChangerAsync(derniere, delta);
+            }
+            return;
+        }
         // Flèches haut et bas (2026-11-18) : parcourent les propositions sélectionnables, en boucle
         if (e.Key is "ArrowDown" or "ArrowUp")
         {
@@ -2033,27 +2115,87 @@
         if (ActifScan is >= 0 and var choisie && OptionsScan() is var liste && choisie < liste.Count)
         {
             var o = liste[choisie];
+            var quantiteChoisie = QuantiteSaisie;   // « 3 * » tapé avant la recherche
             (listeActif, actifScan) = (null, -1);
             ++requete;
             // Même verrou que les scans : un scan arrivé juste avant est traité d'abord, l'ajout ne se mêle pas au sien
             await scansEnCours.WaitAsync();
-            try { await AjouterAsync(o.ProduitId, o.Nom, o.Prix); }
+            try { await AjouterAsync(o.ProduitId, o.Nom, o.Prix, quantiteChoisie); }
             finally { scansEnCours.Release(); }
             return;
         }
+        // « 3 * » seul suivi d'Entrée : rien à chercher, la quantité reste tapée pour le scan qui suit
+        var saisie = texte.Trim();
+        var (quantite, reste) = LirePrefixeQuantite(saisie);
+        if (quantite > 1 && reste.Trim().Length == 0) return;
         // Le code lu est pris et la saisie vidée tout de suite, avant toute attente : le scan suivant peut déjà arriver.
         // La recherche de frappe en cours n'a plus d'objet.
-        var code = texte.Trim();
+        var code = reste.Trim();
         texte = "";
         ++requete;
         // Scans rapprochés : traités un par un, dans l'ordre, chacun avec son propre code
         await scansEnCours.WaitAsync();
-        try { await TraiterCodeAsync(code); }
+        try { await TraiterCodeAsync(code, quantite, saisie); }
         finally { scansEnCours.Release(); }
     }
 
+    // ---- Caisse au clavier (2026-11-27, revue d'ergonomie n° 3) ----
+
+    /// <summary>« 3 * » (ou « 3* ») tapé avant le scan ou la recherche : quantité de 1 à 99 ; sans préfixe, 1 et le texte tel quel.</summary>
+    internal static (int Quantite, string Reste) LirePrefixeQuantite(string saisie)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(saisie, @"^\s*([1-9][0-9]?)\s*\*(.*)$", System.Text.RegularExpressions.RegexOptions.Singleline);
+        return m.Success ? (int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture), m.Groups[2].Value.TrimStart()) : (1, saisie);
+    }
+
+    /// <summary>Quantité tapée devant la recherche en cours (1 sans préfixe).</summary>
+    private int QuantiteSaisie => LirePrefixeQuantite(texte).Quantite;
+    /// <summary>Texte cherché, sans la quantité tapée devant.</summary>
+    private string TexteRecherche => LirePrefixeQuantite(texte).Reste;
+    /// <summary>+ ou − vient d'être traité comme quantité : le caractère tapé est retiré de la recherche.</summary>
+    private bool signeAEffacer;
+    private ElementReference champScan, champRecu;
+    private bool focaliserScan, focaliserRecu;
+
+    /// <summary>Dernière ligne ajoutée (sinon la dernière du panier), si sa quantité se règle : produit servi sur un lot, ou prestation.</summary>
+    private LignePanier? DerniereLigneModifiable()
+    {
+        var l = derniereAjoutee is { } d && lignes.Contains(d) ? d : lignes.LastOrDefault();
+        return l is not null && (l.Lot is not null || l.EstPrestation) ? l : null;
+    }
+
+    /// <summary>Une fenêtre est ouverte au-dessus de la vente : les touches de paiement n'agissent pas derrière elle.</summary>
+    private bool FenetreSurLaVente => imageAgrandie || cameraOuverte || prestationsOuvert || motifAttenteOuvert || patientsAttenteOuvert
+        || (volet is not null && patientVoletOuvert) || controlePsy is not null || rapprochement is not null || renvoi is not null;
+
+    /// <summary>
+    /// Touche d'un mode de paiement (TouchesModes) depuis la recherche produit ou la colonne Paiement. Espèces : le curseur va dans
+    /// « Montant reçu ». Crédit : seulement une fois le patient choisi, comme la puce. Vrai si la touche a été prise.
+    /// </summary>
+    private bool ToucheMode(KeyboardEventArgs e)
+    {
+        if (e.CtrlKey || e.AltKey || e.ShiftKey || rubrique != "" || FenetreSurLaVente) return false;
+        var choisi = TouchesModes.FirstOrDefault(t => t.Value == e.Key).Key;
+        if (choisi is null) return false;
+        if (choisi == "credit" && patient is null) return true;   // puce grisée : la raison est dans son infobulle
+        mode = choisi;
+        if (mode == "especes" && APayerEspeces > 0) focaliserRecu = true;
+        return true;
+    }
+
+    /// <summary>Touches dans la colonne Paiement : modes de paiement (le champ « Montant reçu » a en plus Entrée).</summary>
+    private void TouchePaiement(KeyboardEventArgs e) => ToucheMode(e);
+
+    /// <summary>Entrée dans « Montant reçu » : encaisse comme F12 (sinon le curseur va sur ce qui manque).</summary>
+    private async Task ToucheRecuAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.CtrlKey && !e.AltKey) await SurF12();
+    }
+
     /// <summary>Code lu (scan ou saisie suivie d'Entrée) : ne dépend ni de la saisie en cours ni des recherches de frappe.</summary>
-    private async Task TraiterCodeAsync(string code)
+    /// <param name="quantite">Quantité tapée devant le code (« 3 * »), pour un produit ; une boîte identifiée ou un volet : sans objet.</param>
+    /// <param name="saisie">Saisie complète (quantité comprise), remise dans le champ si rien n'est ajouté.</param>
+    private async Task TraiterCodeAsync(string code, int quantite = 1, string? saisie = null)
     {
         // QR d'un volet Chifa (champs séparés par « ; », ou scanné en clavier QWERTY sur un poste AZERTY)
         if (code.Length >= 20 && (code.Contains(';') || code.Count(c => "&é\"'(-è_çà".Contains(c)) >= 5))
@@ -2085,12 +2227,12 @@
         var (trouves, err) = await Api.RechercherAuComptoirAsync(code);
         if (trouves.FirstOrDefault() is { Produit.Stock: > 0 } c)
         {
-            await AjouterAsync(c.Produit.Id, c.Produit.NomCommercial, c.PrixServi, viderSaisie: false);
+            await AjouterAsync(c.Produit.Id, c.Produit.NomCommercial, c.PrixServi, quantite, viderSaisie: false);
             return;
         }
         (suggestions, erreur) = (trouves, err);
         // Rien d'ajouté : la saisie revient pour être corrigée (sauf si un autre code est déjà en cours de saisie)
-        if (texte.Length == 0) texte = code;
+        if (texte.Length == 0) texte = saisie ?? code;
     }
 
     /// <param name="viderSaisie">Faux pour un code scanné : la saisie a déjà été vidée à l'Entrée et contient peut-être le scan suivant.</param>
@@ -2363,6 +2505,15 @@
             focaliserPorteur = false;
             try { await champPorteurNom.FocusAsync(); }
             catch (Exception e) when (e is InvalidOperationException or Microsoft.JSInterop.JSException) { }   // champ retiré entre-temps
+        }
+        // Ergonomie (2026-11-27) : curseur dans « Fond de caisse » à l'ouverture ; à F12 refusé, sur le champ qui manque (montant reçu,
+        // ou recherche produit quand le panier est vide)
+        if (focaliserFond || focaliserRecu || focaliserScan)
+        {
+            var champ = focaliserFond ? champFond : focaliserRecu ? champRecu : champScan;
+            (focaliserFond, focaliserRecu, focaliserScan) = (false, false, false);
+            try { await champ.FocusAsync(); }
+            catch (Exception e) when (e is InvalidOperationException or Microsoft.JSInterop.JSException) { }   // champ pas (ou plus) affiché
         }
         // Patient choisi ou changé : membres de sa famille (script 090) chargés pour « Remis à » / « Pour »
         if (patient?.Id != prochesDe)

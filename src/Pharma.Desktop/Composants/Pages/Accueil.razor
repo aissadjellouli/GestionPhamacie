@@ -9,15 +9,17 @@
    des droits de gestion (Domaines.Accueil) ; le vendeur arrive directement sur la Caisse. *@
 <div class="page avec-menu">
     <NavDomaine Libelle="Accueil">
-        <span class="nav-groupe-titre">Accueil</span>
-        <a href="accueil" class="@(rubrique == "jour" ? "active" : null)" aria-current="@(rubrique == "jour" ? "page" : null)">Aujourd’hui</a>
-        @if (Titulaire)
-        {
-            <a href="accueil?rubrique=ecarts" class="@(rubrique == "ecarts" ? "active" : null)" aria-current="@(rubrique == "ecarts" ? "page" : null)">
-                <span>Écarts de caisse</span>@if (nbEcarts > 0) { <span class="compteur" aria-label="@($"{nbEcarts} écart(s) non vu(s)")">@nbEcarts</span> }</a>
-            <a href="accueil?rubrique=non-envoyees" class="@(rubrique == "non-envoyees" ? "active" : null)" aria-current="@(rubrique == "non-envoyees" ? "page" : null)">
-                <span>Alertes non envoyées</span>@if (nbNonEnvoyees > 0) { <span class="compteur" aria-label="@($"{nbNonEnvoyees} alerte(s) non vue(s)")">@nbNonEnvoyees</span> }</a>
-        }
+        @* Groupe repliable (GroupeMenu, 2026-11-27) : chevron « › » replié, « ⌄ » déplié *@
+        <GroupeMenu Cle="accueil" Titre="Accueil" ContientActif="true">
+            <a href="accueil" class="@(rubrique == "jour" ? "active" : null)" aria-current="@(rubrique == "jour" ? "page" : null)">Aujourd’hui</a>
+            @if (Titulaire)
+            {
+                <a href="accueil?rubrique=ecarts" class="@(rubrique == "ecarts" ? "active" : null)" aria-current="@(rubrique == "ecarts" ? "page" : null)">
+                    <span>Écarts de caisse</span>@if (nbEcarts > 0) { <span class="compteur" aria-label="@($"{nbEcarts} écart(s) non vu(s)")">@nbEcarts</span> }</a>
+                <a href="accueil?rubrique=non-envoyees" class="@(rubrique == "non-envoyees" ? "active" : null)" aria-current="@(rubrique == "non-envoyees" ? "page" : null)">
+                    <span>Alertes non envoyées</span>@if (nbNonEnvoyees > 0) { <span class="compteur" aria-label="@($"{nbNonEnvoyees} alerte(s) non vue(s)")">@nbNonEnvoyees</span> }</a>
+            }
+        </GroupeMenu>
     </NavDomaine>
 
     <div class="contenu-rubrique">

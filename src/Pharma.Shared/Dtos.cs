@@ -2,7 +2,8 @@ namespace Pharma.Shared;
 
 public sealed record ConnexionRequete(string Identifiant, string MotDePasse);
 /// <summary>DoitChangerMotDePasse : mot de passe provisoire, le poste ouvre l'écran de changement avant tout.</summary>
-public sealed record ConnexionReponse(string Jeton, string NomComplet, DateTime ExpireLe, bool DoitChangerMotDePasse = false);
+/// <param name="AdministrationSeule">Titulaire connecté sur un PC non autorisé : Administration seulement (décision du titulaire du 2026-11-27).</param>
+public sealed record ConnexionReponse(string Jeton, string NomComplet, DateTime ExpireLe, bool DoitChangerMotDePasse = false, bool AdministrationSeule = false);
 
 public sealed record ChangementMotDePasseRequete(string? Actuel, string? Nouveau, string? Confirmation);
 
@@ -1108,10 +1109,14 @@ public sealed record PackOffreDto(string Code, string Libelle);
 /// <summary>Activation rangée (historique) ; jamais le code lui-même.</summary>
 public sealed record ActivationOffreDto(long Id, DateTime SigneeLe, string Source, DateTime SaisieLe, string? SaisiePar, DateTime? RefuseeLe, string? MotifRefus);
 
-/// <summary>Offre en vigueur. Etat : base, active, grace. Officine et Nif : à transmettre à l'éditeur pour obtenir un code.</summary>
+/// <summary>
+/// Offre en vigueur. Etat : base, active, grace. Officine, Nif et EmpreinteServeur (clé de CE serveur, par groupes de 4 ; null : clé absente) : à
+/// transmettre à l'éditeur pour obtenir un code. AlerteServeur : code version 1 « non lié au serveur » (serveur non déclaré : dans Alerte) ; AlerteHorloge : horloge reculée
+/// (point 5 du 2026-11-27).
+/// </summary>
 public sealed record OffreDto(string Etat, IReadOnlyList<PackOffreDto> Packs, int Postes, int PostesComptes, int ScannersMobiles, DateOnly? Fin,
     bool Transition, DateTime? SigneeLe, string? Alerte, Guid Officine, string? Nif, IReadOnlyList<ActivationOffreDto> Historique,
-    IReadOnlyList<PackOffreDto> TousLesPacks);
+    IReadOnlyList<PackOffreDto> TousLesPacks, string? EmpreinteServeur = null, string? AlerteServeur = null, string? AlerteHorloge = null);
 
 public sealed record ActivationOffreRequete(string Code);
 

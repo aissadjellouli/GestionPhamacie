@@ -271,6 +271,16 @@ internal sealed class JournalEspion : IJournal
         Details.Add(d);
         return Task.CompletedTask;
     }
+
+    /// <summary>Entrées sans utilisateur local (ordre du serveur central), aussi comptées dans Actions et Details.</summary>
+    public List<string> SansUtilisateur { get; } = [];
+    public Task EcrireSansUtilisateurAsync(string action, string? t, long? id, IReadOnlyDictionary<string, object?> d, CancellationToken ct = default)
+    {
+        SansUtilisateur.Add(action);
+        Actions.Add(action);
+        Details.Add(d);
+        return Task.CompletedTask;
+    }
 }
 
 public class CaisseApplicationTests

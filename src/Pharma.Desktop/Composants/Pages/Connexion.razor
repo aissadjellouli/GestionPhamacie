@@ -9,14 +9,21 @@
     <div class="entete-connexion">
         <img class="logo-connexion" src="img/logo.svg" alt="Tracodex Officine" />
         <h1>Connexion</h1>
-        <p class="sous-titre">Chaque employé se connecte avec son propre identifiant.</p>
+        @if (superAdmin || PosteAutorise || titulaire) { <p class="sous-titre">Chaque employé se connecte avec son propre identifiant.</p> }
     </div>
 
-    @* Liste des postes autorisés : bandeau et saisie du code d'autorisation du poste (Composants/Mise/AutorisationPoste.razor) *@
-    @if (!superAdmin) { <AutorisationPoste /> }
+    @* Liste des postes autorisés : saisie du code d'autorisation du poste (Composants/Mise/AutorisationPoste.razor). Preuve toujours exigée (décision du
+       titulaire du 2026-11-27) : sur un PC non autorisé, seule cette saisie est montrée ; la connexion de l'employé n'apparaît qu'une fois le poste autorisé.
+       Le super admin garde son accès depuis n'importe quel PC (lien en bas). Le titulaire aussi, pour l'Administration seulement (décision du
+       2026-11-27) : lien « Connexion du titulaire » sous la saisie du code ; le serveur refuse tout autre employé et tout autre écran. *@
+    @if (!superAdmin && !titulaire) { <AutorisationPoste EtatChange="SurEtatPoste" /> }
+    @if (!superAdmin && !titulaire && etatLu && etatPoste == false)
+    {
+        <button type="button" class="lien-bouton" style="align-self: center" @onclick="() => BasculerTitulaire(true)">Connexion du titulaire (Administration seulement)</button>
+    }
 
     @* Les deux onglets sont toujours proposés (« Mot de passe » par défaut) ; le dernier choisi sur ce poste est retenu *@
-    @if (!superAdmin)
+    @if (!superAdmin && PosteAutorise)
     {
         <div class="onglets-connexion" role="tablist" aria-label="Mode de connexion">
             <button type="button" role="tab" aria-selected="@(parCode ? "true" : "false")" class="@(parCode ? "actif" : null)" @onclick="() => Basculer(true)">Code comptoir</button>
@@ -44,7 +51,8 @@
             <button type="button" class="lien-bouton" @onclick="() => BasculerSuperAdmin(false)">Retour à la connexion des employés</button>
         </form>
     }
-    else if (parCode)
+    else if (!PosteAutorise && !titulaire) { }
+    else if (parCode && !titulaire)
     {
         <form class="carte" @onsubmit="SeConnecterParCodeAsync">
             <p class="sous-titre" style="margin: 0">Caisse du poste ouverte : tapez votre identifiant et votre code.</p>
@@ -68,6 +76,12 @@
     else
     {
         <form class="carte" @onsubmit="SeConnecterAsync">
+            @if (titulaire)
+            {
+                <h2 style="margin: 0">Connexion du titulaire</h2>
+                <p class="sous-titre" style="margin: 0">Ce PC n’est pas autorisé : seul le pharmacien titulaire s’y connecte, pour l’Administration seulement
+                    (Postes autorisés, Mon offre, réglages). Ni caisse, ni vente, ni stock, ni finances.</p>
+            }
             <div class="champ">
                 <label for="identifiant" class="requis">Identifiant</label>
                 <input id="identifiant" type="text" @ref="champIdentifiant" @bind="identifiant" @bind:event="oninput" autocomplete="username" autofocus
@@ -81,6 +95,10 @@
             @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
             else if (Session.MotifDeconnexion is { } motif) { <div class="info-bandeau" role="status">@motif</div> }
             <button class="btn btn-principal" type="submit" disabled="@enCours">Se connecter</button>
+            @if (titulaire)
+            {
+                <button type="button" class="lien-bouton" @onclick="() => BasculerTitulaire(false)">Retour à l’autorisation du poste</button>
+            }
         </form>
     }
 
@@ -120,12 +138,28 @@
         Reglages.Enregistrer(Reglages.Actuelles);
     }
 
+    // État du poste (AutorisationPoste) : null tant qu'il n'est pas lu ou si le serveur est injoignable (formulaire montré : il affichera l'erreur du
+    // serveur), faux pour un PC non autorisé ; rien n'est montré avant la première lecture (pas de formulaire qui apparaît puis disparaît)
+    private bool? etatPoste;
+    private bool etatLu;
+    private bool PosteAutorise => etatLu && etatPoste != false;
+
+    private void SurEtatPoste(bool? prouve) => (etatPoste, etatLu) = (prouve, true);
+
     // Compte super admin (restauration, reprise de données) : formulaire à part
     private bool superAdmin;
 
     private void BasculerSuperAdmin(bool versSuperAdmin)
     {
         (superAdmin, erreur, controle, motDePasse) = (versSuperAdmin, null, false, "");
+    }
+
+    // Titulaire sur un PC non autorisé (décision du 2026-11-27) : formulaire de connexion, Administration seulement (le serveur refuse les autres employés)
+    private bool titulaire;
+
+    private void BasculerTitulaire(bool versTitulaire)
+    {
+        (titulaire, erreur, controle) = (versTitulaire, null, false);
     }
 
     private async Task SeConnecterSuperAdminAsync()
@@ -170,6 +204,6 @@
         // Une vente a été laissée en attente au changement d'utilisateur : on arrive directement à la Caisse pour la reprendre ;
         // sinon, accueil selon les droits (tableau de bord, ou Caisse pour le vendeur)
         if (erreur is null) Nav.NavigateTo(Session.DoitChangerMotDePasse ? "mot-de-passe"
-            : (Session.AVenteAReprendre || PanierARendre) && Session.A("caisse.vendre") ? "caisse" : Domaines.Accueil(Session));
+            : !Session.AdministrationSeule && (Session.AVenteAReprendre || PanierARendre) && Session.A("caisse.vendre") ? "caisse" : Domaines.Accueil(Session));
     }
 }

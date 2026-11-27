@@ -11,14 +11,21 @@ internal static class AuthEndpoints
 {
     public static void MapAuth(this IEndpointRouteBuilder app)
     {
+        // PC non autorisé (décision du titulaire du 2026-11-27) : seul le titulaire se connecte, pour l'Administration seulement (jeton marqué,
+        // aucun poste lié : ce PC n'est pas un poste) ; tout autre employé est refusé (403, message clair)
         app.MapPost("/api/auth/connexion", async (ConnexionRequete req, SeConnecter seConnecter, HttpRequest requete, CancellationToken ct) =>
-            await seConnecter.ExecuterAsync(req.Identifiant, req.MotDePasse, ct, requete.Poste()) is { } session
-                ? Results.Ok(session.VersDto())
-                : Results.Json(new ErreurDto("Identifiant ou mot de passe incorrect."), statusCode: 401));
+        {
+            var pcNonProuve = AccesAdministrationSeule.PcNonProuve(requete.HttpContext);
+            return await seConnecter.ExecuterAsync(req.Identifiant, req.MotDePasse, ct, pcNonProuve ? null : requete.Poste(), titulaireSeulement: pcNonProuve) is { } session
+                ? Results.Ok(session.VersDto() with { AdministrationSeule = pcNonProuve })
+                : Results.Json(new ErreurDto("Identifiant ou mot de passe incorrect."), statusCode: 401);
+        });
 
         // L'employé connecté change son mot de passe (obligatoire avec un mot de passe provisoire) : nouveau jeton, droits du rôle
         app.MapPost("/api/auth/mot-de-passe", async (ChangementMotDePasseRequete req, ChangerMonMotDePasse changer, ClaimsPrincipal user, HttpRequest requete, CancellationToken ct) =>
-                Results.Ok((await changer.ExecuterAsync(user.UtilisateurId(), req.Actuel, req.Nouveau, req.Confirmation, ct, requete.Poste())).VersDto()))
+                Results.Ok((await changer.ExecuterAsync(user.UtilisateurId(), req.Actuel, req.Nouveau, req.Confirmation, ct,
+                    AccesAdministrationSeule.Demande(requete.HttpContext) ? null : requete.Poste())).VersDto()
+                    with { AdministrationSeule = AccesAdministrationSeule.Demande(requete.HttpContext) }))
            .ExigerConnexion(motDePasseProvisoire: true)
            .GererErreursMetier();
 

@@ -7,19 +7,18 @@
    (rapports?rubrique=…). La période choisie reste la même d'une rubrique à l'autre. *@
 <div class="page avec-menu">
     <NavDomaine Libelle="Rubriques des rapports">
-        @foreach (var x in Rubriques)
+        @* Groupes repliables (GroupeMenu, 2026-11-27) : chevron « › » replié, « ⌄ » déplié *@
+        @foreach (var (g, membres) in GroupesMenu())
         {
-            if (x.Groupe is { } g)
-            {
-                <span class="nav-groupe-titre">@g</span>
-            }
-            else
-            {
-                var nombre = Compteur(x.Id);
-                <a href="@($"rapports?rubrique={x.Id}")" class="sous-rubrique @(x.Id == rubrique ? "active" : null)" aria-current="@(x.Id == rubrique ? "page" : null)">
-                    @x.Libelle@if (nombre > 0) { <span class="compteur neutre">@nombre</span> }
-                </a>
-            }
+            <GroupeMenu Cle="@($"rapports:{g}")" Titre="@g" ContientActif="@membres.Any(x => x.Id == rubrique)">
+                @foreach (var x in membres)
+                {
+                    var nombre = Compteur(x.Id);
+                    <a href="@($"rapports?rubrique={x.Id}")" class="sous-rubrique @(x.Id == rubrique ? "active" : null)" aria-current="@(x.Id == rubrique ? "page" : null)">
+                        @x.Libelle@if (nombre > 0) { <span class="compteur neutre">@nombre</span> }
+                    </a>
+                }
+            </GroupeMenu>
         }
     </NavDomaine>
 
@@ -31,7 +30,7 @@
         </div>
         <div style="display: flex; gap: 8px; flex-wrap: wrap">
             <button type="button" class="btn" disabled="@(rapport is null || enCours)" @onclick='() => ExporterAsync("pdf")'>Exporter en PDF</button>
-            <button type="button" class="btn" disabled="@(rapport is null || enCours)" @onclick='() => ExporterAsync("excel")'>Exporter pour Excel</button>
+            <button type="button" class="btn" disabled="@(rapport is null || enCours)" @onclick='() => ExporterAsync("excel")'>Exporter en Excel</button>
         </div>
     </div>
 
@@ -39,7 +38,15 @@
         <div class="filtres" role="group" aria-label="Période">
             @foreach (var (code, libelle) in Periodes)
             {
-                <button type="button" class="puce" aria-pressed="@(periode == code ? "true" : "false")" @onclick="() => ChoisirAsync(code)">@libelle</button>
+                @* « Dates choisies » n'est pas marquée quand les dates sont celles d'une puce « 7 jours » ou « 30 jours » (une seule puce choisie) *@
+                var choisie = periode == code && !(code == "dates" && PeriodeRapideChoisie);
+                <button type="button" class="puce" aria-pressed="@(choisie ? "true" : "false")" @onclick="() => ChoisirAsync(code)">@libelle</button>
+                @* Périodes rapides (ergonomie 2026-11-27, proposition 29), même calcul que les autres écrans ; « Aujourd'hui » et
+                   « Mois en cours » existent déjà ici (« Jour » ou « Mois » avec « Aujourd'hui ») *@
+                @if (code == "mois")
+                {
+                    <PeriodeRapide Du="du" Au="au" Actif="@(periode == "dates")" Choix="ChoixRapides" OnChoisie="ChoisirPeriodeRapideAsync" />
+                }
             }
         </div>
         @if (periode == "dates")
@@ -80,7 +87,8 @@
                 <span class="tuile-pied">@r.Synthese.NombreVentes vente(s) · remises @Libelles.Dinars(r.Synthese.Remises)@(r.Synthese.DonsPartiels > 0 ? $" · dons partiels {Libelles.Dinars(r.Synthese.DonsPartiels)}" : "")@(r.Synthese.RemisesAutomatiques > 0 ? $" (dont automatiques {Libelles.Dinars(r.Synthese.RemisesAutomatiques)})" : "")</span>
                 @if (r.Synthese.Shp > 0)
                 {
-                    <span class="tuile-pied">dont SHP @Libelles.Dinars(r.Synthese.Shp, 2)</span>
+                    @* Sigle écrit en clair (ergonomie 2026-11-27, proposition 27) ; définition tirée de docs/regles-metier.md « SHP » *@
+                    <span class="tuile-pied">dont honoraires (<abbr title="@InfobulleShp">SHP</abbr>) @Libelles.Dinars(r.Synthese.Shp, 2)</span>
                 }
             </TuileLien>
             @* Répartition et retours dans leurs propres tuiles (2026-11-20) : dans la tuile du chiffre d'affaires, ils la faisaient
@@ -138,11 +146,24 @@
                 </TuileLien>
             }
         </div>
-        <p class="pied-page">
-            Ventes validées seulement, remises déduites. Marge brute : chiffre d’affaires hors TVA moins le coût d’achat HT des boîtes vendues,
-            au prix réel de chaque boîte identifiée, sinon au prix de son lot. Marge après pertes et dons : marge brute moins la valeur d’achat HT
-            des boîtes périmées, cassées ou données, moins la TVA à reverser sur ces boîtes selon le réglage de la rubrique « TVA à reverser ».
-        </p>
+        @* Note repliée (ergonomie 2026-11-27, proposition 27) : textes tirés du calcul réel (Pharma.Infrastructure/Lecture/RapportsSql.cs,
+           SyntheseAsync et MargeAsync ; Pharma.Application/Rapports/Rapports.cs, MargeApresSorties) ; à tenir à jour avec lui *@
+        <details class="pied-page note-calcul">
+            <summary>Comment sont calculés ces chiffres ?</summary>
+            <ul class="note-calcul-corps">
+                <li><strong>Chiffre d’affaires</strong> : ventes validées de la période (les ventes annulées n’y sont pas), remises et dons partiels
+                    déduits, moins les sommes rendues pour les retours clients enregistrés pendant la période (un retour compte le jour où il est
+                    enregistré, pas le jour de la vente).</li>
+                <li><strong>Dont honoraires (SHP)</strong> : @InfobulleShp</li>
+                <li><strong>Part Chifa à recevoir</strong> : part des organismes (tiers payant) sur les ventes validées de la période.
+                    <strong>Crédits clients accordés</strong> : part de ces ventes payée « à crédit ».</li>
+                <li><strong>Marge brute</strong> : chiffre d’affaires hors TVA moins le coût d’achat HT des boîtes vendues, au prix réel de chaque
+                    boîte identifiée, sinon au prix de son lot. Un retour client retire sa part du chiffre hors TVA ; son coût n’est retiré que
+                    pour les boîtes remises en stock.</li>
+                <li><strong>Marge après pertes et dons</strong> : marge brute moins la valeur d’achat HT des boîtes périmées, cassées ou données,
+                    moins la TVA à reverser sur ces boîtes selon le réglage de la rubrique « TVA à reverser ».</li>
+            </ul>
+        </details>
         }
 
         @if (rubrique == "ventes")
@@ -436,6 +457,18 @@
     private string rubrique = "synthese";
     // Pertes et dons demandées dans l'adresse : leur titre s'affiche déjà pendant le calcul du rapport (le menu attend le rapport, qui dit le droit)
     private static readonly Dictionary<string, string> LibellesPertes = new() { ["pertes"] = "Récapitulatif", ["pertes-detail"] = "Détail des sorties", ["tva"] = "TVA à reverser" };
+    /// <summary>Groupes du menu et leurs rubriques, dans l'ordre.</summary>
+    private List<(string Groupe, List<RubriqueRapport> Membres)> GroupesMenu()
+    {
+        var groupes = new List<(string Groupe, List<RubriqueRapport> Membres)>();
+        foreach (var x in Rubriques)
+        {
+            if (x.Groupe is { } g) groupes.Add((g, []));
+            else if (groupes.Count > 0) groupes[^1].Membres.Add(x);
+        }
+        return groupes.Where(x => x.Membres.Count > 0).ToList();
+    }
+
     private RubriqueRapport Courante => Rubriques.FirstOrDefault(x => x.Groupe is null && x.Id == rubrique)
         ?? (LibellesPertes.TryGetValue(rubrique, out var l) ? new RubriqueRapport(rubrique, l) : Rubriques[1]);
     protected override void OnParametersSet()
@@ -536,6 +569,20 @@
     }
 
     private Task ChoisirAsync(string code) { (periode, message) = (code, null); return ChargerAsync(); }
+
+    /// <summary>SHP en clair (docs/regles-metier.md « SHP » ; total des lignes des ventes validées, RapportsSql.SyntheseAsync).</summary>
+    private const string InfobulleShp = "Supplément d’honoraire du pharmacien : montant par boîte selon la liste du médicament (liste I, liste II, stupéfiant ; 0 hors liste), "
+        + "compris dans le prix de la boîte et jamais réduit par une remise ; total des boîtes des ventes validées de la période.";
+
+    private static readonly PeriodeRapide.Periode[] ChoixRapides = [PeriodeRapide.Periode.SeptJours, PeriodeRapide.Periode.TrenteJours];
+    private bool PeriodeRapideChoisie => PeriodeRapide.Reconnaitre(du, au, Aujourdhui) is PeriodeRapide.Periode.SeptJours or PeriodeRapide.Periode.TrenteJours;
+
+    /// <summary>« 7 jours » ou « 30 jours » : période « Dates choisies » avec les bornes communes à tous les écrans.</summary>
+    private Task ChoisirPeriodeRapideAsync((DateOnly Du, DateOnly Au) p)
+    {
+        (periode, du, au, message) = ("dates", p.Du, p.Au, null);
+        return ChargerAsync();
+    }
     private Task AujourdhuiAsync()
     {
         (reference, message) = (Aujourdhui, null);

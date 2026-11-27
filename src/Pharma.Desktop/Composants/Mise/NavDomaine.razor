@@ -14,20 +14,25 @@
     }
     else
     {
-        <span class="nav-groupe-titre">@domaine.Libelle</span>
-        @foreach (var e in ecrans)
-        {
-            var attente = Compteurs.Ecran(e.Lien);
-            if (e == ecran && ChildContent is not null)
+        @* Rubriques repliables homogènes (2026-11-27) : le nom du domaine et l'écran affiché déplié sont des boutons qui replient ou
+           déplient leurs entrées (GroupeMenu) ; un écran replié reste un lien vers l'écran *@
+        <GroupeMenu Cle="@($"domaine:{domaine.Libelle}")" Titre="@domaine.Libelle" ContientActif="@(ecran is not null)">
+            @foreach (var e in ecrans)
             {
-                <span class="nav-ecran-ouvert" aria-current="page">@e.Libelle@Compteur(attente)</span>
-                <div class="nav-rubriques">@ChildContent</div>
+                var attente = Compteurs.Ecran(e.Lien);
+                if (e == ecran && ChildContent is not null)
+                {
+                    <GroupeMenu Cle="@($"ecran:{e.Lien}")" Titre="@e.Libelle" Complement="@Compteur(attente)" Variante="ecran" Courant="true" ContientActif="true">
+                        <div class="nav-rubriques">@ChildContent</div>
+                    </GroupeMenu>
+                }
+                else
+                {
+                    @* Écran à rubriques, replié : chevron « › » (décision du 2026-11-27 : tout menu dépliable porte son chevron, à tout niveau) *@
+                    <a href="@e.Lien" class="@(e == ecran ? "active" : null)" aria-current="@(e == ecran ? "page" : null)">@if (e.AvecRubriques) {<span class="chevron-menu" aria-hidden="true"></span>}@e.Libelle@Compteur(attente)</a>
+                }
             }
-            else
-            {
-                <a href="@e.Lien" class="@(e == ecran ? "active" : null)" aria-current="@(e == ecran ? "page" : null)">@e.Libelle@Compteur(attente)</a>
-            }
-        }
+        </GroupeMenu>
     }
 </nav>
 

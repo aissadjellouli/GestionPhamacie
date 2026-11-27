@@ -13,6 +13,11 @@ using Pharma.Shared;
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 var builder = WebApplication.CreateBuilder(args);
 
+// Clé de ce serveur pour l'offre (point 5 du 2026-11-27) : Pharma.Api.exe --creer-cle-serveur | --empreinte-serveur, avant tout le reste
+// (ni base, ni clé des jetons, ni réseau : fonctionne aussi sur un 2e serveur en veille ou un PC de secours ; le serveur ne démarre pas)
+if (ConsoleCleServeur.Concerne(args))
+    return ConsoleCleServeur.Executer(args, Pharma.Infrastructure.Systeme.DossiersDonnees.Racine(builder.Configuration["Donnees:Racine"]));
+
 // HTTPS sur le réseau de la pharmacie (postes et téléphones) : fichier écrit par scripts/certificat_https.ps1
 builder.Configuration.AddJsonFile("appsettings.Https.json", optional: true, reloadOnChange: false);
 
@@ -434,13 +439,12 @@ app.Use(BarrageServeurVeille.Filtrer);
 // Démonstration : fonctions coupées refusées (422 « Indisponible en démonstration : … »), avant toute authentification
 if (demo.Actif) app.Use(Pharma.Api.Demo.FonctionsCoupeesDemo.FiltrerAsync);
 
-// Liste des postes autorisés (script 167) : preuve de poste vérifiée avant l'authentification (poste prouvé, ou refus selon le mode)
+// Liste des postes autorisés (script 167) : preuve de poste vérifiée avant l'authentification (poste prouvé, sinon refus : preuve toujours exigée, script 174)
 app.UseMiddleware<Pharma.Api.Securite.PreuvePosteMiddleware>();
 app.UseAuthentication();
 // Présence des postes (V2-1b) : seule une requête authentifiée compte (healthcheck compris, le poste y joint son jeton) ; nom pris dans le claim « poste » du jeton
 app.UseMiddleware<Pharma.Api.Securite.PresencePostesMiddleware>();
-// Le poste est lié au jeton à la connexion : mode « inactif », un en-tête X-Pharma-Poste différent est refusé (comme avant) ; sinon le claim
-// « poste_id » doit être le poste prouvé par la signature de la requête (ControlePosteJeton, contrat des postes autorisés § 3)
+// Le poste est lié au jeton à la connexion : le claim « poste_id » doit être le poste prouvé par la signature de la requête (ControlePosteJeton, contrat des postes autorisés § 3)
 app.Use((ctx, suite) => Pharma.Api.Securite.ControlePosteJeton.FiltrerAsync(ctx, suite));
 app.UseAuthorization();
 app.MapPharmaEndpoints();

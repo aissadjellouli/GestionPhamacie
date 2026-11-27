@@ -5,17 +5,17 @@
 
 <div class="page avec-menu">
     <NavCaisse Actif="@(Intermediaire ? "caisse/etat" : Releve ? "cloture?releve=true" : "cloture")"
-               OuverteLe="etat?.OuverteLe" OuvertePar="@etat?.OuvertePar" Fond="etat?.FondCaisse" Poste="@etat?.Poste" />
+               OuverteLe="etat?.OuverteLe" OuvertePar="@etat?.OuvertePar" Fond="etat?.FondCaisse" Poste="@etat?.Poste" CaisseOuverte="@(!SansCaisse)" />
     <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
-            <h1>@(Intermediaire ? "Comptage intermédiaire" : Releve ? "Relève de caisse" : "Clôture de caisse")</h1>
+            <h1>@(Intermediaire ? "Comptage intermédiaire" : Releve ? "Relève de caisse" : "Clôture de caisse")<AideEcran Cle="cloture" /></h1>
             @if (etat?.SessionId is not null)
             {
                 <p class="sous-titre">Session ouverte le @Libelles.DateHeureLocale(etat.OuverteLe!.Value)@(etat.OuvertePar is { } par ? $" par {par}" : "") avec un fond de caisse de @Libelles.Dinars(etat.FondCaisse ?? 0) · @etat.Poste</p>
             }
         </div>
-        <a href="caisse" style="font-size: 14px; font-weight: 500">Retour à la caisse</a>
+        @* « Retour à la caisse » retiré (2026-11-27) : doublon du « ← » de l'en-tête et de « Vente » dans le menu de gauche *@
     </div>
 
     @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
@@ -24,9 +24,10 @@
     {
         <Chargement />
     }
-    else if (etat is not null && etat.SessionId is null && resultat is null)
+    else if (SansCaisse)
     {
-        <div class="carte vide">Aucune caisse ouverte sur ce poste. <a href="caisse">Ouvrir la caisse</a></div>
+        @* Même état vide que l'état de la caisse (2026-11-27) : neutre, avec « Ouvrir la caisse » *@
+        <CaisseFermee Explication="@(Intermediaire ? "Le comptage intermédiaire se fait sur une caisse ouverte." : Releve ? "La relève se fait sur une caisse ouverte, au changement d’équipe." : "La clôture se fait sur une caisse ouverte, en fin de journée.")" />
     }
     else if (etat is not null)
     {
@@ -149,13 +150,13 @@
                 }
                 @if (Intermediaire && resultat is not null)
                 {
-                    <div class="succes" role="status">Comptage intermédiaire enregistré : la caisse reste ouverte. <a href="caisse/etat">État de la caisse</a> · <a href="caisse">Retour à la caisse</a></div>
+                    <div class="succes" role="status">Comptage intermédiaire enregistré : la caisse reste ouverte. <a href="caisse/etat">État de la caisse</a> · <a href="caisse">Aller à la vente</a></div>
                 }
                 @if (nouvelleSession is not null && resultat is not null)
                 {
                     <div class="succes" role="status">
                         Relève faite : la caisse reste ouverte avec un fond de @Libelles.Dinars(resultat.Compte, 2).
-                        <a href="caisse">Retour à la caisse</a>
+                        <a href="caisse">Aller à la vente</a>
                         <button type="button" class="btn" style="margin-left: 8px" @onclick="ChangerUtilisateur">⇄ Changer d’utilisateur maintenant</button>
                     </div>
                 }
@@ -205,6 +206,8 @@
     private bool enCours;
 
     private decimal TotalCompte => Coupures.Sum(c => saisies[c.Code] * c.Valeur);
+    /// <summary>Le poste n'a pas de caisse ouverte (et aucun résultat de comptage à montrer) : état vide neutre.</summary>
+    private bool SansCaisse => etat is { SessionId: null } && resultat is null;
 
     // Relève ou clôture affichée : Blazor garde l'écran quand seule l'adresse change (?releve=true ou non) ;
     // on repart alors d'un comptage vierge et de l'état de caisse à jour (sinon le résultat précédent restait affiché)

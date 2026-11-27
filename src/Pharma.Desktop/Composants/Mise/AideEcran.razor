@@ -24,6 +24,20 @@
             <ul>
                 @foreach (var p in aide.Points) { <li>@p</li> }
             </ul>
+            @if (aide.Raccourcis is { Length: > 0 } raccourcis)
+            {
+                @* Carte « Raccourcis clavier » (revue d'ergonomie du 2026-11-27, n° 6) : touche à gauche dans son petit cadre, action à droite *@
+                <section class="carte-raccourcis" aria-label="Raccourcis clavier">
+                    <h3>Raccourcis clavier</h3>
+                    <dl>
+                        @foreach (var (touche, action) in raccourcis)
+                        {
+                            <dt><kbd>@touche</kbd></dt>
+                            <dd>@action</dd>
+                        }
+                    </dl>
+                </section>
+            }
             <p class="detail">Raccourcis : Ctrl + K rechercher · Ctrl + Maj + lettre du domaine · Alt + ← retour · Échap fermer ou effacer.</p>
             <div class="pied-aide">
                 <button type="button" class="btn" @onclick='() => { ouverte = false; Nav.NavigateTo("guide"); }'>Guide complet</button>
@@ -42,7 +56,8 @@
     private bool ouverte;
     private void Touche(KeyboardEventArgs e) { if (e.Key == "Escape") ouverte = false; }
 
-    private sealed record Aide(string Titre, string[] Points);
+    /// <summary>Aide d'un écran ; Raccourcis : touches propres à l'écran (touche, action), en carte sous la liste.</summary>
+    private sealed record Aide(string Titre, string[] Points, (string Touche, string Action)[]? Raccourcis = null);
 
     private static readonly Dictionary<string, Aide> Textes = new()
     {
@@ -52,7 +67,7 @@
             "Le logo en haut à gauche ramène ici ; Ctrl + K : chercher un écran, un produit ou un patient."]),
         [""] = new("Alertes", ["Urgentes : à traiter aujourd’hui (périmé, rupture…).", "Une alerte se traite ou se reporte à une date ; elle reste tracée.",
             "Péremption : lots qui périment bientôt, à vendre en priorité ou à retourner."]),
-        ["stock"] = new("Stock", ["Recherche par nom, DCI, code-barres, lot ou emplacement.", "Filtres : à commander, péremption proche, psychotropes ; rayon.",
+        ["stock"] = new("Gestion du stock", ["Recherche par nom, DCI, code-barres, lot ou emplacement.", "Filtres : à commander, péremption proche, psychotropes ; rayon.",
             "Un nom de produit ou de lot souligné en pointillé ouvre ce stock filtré.",
             "Remises automatiques : un % par produit ou catégorie sur une période, appliqué par la caisse en vente libre (jamais sur un remboursable).",
             "Contenances : à compléter (les plus vendus d’abord) ou à corriger (« Toutes ») ; tapez le nombre et Entrée. Par fichier : « Exporter la liste », remplissez la colonne Contenance, puis « Importer un fichier… » (aperçu avant d’enregistrer)."]),
@@ -61,12 +76,28 @@
         ["stock/registre"] = new("Registre des psychotropes", ["Entrées et sorties numérotées, non modifiables.",
             "Consultation sur toute période ; export PDF ou CSV : un an par fichier.", "Noms en clair pour le titulaire seul."]),
         ["stock/etiquettes"] = new("Étiquettes internes", ["Boîtes en stock sans Data Matrix ni étiquette : une étiquette par boîte, collée avant le rangement.",
-            "Chaque étiquette porte un code unique qui suit la boîte jusqu’au patient.", "Imprimer demande le droit de réceptionner ; la réimpression d’une livraison est dans Achats › Historique."]),
+            "Chaque étiquette porte un code EAN-13 unique (préfixe 20) qui suit la boîte jusqu’au patient.",
+            "Impression : planche PDF A4 de 4 × 9 étiquettes 50 × 30 mm, rangée dans Documents\\Pharma Officine\\Etiquettes.",
+            "Imprimante thermique : déclarez son adresse IP dans Administration › Imprimantes et étiquettes ; les étiquettes y partent alors directement (ZPL).",
+            "Imprimer demande le droit de réceptionner ; la réimpression d’une livraison est dans Achats › Historique."]),
         ["tracabilite"] = new("Traçabilité et rappel de lot", ["Scannez une boîte pour voir son parcours, du grossiste au patient.",
             "Rappel de lot : choisissez le produit et le lot ; les boîtes vendues sont retrouvées."]),
         ["caisse"] = new("Caisse", ["1 · Panier : scannez ou recherchez le produit (F7). 2 · Client et ordonnance : patient (F6), médecin (F5), tiers payant. 3 · Paiement : mode, puis Encaisser (F12).", "Crédit : un mode de paiement, une fois le patient choisi. F8 : ouvrir le tiroir.",
             "« ⇄ Changer » : passer la main sans fermer la caisse (relève proposée).",
-            "Remise : sur un médicament, c’est un don partiel ; au-delà de votre maximum, un collègue qui en a le droit valide avec son code. Les remises automatiques s’appliquent seules."]),
+            "Remise : sur un médicament, c’est un don partiel ; au-delà de votre maximum, un collègue qui en a le droit valide avec son code. Les remises automatiques s’appliquent seules."],
+            [("Entrée", "dans « Fond de caisse » : ouvrir la caisse"),
+             ("F7", "scanner ou rechercher un produit"),
+             ("3 *", "tapé avant le scan ou la recherche : 3 boîtes (1 à 99)"),
+             ("+ / −", "du pavé numérique, champ vide : quantité de la dernière ligne"),
+             ("F6", "patient"),
+             ("F5", "médecin prescripteur"),
+             ("F2", "Espèces (curseur dans « Montant reçu »)"),
+             ("F4", "Carte"),
+             ("F9", "Chèque"),
+             ("F11", "Crédit (une fois le patient choisi)"),
+             ("Entrée", "dans « Montant reçu » : encaisser, comme F12"),
+             ("F12", "encaisser ou mettre en crédit"),
+             ("F8", "ouvrir le tiroir (confirmation et motif)")]),
         ["achats"] = new("Achats", ["Commandes : produits à commander, puis bons par grossiste.",
             "Réceptions : comptage à l’aveugle, puis facture saisie par une autre personne.", "Retours, étiquettes, règlements, traites à payer et grossistes dans le même écran."]),
         ["patients"] = new("Fichier des patients", ["Tous les patients, 10 par page : cherchez par nom, prénom, n° d’assuré ou téléphone.",
@@ -80,7 +111,8 @@
         ["factures"] = new("Factures", ["Patients, entreprises et organismes.", "Suivi : à encaisser, échues, soldées, rejetées.",
             "Un avoir corrige une facture sans la modifier."]),
         ["tresorerie"] = new("Trésorerie", ["Comptes : coffre, banque, caisse.", "Dépôts, retraits, dépenses par catégorie.",
-            "Le solde du coffre est rappelé en bas du menu."]),
+            "Le solde du coffre est rappelé en bas du menu.",
+            "Cliquez une carte pour ouvrir les mouvements de ce compte ; « Modifier » change son nom ou son solde de départ."]),
         ["dettes"] = new("Dettes et créances", ["Ce que l’officine doit (grossistes, traites) et ce qu’on lui doit (patients, entreprises, organismes).",
             "Les sommes en retard passent en alerte.",
             "Titulaire : aussi le capital restant dû des prêts (alerte 7 jours avant une échéance) et les apports à se rembourser."]),
@@ -92,8 +124,50 @@
             "Échéance payée : le capital diminue la dette envers la banque, les intérêts et l’assurance (TVA, marge) vont en charges financières. Fiche du prêt : coût total du crédit.",
             "Un prêt ou un apport paie une facture ou une traite de grossiste dans Achats (« Prêt ou apport »), alimente un compte ou paie une dépense ici."]),
         ["pilotage-financier"] = new("Tableau de bord financier", ["CA, marge, panier moyen comparés à la période précédente ; créances, stock dormant, achats, rejets Chifa, TVA.", "Lecture seule ; exports PDF et Excel."]),
-        ["rapports"] = new("Rapports",["Ventes, clôtures, retours, pertes et dons sur une période.", "Exports pour le comptable."]),
+        ["rapports"] = new("Rapports",["Ventes, clôtures, retours, pertes et dons sur une période.", "Exports pour le comptable.",
+            "« 7 jours » et « 30 jours » : aujourd’hui et les 6 ou 29 jours d’avant (même calcul sur tous les écrans)."]),
         ["surveillance"] = new("Contrôle interne", ["Anomalies à examiner : ventes hors horaires, remises en série, écarts de caisse…",
             "Chaque anomalie traitée garde qui l’a traitée et l’action prise."]),
+        // Écrans sans aide jusqu'au 2026-11-27 (revue d'ergonomie, n° 13) : à quoi sert l'écran, que faire en premier
+        ["chifa"] = new("Chifa", ["Ventes Chifa déjà encaissées qui attendent leur volet, et volets rattachés malgré des différences.",
+            "Pour rattacher un volet : à la caisse, panier vide, scannez le QR du volet.",
+            "Choisissez la liste en haut : « Ventes en attente de volet » ou « Volets avec écart »."]),
+        ["bordereaux-chifa"] = new("Bordereaux Chifa", ["Bordereaux de CHIFA-Officine (CNAS, CASNOS) et du MDN : un bordereau par organisme et centre payeur.",
+            "Commencez par « Ventes à déposer » : rattachez les ventes au bordereau (dans la liste, ou en scannant le n° de facture Chifa).",
+            "Puis le dépôt, les rejets et leurs suites ; les paiements se saisissent dans Trésorerie (versement d’un organisme)."]),
+        ["patients/droits-chifa"] = new("Droits expirés ou bientôt expirés", ["Patients CNAS / CASNOS dont la fin de droits Chifa est dépassée ou proche (délai réglé dans Administration › Caisse et contrôle).",
+            "Prévenez le patient, ou « Mettre à jour la date » lue sur sa carte : enregistrée tout de suite.",
+            "La vente n’est jamais bloquée par des droits expirés."]),
+        ["surveillance/risques"] = new("Pertes et vigilance", ["Réservé au titulaire : les pertes rapprochées des jours, des postes et des employés présents.",
+            "Une perte qui revient quand la même personne travaille saute aux yeux : vue « Par employé » ou « Jour par jour » (menu de gauche).",
+            "La période choisie est commune aux deux vues."]),
+        ["surveillance/tiroir"] = new("Sorties et entrées du tiroir", ["Réservé au titulaire : chaque sortie ou remise d’argent par le tiroir (F8 à la caisse), par motif, employé et période.",
+            "Elles sont comptées dans l’attendu de la caisse ; les totaux sont nets des corrections.",
+            "Rien ne se supprime : une erreur se corrige par une écriture inverse (motif obligatoire, caisse du poste ouverte)."]),
+        ["cloture"] = new("Clôture, relève et comptage", ["Comptez les espèces du tiroir et saisissez le montant, puis validez.",
+            "Comptage aveugle (si réglé) : l’attendu n’est pas affiché ; le logiciel calcule l’écart après validation.",
+            "Relève : la caisse est clôturée puis rouverte aussitôt avec l’argent compté ; chacun répond de sa période.",
+            "Comptage intermédiaire : le montant compté est enregistré, la caisse reste ouverte."]),
+        ["caisse/etat"] = new("État de la caisse", ["Ce qui s’est passé depuis l’ouverture de la caisse du poste, sans compter ni clôturer.",
+            "Pour compter le tiroir sans fermer la caisse : « Faire un comptage intermédiaire »."]),
+        ["admin/seuils"] = new("Alertes et seuils", ["Réglages des alertes : péremption (orange, rouge), par grossiste (délai de reprise), exceptions par produit, stock et lots délaissés, seuils par produit.",
+            "Choisissez la rubrique à gauche, modifiez, puis « Enregistrer » : les alertes sont recalculées tout de suite.",
+            "Réglages généraux fixés par le serveur central : non modifiables ici ; les seuils par grossiste et les exceptions par produit le restent."]),
+        ["admin/droits"] = new("Utilisateurs et droits", ["Utilisateurs : ajouter un employé ou le modifier ; effacer son code comptoir s’il l’a oublié ou divulgué.",
+            "Droits par rôle : cochez les droits de chaque rôle, puis « Enregistrer les droits ».",
+            "Chaque modification est inscrite au journal."]),
+        ["admin/offre"] = new("Mon offre", ["Options et nombre de postes fixés par l’éditeur, par un code signé : rien ne se règle ici.",
+            "Pour un nouveau code : donnez à l’éditeur le code de l’officine (bouton « Copier ») et le NIF.",
+            "Collez le code reçu, puis « Activer »."]),
+        ["admin/postes"] = new("Postes autorisés", ["Seuls les postes autorisés ici prouvent leur identité au serveur.",
+            "« Autoriser un poste » : nommez-le, puis tapez le code affiché sur ce poste, à l’écran de connexion (« Autoriser ce poste ») ; il ne sert qu’une fois.",
+            "Un PC non autorisé ne peut pas se connecter et ne compte pas dans le maximum : seule la saisie de son code lui est proposée.",
+            "Le nombre maximal de postes est fixé par votre offre (Mon offre)."]),
+        ["admin/sauvegardes"] = new("Sauvegardes", ["Copie quotidienne de la base de la pharmacie sur un disque externe ; le titulaire est prévenu en cas de problème.",
+            "Commencez par le dossier sur le disque externe et l’heure, cochez « Sauvegarde automatique chaque jour », puis « Enregistrer ».",
+            "« Sauvegarder maintenant » en lance une tout de suite ; le journal garde chaque résultat."]),
+        ["admin/taux-tva"] = new("Taux de TVA", ["Taux proposés à la saisie d’un produit, d’une prestation ou d’une ligne libre de facture.",
+            "Un taux n’est jamais supprimé : décochez « Actif », il n’est plus proposé.",
+            "Second tableau : le taux proposé à la création d’un produit de chaque catégorie. À faire valider par votre comptable."]),
     };
 }

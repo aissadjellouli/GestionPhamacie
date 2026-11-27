@@ -23,7 +23,7 @@ public class PacksOffreRoutesTests
         ["PilotageEndpoints.cs"] = ("Pilotage", 1),
         ["NotificationsEndpoints.cs"] = ("Pilotage", 1),            // rapport quotidien envoyé tout de suite
         ["SecondServeurEndpoints.cs"] = ("Continuite", 1),
-        ["SynchronisationEndpoints.cs"] = ("MultiOfficines", 10),   // statut et ordres déjà reçus restent (décision 3)
+        ["SynchronisationEndpoints.cs"] = ("MultiOfficines", 9),    // statut et ordres déjà reçus restent (décision 3) ; réglages : désactiver permis sans G (2026-11-27), activer refusé dans la route
         ["OrdonnancesEndpoints.cs"] = ("Comptoir", 2),
     };
 

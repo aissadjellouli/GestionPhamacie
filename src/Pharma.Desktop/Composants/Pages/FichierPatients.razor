@@ -2,6 +2,7 @@
 @inject ApiClient Api
 @inject SessionPoste Session
 @inject HistoriqueNavigation Historique
+@inject FichesContact Fiches
 
 @* Patients › « Fichier des patients » (2026-11-18) : tous les patients, filtrés et paginés par le serveur ; écran fixe, seul le tableau
    défile. Droits : ceux de la recherche de patients et de la fiche patient (droit de vendre) ; le filtre « à crédit » et la colonne de
@@ -14,7 +15,14 @@
                 <h1>Fichier des patients<AideEcran Cle="patients" /></h1>
                 <p class="sous-titre">Tous les patients de l’officine : cliquez sur un nom pour ouvrir et modifier sa fiche.</p>
             </div>
+            @* « Nouveau patient » (ergonomie 2026-11-27, proposition 14) : même fiche et même route qu'à la caisse (POST api/patients,
+               droit de vendre), pour saisir un patient au téléphone ou hors vente *@
+            @if (Session.A("caisse.vendre"))
+            {
+                <button type="button" class="btn btn-principal" @onclick="OuvrirNouveauAsync">Nouveau patient</button>
+            }
         </div>
+        @if (message is not null) { <div class="succes" role="status">@message</div> }
 
         @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
 
@@ -78,7 +86,7 @@
                                 }
                             </tr>
                         }
-                        @if (liste.Lignes.Count == 0) { <tr><td colspan="@Colonnes" class="vide">@(FiltreActif ? "Aucun patient ne répond à ces filtres." : "Aucun patient enregistré : les fiches se créent à la caisse.")</td></tr> }
+                        @if (liste.Lignes.Count == 0) { <tr><td colspan="@Colonnes" class="vide">@(FiltreActif ? "Aucun patient ne répond à ces filtres." : "Aucun patient enregistré : « Nouveau patient » en haut à droite, ou à la caisse.")</td></tr> }
                     }
                 </tbody>
             </table>
@@ -88,7 +96,114 @@
     </div>
 </div>
 
+@if (nouveau is { } np)
+{
+    <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-nouveau-patient">
+        <section class="panneau fenetre-nouveau-patient">
+            <h2 id="t-nouveau-patient">Nouveau patient</h2>
+            @* Mêmes champs qu'à la caisse ; après un refus, la saisie reste (seul le message change) *@
+            <div class="sous-formulaire fiche-medecin" role="group" aria-label="Nouveau patient">
+                <input type="text" aria-label="Nom (obligatoire)" data-champ="nom_patient" placeholder="Nom *" @ref="champNom" @bind="np.Nom" @bind:event="oninput"
+                       class="@Obligatoire.Classe(NomManquant)" aria-invalid="@Obligatoire.Aria(NomManquant)" />
+                <input type="text" aria-label="Prénom" placeholder="Prénom" @bind="np.Prenom" />
+                <input type="text" aria-label="Téléphone" data-champ="telephone" placeholder="Téléphone" @bind="np.Telephone" />
+                <input type="email" aria-label="E-mail (facultatif)" data-champ="email" placeholder="E-mail" maxlength="120" @bind="np.Email" />
+                <input type="text" aria-label="N° d’assuré" placeholder="N° d’assuré" @bind="np.NumAssure" />
+                <select class="selection" aria-label="Organisme" @bind="np.OrganismeId">
+                    <option value="0">Sans organisme</option>
+                    @foreach (var o in organismes) { <option value="@o.Id">@o.Code</option> }
+                </select>
+                <input type="number" min="0" aria-label="Plafond de crédit (DA)" data-champ="plafond" placeholder="Plafond de crédit (DA)" @bind="np.Plafond" />
+                @if (NomManquant) { <span class="message-champ fiche-pleine-largeur">Le nom du patient est obligatoire.</span> }
+                @if (erreurNouveau is not null) { <div class="erreur" role="alert">@erreurNouveau</div> }
+                @if (patientExistant is { } existant)
+                {
+                    <span class="message-champ fiche-pleine-largeur">
+                        Ce n° d’assuré est celui de @($"{existant.Nom} {existant.Prenom}".Trim()).
+                        <button type="button" class="lien-bouton" @onclick="OuvrirPatientExistant">Ouvrir sa fiche</button>
+                    </span>
+                }
+                <div class="actions">
+                    <button type="button" class="btn btn-principal" disabled="@enCreation" @onclick="CreerAsync">Créer</button>
+                    <button type="button" class="btn" disabled="@enCreation" @onclick="FermerNouveau">Annuler</button>
+                </div>
+            </div>
+        </section>
+    </div>
+}
+
 @code {
+    // ---- Nouveau patient (proposition 14) : mêmes champs que la fiche de la caisse ----
+    private sealed class NouveauPatientSaisie
+    {
+        public string Nom { get; set; } = "";
+        public string? Prenom { get; set; }
+        public string? Telephone { get; set; }
+        public string? Email { get; set; }
+        public string? NumAssure { get; set; }
+        public long OrganismeId { get; set; }
+        public decimal Plafond { get; set; }
+    }
+    private NouveauPatientSaisie? nouveau;
+    private bool controleNouveau, enCreation, focaliserNom;
+    private string? erreurNouveau, message;
+    private PatientDto? patientExistant;
+    private ElementReference champNom;
+    private bool NomManquant => nouveau is not null && Obligatoire.Manque(controleNouveau, nouveau.Nom);
+
+    private async Task OuvrirNouveauAsync()
+    {
+        // Plafond de crédit proposé : celui réglé par le titulaire (Administration › Caisse), comme à la caisse ; 0 s'il est illisible
+        var (etat, _) = await Api.EtatCaisseAsync();
+        nouveau = new NouveauPatientSaisie { Nom = texte?.Trim() ?? "", Plafond = etat?.PlafondCreditDefaut ?? 0 };
+        (controleNouveau, erreurNouveau, patientExistant, message, focaliserNom) = (false, null, null, null, true);
+    }
+
+    private void FermerNouveau() => (nouveau, controleNouveau, erreurNouveau, patientExistant) = (null, false, null, null);
+
+    private void OuvrirPatientExistant()
+    {
+        if (patientExistant is not { } p) return;
+        FermerNouveau();
+        Fiches.Ouvrir("patient", p.Id, $"{p.Nom} {p.Prenom}".Trim());
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!focaliserNom || nouveau is null) return;
+        focaliserNom = false;
+        await champNom.FocusAsync();
+    }
+
+    private async Task CreerAsync()
+    {
+        if (nouveau is not { } np) return;
+        controleNouveau = true;
+        if (NomManquant) { await champNom.FocusAsync(); return; }
+        (enCreation, erreurNouveau, patientExistant) = (true, null, null);
+        try
+        {
+            var saisie = new NouveauPatientDto(np.Nom.Trim(), np.Prenom, np.Telephone, np.NumAssure,
+                np.OrganismeId > 0 ? np.OrganismeId : null, np.Plafond, np.Email);
+            var (cree, err) = await Api.CreerPatientAsync(saisie);
+            if (err is not null)
+            {
+                // Saisie gardée : seul le message s'affiche ; n° d'assuré déjà pris (script 089) : la fiche existante est proposée
+                erreurNouveau = err;
+                patientExistant = err.StartsWith("N° d’assuré déjà utilisé par ", StringComparison.Ordinal) && !string.IsNullOrWhiteSpace(saisie.NumAssure)
+                    ? (await Api.RechercherPatientsAsync(saisie.NumAssure.Trim())).Item1.FirstOrDefault() : null;
+                return;
+            }
+            var nom = $"{saisie.Nom} {saisie.Prenom}".Trim();
+            FermerNouveau();
+            message = $"« {nom} » ajouté au fichier des patients.";
+            await ChargerAsync(liste?.Numero ?? 1, taille);
+            // Sa fiche s'ouvre, pour compléter le reste (adresse, chronique, accord SMS…)
+            Fiches.Ouvrir("patient", cree!.Id, nom);
+        }
+        finally { enCreation = false; }
+    }
+
     private PageDto<PatientFichierDto>? liste;
     private List<OrganismeDto> organismes = [];
     private string? texte;

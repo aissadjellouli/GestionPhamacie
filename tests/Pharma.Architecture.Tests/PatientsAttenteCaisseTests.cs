@@ -68,7 +68,7 @@ public class PatientsAttenteCaisseTests
         var nav = Lire("Pharma.Desktop", "Composants", "Caisse", "NavCaisse.razor");
         var vente = nav.IndexOf("@Lien(\"caisse\", \"Vente\")", StringComparison.Ordinal);
         var lien = nav.IndexOf("@Lien(\"patients/attente\", \"Patients en attente\")", StringComparison.Ordinal);
-        var operations = nav.IndexOf("Opérations</span>", StringComparison.Ordinal);
+        var operations = nav.IndexOf("Titre=\"Opérations\"", StringComparison.Ordinal);   // groupe repliable (GroupeMenu, 2026-11-27)
         Assert.True(vente > 0 && lien > vente && operations > lien, "Groupe Comptoir : Vente puis Patients en attente");
         Assert.Contains("@if (Session.A(\"caisse.vendre\"))", nav[vente..lien]);
     }

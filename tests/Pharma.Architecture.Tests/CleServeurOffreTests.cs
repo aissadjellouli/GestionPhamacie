@@ -1,0 +1,76 @@
+using Pharma.Api.Securite;
+using Pharma.Application.Offre;
+using Pharma.Infrastructure.Offre;
+
+namespace Pharma.Architecture.Tests;
+
+/// <summary>
+/// Clé de ce serveur et date plancher de l'offre (décision du titulaire du 2026-11-27, point 5) : commande --creer-cle-serveur idempotente,
+/// --empreinte-serveur, fichier de la date plancher, et commandes traitées avant tout accès à la base dans Program.cs.
+/// </summary>
+public sealed class CleServeurOffreTests
+{
+    private static string Dossier() => Path.Combine(Path.GetTempPath(), "cle-serveur-tests-" + Guid.NewGuid().ToString("N"));
+
+    [Fact]
+    public void Creer_la_cle_est_idempotent_et_l_empreinte_se_relit()
+    {
+        var dossier = Dossier();
+        try
+        {
+            var cle = new CleServeurFichier(Path.Combine(dossier, CleServeurFichier.FichierNom));
+            var sortie = new StringWriter();
+            var erreurs = new StringWriter();
+            Assert.Equal(1, ConsoleCleServeur.Executer([ConsoleCleServeur.ArgumentEmpreinte], cle, sortie, erreurs));   // pas encore de clé
+            Assert.Contains("--creer-cle-serveur", erreurs.ToString());
+
+            Assert.Equal(0, ConsoleCleServeur.Executer([ConsoleCleServeur.ArgumentCreer], cle, sortie, erreurs));
+            var empreinte = cle.Lire()!.Empreinte;
+            Assert.Contains("créée", sortie.ToString());
+            Assert.Contains("LOGICIELLE", sortie.ToString());                                                           // avertissement sans TPM
+
+            var deuxieme = new StringWriter();
+            Assert.Equal(0, ConsoleCleServeur.Executer([ConsoleCleServeur.ArgumentCreer], cle, deuxieme, erreurs));
+            Assert.Contains("existe déjà", deuxieme.ToString());
+            Assert.Equal(empreinte, cle.Lire()!.Empreinte);                                                            // jamais remplacée
+            Assert.Contains(EmpreinteServeur.Afficher(empreinte), deuxieme.ToString());
+            Assert.True(PreuveCleServeur.Prouver(cle, [empreinte]).Autorisee);
+        }
+        finally { if (Directory.Exists(dossier)) Directory.Delete(dossier, true); }
+    }
+
+    [Fact]
+    public void La_date_plancher_se_garde_dans_un_fichier_et_un_fichier_abime_ne_bloque_rien()
+    {
+        var dossier = Dossier();
+        try
+        {
+            var fichier = DatePlancherFichier.CheminParDefaut(dossier);
+            var p = new DatePlancherFichier(fichier);
+            Assert.Null(p.Lire());
+            var date = new DateTime(2027, 1, 10, 12, 0, 0, DateTimeKind.Utc);
+            p.Ecrire(date);
+            Assert.Equal(date, new DatePlancherFichier(fichier).Lire());
+            File.WriteAllText(fichier, "abîmé");
+            Assert.Null(new DatePlancherFichier(fichier).Lire());
+        }
+        finally { if (Directory.Exists(dossier)) Directory.Delete(dossier, true); }
+    }
+
+    [Fact]
+    public void Les_commandes_de_la_cle_du_serveur_passent_avant_la_base()
+    {
+        var programme = File.ReadAllText(Path.Combine(Racine(), "src", "Pharma.Api", "Program.cs"));
+        var commande = programme.IndexOf("ConsoleCleServeur.Concerne(args)", StringComparison.Ordinal);
+        Assert.True(commande > 0);
+        Assert.True(commande < programme.IndexOf("DemarrageServeur.LireAsync", StringComparison.Ordinal), "La commande doit passer avant la lecture de la base.");
+        Assert.True(commande < programme.IndexOf("JetonService.VerifierCle", StringComparison.Ordinal), "La commande ne doit pas dépendre de la clé des jetons.");
+    }
+
+    private static string Racine()
+    {
+        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d is not null; d = d.Parent)
+            if (File.Exists(Path.Combine(d.FullName, "PharmaOfficine.slnx"))) return d.FullName;
+        throw new DirectoryNotFoundException("Racine du dépôt introuvable.");
+    }
+}

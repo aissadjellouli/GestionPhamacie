@@ -328,9 +328,8 @@ prend toute la largeur restante (32 px d'écart avec la colonne). Tout vient de 
 aucun écran n'a de style propre pour cela. Les écrans sans menu vertical restent centrés (1 280 px au plus).
 
 **Bandeau ambre : toujours sur l'écran ou la sous-rubrique affichés, et sur eux seuls.** Dans l'Administration, l'écran affiché qui a
-des sous-rubriques (Alertes et seuils, Utilisateurs et droits…) devient un **titre de groupe non cliquable** (`.nav-groupe-titre`,
-gris, majuscules), comme « COMMANDES » ou « AUTRES ÉCRANS DU STOCK » dans les autres menus ; sa sous-rubrique affichée porte le
-bandeau. Les autres écrans de l'Administration restent des liens. Utilisé par l'Administration (`.admin`, `.admin-nav`,
+des sous-rubriques (Alertes et seuils, Utilisateurs et droits…) devient une **rubrique repliable** (composant `GroupeMenu`), comme
+les groupes des autres menus : un bouton qui replie ou déplie ses sous-rubriques ; sa sous-rubrique affichée porte le bandeau. Les autres écrans de l'Administration restent des liens. Utilisé par l'Administration (`.admin`, `.admin-nav`,
 `.admin-contenu`, composant `NavAdmin`), la Trésorerie, Dettes et créances, Stock, Alertes, Registre, Inventaire, Achats, Rapports,
 Contrôle interne (composant `NavControleInterne`, commun aux anomalies et aux pertes et vigilance), le Guide et la Caisse (composant
 `NavCaisse`, commun à la vente, à l'annulation ou au retour, au règlement d'un crédit, à l'état de la caisse, à la relève et à la clôture ;
@@ -353,8 +352,14 @@ une action qui n'est pas un écran, comme ouvrir le tiroir, demande une confirma
 - La rubrique est **dans l'adresse** (`?rubrique=…`) : « Retour » revient à la rubrique précédente (voir `navigation.md`).
 - `.compteur` (rouge) à côté d'une rubrique : nombre de choses qui attendent ou sont en alerte (caisses à verser, chèques à remettre,
   alertes), absent à zéro. `.compteur.neutre` (gris) : simple nombre de lignes (patients, grossistes…), affiché même à zéro.
-- `.nav-groupe-titre` : intitulé de groupe dans le menu (« À recevoir », « À payer »), en petites capitales grises ; les rubriques
-  du groupe sont en retrait (`class="sous-rubrique"`).
+- **Rubriques repliables (décision du titulaire du 2026-11-27)** : toute rubrique qui a des sous-rubriques (nom du domaine, écran
+  affiché déplié, groupe comme « À recevoir », thème ou écran de l'Administration) est un bouton (composant `GroupeMenu`,
+  `.groupe-menu-titre`) qui replie ou déplie ses sous-rubriques. Chevron `.chevron-menu` « › » replié, « ⌄ » déplié ; `aria-expanded`,
+  `aria-controls`, Entrée et Espace, focus visible. Par défaut déplié (thèmes de l'Administration : seul celui de l'écran affiché). Le
+  choix de l'employé est gardé tant que le poste est ouvert (`EtatMenus`) ; un groupe replié qui contient l'élément affiché se rouvre à
+  l'arrivée sur un autre de ses éléments. Titre en petites capitales grises, en vert quand il contient l'élément affiché ; mêmes
+  hauteurs que les anciens titres de groupe ; rubriques du groupe en retrait (`class="sous-rubrique"`). Un écran replié qui a des
+  rubriques reste un lien (chevron « › »). Plus aucun titre de groupe statique (`.nav-groupe-titre`), vérifié par `ChevronsMenusTests`.
 - `.nav-resume` sous le menu : un seul chiffre utile partout dans l'écran (ex. solde du coffre), facultatif.
 - Le titre reprend l'écran et la rubrique (« Trésorerie · Mouvements ») ; le sous-titre dit à quoi sert la rubrique.
 - **Administration : menu à deux niveaux.** Sous l'écran affiché, ses sous-rubriques (`admin/…?rubrique=…`, déclarées dans
@@ -811,3 +816,13 @@ Accueil (18 tuiles), Alertes › Vue d'ensemble (8), Stock › Vue d'ensemble (3
 (5, caisse ouverte), Financements › Compte du titulaire (3), fiche d'un prêt (5), Pilotage financier (6), Rapports (5) : **toutes
 navigables**. Non vues : tuiles de l'Inventaire (inventaire complet en cours et lots comptés nécessaires).
 
+### Ergonomie du 2026-11-27 (détail : [ergonomie-2026-11-27.md](ergonomie-2026-11-27.md))
+
+- **Boutons grisés** : plus d'opacité à 50 % ; fond gris, texte `--texte-2` (contraste AA en clair et en sombre), bord en pointillé ; la
+  raison est écrite à côté du bouton (texte court).
+- **Menu du haut** : la lettre du raccourci (⇧ lettre, petit cadre) est toujours affichée **sous** le nom du domaine (elle ne prend aucune
+  largeur ; remplace « lettres masquées sous 1 850 px ») ; « Réglages » sous l'icône ⚙.
+- **Tableaux compacts** (`.tableau-compact`) : une ligne par élément, information secondaire en petit sur la même ligne, actions en fin de
+  ligne. **Écart ouvert** : 14 px au lieu de 15 px pour les cellules, à trancher à l'essai réel.
+- **Pastille `.pastille.neutre`** (gris) : statut sans gravité (« Pas en stock »).
+- **Écart ouvert** : compteurs à 0 masqués dans le menu de Dettes et créances, alors que `.compteur.neutre` s'affiche même à zéro ailleurs.

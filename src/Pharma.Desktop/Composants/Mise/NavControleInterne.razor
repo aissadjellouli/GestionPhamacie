@@ -1,19 +1,24 @@
 @* Menu vertical commun aux écrans du contrôle interne (anomalies, produits sensibles, pertes et vigilance) :
    chaque entrée est une adresse, « ← Retour » y revient. Les réglages (seuils, horaires) sont dans l'Administration. *@
 <NavDomaine Libelle="Rubriques du contrôle interne">
-    <span class="nav-groupe-titre">Anomalies</span>
-    @Lien("surveillance", "À examiner", AExaminer)
-    @Lien("surveillance?onglet=traitees", "Traitées")
-    <span class="nav-groupe-titre">Pertes et vigilance</span>
-    @Lien("surveillance/risques", "Par employé")
-    @Lien("surveillance/risques?rubrique=jours", "Jour par jour")
-    @* Tiroir et produits sensibles rangés dans « Pertes et vigilance » (2026-11-18) : à 1366 × 768, les groupes « Caisse » et
-       « Stock » d'une entrée chacun faisaient défiler le menu de 37 px *@
-    @Lien("surveillance/tiroir", "Sorties et entrées du tiroir")
-    @Lien("surveillance?onglet=sensibles", "Produits sensibles")
-    <span class="nav-groupe-titre">Réglages</span>
-    <a href="admin/controle-interne" class="sous-rubrique">Seuils et horaires</a>
-    <a href="admin/controle-interne?rubrique=integrite" class="sous-rubrique">Intégrité des journaux</a>
+    @* Groupes repliables (GroupeMenu, 2026-11-27) : chevron « › » replié, « ⌄ » déplié *@
+    <GroupeMenu Cle="controle-interne:anomalies" Titre="Anomalies" ContientActif="@(Actif is "surveillance" or "surveillance?onglet=traitees")">
+        @Lien("surveillance", "À examiner", AExaminer)
+        @Lien("surveillance?onglet=traitees", "Traitées")
+    </GroupeMenu>
+    <GroupeMenu Cle="controle-interne:pertes" Titre="Pertes et vigilance"
+                ContientActif="@(Actif is "surveillance/risques" or "surveillance/risques?rubrique=jours" or "surveillance/tiroir" or "surveillance?onglet=sensibles")">
+        @Lien("surveillance/risques", "Par employé")
+        @Lien("surveillance/risques?rubrique=jours", "Jour par jour")
+        @* Tiroir et produits sensibles rangés dans « Pertes et vigilance » (2026-11-18) : à 1366 × 768, les groupes « Caisse » et
+           « Stock » d'une entrée chacun faisaient défiler le menu de 37 px *@
+        @Lien("surveillance/tiroir", "Sorties et entrées du tiroir")
+        @Lien("surveillance?onglet=sensibles", "Produits sensibles")
+    </GroupeMenu>
+    <GroupeMenu Cle="controle-interne:reglages" Titre="Réglages">
+        <a href="admin/controle-interne" class="sous-rubrique">Seuils et horaires</a>
+        <a href="admin/controle-interne?rubrique=integrite" class="sous-rubrique">Intégrité des journaux</a>
+    </GroupeMenu>
 </NavDomaine>
 
 @code {

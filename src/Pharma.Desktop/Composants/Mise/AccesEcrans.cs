@@ -44,6 +44,8 @@ public static class AccesEcrans
         var chemin = Chemin(lien);
         if (session.SuperAdmin) return EcransSuperAdmin.Contains(chemin);
         if (EcransSuperAdmin.Contains(chemin)) return false;
+        // PC non autorisé (titulaire, décision du 2026-11-27) : Administration seulement
+        if (session.AdministrationSeule && !AdministrationSeule.PeutOuvrir(chemin)) return false;
         var (reserve, droits) = Reserve(chemin);
         if (reserve is not null && !droits.Any(session.A)) return false;
         var (_, ecran) = Domaines.De(chemin);

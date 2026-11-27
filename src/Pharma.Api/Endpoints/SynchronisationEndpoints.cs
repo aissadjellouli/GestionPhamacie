@@ -114,11 +114,14 @@ public static class SynchronisationEndpoints
             return Results.Ok(new { numero = n });
         }).ExigerPack(PacksOffre.MultiOfficines);
 
-        s.MapPut("/reglages", async (ReglagesSynchronisationDto d, ReglerSync regler, ClaimsPrincipal user, CancellationToken ct) =>
+        // Décision du titulaire du 2026-11-27 (aucun blocage sans le central ni sans le pack G) : DÉSACTIVER la synchronisation reste permis sans le
+        // pack G (le titulaire qui ne veut plus du central en sort : plus de file, plus de réglage imposé) ; l'activer exige le pack G
+        s.MapPut("/reglages", async (ReglagesSynchronisationDto d, ReglerSync regler, IPacksOffre packs, ClaimsPrincipal user, CancellationToken ct) =>
         {
+            if (d.Active && !await packs.InclusAsync(PacksOffre.MultiOfficines, ct)) return PackExtensions.Refus(PacksOffre.MultiOfficines);
             await regler.ExecuterAsync(new ReglagesSync(d.Active, d.Adresse, d.TextesLibres, d.EnvoyerMedecins, d.DelaiControleDemarrage), user.UtilisateurId(), ct);
             return Results.NoContent();
-        }).ExigerPack(PacksOffre.MultiOfficines);
+        });
 
         // Lot S3 : seuils du bandeau et des alertes, conservation des lots accusés
         s.MapPut("/supervision", async (ReglagesSupervisionSynchronisationDto d, ReglerSupervisionSync regler, ClaimsPrincipal user, CancellationToken ct) =>

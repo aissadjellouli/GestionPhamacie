@@ -33,6 +33,10 @@ réseau, **se met lui-même en lecture seule**. Il n'y a ainsi **jamais deux ser
 | 4 | Promotion automatique active | Réglage de l'API du 2e serveur `SecondServeur__Bascule__PromotionAutomatique` (vrai par défaut) | Journal de l'API au démarrage |
 | 5 | Chaque serveur connaît l'autre | `SecondServeur__AutreServeur` (et l'adresse HTTPS de l'autre API) sur les deux serveurs | Écran « 2e serveur » : autre serveur joint |
 | 6 | Postes **autorisés et prouvés** (Administration › Postes autorisés), employés connectés | Postes | Barre d'état « Connecté » |
+| 7 | **2e serveur déclaré dans le code de l'offre** (point 5 du 2026-11-27) : sa clé créée (`Pharma.Api.exe --creer-cle-serveur`, en administrateur) et son empreinte (`--empreinte-serveur`) signée par l'éditeur avec celle du principal (`--serveur` deux fois) | 2e serveur (clé), Mon offre sur le principal (code) | `Pharma.Api.exe --empreinte-serveur` sur le 2e serveur, et `lire` de l'outil de l'éditeur : l'empreinte est dans « Serveurs autorisés » |
+
+Le prérequis 7 ne conditionne pas la promotion elle-même : sans lui, le nouveau principal tourne, mais son offre passe en **délai de grâce de
+15 jours** (Mon offre : « Ce serveur n'est pas déclaré dans le code de l'offre … » avec son empreinte), puis à l'offre de base.
 
 **Le script 166b se passe sur la base de la pharmacie, jamais sur la base système `postgres`** (le droit s'enregistre base par base) :
 
@@ -144,6 +148,8 @@ pendant 2 minutes après le démarrage de son API.
    écran « 2e serveur », synchronisation avec le central (nouvelle époque si demandée).
 3. Retour du PC réparé : **F4** ([procedure-deux-serveurs.md](procedure-deux-serveurs.md) § 9) ; il redevient **2e serveur** (copie). Les
    réglages de réplication synchrone sont à reposer sur le nouveau principal (ils ne suivent pas la réplication).
+4. Ouvrir **Administration › Mon offre** sur le nouveau principal : aucun message « Ce serveur n'est pas déclaré dans le code de l'offre »
+   attendu si le prérequis 7 est fait ; sinon, demander tout de suite un nouveau code à l'éditeur avec l'empreinte affichée (15 jours de grâce).
 
 ## 10. Diagnostic rapide
 

@@ -468,12 +468,19 @@ public sealed class FinancementsSql(NpgsqlDataSource db) : IFinancements
             id = (long)(await cmd.ExecuteScalarAsync(ct))!;
         }
 
-        // Capital encore dû : échéances non payées bloquées jusqu'au nouveau tableau ; tout remboursé : elles sont retirées
+        // Capital encore dû : échéances non payées bloquées jusqu'au nouveau tableau ; tout remboursé : elles sont retirées et le blocage
+        // (posé par un remboursement anticipé partiel précédent) est levé : plus aucun tableau à attendre pour un prêt soldé
         var solde = montantPret - capitalRembourse - a.Capital == 0;
         await using (var cmd = new NpgsqlCommand(solde
             ? "DELETE FROM echeance_pret e WHERE e.pret_id = $1 AND NOT EXISTS (SELECT 1 FROM paiement_echeance_pret x WHERE x.echeance_id = e.id)"
             : "UPDATE pret_bancaire SET echeancier_a_remplacer = true WHERE id = $1", cx, tx))
         {
+            cmd.Parameters.AddWithValue(a.PretId);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        if (solde)
+        {
+            await using var cmd = new NpgsqlCommand("UPDATE pret_bancaire SET echeancier_a_remplacer = false WHERE id = $1 AND echeancier_a_remplacer", cx, tx);
             cmd.Parameters.AddWithValue(a.PretId);
             await cmd.ExecuteNonQueryAsync(ct);
         }

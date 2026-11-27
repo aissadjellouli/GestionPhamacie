@@ -4,24 +4,29 @@
 @* État intermédiaire de la caisse du poste : depuis l'ouverture, sans compter ni clôturer. Comptage aveugle strict : ni espèces,
    ni total, ni attendu ; le tiroir se compte par un comptage intermédiaire (écran de clôture, mode intermédiaire). *@
 <div class="page avec-menu">
-    <NavCaisse Actif="caisse/etat" OuverteLe="etat?.OuverteLe" OuvertePar="@etat?.OuvertePar" Fond="etat?.FondCaisse" Poste="@etat?.Poste" />
+    <NavCaisse Actif="caisse/etat" OuverteLe="etat?.OuverteLe" OuvertePar="@etat?.OuvertePar" Fond="etat?.FondCaisse" Poste="@etat?.Poste" CaisseOuverte="@(!caisseFermee)" />
     <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
-            <h1>État de la caisse</h1>
+            <h1>État de la caisse<AideEcran Cle="caisse/etat" /></h1>
             <p class="sous-titre">Depuis l’ouverture de la caisse du poste, sans compter ni clôturer</p>
         </div>
         <div style="display: flex; gap: 8px; flex-wrap: wrap">
+            @* « Retour à la caisse » retiré (2026-11-27) : doublon du « ← » de l'en-tête ; l'action claire est « Aller à la vente » *@
             @if (etat is not null)
             {
                 <a href="cloture?intermediaire=true" class="btn btn-principal">Faire un comptage intermédiaire</a>
+                <a href="caisse" class="btn">Aller à la vente</a>
             }
-            <a href="caisse" class="btn">Retour à la caisse</a>
         </div>
     </div>
 
-    @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
-    @if (etat is null && erreur is null) { <Chargement Texte="Chargement de l’état de la caisse…" /> }
+    @if (caisseFermee)
+    {
+        <CaisseFermee Explication="L’état de la caisse (ventes, paiements par mode, comptages intermédiaires) s’affiche ici une fois la caisse ouverte." />
+    }
+    else if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
+    @if (etat is null && erreur is null && !caisseFermee) { <Chargement Texte="Chargement de l’état de la caisse…" /> }
 
     @if (etat is { } e)
     {
@@ -89,6 +94,15 @@
 @code {
     private EtatIntermediaireDto? etat;
     private string? erreur;
+    /// <summary>Le poste n'a pas de caisse ouverte (lu par l'état de la caisse) : état vide neutre au lieu de l'erreur du serveur.</summary>
+    private bool caisseFermee;
 
-    protected override async Task OnInitializedAsync() => (etat, erreur) = await Api.EtatIntermediaireAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        // Caisse fermée : même état vide que la clôture (2026-11-27). L'état de la caisse est lu d'abord ; s'il est illisible, l'état
+        // intermédiaire est demandé quand même et son message s'affiche comme avant.
+        var (caisse, _) = await Api.EtatCaisseAsync();
+        if (caisse is { SessionId: null }) { caisseFermee = true; return; }
+        (etat, erreur) = await Api.EtatIntermediaireAsync();
+    }
 }

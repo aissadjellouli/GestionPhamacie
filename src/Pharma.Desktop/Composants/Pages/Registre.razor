@@ -90,46 +90,41 @@
             }
             else
             {
+                @* Tableau compact (ergonomie 2026-11-27, propositions 2 et 16) : une ligne par inscription, sans défilement horizontal ;
+                   Entrée et Sortie en une colonne signée, soldes produit et lot ensemble, patient et médecin (ou grossiste et référence)
+                   ensemble, actions en fin de ligne. Ordre du serveur : n° croissant (indiqué dans l'en-tête). Texte coupé par « … »,
+                   complet en infobulle. *@
                 <div class="tableau-cadre">
-                    <table class="tableau tableau-registre">
+                    <table class="tableau tableau-registre tableau-compact">
                         <thead>
                             <tr>
-                                <th scope="col">N°</th><th scope="col">Date</th><th scope="col">Produit · lot</th><th scope="col">Opération</th>
-                                <th scope="col" class="nombre">Entrée</th><th scope="col" class="nombre">Sortie</th>
-                                <th scope="col" class="nombre">Solde produit</th><th scope="col" class="nombre">Solde lot</th>
-                                <th scope="col">Patient · porteur</th><th scope="col">Médecin · ordonnance</th><th scope="col">Référence · grossiste</th><th scope="col">Employé</th>
+                                <th scope="col" aria-sort="ascending" title="Trié par n° croissant">N° ↑</th><th scope="col">Date</th>
+                                <th scope="col" class="principal">Produit · lot</th><th scope="col">Mouvement</th>
+                                <th scope="col" class="nombre" title="Solde du produit, puis solde du lot">Solde · lot</th>
+                                <th scope="col">Patient · médecin ou grossiste</th><th scope="col">Employé</th>
+                                <th scope="col"><span class="visuellement-cache">Actions</span></th>
                             </tr>
                         </thead>
                         <tbody>
                             @foreach (var l in inscriptions)
                             {
+                                var tiers = Tiers(l);
                                 <tr>
                                     <td>@l.Numero</td>
-                                    <td>@Libelles.DateHeureLocale(l.Date)</td>
-                                    <td><span class="nom"><LienProduit Texte="@l.Produit" /></span><br /><span class="detail">lot <LienProduit Texte="@l.NumeroLot" Lot="true" /></span></td>
-                                    <td>@l.Operation
-                                        @if (l.Annulation is not null) { <br /><span class="pastille urgent" title="@l.Annulation">Annulée</span> }
-                                        else if (Session.A("role.titulaire")) { <br /><button type="button" class="lien-bouton" @onclick="() => annulation = (l.Numero, l.Produit, (string?)null)">Annuler l’écriture</button> }
-                                        @if (l.PatientId is { } pid) { <br /><button type="button" class="lien-bouton" title="Exporter seulement les lignes de ce patient" @onclick="() => patientExport = (pid, l.Patient ?? pid.ToString())">Extrait patient</button> }
+                                    <td title="@Libelles.DateHeureLocale(l.Date)">@l.Date.ToLocalTime().ToString("dd/MM/yy HH:mm")</td>
+                                    <td class="principal" title="@($"{l.Produit} · lot {l.NumeroLot}")"><span class="nom"><LienProduit Texte="@l.Produit" /></span><span class="detail">lot <LienProduit Texte="@l.NumeroLot" Lot="true" /></span></td>
+                                    <td title="@l.Operation"><span class="coupe coupe-s"><strong>@Mouvement(l)</strong> <span class="detail">@l.Operation</span></span></td>
+                                    <td class="nombre"><strong>@(l.SoldeProduit?.ToString() ?? "—")</strong><span class="detail">@l.SoldeLot</span></td>
+                                    <td title="@tiers.Infobulle"><span class="coupe coupe-m">
+                                        @if (l.Patient is not null) { <LienContact Type="patient" Id="l.PatientId" Nom="@l.Patient" /> }
+                                        @if (tiers.Detail is not null) { <span class="detail">@tiers.Detail</span> }
+                                    </span></td>
+                                    <td><span class="coupe coupe-xs" title="@l.Employe">@l.Employe</span></td>
+                                    <td class="actions-ligne">
+                                        @if (l.Annulation is not null) { <span class="pastille urgent" title="@l.Annulation">Annulée</span> }
+                                        else if (Session.A("role.titulaire")) { <button type="button" class="lien-bouton" title="Annuler l’écriture n° @l.Numero" aria-label="Annuler l’écriture n° @l.Numero" @onclick="() => annulation = (l.Numero, l.Produit, (string?)null)">Annuler</button> }
+                                        @if (l.PatientId is { } pid) { <button type="button" class="lien-bouton" title="Extrait patient : exporter seulement les lignes de ce patient" aria-label="Extrait patient : @(l.Patient ?? pid.ToString())" @onclick="() => patientExport = (pid, l.Patient ?? pid.ToString())">Extrait</button> }
                                     </td>
-                                    <td class="nombre">@l.Entree</td>
-                                    <td class="nombre">@l.Sortie</td>
-                                    <td class="nombre"><strong>@(l.SoldeProduit?.ToString() ?? "—")</strong></td>
-                                    <td class="nombre">@l.SoldeLot</td>
-                                    <td>
-                                        <LienContact Type="patient" Id="l.PatientId" Nom="@(l.Patient ?? "")" />
-                                        @if (l.PorteurNom is not null)
-                                        {
-                                            <br /><span class="detail">Porteur : @l.PorteurNom, @l.PorteurAdresse, pièce @l.PorteurPiece</span>
-                                }
-                                @if (l.DureeTraitementJours is { } dt)
-                                {
-                                    <br /><span class="detail">Traitement : @dt jours</span>
-                                        }
-                                    </td>
-                                    <td>@l.Medecin @if (l.Ordonnance is not null) { <br /><span class="detail">n° @l.Ordonnance</span> }</td>
-                                    <td>@l.Reference @if (l.Fournisseur is not null) { <br /><span class="detail">@l.Fournisseur</span> }</td>
-                                    <td>@l.Employe</td>
                                 </tr>
                             }
                         </tbody>
@@ -208,6 +203,35 @@
         await ChargerInscriptionsAsync(pageInscriptions, tailleInscriptions);
     }
     private int? NombreInscriptions => registre?.Inscriptions;
+
+    /// <summary>Entrée et sortie en une colonne signée (+ entrée, − sortie) ; les deux si une ligne porte les deux.</summary>
+    private static string Mouvement(LigneRegistreDto l) => (l.Entree, l.Sortie) switch
+    {
+        ({ } e, { } so) when e != 0 && so != 0 => $"+{e} / −{so}",
+        ({ } e, _) when e != 0 => $"+{e}",
+        (_, { } so) when so != 0 => $"−{so}",
+        _ => "0"
+    };
+
+    /// <summary>
+    /// Colonne regroupée : après le patient, le médecin et l'ordonnance (sortie) ou la référence et le grossiste (entrée) en petit ;
+    /// porteur et durée de traitement dans l'infobulle (texte complet), le mot « porteur » restant visible.
+    /// </summary>
+    private static (string? Detail, string Infobulle) Tiers(LigneRegistreDto l)
+    {
+        var morceaux = new List<string>();
+        if (l.PorteurNom is not null) morceaux.Add("porteur");
+        if (l.Medecin is not null) morceaux.Add(l.Ordonnance is null ? l.Medecin : $"{l.Medecin}, ord. {l.Ordonnance}");
+        if (l.Reference is not null || l.Fournisseur is not null) morceaux.Add(string.Join(" · ", new[] { l.Reference, l.Fournisseur }.OfType<string>()));
+        var infobulle = new List<string>();
+        if (l.Patient is not null) infobulle.Add($"Patient : {l.Patient}");
+        if (l.PorteurNom is not null) infobulle.Add($"Porteur : {l.PorteurNom}, {l.PorteurAdresse}, pièce {l.PorteurPiece}");
+        if (l.DureeTraitementJours is { } dt) infobulle.Add($"Traitement : {dt} jours");
+        if (l.Medecin is not null) infobulle.Add($"Médecin : {l.Medecin}{(l.Ordonnance is null ? "" : $", ordonnance n° {l.Ordonnance}")}");
+        if (l.Reference is not null) infobulle.Add($"Référence : {l.Reference}");
+        if (l.Fournisseur is not null) infobulle.Add($"Grossiste : {l.Fournisseur}");
+        return (morceaux.Count == 0 ? null : string.Join(" · ", morceaux), string.Join(" / ", infobulle));
+    }
     // Consultation sans limite de durée ; un export (PDF ou CSV) porte sur un an au plus : un fichier par année
     private const int JoursMaxExport = 366;
     private bool ExportTropLong => au.DayNumber - du.DayNumber >= JoursMaxExport;

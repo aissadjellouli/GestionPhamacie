@@ -23,6 +23,21 @@ public sealed class JournalSql(NpgsqlDataSource db, Pharma.Application.Securite.
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    /// <summary>Entrée sans utilisateur local (ordre du serveur central) : utilisateur_id NULL, aucun droit ni autorisation.</summary>
+    public async Task EcrireSansUtilisateurAsync(string action, string? tableCible, long? enregistrementId, IReadOnlyDictionary<string, object?> details,
+        CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("""
+            INSERT INTO journal_audit (utilisateur_id, action, table_cible, enregistrement_id, details)
+            VALUES (NULL, $1, $2, $3, $4)
+            """);
+        cmd.Parameters.AddWithValue(action);
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)tableCible ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = (object?)enregistrementId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
+        cmd.Parameters.Add(new NpgsqlParameter { Value = JsonSerializer.Serialize(details, Json), NpgsqlDbType = NpgsqlDbType.Jsonb });
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     /// <summary>Même insertion, dans la transaction d'une autre écriture.</summary>
     internal static async Task EcrireAsync(NpgsqlConnection cx, NpgsqlTransaction tx, long utilisateurId, string action,
         string? tableCible, long? enregistrementId, IReadOnlyDictionary<string, object?> details, string? permissionCode,

@@ -619,6 +619,18 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
     A23 non faite. Message sur `Jwt:Cle` = A21.
   - Détail : MEP § A 4.7.
 
+- [ ] **A24 bis — Créer la clé de ce serveur pour l'offre** et relever son **empreinte** (point 5 du 2026-11-27). **Qui** : technicien.
+  **Où** : PC serveur, invite de commandes **en administrateur**.
+  ```powershell
+  & "C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" --creer-cle-serveur
+  & "C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" --empreinte-serveur
+  ```
+  - **Attendu** : « Clé de ce serveur créée. » (ou « existe déjà » : jamais remplacée), fournisseur « Microsoft Platform Crypto Provider »
+    (TPM), empreinte en 8 groupes de 4 caractères : la **noter** pour l'éditeur (A45). La base n'est pas lue (marche aussi en veille).
+  - « ATTENTION : clé LOGICIELLE » : pas de TPM utilisable, rien n'est bloqué ; vérifier le TPM dans le BIOS/UEFI **avant** de transmettre
+    l'empreinte. « Droits d'administrateur nécessaires » : relancer l'invite en administrateur.
+  - Détail : MEP § A 4.7 bis.
+
 - [ ] **A25 — Vérifier l'API.** **Qui** : technicien. **Où** : PC serveur, administrateur Windows.
   ```powershell
   (Invoke-WebRequest http://localhost:5080/api/healthcheck -UseBasicParsing).StatusCode
@@ -743,20 +755,22 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
 - [ ] **A44 — Organismes payeurs.** Même page : organismes conventionnés (militaires…) avec adresse et NIF. Détail : MEP § A 9.2.
 
 - [ ] **A45 — Offre et code d'activation.** **Qui** : titulaire (relevé et saisie), **éditeur** (signature, sur **son** PC).
-  - [ ] **A45.1** Titulaire, dans **Administration › Mon offre** : relever le **code de l'officine** et le **NIF** (NIF saisi d'abord, A43,
-    Administration › Langue et pharmacie). Les transmettre à l'éditeur.
+  - [ ] **A45.1** Titulaire, dans **Administration › Mon offre** : relever le **code de l'officine**, le **NIF** (NIF saisi d'abord, A43,
+    Administration › Langue et pharmacie) et l'**empreinte de ce serveur** (boutons « Copier » ; clé créée à A24 bis), plus les empreintes
+    du 2e serveur (C-14 bis) et du PC de secours (D-08 bis) s'il y en a. Les transmettre à l'éditeur.
   - [ ] **A45.2** Éditeur, **sur le PC de l'éditeur** (jamais sur le serveur de l'officine), dans sa propre fenêtre PowerShell, signer un
     **code de transition** (durée fixée ce jour-là) ou le code de l'offre vendue. Mot de passe de la clé demandé :
     ```powershell
     cd C:\MesAtlassian\pharmaofficine
     dotnet run --project src\Pharma.Editeur -- signer --cle C:\MesAtlassian\cle-editeur\cle-editeur.pem `
-        --officine <code de l'officine> --nif <NIF> --postes <n> [--packs A,D | --packs tous] [--scanners <n>] [--fin AAAA-MM-JJ] [--transition]
+        --officine <code de l'officine> --nif <NIF> --postes <n> --serveur <empreinte> [--serveur <empreinte> …] `
+        [--packs A,D | --packs tous] [--scanners <n>] [--fin AAAA-MM-JJ] [--transition]
     ```
     Forme courte d'un code de transition (offre-et-options.md, « Mise en service ») :
-    `signer --cle <cle-editeur.pem> --officine <code> --nif <NIF> --postes <n> --transition --fin AAAA-MM-JJ`.
-    - `--postes <n>` obligatoire (1 à 200) ; `--transition` = les 8 packs, `--fin` obligatoire ; `--fin` absent (hors transition) = définitive.
-    - **Attendu** : une ligne de résumé (pharmacie, NIF, postes, packs, fin), puis le code `PO1.…` (non secret : il ne vaut que pour cette
-      pharmacie).
+    `signer --cle <cle-editeur.pem> --officine <code> --nif <NIF> --postes <n> --serveur <empreinte> --transition --fin AAAA-MM-JJ`.
+    - `--serveur <empreinte>` obligatoire, 1 à 3 fois (un par serveur de l'officine) ; `--postes <n>` obligatoire (1 à 200) ; `--transition` = les 8 packs, `--fin` obligatoire ; `--fin` absent (hors transition) = définitive.
+    - **Attendu** : une ligne de résumé (pharmacie, NIF, postes, packs, fin), les serveurs autorisés, puis le code `PO1.…` (non secret : il
+      ne vaut que pour cette pharmacie et sur les serveurs déclarés).
   - [ ] **A45.3** Éditeur : relire le code avant de l'envoyer :
     ```powershell
     dotnet run --project src\Pharma.Editeur -- lire --code <PO1.…> --cle-publique (Get-Content C:\MesAtlassian\cle-editeur\cle-editeur-publique.txt)
@@ -767,6 +781,9 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
   - **Attendu** : « Code accepté : Offre activée (ou Période de transition), N postes » ; les écrans des packs se rouvrent (au plus 2 minutes
     sur les autres postes).
   - **Sans code** : offre de base, **2 postes**, écrans des packs A à H fermés.
+  - **Refus « Ce serveur n'est pas déclaré dans le code de l'offre … »** : l'empreinte de ce serveur manque au code ; re-signer avec
+    l'empreinte affichée. **Remplacement d'un serveur** (PC neuf, Windows réinstallé, restauration sur un autre PC) : nouveau code ; en
+    attendant, 15 jours de grâce. **Horloge** : la reculer ne prolonge pas l'offre (message dans Mon offre, journal `offre_horloge_reculee`).
   - **Offre à date de fin** : l'écran Mon offre prévient dès 90 jours ; alerte au titulaire par SMS ou e-mail (mêmes destinataires que les
     alertes techniques) 90, 60, 30, 15, 7 et 1 jour(s) avant la fin, puis au début du délai de grâce de 15 jours, une seule fois chacune pour une date de fin
     donnée (journal `offre_rappel`), seule l'étape la plus proche étant envoyée (`RappelsOffre`, `src\Pharma.Application\Offre\Offre.cs`).
@@ -775,19 +792,26 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
   - Détail : MEP § A 13.0 ; [procedure-cle-editeur.md](procedure-cle-editeur.md) § 3 et § 4 ; offre-et-options.md, « Mise en service ».
 
 - [ ] **A46 — Autoriser chaque poste.** **Qui** : titulaire, puis technicien sur chaque poste. Le **maximum de postes vient de l'offre** (A45).
+  - **Preuve toujours exigée** (décision du titulaire du 2026-11-27, script 174) : un PC non autorisé ne se connecte pas et ne compte pas dans
+    le maximum ; plus de mode « transition » ni « inactif », plus de choix du mode à l'écran. Sur un PC non autorisé, l'écran de connexion ne
+    montre que « Code du poste » et « Autoriser » (le super admin garde son lien « Connexion super admin »).
   - **Base neuve** : `seed_referentiel.sql` pose la ligne `parametre_postes` avec les défauts du schéma (`INSERT INTO parametre_postes
-    DEFAULT VALUES`) : mode **transition** (`schema.sql`, `mode DEFAULT 'transition'`), code valable 15 minutes ; liste `poste_autorise`
-    **vide**. Maximum : celui de l'offre ; sans code d'activation, offre de base, **2 postes** (`OffreCourante.PostesBase = 2`) ; la colonne
+    DEFAULT VALUES`) : mode `exige` (script 174, plus lu par l'API), code valable 15 minutes ; liste `poste_autorise`
+    **vide** : aucun PC ne se connecte avant le premier poste, autorisé **obligatoirement** par `Pharma.Api.exe --autoriser-poste` (A46.1). Maximum : celui de l'offre ; sans code d'activation, offre de base, **2 postes** (`OffreCourante.PostesBase = 2`) ; la colonne
     `parametre_postes.maximum_postes` (20 par défaut) n'est plus lue depuis le script 172. Saisir le code (A45) avant d'autoriser plus de
     2 postes.
-  - **Après la mise à jour** d'une officine en service (version du 2026-11-24, script 167) : même mode **transition**.
-  - En mode transition, tout fonctionne, avec un bandeau « Ce poste n'est pas encore autorisé » sur l'écran de connexion des postes.
-  - [ ] **A46.1** Premier poste (aucun titulaire connecté sur un poste autorisé) : sur le PC serveur, `Pharma.Api.exe --autoriser-poste "CAISSE-1"`
-    (identifiant et mot de passe du titulaire) affiche un code ; sinon, Administration › Postes autorisés › « Autoriser un poste ».
+  - **Mise à jour d'une officine en service** (version avec le script 174) : dès le redémarrage de l'API, aucun PC non autorisé ne se connecte.
+    Générer les codes de **tous** les postes **le jour même** (A46.1 puis A46.2 sur chaque PC), avec le titulaire, de préférence avant
+    l'ouverture.
+  - [ ] **A46.1** Premier poste : sur le PC lui-même, « Connexion du titulaire (Administration seulement) » sous la saisie du code (décision du
+    2026-11-27 : le titulaire seul, Administration seulement, ni caisse ni vente), Postes autorisés › « Autoriser un poste » affiche le code ;
+    se déconnecter, taper le code (A46.2), se reconnecter. `Pharma.Api.exe --autoriser-poste "CAISSE-1"` sur le PC serveur reste possible.
+    Le code de l'offre (A45) se saisit aussi ainsi, depuis n'importe quel PC.
   - [ ] **A46.2** Sur le poste, avec le compte Windows habituel : écran de connexion, « Autoriser ce poste », taper le code. Sur un compte
     standard, Windows demande **une fois** l'accord d'un administrateur du PC. Refus : « Autorisation annulée », recommencer. **[À VÉRIFIER]**
     au premier poste réel : la connexion avec le compte standard fonctionne ensuite (preuve acceptée).
-  - [ ] **A46.3** Une fois tous les postes autorisés : Administration › Postes autorisés › « Preuve des postes » = « Exigée pour tous ».
+  - [ ] **A46.3** Contrôle : chaque PC se connecte après la saisie de son code ; Administration › Postes autorisés les liste « Autorisé »
+    (plus de réglage « Preuve des postes » depuis le script 174).
   - Nom du poste : celui saisi à l'autorisation (« Nom du poste »), changeable par « Renommer ». PC remplacé : « Remplacer le PC » ; PC volé
     ou perdu : « Révoquer ». L'heure de chaque PC à moins de 2 minutes de celle du serveur.
   - La source décrit cette section pour une officine « après la mise à jour » ; procedure-deux-serveurs.md § 6.1 la place dans la mise en
@@ -1067,6 +1091,20 @@ Option facultative, **fortement conseillée**. À faire **après** la partie A. 
   - **Si échec** : `role` absent ou « inconnu » = ancienne API. Service en boucle = `SecondServeur__AutreServeur` absent ou faux.
   - Détail : MEP § C 10.
 
+- [ ] **C-14 bis — Créer la clé de ce serveur pour l'offre** et relever son **empreinte** (point 5 du 2026-11-27). **Qui** : technicien.
+  **Où** : 2e serveur, invite de commandes **en administrateur**.
+  ```powershell
+  & "C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" --creer-cle-serveur
+  & "C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" --empreinte-serveur
+  ```
+  - **Attendu** : « Clé de ce serveur créée. » (ou « existe déjà » : jamais remplacée), fournisseur « Microsoft Platform Crypto Provider »
+    (TPM), empreinte en 8 groupes de 4 caractères : la **noter** pour l'éditeur (A45). La base n'est pas lue (marche aussi en veille).
+  - « ATTENTION : clé LOGICIELLE » : pas de TPM utilisable, rien n'est bloqué ; vérifier le TPM dans le BIOS/UEFI **avant** de transmettre
+    l'empreinte. « Droits d'administrateur nécessaires » : relancer l'invite en administrateur.
+  - Transmettre l'empreinte du 2e serveur à l'éditeur : **nouveau code** avec les deux `--serveur` (principal et 2e), saisi dans Mon offre
+    sur le principal ; sinon, après une bascule, 15 jours de grâce puis offre de base.
+  - Détail : MEP § C 10 bis.
+
 - [ ] **C-15 — Réglages par serveur.** **Qui** : titulaire, sur le PC serveur. Administration, 2e serveur, **Réglages par serveur** : dossiers
   **CHIFA-Officine** et **logiciel MDN** de chaque serveur ; cases « CHIFA-Officine installé », « Lecteur de carte et Token disponibles »,
   « Logiciel MDN installé », « Douchette branchée et testée ». Répliqués (table `serveur_officine`). Détail : MEP § C 11.
@@ -1259,6 +1297,19 @@ chaque sauvegarde. En cas de panne du PC serveur, la pharmacie repart dessus (F2
   - **Attendu** : la même empreinte que sur l'écran du titulaire. `--remplacer` seulement si le titulaire le demande. **[À CONFIRMER :
     comportement de `--importer-cle` si une clé existe déjà.]** L'API refuse de démarrer si la clé est illisible.
   - Détail : MEP § D 8.
+- [ ] **D-08 bis — Créer la clé de ce serveur pour l'offre** et relever son **empreinte** (point 5 du 2026-11-27). **Qui** : technicien.
+  **Où** : PC de secours, invite de commandes **en administrateur**.
+  ```powershell
+  & "C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" --creer-cle-serveur
+  & "C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" --empreinte-serveur
+  ```
+  - **Attendu** : « Clé de ce serveur créée. » (ou « existe déjà » : jamais remplacée), fournisseur « Microsoft Platform Crypto Provider »
+    (TPM), empreinte en 8 groupes de 4 caractères : la **noter** pour l'éditeur (A45). La base n'est pas lue (marche aussi en veille).
+  - « ATTENTION : clé LOGICIELLE » : pas de TPM utilisable, rien n'est bloqué ; vérifier le TPM dans le BIOS/UEFI **avant** de transmettre
+    l'empreinte. « Droits d'administrateur nécessaires » : relancer l'invite en administrateur.
+  - Transmettre l'empreinte du PC de secours à l'éditeur (3 serveurs au plus dans un code) : nouveau code saisi dans Mon offre sur le PC
+    serveur ; sinon, après la bascule, 15 jours de grâce puis offre de base.
+  - Détail : MEP § D 8 bis.
 - [ ] **D-09 — Dossier partagé de la copie.** **Où** : PC de secours, administrateur Windows.
   ```powershell
   New-Item -ItemType Directory -Force "D:\CopieSecours" | Out-Null
@@ -1656,8 +1707,9 @@ Les scripts `database\migration\NNN_*.sql` sont réexécutables sans dégât ; `
   Mon offre), l'éditeur signe sur **son** PC un code `--transition --fin AAAA-MM-JJ`, saisie dans Mon offre (ou par le central,
   `--ordre-activation`). Même procédure que A45. Pharmacies déjà installées : tout reste ouvert pendant une période de transition (durée **à
   définir**, offre-et-options.md Q8). Détail : offre-et-options.md, « Mise en service » (point 3) et « Décisions » ; procedure-cle-editeur.md § 3 et § 4.
-- [ ] **B-16 — Postes autorisés** (depuis la version du 2026-11-24, script 167) : après la mise à jour, la liste est en mode **transition**
-  (bandeau « Ce poste n'est pas encore autorisé »). Autoriser chaque poste comme A46.1 à A46.3. Détail : MEP, « Postes autorisés ».
+- [ ] **B-16 — Postes autorisés** (script 174, décision du 2026-11-27 : preuve toujours exigée) : après la mise à jour, **aucun PC non
+  autorisé ne se connecte**. Le jour même : générer le code de chaque poste et le taper sur chaque PC, comme A46.1 à A46.3 (premier poste par
+  `Pharma.Api.exe --autoriser-poste` si aucun n'est encore autorisé). Détail : MEP, « Postes autorisés ».
 
 Puis cocher la [checklist après chaque mise à jour](#checklist-après-chaque-mise-à-jour).
 
@@ -2003,7 +2055,7 @@ autres sources (marquées « ajout »).
 - [ ] Essai réel sur un vrai poste, en HTTPS (connexion, vente, impression, scanner mobile)
 - [ ] (ajout) Droits `163b` et `166b` passés sur la base de la pharmacie ; `has_function_privilege` → `t` (A17 ; promotion-serveurs.md § 3)
 - [ ] (ajout) Offre : code d'activation saisi dans Mon offre, « Offre activée » ou « Période de transition », nombre de postes affiché (A45)
-- [ ] (ajout) Postes autorisés ; « Preuve des postes » = « Exigée pour tous » une fois tous autorisés (A46)
+- [ ] (ajout) Postes autorisés : premier poste par `--autoriser-poste`, chaque PC autorisé avec son code (A46)
 - [ ] (ajout) Taux de TVA des catégories validés par le comptable et réglés (A54)
 - [ ] (ajout) Contenances manquantes complétées si la nomenclature ne les donne pas (A53)
 - [ ] (ajout) Sans 2e serveur : deux disques externes en rotation, un hors de l'officine (A65)
@@ -2028,7 +2080,7 @@ Lignes de la source (mise-en-production.md, « Checklist après chaque mise à j
 - [ ] Journal du serveur relu : aucune erreur au démarrage
 - [ ] (ajout) `101b` : passé seulement après le « go » du titulaire, procédure B-08 suivie (ou rien à faire)
 - [ ] (ajout) Code de transition de l'offre saisi (B-15)
-- [ ] (ajout) Postes autorisés après la mise à jour (B-16)
+- [ ] (ajout) Postes autorisés après la mise à jour : codes de tous les postes générés et saisis le jour même (B-16)
 - [ ] (ajout) Avec 2e serveur : `163b` et `166b` présents (`has_function_privilege` → `t`)
 
 ---

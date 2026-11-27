@@ -32,7 +32,8 @@ public sealed record AffichageBarre(IReadOnlyList<Pastille> Visibles, IReadOnlyL
 
 /// <summary>
 /// Règles de la barre d'état (maquette validée le 2026-11-21) : une pastille seulement s'il y a une information, cliquable vers l'écran
-/// concerné pour qui a le droit de l'ouvrir. Serveur injoignable : seules restent les pastilles qui ne dépendent pas du serveur
+/// concerné pour qui a le droit de l'ouvrir ; pastilles techniques (central, 2e serveur, sauvegarde) réservées au titulaire et à qui a le
+/// droit de les régler (2026-11-27). Serveur injoignable : seules restent les pastilles qui ne dépendent pas du serveur
 /// (imprimante de tickets, déconnexion automatique). Sans dépendance à l'interface (testées).
 /// </summary>
 public static class PastillesBarre
@@ -96,12 +97,14 @@ public static class PastillesBarre
 
         if (!e.ServeurJoignable) yield break;
 
-        // Anomalies connues du serveur
-        if (e.Liaisons?.Central is { } central)
+        // Anomalies connues du serveur. Pastilles techniques (central, 2e serveur, sauvegarde) : seulement pour le titulaire et pour qui a le
+        // droit de les régler (décision du titulaire, revue d'ergonomie du 2026-11-27, n° 19) ; un vendeur n'en voit aucune
+        var titulaire = e.Droit("role.titulaire");
+        if (e.Liaisons?.Central is { } central && (titulaire || e.Droit("admin.parametres")))
             yield return new("liaison-central", central.Libelle, NiveauLiaison(central), e.Droit("admin.parametres") ? "admin/synchronisation" : null, central.Detail);
-        if (e.Liaisons?.Second is { } second)
+        if (e.Liaisons?.Second is { } second && titulaire)
             yield return new("liaison-second", second.Libelle, NiveauLiaison(second), e.Droit("role.titulaire") ? "admin/second-serveur" : null, second.Detail);
-        if (Sauvegarde(e) is { } sauvegarde) yield return sauvegarde;
+        if ((titulaire || e.Droit("admin.sauvegardes")) && Sauvegarde(e) is { } sauvegarde) yield return sauvegarde;
         if (e.Compteurs is { JournauxEnAnomalie: true } && e.Droit("role.titulaire"))
             yield return new("journaux", "Journaux : anomalie", Anormal, "admin/controle-interne?rubrique=integrite",
                 "Intégrité des journaux : une chaîne est rompue ou n’a pas pu être vérifiée.");

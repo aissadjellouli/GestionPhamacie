@@ -199,13 +199,33 @@ Plan : `docs/taches/2026-11-24-postes-autorises/plan.md` ; contrat : `contrat-ap
   recopié sur un autre PC est inutilisable.
 - **Enrôlement** : code de 8 caractères à usage unique, valable 15 min (réglable), seul son hachage est gardé ; même réponse pour tout code faux ;
   5 échecs invalident tous les codes en attente et alertent le titulaire ; limite de débit des routes de connexion. Démarrage : commande
-  `Pharma.Api.exe --autoriser-poste "<nom>"` sur le serveur (titulaire, mot de passe contrôlé).
+  `Pharma.Api.exe --autoriser-poste "<nom>"` sur le serveur (titulaire, mot de passe contrôlé), ou depuis le PC lui-même par la connexion du
+  titulaire en Administration seulement (ci-dessous).
+- **Titulaire sur un PC non autorisé : Administration seulement** (choix du jeton : marque dans le jeton EN PLUS du contrôle de la preuve à chaque requête, pour qu'un jeton ouvert sur ce PC reste limité partout, même rejoué sans en-tête de poste comme un client sans poste) (décision du titulaire du 2026-11-27, « le titulaire peut accéder à partir d'un
+  poste non autorisé ») : depuis un PC non prouvé (sans preuve, ou preuve d'un poste révoqué, remplacé ou inconnu ; une horloge décalée reste
+  refusée), seul le **pharmacien titulaire** se connecte (`/api/auth/connexion`) ; tout autre employé est refusé (403, « Ce PC n'est pas
+  autorisé : seul le pharmacien titulaire peut s'y connecter, pour l'Administration seulement… »), après la vérification du mot de passe, sans
+  jeton. Le jeton émis porte la marque `acces = administration_seule`, sans nom ni identifiant de poste : il n'ouvre que la **liste fermée**
+  `AccesAdministrationSeule.Prefixes` (session : connexion, mot de passe, droits, affichage ; `/api/admin/postes`, `/api/offre`,
+  `/api/admin/pharmacie`, `/api/pharmacie`, `/api/admin/organismes`, `/api/medecins`, `/api/wilayas`, `/api/suggestions/specialite_medecin` ;
+  `/api/admin/utilisateurs`, `/api/admin/droits`, `/api/admin/notifications`, `/api/parametres/formulaire-sms` ; `/api/admin/sauvegardes`,
+  `/api/admin/second-serveur`, `/api/admin/synchronisation`, `/api/reglages-mutualises`), sur tout PC (même rejoué sans en-tête de poste, même
+  après l'autorisation du PC : il faut se reconnecter) ; toute autre route : 403 `administration_seule` « Depuis un PC non autorisé, le
+  titulaire n'a accès qu'à l'Administration ; autorisez ce PC (Administration › Postes autorisés) pour le reste. » (403 : la session reste
+  ouverte). Jamais caisse, vente, stock, achats, patients ni finances. Ce PC n'est pas un poste : il n'entre pas dans le maximum. Poste :
+  lien « Connexion du titulaire (Administration seulement) » sous la saisie du code ; une fois connecté, menu du haut réduit à « Réglages »
+  (mention « PC non autorisé : Administration seulement »), accueil = Postes autorisés, écrans permis : Utilisateurs et droits, Notifications,
+  Imprimantes, Sauvegardes, 2e serveur, Synchronisation, Langue et pharmacie, Postes autorisés, Mon offre ; toute autre adresse ramène aux
+  Postes autorisés avec le bandeau « PC non autorisé : Administration seulement ; autorisez ce PC dans Postes autorisés. ». Pour autoriser ce
+  PC : le créer dans Postes autorisés, se déconnecter, taper son code. — `src/Pharma.Api/Securite/AccesAdministrationSeule.cs`,
+  `src/Pharma.Application/Securite/SeConnecter.cs`, `src/Pharma.Desktop/Services/AdministrationSeule.cs`
 - **Gestion réservée au titulaire** (Administration › Postes autorisés) : autoriser, nouveau code, renommer, remplacer le PC, révoquer (motif
-  obligatoire), réglage du mode. Tout est inscrit au journal des actions, sans donnée personnelle. Un poste révoqué qui se présente alerte le titulaire.
-- **Modes** : `inactif` (comme avant), `transition` (après la mise à jour : un poste non autorisé fonctionne, avec un bandeau, mais ne compte jamais
-  pour la bascule ; un nom réservé à un poste autorisé est refusé sans preuve ; une preuve fausse ou inconnue vaut absence de preuve), `exige`
-  (tout poste qui s'annonce sans preuve valide est refusé). Poste révoqué et horloge décalée : toujours refusés. Page mobile et super admin
-  (aucun poste) : inchangés.
+  obligatoire), durée du code. Tout est inscrit au journal des actions, sans donnée personnelle. Un poste révoqué qui se présente alerte le titulaire.
+- **Preuve toujours exigée** (décision du titulaire du 2026-11-27, script 174) : les anciens modes `inactif` et `transition` ne s'appliquent plus,
+  `parametre_postes.mode` n'est plus lu ; tout PC qui s'annonce sans preuve valide est refusé. Poste révoqué et horloge décalée : toujours
+  refusés. Page mobile (aucun poste) : inchangée. Super admin : ses routes (`/api/super-admin/*`, `/api/admin/reprise/*`) ne sont jamais
+  refusées par la preuve, pour qu'il garde son accès depuis n'importe quel PC (restauration sur un serveur neuf) ; elles restent protégées
+  par son jeton et le code de chaque action sensible.
 - **Constaté à l'essai réel du 2026-11-24** : un compte Windows **standard** ne peut pas créer la clé machine (« Accès refusé »). **Décision D4,
   option 1 (titulaire, 2026-11-24)** : sur un compte standard, « Autoriser ce poste » relance le logiciel par la demande d'élévation de Windows
   (`Pharma.Desktop.exe --creer-cle-poste <nom>`, nom de clé de forme fixe contrôlé, aucune fenêtre) ; ce processus crée la clé avec son descripteur

@@ -9,10 +9,14 @@
     <div class="admin-contenu">
         <div class="titre-page">
             <div>
-                <h1>Utilisateurs et droits · @NavAdmin.Libelle("admin/droits", Rubrique)</h1>
+                <h1>Utilisateurs et droits · @NavAdmin.Libelle("admin/droits", Rubrique)<AideEcran Cle="admin/droits" /></h1>
                 <p class="sous-titre">Réservé au titulaire · chaque modification est inscrite au journal</p>
             </div>
-            <button type="button" class="btn btn-principal" disabled="@(etat is null || enCours)" @onclick="EnregistrerDroitsAsync">Enregistrer les droits</button>
+            @* Seulement sur « Droits par rôle » (revue d'ergonomie du 2026-11-27, n° 15) : il n'enregistre que les droits des rôles *@
+            @if (rubrique == "roles")
+            {
+                <button type="button" class="btn btn-principal" disabled="@(etat is null || enCours)" @onclick="EnregistrerDroitsAsync">Enregistrer les droits</button>
+            }
         </div>
 
         @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
@@ -113,9 +117,21 @@
                                         }
                                         else
                                         {
-                                            <span class="detail">Défini</span>
-                                            <button type="button" class="lien-bouton" style="margin-left: 8px" disabled="@enCours"
-                                                    title="Code oublié ou divulgué : l'employé en choisira un nouveau" @onclick="() => EffacerCodeAsync(u)">Effacer</button>
+                                            @* Confirmation courte avant d'effacer (revue d'ergonomie du 2026-11-27, n° 15) : le bouton était collé à « Modifier » *@
+                                            @if (codeAEffacer == u.Id)
+                                            {
+                                                <span class="confirmation-ligne" role="group" aria-label="@($"Effacer le code comptoir de {u.NomComplet}")">
+                                                    <span class="detail">Effacer ? L’employé devra en choisir un nouveau.</span>
+                                                    <button type="button" class="lien-bouton danger" disabled="@enCours" @onclick="() => EffacerCodeAsync(u)">Oui, effacer</button>
+                                                    <button type="button" class="lien-bouton" @onclick="() => codeAEffacer = null">Annuler</button>
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span class="detail">Défini</span>
+                                                <button type="button" class="lien-bouton" style="margin-left: 8px" disabled="@enCours"
+                                                        title="Code oublié ou divulgué : l'employé en choisira un nouveau" @onclick="() => codeAEffacer = u.Id">Effacer</button>
+                                            }
                                         }
                                     </td>
                                     <td>
@@ -253,9 +269,12 @@
 
     protected override async Task OnInitializedAsync() => await ChargerAsync();
 
+    /// <summary>Employé dont l'effacement du code comptoir attend la confirmation (« Oui, effacer » ou « Annuler »).</summary>
+    private long? codeAEffacer;
+
     private async Task EffacerCodeAsync(UtilisateurAdminDto u)
     {
-        (enCours, erreur, message) = (true, null, null);
+        (enCours, erreur, message, codeAEffacer) = (true, null, null, null);
         erreur = await Api.EffacerCodeComptoirAsync(u.Id);
         enCours = false;
         if (erreur is null)

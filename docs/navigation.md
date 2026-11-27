@@ -189,3 +189,8 @@ livraison en cours de saisie la **met en attente sur le serveur** (« Réception
 | Écrans du super administrateur (restauration, reprise) | accès sous double validation, jamais rouverts par l'historique |
 | Après une validation (vente encaissée, réception validée, clôture faite, restauration lancée) | le retour ramène à l'écran, jamais à l'action déjà validée |
 | Fenêtres d'autorisation sur place et de validation du super administrateur | fermées, elles ne se rouvrent pas |
+
+## Renommage du 2026-11-27
+
+L'écran « Stock » du domaine Stock s'appelle **« Gestion du stock »** (décision du titulaire du 2026-11-27) : le menu ne montre plus
+« STOCK › Stock › Produits ». Sa première rubrique s'appelle **« Liste des produits »**. Adresse (`/stock`), raccourci (⇧ S) et droits inchangés.

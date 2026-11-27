@@ -14,7 +14,7 @@
 }
 <div class="tableau-cadre">
     <table class="tableau" style="min-width: 0">
-        <thead><tr><th scope="col">Produit</th><th scope="col">Lot</th><th scope="col">Péremption</th><th scope="col">Sans identité</th><th scope="col">À imprimer</th><th scope="col"></th></tr></thead>
+        <thead><tr><th scope="col">Produit</th><th scope="col">Lot</th><th scope="col">Péremption</th><th scope="col" title="Boîtes du lot sans Data Matrix ni étiquette interne, sur les boîtes disponibles">Boîtes sans étiquette</th><th scope="col">À imprimer</th><th scope="col"></th></tr></thead>
         <tbody>
             @foreach (var l in Lots)
             {
@@ -23,7 +23,7 @@
                     <td class="nom">@l.Produit</td>
                     <td>@l.NumeroLot</td>
                     <td>@Libelles.Date(l.DatePeremption)</td>
-                    <td>@reste / @l.Disponible</td>
+                    <td>@reste sur @l.Disponible</td>
                     <td><input type="number" min="1" max="@reste" style="width: 80px" aria-label="Étiquettes à imprimer pour le lot @l.NumeroLot"
                                value="@Nombre(l)" @onchange="e => nombres[l.LotId] = int.TryParse(e.Value?.ToString(), out var n) ? n : 0" disabled="@(reste == 0)" /></td>
                     <td>
@@ -41,13 +41,19 @@
         </tbody>
     </table>
 </div>
-<p class="detail" style="margin: 0">
-    Planche PDF A4 de 4 × 9 étiquettes 50 × 30 mm (Documents\Pharma Officine\Etiquettes).
-    @(Imprimante.EstConfiguree ? $"Envoi direct à l’imprimante thermique {Imprimante.Adresse}." : "Imprimante thermique : déclarez son adresse IP dans Administration, Imprimantes et étiquettes, pour l’envoi direct en ZPL.")
-</p>
+@if (NoteTechnique)
+{
+    <p class="detail" style="margin: 0">
+        Planche PDF A4 de 4 × 9 étiquettes 50 × 30 mm (Documents\Pharma Officine\Etiquettes).
+        @(Imprimante.EstConfiguree ? $"Envoi direct à l’imprimante thermique {Imprimante.Adresse}." : "Imprimante thermique : déclarez son adresse IP dans Administration, Imprimantes et étiquettes, pour l’envoi direct en ZPL.")
+    </p>
+}
 
 @code {
     [Parameter, EditorRequired] public List<LotAEtiqueterDto> Lots { get; set; } = [];
+    /// <summary>Faux : la note technique (planche PDF, dossier, imprimante thermique) n'est pas affichée ; l'écran la met dans son aide « ? »
+    /// (Étiquettes internes, ergonomie 2026-11-27, proposition 26). Vrai par défaut (Inventaire inchangé).</summary>
+    [Parameter] public bool NoteTechnique { get; set; } = true;
     /// <summary>Message quand la liste est vide (ex. « Aucun lot pour ces filtres »).</summary>
     [Parameter] public string MessageVide { get; set; } = "Toutes les boîtes en stock ont une identité.";
 

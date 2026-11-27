@@ -4,7 +4,8 @@
 @* Lots à étiqueter : liste paginée et filtrée par le serveur (règle des listes, docs/charte-graphique.md) ; le tableau défile dans son cadre *@
 <section aria-labelledby="t-etiq" style="display: flex; flex-direction: column; gap: 12px">
     <h2 id="t-etiq" class="visuellement-cache">Lots à étiqueter</h2>
-    <p class="detail" style="margin: 0">Boîtes en stock sans Data Matrix ni étiquette interne. Chaque étiquette porte un code EAN-13 unique (préfixe 20) qui suit la boîte jusqu’au patient.</p>
+    @* Texte technique (code EAN-13, planche PDF, dossier, ZPL) déplacé dans l'aide « ? » de l'écran (ergonomie 2026-11-27, proposition 26) *@
+    <p class="detail" style="margin: 0">Imprimez une étiquette par boîte et collez-la avant de ranger la boîte.</p>
 
     <div class="filtres-liste" role="search" aria-label="Filtrer les lots à étiqueter">
         <div class="champ" style="flex: 1 1 280px">
@@ -26,7 +27,11 @@
     }
     else
     {
-        <EtiquetagerLots Lots="lots" MessageVide="@(FiltreActif ? "Aucun lot à étiqueter pour ces filtres." : "Toutes les boîtes en stock ont une identité.")" />
+        @* Lignes compactes (ergonomie 2026-11-27, proposition 2) : champ et bouton resserrés, une ligne par lot ; EtiquetagerLots
+           est partagé avec l'Inventaire, d'où le cadre « tableaux-compacts » (display: contents, sans effet sur la mise en page) *@
+        <div class="tableaux-compacts">
+            <EtiquetagerLots Lots="lots" NoteTechnique="false" MessageVide="@(FiltreActif ? "Aucun lot à étiqueter pour ces filtres." : "Toutes les boîtes en stock ont une identité.")" />
+        </div>
         <Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des lots à étiqueter" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
     }
 </section>

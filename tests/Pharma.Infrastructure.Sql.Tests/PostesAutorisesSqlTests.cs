@@ -10,7 +10,7 @@ public sealed class PostesAutorisesSqlTests(CopieSql copie) : IClassFixture<Copi
 {
     private async Task<(PostesAutorisesSql Sql, long Titulaire)> PreparerAsync()
     {
-        await using (var cmd = copie.Verif.CreateCommand("DELETE FROM presence_poste; DELETE FROM poste_autorise; UPDATE parametre_postes SET mode = 'transition', maximum_postes = 20, duree_code_minutes = 15"))
+        await using (var cmd = copie.Verif.CreateCommand("DELETE FROM presence_poste; DELETE FROM poste_autorise; UPDATE parametre_postes SET mode = 'exige', maximum_postes = 20, duree_code_minutes = 15"))
             await cmd.ExecuteNonQueryAsync();
         return (new PostesAutorisesSql(copie.Source), await copie.Donnees.UtilisateurAsync());
     }
@@ -36,7 +36,7 @@ public sealed class PostesAutorisesSqlTests(CopieSql copie) : IClassFixture<Copi
     }
 
     [FactSql]
-    public async Task Reglages_par_defaut_transition_20_postes_15_minutes_et_enregistrement()
+    public async Task Reglages_par_defaut_preuve_exigee_15_minutes_et_enregistrement()   // script 174 : preuve toujours exigée
     {
         var (sql, _) = await PreparerAsync();
         Assert.Equal(ReglagesPostes.ParDefaut, await sql.ReglagesAsync());

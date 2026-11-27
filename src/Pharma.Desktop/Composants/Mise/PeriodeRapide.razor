@@ -1,0 +1,70 @@
+@* Puces de période rapide à côté des champs « Du / Au » (ergonomie 2026-11-27, proposition 29) : Aujourd'hui, 7 jours, 30 jours,
+   Mois en cours. Un seul calcul pour tous les écrans (Bornes) : « 7 jours » et « 30 jours » finissent aujourd'hui et comptent
+   aujourd'hui (30 jours = aujourd'hui et les 29 jours d'avant) ; « Mois en cours » va du 1er du mois à aujourd'hui. La puce dont
+   les bornes sont celles des champs est marquée choisie (aria-pressed) ; une date tapée à la main les désélectionne. L'écran
+   reçoit les deux dates par OnChoisie et recharge sa liste comme après une saisie dans « Du » ou « Au ». *@
+<div class="periode-rapide" role="group" aria-label="@Libelle">
+    @foreach (var p in Choix ?? Toutes)
+    {
+        var periode = p;
+        var choisie = Actif && Reconnaitre(Du, Au, Aujourdhui) == periode;
+        <button type="button" class="puce" aria-pressed="@(choisie ? "true" : "false")" title="@Infobulle(periode)" disabled="@Desactive"
+                @onclick="() => ChoisirAsync(periode)">@Texte(periode)</button>
+    }
+</div>
+
+@code {
+    /// <summary>Périodes proposées, dans l'ordre d'affichage.</summary>
+    public enum Periode { Aujourdhui, SeptJours, TrenteJours, MoisEnCours }
+
+    private static readonly Periode[] Toutes = [Periode.Aujourdhui, Periode.SeptJours, Periode.TrenteJours, Periode.MoisEnCours];
+
+    /// <summary>Dates affichées dans « Du » et « Au » (vides : aucune puce choisie).</summary>
+    [Parameter] public DateOnly? Du { get; set; }
+    [Parameter] public DateOnly? Au { get; set; }
+    /// <summary>Puce choisie : l'écran pose les deux dates et recharge.</summary>
+    [Parameter] public EventCallback<(DateOnly Du, DateOnly Au)> OnChoisie { get; set; }
+    /// <summary>Périodes à proposer (aucune : les quatre). Ex. Rapports, qui a déjà « Jour » et « Mois ».</summary>
+    [Parameter] public IReadOnlyList<Periode>? Choix { get; set; }
+    /// <summary>Faux : aucune puce marquée choisie (l'écran n'est pas en mode « dates », ex. Rapports en Jour ou Semaine).</summary>
+    [Parameter] public bool Actif { get; set; } = true;
+    [Parameter] public bool Desactive { get; set; }
+    /// <summary>Nom du groupe pour les lecteurs d'écran.</summary>
+    [Parameter] public string Libelle { get; set; } = "Période rapide";
+
+    private static DateOnly Aujourdhui => DateOnly.FromDateTime(DateTime.Today);
+
+    /// <summary>Bornes d'une période, jour de fin compris. Fonction commune : tout écran qui propose ces périodes passe par elle.</summary>
+    public static (DateOnly Du, DateOnly Au) Bornes(Periode periode, DateOnly aujourdhui) => periode switch
+    {
+        Periode.Aujourdhui => (aujourdhui, aujourdhui),
+        Periode.SeptJours => (aujourdhui.AddDays(-6), aujourdhui),
+        Periode.TrenteJours => (aujourdhui.AddDays(-29), aujourdhui),
+        _ => (new DateOnly(aujourdhui.Year, aujourdhui.Month, 1), aujourdhui)
+    };
+
+    /// <summary>Période dont les bornes sont exactement ces dates (null : dates saisies à la main, ou vides).</summary>
+    public static Periode? Reconnaitre(DateOnly? du, DateOnly? au, DateOnly aujourdhui)
+    {
+        if (du is not { } d || au is not { } a) return null;
+        // Aujourd'hui d'abord : le 1er du mois, « Aujourd'hui » et « Mois en cours » ont les mêmes bornes
+        foreach (var p in Toutes)
+            if (Bornes(p, aujourdhui) == (d, a)) return p;
+        return null;
+    }
+
+    private static string Texte(Periode p) => p switch
+    {
+        Periode.Aujourdhui => "Aujourd’hui", Periode.SeptJours => "7 jours", Periode.TrenteJours => "30 jours", _ => "Mois en cours"
+    };
+
+    private static string Infobulle(Periode p) => p switch
+    {
+        Periode.Aujourdhui => "Aujourd’hui seulement",
+        Periode.SeptJours => "Aujourd’hui et les 6 jours d’avant",
+        Periode.TrenteJours => "Aujourd’hui et les 29 jours d’avant",
+        _ => "Du 1er du mois à aujourd’hui"
+    };
+
+    private Task ChoisirAsync(Periode p) => OnChoisie.InvokeAsync(Bornes(p, Aujourdhui));
+}

@@ -83,6 +83,52 @@ public sealed class ActivationsOffreSql(NpgsqlDataSource db) : IActivationsOffre
         return true;
     }
 
+    /// <summary>
+    /// Plus grande des deux dates du journal fiscal (chaîné et scellé : une ligne effacée ou modifiée se voit au contrôle d'intégrité) : la plus
+    /// grande date des faits (index sur survenu_le) et la date d'enregistrement de la dernière ligne (clé primaire), toutes deux posées par la base.
+    /// </summary>
+    public async Task<DateTime?> DerniereDateFiscaleAsync(CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("""
+            SELECT GREATEST((SELECT max(survenu_le) FROM journal_vente), (SELECT enregistre_le FROM journal_vente ORDER BY id DESC LIMIT 1))
+            """);
+        return await cmd.ExecuteScalarAsync(ct) is DateTime d ? DateTime.SpecifyKind(d, DateTimeKind.Utc) : null;
+    }
+
+    public async Task<bool> SignalerHorlogeReculeeAsync(DateTime plancherUtc, DateTime serveurUtc, CancellationToken ct = default)
+    {
+        // Jamais bloquant : base en lecture seule (serveur écarté, 2e serveur en veille) → rien n'est noté, le message reste dans Mon offre
+        try { return await NoterHorlogeReculeeAsync(plancherUtc, serveurUtc, ct); }
+        catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.ReadOnlySqlTransaction) { return false; }
+    }
+
+    private async Task<bool> NoterHorlogeReculeeAsync(DateTime plancherUtc, DateTime serveurUtc, CancellationToken ct)
+    {
+        // Une seule ligne par date plancher (à la seconde) ; verrou de transaction : deux évaluations simultanées n'en écrivent qu'une
+        var plancher = DateTime.SpecifyKind(plancherUtc, DateTimeKind.Utc).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture);
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        await using (var verrou = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtext('offre_horloge_reculee'))", cnx, tx))
+            await verrou.ExecuteNonQueryAsync(ct);
+        await using (var deja = new NpgsqlCommand(
+            "SELECT EXISTS (SELECT 1 FROM journal_audit WHERE action = 'offre_horloge_reculee' AND details ->> 'plancher' = $1)", cnx, tx))
+        {
+            deja.Parameters.AddWithValue(plancher);
+            if (await deja.ExecuteScalarAsync(ct) is true) return false;
+        }
+        await using (var note = new NpgsqlCommand("""
+            INSERT INTO journal_audit (utilisateur_id, action, table_cible, details)
+            VALUES (NULL, 'offre_horloge_reculee', 'activation_offre', jsonb_build_object('plancher', $1::text, 'serveur', $2::text))
+            """, cnx, tx))
+        {
+            note.Parameters.AddWithValue(plancher);
+            note.Parameters.AddWithValue(DateTime.SpecifyKind(serveurUtc, DateTimeKind.Utc).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture));
+            await note.ExecuteNonQueryAsync(ct);
+        }
+        await tx.CommitAsync(ct);
+        return true;
+    }
+
     /// <summary>Première constatation seulement : refusee_le et motif posés, puis une ligne au journal des actions (sans utilisateur).</summary>
     public async Task<bool> SignalerRefusAsync(long id, string motif, CancellationToken ct = default)
     {

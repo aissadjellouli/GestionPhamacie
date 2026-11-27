@@ -101,8 +101,11 @@ public sealed class MemoireLiaisonsPoste(IHorloge horloge)
 /// Lecture de l'état des liaisons pour la barre d'état (tout employé connecté). Chaque liaison est lue à part : une erreur de lecture
 /// (réglage absent, droit pg_monitor manquant…) ne montre rien pour cette liaison, sans rien bloquer.
 /// </summary>
+/// <param name="packs">Sans le pack G (décision du titulaire du 2026-11-27) : la synchronisation est arrêtée volontairement, aucune anomalie du
+/// central n'est montrée (sinon « Central : en retard » sans fin sur tous les postes) ; null : comme avant (doublures de tests).</param>
 public sealed class ConsulterLiaisonsPoste(IEnvoiSyncDepot envoi, ISupervisionSyncDepot supervision, MemoireSupervisionSync memoireSupervision,
-    ICertificatSync certificat, ISecondServeurDepot second, MemoireLiaisonsPoste memoire, IHorloge horloge, ITraceErreurs? trace = null)
+    ICertificatSync certificat, ISecondServeurDepot second, MemoireLiaisonsPoste memoire, IHorloge horloge, ITraceErreurs? trace = null,
+    Offre.IPacksOffre? packs = null)
 {
     public async Task<EtatLiaisonsPoste> ExecuterAsync(CancellationToken ct = default)
     {
@@ -113,7 +116,8 @@ public sealed class ConsulterLiaisonsPoste(IEnvoiSyncDepot envoi, ISupervisionSy
         {
             var p = await envoi.ParametresAsync(ct);
             var s = await memoireSupervision.LireAsync(supervision, ct);
-            var active = p.Active && !string.IsNullOrWhiteSpace(p.Adresse);
+            var active = p.Active && !string.IsNullOrWhiteSpace(p.Adresse)
+                         && (packs is null || await packs.InclusAsync(Offre.PacksOffre.MultiOfficines, ct));
             central = (active, active ? RegleLiaisonsPoste.Central(p, s, LireCertificat(), maintenant) : null, active ? p.LotsEnAttente : 0,
                 active ? p.DernierEnvoiLe : null);
         }

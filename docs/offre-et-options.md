@@ -131,7 +131,7 @@ Faite à partir des 275 fonctionnalités de [fonctionnalites.md](fonctionnalites
 | D | `/tresorerie`, `/suivi-dettes`, `/financements`, `/pilotage/financier` ; facture à une entreprise ou un organisme | facture à un patient, rapports |
 | E | `/pilotage`, rapport quotidien envoyé tout de suite | alertes de sécurité |
 | F | réglages `/admin/second-serveur` (consultation permise) | vigie et bascule de la paire déjà installée |
-| G | activation, envoi, rechargement, réglages, supervision, accès à distance, nouvelle époque de `/admin/synchronisation` | statut, ordres déjà reçus et leurs résultats |
+| G | activation, envoi, rechargement, réglages (sauf désactiver), supervision, accès à distance, nouvelle époque de `/admin/synchronisation` | statut, ordres reçus et leurs résultats, désactivation de la synchronisation (2026-11-27) |
 | H | `/ordonnances/analyser`, `/ordonnances/scans` (OCR) | lecture manuelle de l'ordonnance |
 
 **Limites connues** : le quota de **scanners mobiles** n'est pas compté (aucun registre des téléphones : seul le pack B ouvre `/mobile`) ;
@@ -143,7 +143,9 @@ des notifications de l'API) : pour une offre ou une période de transition qui a
 ou par e-mail (mêmes destinataires que les alertes techniques) **90, 60, 30, 15, 7 et 1 jour(s)** avant la fin (« go rappels » du
 2026-11-27), puis au **début du délai de grâce de 15 jours**. Chaque étape n'est envoyée **qu'une fois** pour une date de fin donnée (journal des actions, action `offre_rappel`) ; si
 plusieurs étapes sont dues le même jour, seule la plus proche de la fin est envoyée. L'écran Mon offre garde son message dès 90 jours. La vérification
-se fait une fois par jour ; l'alerte part avant d'être notée (au pire un rappel en double, jamais un rappel perdu). Une nouvelle date de fin
+se fait une fois par jour ; l'alerte part avant d'être notée (au pire un rappel en double, jamais un rappel perdu) et l'étape n'est notée que si
+l'alerte a vraiment été mise en file, au moins un message (2026-11-27 : sinon, sans destinataire ou file en panne, nouvel essai le lendemain ;
+`IAlertesTitulaire.OffreAsync` rend le nombre de messages mis en file). Une nouvelle date de fin
 (nouveau code) relance les sept étapes.
 
 ### Mise en service (à faire une fois par l'éditeur)
@@ -163,12 +165,80 @@ se fait une fois par jour ; l'alerte part avant d'être notée (au pire un rappe
    transition. **Clé principale perdue** : signer avec la clé de secours (aucune nouvelle version, aucun retour à l'offre de base), puis
    générer une nouvelle clé de secours à la version suivante. **Clé principale volée** : signer avec la clé de secours et retirer la
    principale de la liste à la version suivante (ses codes ne valent plus : nouveaux codes à signer pour les pharmacies concernées).
-3. **À chaque mise en place ou mise à jour d'une pharmacie** : relever son code d'officine et son NIF (Administration › Mon offre), signer un
-   code de transition `signer --cle <cle-editeur.pem> --officine <code> --nif <NIF> --postes <n> --transition --fin AAAA-MM-JJ` (durée fixée
+3. **À chaque mise en place ou mise à jour d'une pharmacie** : relever son code d'officine, son NIF et l'**empreinte de chaque serveur**
+   (Administration › Mon offre, ou `Pharma.Api.exe --empreinte-serveur` sur chaque serveur), signer un code de transition
+   `signer --cle <cle-editeur.pem> --officine <code> --nif <NIF> --postes <n> --serveur <empreinte> [--serveur <empreinte> …] --transition --fin AAAA-MM-JJ` (durée fixée
    à ce moment-là), le saisir dans Mon offre avec le compte du titulaire (par le titulaire, ou par l'éditeur à ses côtés : la saisie est
    réservée au titulaire) ou l'envoyer par le central :
    `Pharma.Cloud.Api.exe --ordre-activation --officine <code> --code <code> --auteur <nom>`.
-4. **Vente d'une option** : signer un nouveau code (packs `--packs A,D`, postes, scanners, `--fin` si abonnement) ; le plus récent l'emporte.
+4. **Vente d'une option** : signer un nouveau code (packs `--packs A,D`, postes, scanners, `--fin` si abonnement, toujours `--serveur`) ; le plus récent l'emporte.
+
+## Liaison renforcée de l'offre (point 5 de la revue de code, décision du titulaire du 2026-11-27 : « horloge + matériel »)
+
+La revue de code de la branche (2026-11-27) a relevé que la liaison de l'offre reposait sur des valeurs que la pharmacie contrôle (code de
+l'officine, NIF, horloge du serveur). Deux contournements, deux parades :
+
+| | Contournement | Qui peut le faire | Parade décidée |
+|---|---|---|---|
+| **a** | **Copier l'activation d'une autre pharmacie** : recopier dans sa base le code de l'officine, le NIF et le code `PO1.…` d'une autre | Quelqu'un qui a accès à PostgreSQL et à la base d'une autre pharmacie | **Liaison au matériel** : chaque serveur (principal, 2e serveur, PC de secours) a une clé non exportable protégée par son TPM ; le code d'activation (version 2) contient les **empreintes des serveurs autorisés** (1 à 3) ; l'API prouve à chaque contrôle qu'elle détient l'une de ces clés. Une base copiée sur un autre PC ne vaut plus rien. |
+| **b** | **Reculer l'horloge du serveur** pour qu'une offre échue paraisse encore valable | L'administrateur Windows du serveur | **Date plancher** : la plus grande de la dernière date du journal fiscal des ventes (chaîné et scellé) et d'une date mémorisée dans un fichier du serveur, hors de la base ; l'offre (échéance, grâce, rappels) se calcule avec la plus grande de la date du serveur et de cette date plancher : reculer l'horloge ne prolonge rien. Horloge en retard de plus d'une heure : alerte au titulaire une fois, journal `offre_horloge_reculee` ; la caisse n'est jamais bloquée. |
+
+**Conséquences en exploitation (matériel)** :
+- À l'installation, l'administrateur crée la clé de chaque serveur (`Pharma.Api.exe --creer-cle-serveur`) et lit son empreinte
+  (`Pharma.Api.exe --empreinte-serveur`, aussi affichée dans Administration › Mon offre) ; il la transmet à l'éditeur avec le code de
+  l'officine et le NIF ; l'éditeur signe avec `--serveur <empreinte>` (répétable, 1 à 3).
+- Tout **remplacement de serveur** (PC neuf, Windows réinstallé, restauration sur un autre PC, nouveau 2e serveur ou PC de secours)
+  demande un **nouveau code** ; en attendant, le délai de grâce de 15 jours s'applique. Le 2e serveur et le PC de secours sont à déclarer
+  **à l'avance** dans le code, sinon une bascule ferait perdre les options pendant la grâce.
+- Codes déjà signés (version 1, sans empreinte, ex. bases de l'éditeur) : toujours acceptés, avec « Code non lié au serveur : demandez un
+  nouveau code » ; l'outil ne signe plus que des codes version 2.
+
+**Hors de portée** (non traité, à savoir) : modifier le programme lui-même (par exemple remplacer la clé publique dans la `.dll`) ; seule une
+signature du programme par un certificat de code protégerait contre cela.
+
+### Mise en œuvre (2026-11-27)
+
+**Matériel (a)** :
+- **Clé de chaque serveur** : clé CNG de **machine** nommée `PharmaOfficine-Serveur`, ECDSA P-256, **non exportable**, usage signature ;
+  fournisseur TPM « Microsoft Platform Crypto Provider » essayé d'abord, sinon « Microsoft Software Key Storage Provider » (clé logicielle, non
+  exportable, **avertissement** affiché par la commande ; rien n'est bloqué). Droits posés à la création : SYSTEM (compte du service
+  « PharmaOfficine API », LocalSystem par défaut) et Administrateurs, personne d'autre. Hors Windows : clé logicielle dans
+  `<racine des données>/Serveur/cle-serveur.pem` (droits 600). Code : `src/Pharma.Infrastructure/Offre/CleServeur.cs`.
+- **Commandes** (le serveur ne démarre pas ; traitées avant la base, la clé des jetons et le réseau : marchent aussi sur un 2e serveur en
+  veille ou un PC de secours) : `Pharma.Api.exe --creer-cle-serveur` (administrateur ; **idempotente** : une clé existante n'est jamais
+  remplacée, son empreinte est réaffichée) et `Pharma.Api.exe --empreinte-serveur`. L'API ne fait qu'ouvrir la clé.
+- **Empreinte** : 16 premiers octets du SHA-256 de la clé publique (SubjectPublicKeyInfo), en hexadécimal majuscule, affichée par 8 groupes
+  de 4 (`1A2B-3C4D-…`) ; comparée sans tirets ni casse (`EmpreinteServeur`).
+- **Code version 2** : même format `PO1.<contenu>.<signature>`, contenu `"v":2` avec `"serveurs":[…]` (1 à 3 empreintes distinctes). Un code
+  version 1 garde exactement son contenu d'avant (pas de clé `serveurs`).
+- **Preuve** : à chaque évaluation de l'offre (cache existant d'une minute) et à chaque saisie, l'API vérifie que l'empreinte de sa clé est
+  dans la liste, puis fait signer par la clé un défi aléatoire de 32 octets (préfixé d'un domaine propre à l'offre) et vérifie la signature
+  avec cette clé publique (`PreuveCleServeur`) : une empreinte ou une clé publique recopiée sans la clé privée ne passe pas.
+- **Serveur non déclaré ou clé absente** : à la **saisie** (titulaire ou central), le code est refusé avec « Ce serveur n'est pas déclaré dans
+  le code de l'offre : demandez un nouveau code à l'éditeur avec l'empreinte … » ; pour un code **déjà rangé** (base restaurée ou copiée sur
+  un autre PC), la première constatation est notée (`refusee_le`, journal) et l'offre reste ouverte en **délai de grâce 15 jours depuis cette
+  constatation**, puis le code suit le chemin d'une activation refusée (activation précédente valable, sinon offre de base).
+- **Codes version 1** : acceptés ; Mon offre affiche « Code non lié au serveur : demandez un nouveau code à l'éditeur ». L'outil de l'éditeur
+  exige `--serveur` (1 à 3) et `lire` affiche les serveurs autorisés.
+- **Mon offre** : empreinte de CE serveur avec un bouton « Copier », à côté du code de l'officine et du NIF (« clé absente » sinon).
+
+**Horloge (b)** :
+- **Date plancher** = la plus grande de : la dernière date du journal fiscal (`max(survenu_le)` et `enregistre_le` de la dernière ligne de
+  `journal_vente`, deux dates posées par la base) et la date du fichier `C:\ProgramData\PharmaOfficine\Offre\date-plancher.json` (racine des
+  données `Donnees:Racine`). Le fichier est écrit à côté puis remplacé, **au plus une fois par jour** (seulement quand le jour avance, jamais
+  vers le passé), droits restreints à SYSTEM, Administrateurs et au compte de l'API ; illisible ou absent : seule la date du journal compte.
+- **Date effective** = max(date du serveur, date plancher) ; l'échéance, le délai de grâce, les rappels (90 j … 1 j, grâce) et le refus d'un
+  code échu à la saisie se calculent avec le **jour effectif**.
+- **Horloge en retard de plus d'une heure** sur la date plancher : une ligne `offre_horloge_reculee` au journal des actions (une seule par date
+  plancher ; rien n'est noté si la base est en lecture seule) et un message dans Mon offre tant que le retard dure. Rien d'autre ne bloque.
+- **Date du serveur central** : non utilisée ; les accusés de synchronisation ne transmettent aucune date du central (il faudrait la faire
+  ajouter au contrat de synchronisation).
+- **À savoir** : une horloge mise par erreur loin **dans le futur** (puis corrigée) fait avancer la date plancher ; le fichier peut être
+  effacé par un administrateur, mais la date du journal fiscal reste.
+
+**Aucun changement de schéma** (journal des actions et `activation_offre` existants). Tests : `OffreTests` (date effective, recul d'horloge,
+rappels et saisie au jour effectif, codes v1/v2, serveur non déclaré, clé absente, défi signé, outil) et `CleServeurOffreTests`
+(commande idempotente, fichier de la date plancher, commandes avant la base).
 
 ## Décisions
 
@@ -189,3 +259,11 @@ se fait une fois par jour ; l'alerte part avant d'être notée (au pire un rappe
 | 2026-11-26 | Transition (Q8 précisée) : **code de transition** « tout compris » signé par l'éditeur, saisi dans Mon offre avec le compte du titulaire (par le titulaire, ou par l'éditeur à ses côtés) lors de la mise en place ou de la mise à jour, avec une date de fin choisie à ce moment-là. **Sans aucune activation valable : offre de base, 2 postes** ; une activation effacée ramène à l'offre de base, jamais à tout ouvert. |
 | 2026-11-26 | **Tour des packs : recommandations acceptées** (« prends tes recommandations ») : packs A à H confirmés, avec ces précisions. A : la **réception à l'aveugle avec double saisie** entre dans le pack A (la base garde la réception simple). B : l'**inventaire complet annuel** et le **blocage d'un lot rappelé** restent dans la base ; la liste des patients à contacter et son export vont dans B. C : bons de commande, réception, facture d'achat et retours restent dans la base. D : la **facture à un patient** reste dans la base ; sans D, la clôture de caisse ne verse rien en trésorerie ; les rapports simples restent dans la base. E : les **alertes de sécurité** par SMS ou e-mail (sauvegarde absente, rupture d'intégrité, poste ou serveur isolé) restent dans la base. F : sauvegarde quotidienne, rotation des disques et test de restauration restent dans la base. Quotas : 2 postes et **0 scanner mobile** dans la base. **Fermeture d'un pack** : packs avec données (A à D) en **lecture seule** (actions refusées « Option non incluse — voir Mon offre », rien d'effacé) ; packs sans données propres (E à H) **arrêtés** ; tâches automatiques du pack arrêtées ; le serveur refuse lui-même les routes d'un pack fermé. |
 | 2026-11-26 | Lot O6 (« 1 reco, 2 reco, 3 reco, go O6 ») : (1) sans le pack A, les anomalies sont **enregistrées en silence** et deviennent visibles, avec leur historique, dès l'achat du pack ; (2) pack F échu alors que les deux serveurs tournent : la paire **continue de fonctionner** (réplication, bascule), le titulaire est prévenu, aucune nouvelle installation, écrans de réglage du 2e serveur en lecture seule ; (3) pack G échu : la synchronisation s'arrête, mais les **résultats des ordres déjà reçus** sont encore envoyés. |
+| 2026-11-27 | (1) **Postes : preuve toujours exigée** : « Chaque poste doit être autorisé avec son code, sinon pas de connexion, et un poste non autorisé n'entre pas dans le total / maximum autorisé. » Modes « transition » et « inactif » supprimés (script 174, `parametre_postes.mode` plus lu), choix du mode retiré de l'écran, écran de connexion d'un PC non autorisé réduit à la saisie du code ; exemptions gardées : routes ouvertes, clients sans poste (page mobile), super admin (règles métier, « Postes autorisés »). |
+| 2026-11-27 | Postes, précisions (« 1 garder, 2 garder ») : (1) un poste **créé mais pas encore autorisé** (code généré, pas encore saisi sur le PC) **compte dans le maximum**, sa place est réservée ; (2) **exception du super admin** gardée : restauration et reprise de données possibles depuis un PC non autorisé (routes protégées par son compte et par un code reçu sur son téléphone pour chaque action). |
+| 2026-11-27 | **Le titulaire peut accéder à partir d'un poste non autorisé : Administration seulement** : depuis un PC non autorisé, seul le titulaire se connecte (tout autre employé refusé), et n'a accès qu'à l'Administration (Postes autorisés, Mon offre, utilisateurs, réglages…), jamais à la caisse, la vente, le stock ni les finances. But : générer les codes des postes et saisir l'offre depuis n'importe quel PC (installation, PC neuf), sans contourner la limite : ce PC n'est pas un poste et n'entre pas dans le maximum. Contrôle au serveur (jeton marqué, liste fermée de routes) ; voir règles métier, « Postes autorisés ». |
+| 2026-11-27 | **Point 5, liaison renforcée : « horloge + matériel »** : (a) contre la copie d'une activation, liaison aux clés TPM des serveurs de l'officine (empreintes dans le code version 2) ; (b) contre le recul de l'horloge, date plancher tirée du journal fiscal et d'un fichier du serveur. Voir « Liaison renforcée de l'offre ». |
+| 2026-11-27 | (2) **Aucun blocage sans le central ni sans le pack G** : « une officine sans le central, si le titulaire ne veut pas le central, ne doit jamais se retrouver bloquée, pour tous les cas d'usage du logiciel ». Sans G : pas d'attente du contrôle de démarrage pour l'encaissement, réglages imposés rendus à l'officine (réimposés si G revient), ni bandeau, ni alerte de retard ou d'erreur d'envoi, rien sur le central dans la barre d'état ; la synchronisation peut être désactivée sans G. |
+| 2026-11-27 | (3) **Code d'offre transmis par le central sans G** : la synchronisation active sans G relève encore les ordres (échange léger, sans lot de données) et n'applique que `activation_offre` ; les autres ordres restent en attente (ni appliqués, ni refusés, ni alertés ; confirmation refusée « Option non incluse ») ; seuls les résultats d'ordres remontent. |
+| 2026-11-27 | (4) **Rappels de fin d'offre** : une étape n'est notée que si l'alerte a vraiment été mise en file. |
+| 2026-11-27 | (5) Limite restante : **liaison renforcée** de l'activation à la pharmacie (au-delà du code de l'officine et du NIF) : **plan à venir**, rien de codé. |

@@ -42,9 +42,16 @@ public sealed class SessionPoste : ISessionVigie
     /// <summary>Compte super admin : seulement la reprise de données (et la restauration), chaque action validée par un code.</summary>
     public bool SuperAdmin { get; private set; }
 
+    /// <summary>
+    /// Titulaire connecté sur un PC non autorisé (décision du titulaire du 2026-11-27) : Administration seulement (Services/AdministrationSeule) ;
+    /// le serveur refuse tout le reste.
+    /// </summary>
+    public bool AdministrationSeule { get; private set; }
+
     public void Ouvrir(ConnexionReponse r, bool parCode = false, bool superAdmin = false)
     {
         (Jeton, NomComplet, ExpireLe, MotifDeconnexion, ParCode, DoitChangerMotDePasse, SuperAdmin) = (r.Jeton, r.NomComplet, r.ExpireLe, null, parCode, r.DoitChangerMotDePasse, superAdmin);
+        AdministrationSeule = r.AdministrationSeule && !superAdmin;
         Changee?.Invoke();
     }
 
@@ -121,7 +128,7 @@ public sealed class SessionPoste : ISessionVigie
         try { if (Jeton is not null) AvantFermeture?.Invoke(); }
         finally { ChangementUtilisateur = false; }
         Affichage = "auto";
-        (Jeton, NomComplet, MotifDeconnexion, ParCode, SuperAdmin) = (null, null, motif, false, false);
+        (Jeton, NomComplet, MotifDeconnexion, ParCode, SuperAdmin, AdministrationSeule) = (null, null, motif, false, false, false);
         Permissions = new HashSet<string>();
         Changee?.Invoke();
     }
@@ -629,11 +636,13 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         session.DefinirAffichage(affichage?.Affichage ?? "auto");
         var (droits, _) = await GetAsync<List<string>>("api/auth/permissions", []);
         var deconnexion = 0;
-        if (droits.Contains("caisse.vendre") && (await EtatCaisseAsync()).Item1 is { } etat)
+        // PC non autorisé (titulaire, Administration seulement) : ni caisse ni tâches laissées, le serveur les refuserait
+        if (!session.AdministrationSeule && droits.Contains("caisse.vendre") && (await EtatCaisseAsync()).Item1 is { } etat)
             deconnexion = etat.DeconnexionMinutes;
         session.DefinirDroits(droits, deconnexion);
         if ((await PharmacieAsync()).Item1 is { } pharmacie)
             session.DefinirPharmacie(pharmacie.Nom);
+        if (session.AdministrationSeule) return;
         // Facture et retour laissés (réglage de l'officine, script 156) : fichier chiffré du poste ou mémoire seule. Lecture
         // impossible : réglage précédent gardé (aucun avant la première lecture : rien n'est lu, écrit ni supprimé sur le poste)
         if (tachesLaissees is not null && (await ReglageTachesLaisseesAsync()).Item1 is { } reglage)
@@ -1302,7 +1311,8 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 
         var premier = await Task.WhenAny(requete, Task.Delay(delai));
-        var joignable = premier == requete && requete.IsCompletedSuccessfully && requete.Result.IsSuccessStatusCode;
+        // Requête déjà terminée quand elle est lue : « await » rend sa réponse sans attendre (jamais .Result)
+        var joignable = premier == requete && requete.IsCompletedSuccessfully && (await requete).IsSuccessStatusCode;
         if (joignable) { Liaison = EtatLiaison.Joignable; JournalLiaison.Noter("serveur", Liaison, null); }
         else if (!requete.IsFaulted) { Liaison = EtatLiaison.Injoignable; JournalLiaison.Noter("serveur", Liaison, null); }
         else Liaison = LiaisonServeur.Classer(requete.Exception);
@@ -1322,7 +1332,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
             fin.TrySetResult(args.SocketError == System.Net.Sockets.SocketError.Success);
         var premier = await Task.WhenAny(fin.Task, Task.Delay(delai));
         if (premier != fin.Task) System.Net.Sockets.Socket.CancelConnectAsync(args);
-        var ouvert = premier == fin.Task && fin.Task.Result;
+        var ouvert = premier == fin.Task && await fin.Task;
         args.ConnectSocket?.Close();
         return ouvert;
     }

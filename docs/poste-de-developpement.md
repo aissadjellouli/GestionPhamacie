@@ -84,11 +84,61 @@ La base est supprimée, données comprises : le script demande d’abord de reta
 
 Options : `-SansDemo` pour ne pas charger les données fictives, `-Bases` pour choisir les bases.
 
-Pour lancer l’API sur `pharmacie_test` au lieu de `pharmacie_dev` (essais d’écriture) :
+### Basculer entre `pharmacie_dev` et `pharmacie_test` (2026-11-27)
+
+**Ponctuellement** (une seule fenêtre PowerShell, rien n'est changé ailleurs) :
 ```powershell
 $env:ConnectionStrings__Pharmacie = "Host=localhost;Port=5432;Database=pharmacie_test;Username=pharma_app;Password=pharma_dev"
 dotnet run --project src\Pharma.Api
 ```
+
+**Durablement** (Visual Studio et tous les programmes lancés ensuite) : trois variables **de l'utilisateur Windows** vont ensemble.
+L'API lit la base dans `ConnectionStrings__Pharmacie` (prioritaire sur `appsettings.Development.json`) ; le poste lit l'adresse de l'API
+dans `poste.json` (`AdresseApi`), sinon dans `PHARMA_API`, sinon `http://localhost:5080/` ; le dossier de synchronisation contient la clé
+et le certificat **propres à chaque base** (une base reliée au central avec le certificat de l'autre serait refusée).
+
+| Variable (utilisateur) | `pharmacie_dev` | `pharmacie_test` |
+|---|---|---|
+| `ConnectionStrings__Pharmacie` | `…;Database=pharmacie_dev;…` | `…;Database=pharmacie_test;…` |
+| `PHARMA_API` (poste) | absente, ou `http://localhost:5080/` | `http://localhost:5081/` |
+| `Synchronisation__Dossier` | `…\central-dev\sync-pharmacie_dev` | `…\central-dev\sync-pharmacie_test` |
+| Port de l'API (profil ou `--urls`) | 5080 | 5081 |
+
+Passer sur `pharmacie_test`, dans **sa** fenêtre PowerShell (le mot de passe de la base est gardé tel quel, jamais affiché) :
+```powershell
+$v = [Environment]::GetEnvironmentVariable("ConnectionStrings__Pharmacie", "User")
+[Environment]::SetEnvironmentVariable("ConnectionStrings__Pharmacie", ($v -replace "Database=pharmacie_dev", "Database=pharmacie_test"), "User")
+[Environment]::SetEnvironmentVariable("PHARMA_API", "http://localhost:5081/", "User")
+$s = [Environment]::GetEnvironmentVariable("Synchronisation__Dossier", "User")
+[Environment]::SetEnvironmentVariable("Synchronisation__Dossier", ($s -replace "sync-pharmacie_dev", "sync-pharmacie_test"), "User")
+```
+
+Revenir sur `pharmacie_dev` :
+```powershell
+$v = [Environment]::GetEnvironmentVariable("ConnectionStrings__Pharmacie", "User")
+[Environment]::SetEnvironmentVariable("ConnectionStrings__Pharmacie", ($v -replace "Database=pharmacie_test", "Database=pharmacie_dev"), "User")
+[Environment]::SetEnvironmentVariable("PHARMA_API", $null, "User")
+$s = [Environment]::GetEnvironmentVariable("Synchronisation__Dossier", "User")
+[Environment]::SetEnvironmentVariable("Synchronisation__Dossier", ($s -replace "sync-pharmacie_test", "sync-pharmacie_dev"), "User")
+```
+
+Contrôle (sans le mot de passe) :
+```powershell
+(([Environment]::GetEnvironmentVariable("ConnectionStrings__Pharmacie", "User")) -split ";" | Where-Object { $_ -notmatch "^\s*Password=" }) -join ";"
+[Environment]::GetEnvironmentVariable("PHARMA_API", "User")
+[Environment]::GetEnvironmentVariable("Synchronisation__Dossier", "User")
+```
+
+**Ensuite, toujours** :
+1. Fermer Visual Studio, l'API, le poste et le central lancés depuis le dépôt, puis rouvrir Visual Studio : une variable n'est vue que par
+   les programmes démarrés **après** son changement.
+2. Lancer l'API sur le bon port (5080 ou 5081) puis le poste. **Attendu** : barre d'état « Connecté », données de la bonne base.
+3. Si le poste a une `AdresseApi` remplie dans `C:\ProgramData\PharmaOfficine\poste.json`, elle l'emporte sur `PHARMA_API` : la vider
+   ou la changer aussi.
+
+**Chaque base a sa propre offre** (code de l'officine différent) : un code de transition par base
+([signer-code-activation.md](signer-code-activation.md) ; `pharmacie_dev` saisi le 2026-11-26, `pharmacie_test` à saisir). Sans code, la
+base est à l'offre de base : 2 postes, écrans des packs fermés.
 
 ### Vérifier la base
 

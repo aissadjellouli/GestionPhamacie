@@ -43,6 +43,13 @@ public interface ISortieSyncDepot
     /// familles nominatives non autorisées (script 130 : une donnée décochée ne quitte jamais l'officine, même déjà en file).
     /// </summary>
     Task<IReadOnlyList<LigneSortieSync>> LignesEnAttenteAsync(int maximum, IReadOnlyList<string> colonnesRetirees, CancellationToken ct = default);
+    /// <summary>
+    /// Même lecture, limitée aux tables listées (sans le pack G : résultats d'ordres seulement, décision du titulaire du 2026-11-27). Les autres lignes
+    /// restent en file, non rattachées, et partiront avec le pack G. Implémentation par défaut (doublures de tests) : filtre de la lecture complète.
+    /// </summary>
+    async Task<IReadOnlyList<LigneSortieSync>> LignesEnAttenteAsync(int maximum, IReadOnlyList<string> colonnesRetirees, IReadOnlyList<string> tables,
+        CancellationToken ct = default) =>
+        (await LignesEnAttenteAsync(int.MaxValue, colonnesRetirees, ct)).Where(l => tables.Contains(l.Table, StringComparer.Ordinal)).Take(maximum).ToList();
     /// <summary>Enregistre le lot (sync_enregistrer_lot) ; false si son n° n'est plus le suivant (constitution simultanée) ou si le
     /// réglage des familles a changé depuis la lecture des lignes.</summary>
     Task<bool> EnregistrerLotAsync(LotConstitue lot, CancellationToken ct = default);
@@ -63,7 +70,8 @@ public sealed class ConstitutionLotsSync(ISortieSyncDepot depot, IFormatLotSync 
     public const string MotifSimultanee = "Constitution simultanée : reprise au prochain passage.";
 
     /// <summary>Forme au plus <paramref name="maxLots"/> lots avec les lignes en attente.</summary>
-    public async Task<ResultatConstitution> ConstituerAsync(int maxLots = 10, CancellationToken ct = default)
+    /// <param name="tables">null : toutes les tables ; sinon seulement ces tables (sans le pack G : résultats d'ordres, les autres lignes attendent).</param>
+    public async Task<ResultatConstitution> ConstituerAsync(int maxLots = 10, CancellationToken ct = default, IReadOnlyList<string>? tables = null)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maxLots, 1);
         var etat = await depot.EtatAsync(ct);
@@ -77,7 +85,9 @@ public sealed class ConstitutionLotsSync(ISortieSyncDepot depot, IFormatLotSync 
         var colonnes = etat.ColonnesInterdites ?? [];
         while (lots < maxLots)
         {
-            var attente = await depot.LignesEnAttenteAsync(etat.LotMaxLignes, colonnes, ct);
+            var attente = tables is null
+                ? await depot.LignesEnAttenteAsync(etat.LotMaxLignes, colonnes, ct)
+                : await depot.LignesEnAttenteAsync(etat.LotMaxLignes, colonnes, tables, ct);
             if (attente.Count == 0) break;
             var choisies = Borner(attente, etat.LotMaxLignes, etat.LotMaxOctets);
             numero++;

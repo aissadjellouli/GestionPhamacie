@@ -167,6 +167,10 @@ public static class DependencyInjection
         // Liste des postes autorisés (script 167) : sans état, en singleton (lu par les caches et la vérification des preuves)
         services.AddSingleton<Application.Postes.IPostesAutorisesDepot, Postes.PostesAutorisesSql>();
         services.AddScoped<Application.Offre.IActivationsOffreDepot, Offre.ActivationsOffreSql>();
+        // Point 5 du 2026-11-27 : clé de ce serveur (TPM, sinon logicielle ; créée par --creer-cle-serveur) et date plancher hors base
+        services.AddSingleton<Application.Offre.ICleServeur>(_ => Offre.CleServeurLocale.Creer(racine));
+        services.AddSingleton<Application.Offre.IDatePlancherFichier>(sp =>
+            new Offre.DatePlancherFichier(Offre.DatePlancherFichier.CheminParDefaut(racine), sp.GetService<Microsoft.Extensions.Logging.ILogger<Offre.DatePlancherFichier>>()));
         services.AddScoped<IEcartsCaisseRecents, EcartsCaisseRecentsSql>();
         services.AddSingleton<IDocumentsPdf, DocumentsPdf>();
         services.AddSingleton<Pharma.Application.Rapports.IDocumentsRapports, DocumentsPdf>();

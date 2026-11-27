@@ -39,18 +39,20 @@
         @switch (rubrique)
         {
             case "comptes":
-    <div class="tuiles" style="grid-template-columns: repeat(auto-fill, minmax(230px, 1fr))">
+    <div class="tuiles cartes-comptes">
+        @* Ergonomie 2026-11-27 (proposition 25) : une seule ligne de titre (le nom, puis la banque si elle ne le répète pas) ; la carte
+           ouvre les mouvements du compte (règle des tuiles navigables), « Modifier » reste à part, hors du bouton de la carte *@
         @foreach (var c in comptes)
         {
-            <div class="carte @(c.Id == compteVu ? "carte-choisie" : null)" style="display: grid; gap: 4px; @(c.Actif ? null : "opacity: .6")">
-                <span class="detail">@(c.Type == "coffre" ? "Coffre" : c.Banque ?? "Banque")@(c.RecoitCarte ? " · reçoit les cartes" : "")@(c.Actif ? "" : " · inactif")</span>
-                <strong>@c.Nom</strong>
-                <span class="tresorerie-solde @(c.Solde < 0 ? "montant-du" : null)">@Libelles.Dinars(c.Solde, 2)</span>
-                <span class="detail">depuis le @c.DateInitiale.ToString("dd/MM/yyyy") (départ @Libelles.Dinars(c.SoldeInitial, 2))</span>
-                <div class="filtres">
-                    <button type="button" class="lien-bouton" @onclick="() => VoirAsync(c.Id)">Mouvements</button>
-                    <button type="button" class="lien-bouton" @onclick="() => Modifier(c)">Modifier</button>
-                </div>
+            var precision = Precision(c);
+            <div class="carte carte-compte @(c.Id == compteVu ? "carte-choisie" : null) @(c.Actif ? null : "inactif")">
+                <button type="button" class="carte-compte-ouvrir" title="@($"Ouvre les mouvements de « {c.Nom} »")" @onclick="() => VoirAsync(c.Id)">
+                    <span class="carte-compte-titre"><strong>@c.Nom</strong>@if (precision != "") { <span class="detail">@precision</span> }</span>
+                    <span class="tresorerie-solde @(c.Solde < 0 ? "montant-du" : null)">@Libelles.Dinars(c.Solde, 2)</span>
+                    <span class="detail">depuis le @c.DateInitiale.ToString("dd/MM/yyyy") (départ @Libelles.Dinars(c.SoldeInitial, 2))</span>
+                    <span class="tuile-aller">Mouvements →</span>
+                </button>
+                <button type="button" class="lien-bouton carte-compte-modifier" @onclick="() => Modifier(c)" aria-label="@($"Modifier « {c.Nom} »")">Modifier</button>
             </div>
         }
     </div>
@@ -267,6 +269,7 @@
                         </select></div>
                     <div class="champ" style="flex: 0 0 160px"><label for="p-du">Du</label><input id="p-du" type="date" @bind="du" @bind:after="ChargerMouvementsAsync" /></div>
                     <div class="champ" style="flex: 0 0 160px"><label for="p-au">Au</label><input id="p-au" type="date" @bind="au" @bind:after="ChargerMouvementsAsync" /></div>
+                    <PeriodeRapide Du="du" Au="au" OnChoisie="p => { (du, au) = (p.Du, p.Au); return ChargerMouvementsAsync(); }" />
                     <div class="champ" style="flex: 0 0 220px"><label for="p-employe">Employé</label>
                         <select id="p-employe" data-champ="employe" @bind="employeVu" @bind:after="FiltrerMouvementsAsync">
                             <option value="">Tous</option>
@@ -338,7 +341,8 @@
         new("comptes", "Comptes et soldes", "Coffre et banques : soldes, comptes et soldes de départ"),
         new("mouvements", "Mouvements", "Entrées et sorties d’un compte, par période et par employé"),
         new("saisie", "Saisir un mouvement", "Dépense, encaissement divers, versement d’un organisme, transfert entre comptes"),
-        new("caisses", "Caisses à verser au coffre", "Argent des caisses clôturées, et du tiroir de ce poste pendant la journée"),
+        // Libellé court (ergonomie 2026-11-27, proposition 25) : le compteur tient sur la même ligne ; « au coffre » est dans le sous-titre
+        new("caisses", "Caisses à verser", "Argent des caisses clôturées à verser au coffre, et du tiroir de ce poste pendant la journée"),
         new("cheques", "Chèques à remettre", "Chèques reçus en caisse, à déposer à la banque")
     ];
 
@@ -537,6 +541,17 @@
         compteVu = id;
         Nav.NavigateTo("tresorerie?rubrique=mouvements");
         await ChargerMouvementsAsync();
+    }
+
+    /// <summary>Précision écrite après le nom de la carte : la banque (ou « Coffre ») sauf si le nom la répète, cartes, inactif.</summary>
+    private static string Precision(CompteTresorerieDto c)
+    {
+        var genre = c.Type == "coffre" ? "Coffre" : c.Banque ?? "Banque";
+        var parties = new List<string>();
+        if (!string.Equals(genre.Trim(), c.Nom.Trim(), StringComparison.CurrentCultureIgnoreCase)) parties.Add(genre);
+        if (c.RecoitCarte) parties.Add("reçoit les cartes");
+        if (!c.Actif) parties.Add("inactif");
+        return string.Join(" · ", parties);
     }
 
     private void NouvelleBanque() => edition = new EditionCompte { RecoitCarte = !comptes.Any(c => c.RecoitCarte) };

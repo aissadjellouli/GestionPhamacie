@@ -76,6 +76,10 @@ public class EnvoiSynchronisationTests
             P.VersionContrat, P.DernierLot, P.DernierAccuse, 2, 1_048_576, Sortie.Count(l => !Rattachement.ContainsKey(l.Numero)), Interdites(P.FamillesEnvoyees)));
         public Task<IReadOnlyList<LigneSortieSync>> LignesEnAttenteAsync(int maximum, IReadOnlyList<string> colonnes, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<LigneSortieSync>>(Sortie.Where(l => !Rattachement.ContainsKey(l.Numero)).Take(maximum).Select(l => Filtrer(l, colonnes)).ToList());
+        public Task<IReadOnlyList<LigneSortieSync>> LignesEnAttenteAsync(int maximum, IReadOnlyList<string> colonnes, IReadOnlyList<string> tables,
+            CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<LigneSortieSync>>(Sortie.Where(l => !Rattachement.ContainsKey(l.Numero) && tables.Contains(l.Table)).Take(maximum)
+                .Select(l => Filtrer(l, colonnes)).ToList());
         public Task<bool> EnregistrerLotAsync(LotConstitue lot, CancellationToken ct = default)
         {
             foreach (var l in lot.Lignes) Rattachement[l] = lot.Numero;
@@ -803,5 +807,32 @@ public class EnvoiSynchronisationTests
         Assert.Null(r.Erreur);
         Assert.Equal(1, s.Dernier);
         Assert.Contains("non appliqués", b.Envois[^1]);
+    }
+    [Fact]
+    public async Task Sans_le_pack_G_les_ordres_sont_releves_et_seuls_les_resultats_d_ordres_partent()
+    {
+        // Décision du titulaire du 2026-11-27 (point 3) : voie réduite, aucune donnée ne quitte l'officine hormis les résultats d'ordres
+        var (b, c, s) = (new Base(), new Certificat(), new Central());
+        b.Ajouter(3);                                                   // ventes en file
+        var envoi = Envoi(b, c, s);
+        var releve = await envoi.ExecuterSansPackAsync(Maintenant, envoyerResultats: false);
+        Assert.Null(releve.Erreur);
+        Assert.NotEmpty(s.VersionsRecues);                              // échange léger fait : les ordres descendent
+        Assert.Empty(b.Lots);                                           // rien de formé
+        Assert.Equal(0, s.Dernier);
+
+        var i = b.Sortie.Count + 1;
+        b.Sortie.Add(new LigneSortieSync(i, EnvoyerLotsSync.TableResultatsOrdres, "o1", ContratSync.Creation, Maintenant, $$"""{"id":{{i}},"statut":"applique"}"""));
+        var r = await envoi.ExecuterSansPackAsync(Maintenant, envoyerResultats: true);
+        Assert.Null(r.Erreur);
+        Assert.Equal(1, r.LotsAccuses);
+        Assert.Equal(1, s.Dernier);
+        Assert.Equal([i], b.Rattachement.Keys.ToArray());               // seule la ligne de résultat est partie
+        Assert.All(s.Contenus, contenu => Assert.DoesNotContain("\"vente\"", contenu));
+        Assert.Equal(3, b.Sortie.Count(l => l.Table == "vente" && !b.Rattachement.ContainsKey(l.Numero)));   // ventes gardées en file
+
+        // Désactivée ou sans activation : rien
+        b.P = b.P with { Active = false };
+        Assert.Equal(EnvoyerLotsSync.ArretDesactivee, (await envoi.ExecuterSansPackAsync(Maintenant, true)).Arret);
     }
 }

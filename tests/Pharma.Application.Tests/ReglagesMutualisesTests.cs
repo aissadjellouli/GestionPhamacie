@@ -121,6 +121,42 @@ public class ReglagesMutualisesTests
         return (new AppliquerReglagesMutualises(d, moteur, alertes), alertes, moteur);
     }
 
+    private sealed class Packs(bool g) : Pharma.Application.Offre.IPacksOffre
+    {
+        public bool G { get; set; } = g;
+        public Task<bool> InclusAsync(string pack, CancellationToken ct = default) => Task.FromResult(G || pack != Pharma.Application.Offre.PacksOffre.MultiOfficines);
+        public Task<int> ScannersMobilesAsync(CancellationToken ct = default) => Task.FromResult(0);
+    }
+
+    [Fact]
+    public async Task Sans_le_pack_G_une_table_imposee_est_rendue_a_l_officine_puis_s_impose_de_nouveau_au_retour_du_pack()
+    {
+        // Décision du titulaire du 2026-11-27 : aucun blocage sans le central ni sans le pack G
+        var d = Depot(Inventaire, Element(Inventaire, "impose", 3, new MutuInventaireDto(5, 4000m)), 3, "impose", LocaleDeuxMille);
+        var (alertes, moteur, packs) = (new AlertesReglagesEspion(), new MoteurEspion(), new Packs(true));
+        var cas = new AppliquerReglagesMutualises(d, moteur, alertes, packs: packs);
+        await cas.ExecuterAsync();
+        Assert.Equal("impose", d.Etats[Inventaire].Mode);
+        d.Ecritures.Clear();
+        d.Journal.Clear();
+        alertes.Messages.Clear();
+
+        packs.G = false;
+        var bilan = await cas.ExecuterAsync();
+        Assert.Equal([Inventaire], bilan.Liberees);
+        Assert.Equal(("local", "impose"), (d.Etats[Inventaire].Mode, d.Etats[Inventaire].ModeRecu));   // modifiable ici, modèle reçu gardé
+        var j = Assert.Single(d.Journal);
+        Assert.Equal((ActionsReglage.Libere, "impose", "local"), (j.Action, j.ModeAvant, j.ModeApres));
+        Assert.Empty(d.Ecritures);                                                                    // valeur de l'officine non touchée
+        Assert.Empty(alertes.Messages);
+        Assert.Empty((await cas.ExecuterAsync()).Liberees);                                           // rien de plus au passage suivant
+
+        packs.G = true;
+        Assert.Equal([Inventaire], (await cas.ExecuterAsync()).Appliquees);
+        Assert.Equal("impose", d.Etats[Inventaire].Mode);
+        Assert.Single(alertes.Messages);                                                              // titulaire prévenu de la nouvelle imposition
+    }
+
     // ---- Imposé ----
 
     [Fact]

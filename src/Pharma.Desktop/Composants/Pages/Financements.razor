@@ -30,7 +30,8 @@
                 <OptionNonIncluse Pack="D" LectureSeule />
                 <p class="sous-titre">@RubriqueCourante.SousTitre</p>
             </div>
-            @if (rubrique == "prets" && Pret is null && !creation) { <button type="button" class="btn" @onclick="NouveauPret">Nouveau prêt</button> }
+            @* Un seul bouton de création (ergonomie 2026-11-27, proposition 24) : principal (vert) quand aucun prêt n'est encore enregistré *@
+            @if (rubrique == "prets" && Pret is null && !creation) { <button type="button" class="@(AucunPret ? "btn btn-principal" : "btn")" @onclick="NouveauPret">Nouveau prêt</button> }
         </div>
 
         @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
@@ -149,7 +150,6 @@
                     </table>
                 </div>
                 <Pagination Total="@(prets?.Total ?? 0)" Numero="pagePrets" Taille="taillePrets" Libelle="Pages des prêts" OnChange="p => ChargerPretsAsync(p.Numero, p.Taille)" />
-                @if (prets is { Total: 0 } && !FiltrePretsActif) { <ActionSuivante Libelle="Enregistrer un prêt" Lien="financements?rubrique=prets&nouveau=1" /> }
                 break;
 
             case "echeances":
@@ -295,6 +295,7 @@
                             </select></div>
                         <div class="champ" style="flex: 0 0 160px"><label for="ft-du">Du</label><input id="ft-du" type="date" @bind="ftDu" @bind:after="() => ChargerTitulaireAsync(1, tailleTitulaire)" /></div>
                         <div class="champ" style="flex: 0 0 160px"><label for="ft-au">Au</label><input id="ft-au" type="date" @bind="ftAu" @bind:after="() => ChargerTitulaireAsync(1, tailleTitulaire)" /></div>
+                        <PeriodeRapide Du="ftDu" Au="ftAu" OnChoisie="p => { (ftDu, ftAu) = (p.Du, p.Au); return ChargerTitulaireAsync(1, tailleTitulaire); }" />
                         @if (FiltreTitulaireActif) { <button type="button" class="btn" @onclick="EffacerFiltresTitulaireAsync">Tout afficher</button> }
                     </div>
                     <div class="tableau-cadre">
@@ -356,6 +357,8 @@
     private long fpBanque;
     private int pagePrets = 1, taillePrets = Pagination.TailleParDefaut;
     private bool FiltrePretsActif => fpTexte.Trim() != "" || fpEtat != "en_cours" || fpBanque > 0;
+    /// <summary>Liste des prêts vide sans filtre : « Nouveau prêt » devient l'action principale de l'écran.</summary>
+    private bool AucunPret => prets is { Total: 0 } && !FiltrePretsActif;
     private bool creation;
     private long nouveauCompte;
     private bool nouveauHorsTresorerie;

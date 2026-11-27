@@ -21,8 +21,8 @@ public sealed class PresencePostesSqlTests(CopieSql copie) : IClassFixture<Copie
 
     private string Cnx() => new NpgsqlConnectionStringBuilder(OutilsPostgres.ChaineConnexion()) { Database = copie.Nom }.ConnectionString;
 
-    /// <summary>Vide la présence ; mode de la liste des postes autorisés (script 167) : « inactif » = présence par nom, comme avant la liste.</summary>
-    private async Task ViderAsync(string mode = "inactif")
+    /// <summary>Vide la présence ; mode de la liste (script 167), plus lu depuis le script 174 : quelle que soit sa valeur, seuls les postes prouvés comptent.</summary>
+    private async Task ViderAsync(string mode = "exige")
     {
         await using var cmd = copie.Verif.CreateCommand("DELETE FROM presence_poste; DELETE FROM poste_autorise; UPDATE parametre_postes SET mode = @mode");
         cmd.Parameters.AddWithValue("mode", mode);
@@ -41,7 +41,7 @@ public sealed class PresencePostesSqlTests(CopieSql copie) : IClassFixture<Copie
     }
 
     [FactSql]
-    public async Task Mode_transition_seuls_les_postes_prouves_et_actifs_sont_connus_sous_leur_nom_actuel()
+    public async Task Seuls_les_postes_prouves_et_actifs_sont_connus_sous_leur_nom_actuel_quel_que_soit_le_mode_en_base()
     {
         await ViderAsync("transition");
         var a = await PosteActifAsync("CAISSE-A");
@@ -54,15 +54,19 @@ public sealed class PresencePostesSqlTests(CopieSql copie) : IClassFixture<Copie
         var lus = await sql.LireAsync();
         Assert.Equal(["CAISSE-A"], lus.Postes.Select(p => p.Poste).ToArray());
 
+        // Mode « inactif » écrit à la main dans la base : plus lu (script 174), un poste non prouvé reste inconnu
         await ViderAsync("inactif");
         await sql.NoterAsync("NON-PROUVE");
-        Assert.Equal(["NON-PROUVE"], (await sql.LireAsync()).Postes.Select(p => p.Poste).ToArray());
+        Assert.Empty((await sql.LireAsync()).Postes);
     }
 
+    /// <summary>Présence d'un poste prouvé (poste autorisé actif du même nom), vu il y a <paramref name="ilYa"/>.</summary>
     private async Task InsererAsync(string poste, string ilYa)
     {
-        await using var cmd = copie.Verif.CreateCommand($"INSERT INTO presence_poste (poste, vu_le) VALUES (@p, now() - interval '{ilYa}')");
+        var id = await PosteActifAsync(poste);
+        await using var cmd = copie.Verif.CreateCommand($"INSERT INTO presence_poste (poste, vu_le, poste_id) VALUES (@p, now() - interval '{ilYa}', @id)");
         cmd.Parameters.AddWithValue("p", poste);
+        cmd.Parameters.AddWithValue("id", id);
         await cmd.ExecuteNonQueryAsync();
     }
 

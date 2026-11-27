@@ -61,11 +61,17 @@ public class PastillesBarreTests
         // Compteurs reçus mais droits absents (le serveur filtre déjà ; le poste revérifie)
         var a = Calculer(Droits(), compteurs: Compteurs(3, 2, 5, 12, 2, journaux: true));
         Assert.Empty(a.Visibles);
-        // Anomalies visibles par tous mais sans lien pour qui n'a pas le droit de l'écran
+        // Pastilles techniques (central, 2e serveur, sauvegarde) : ni visibles ni cliquables sans le droit de les régler (décision du titulaire,
+        // 2026-11-27) ; l'imprimante de tickets reste visible par tous, sans lien
         var liaisons = new EtatLiaisonsPosteDto(true, new("Central : erreur d’envoi", "anormal", "d"), 3, null, true, new("2e serveur : décroché", "anormal", "d"));
-        a = Calculer(Droits(), new EtatPosteDto(true, Maintenant.AddDays(-1), "echouee", null, null), liaisons, imprimante: "Imprimante introuvable");
-        Assert.Equal(["Imprimante tickets : échec", "Central : erreur d’envoi", "2e serveur : décroché", "Sauvegarde échouée"], Libelles(a.Visibles));
+        a = Calculer(Droits("caisse.vendre"), new EtatPosteDto(true, Maintenant.AddDays(-1), "echouee", null, null), liaisons, imprimante: "Imprimante introuvable");
+        Assert.Equal(["Imprimante tickets : échec"], Libelles(a.Visibles));
         Assert.All(a.Visibles, p => Assert.Null(p.Lien));
+        // Droit de régler une seule d'entre elles : seulement celle-là, avec son lien
+        a = Calculer(Droits("admin.sauvegardes"), new EtatPosteDto(true, Maintenant.AddDays(-1), "echouee", null, null), liaisons);
+        Assert.Equal([("Sauvegarde échouée", "admin/sauvegardes")], a.Visibles.Select(p => (p.Libelle, p.Lien ?? "")).ToArray());
+        a = Calculer(Droits("admin.parametres"), new EtatPosteDto(true, Maintenant.AddDays(-1), "echouee", null, null), liaisons);
+        Assert.Equal([("Central : erreur d’envoi", "admin/synchronisation")], a.Visibles.Select(p => (p.Libelle, p.Lien ?? "")).ToArray());
         a = Calculer(Droits(Titulaire), new EtatPosteDto(true, Maintenant.AddDays(-1), "echouee", null, null), liaisons, imprimante: "x");
         Assert.Equal(["admin/imprimantes", "admin/synchronisation", "admin/second-serveur", "admin/sauvegardes"], a.Visibles.Select(p => p.Lien ?? "").ToArray());
     }

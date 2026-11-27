@@ -43,6 +43,11 @@
             @* Menu en deux niveaux (docs/navigation.md) : en haut les domaines (Services/Domaines), à gauche leurs écrans (NavDomaine) ;
                un domaine sans écran permis n'apparaît pas. Raccourci : Ctrl + Maj + la lettre affichée (poste.js). *@
             <nav class="nav" aria-label="Navigation principale">
+                @if (Session.AdministrationSeule)
+                {
+                    @* PC non autorisé (titulaire, décision du 2026-11-27) : aucun domaine, seulement « Réglages » ; mention à la place des domaines *@
+                    <span class="pc-non-autorise" role="status" title="@AdministrationSeule.Aide">PC non autorisé : Administration seulement</span>
+                }
                 @foreach (var d in Domaines.Tous.Where(d => d.Visible(Session)))
                 {
                     var actif = DomaineCourant == d;
@@ -58,18 +63,24 @@
                             @* Travail en attente du domaine (réceptions et bons en brouillon ; factures à encaisser et sommes en alerte) *@
                             <span class="compteur @(attente.Urgent ? null : "neutre")" aria-label="@($"{attente.Nombre} en attente")">@attente.Nombre</span>
                         }
+                        @* Lettre du raccourci toujours affichée sous le domaine (charte, revue d'ergonomie 2026-11-27 n° 6) : sous le libellé,
+                           elle ne prend aucune largeur à l'en-tête *@
                         <span class="touche" aria-hidden="true">⇧@d.Touche</span>
                     </a>
                 }
             </nav>
+            @if (!Session.AdministrationSeule)
+            {
             <button type="button" class="bouton-recherche" @onclick="() => rechercheOuverte = true" title="Rechercher un écran, un produit, un patient (Ctrl + K)"
                     aria-label="Rechercher partout (Ctrl + K)"><span aria-hidden="true">⌕</span><span class="texte-recherche"> Rechercher…</span> <span class="touche" aria-hidden="true">Ctrl K</span></button>
+            }
 
             <div class="outils-utilisateur">
                 @if (PremiereRubriqueAdmin is { } lienAdmin)
                 {
-                    <a href="@lienAdmin" class="nav-icone @ActifPrefixe("admin")" aria-current="@(Chemin.StartsWith("admin") ? "page" : null)"
-                       title="Administration" aria-label="Administration">⚙</a>
+                    @* « Réglages » écrit sous l'icône (revue d'ergonomie 2026-11-27 n° 9) : l'icône seule ressemblait à un réglage d'affichage *@
+                    <a href="@lienAdmin" class="nav-icone avec-libelle @ActifPrefixe("admin")" aria-current="@(Chemin.StartsWith("admin") ? "page" : null)"
+                       title="Administration (réglages de la pharmacie)" aria-label="Administration"><span aria-hidden="true">⚙</span><span class="libelle-icone" aria-hidden="true">Réglages</span></a>
                 }
                 <div class="nav-groupe" @onkeydown="ToucheMenu">
                     <button type="button" class="bouton-utilisateur" aria-haspopup="true" aria-expanded="@(menuOuvert == "utilisateur" ? "true" : "false")"
@@ -83,7 +94,7 @@
                             }
                             else
                             {
-                                <a href="mon-code" @onclick="FermerMenus">Mon code comptoir</a>
+                                @if (!Session.AdministrationSeule) { <a href="mon-code" @onclick="FermerMenus">Mon code comptoir</a> }
                                 <a href="mot-de-passe" @onclick="FermerMenus">Mot de passe</a>
                             }
                             <button type="button" class="bouton-affichage" @onclick="ChangerAffichageAsync"
@@ -96,7 +107,7 @@
                                 <button type="button" class="valeur-zoom" @onclick="() => ZoomerAsync(100 - zoom)" title="Revenir à 100 %" aria-label="@($"Zoom {zoom} %, revenir à 100 %")">@zoom %</button>
                                 <button type="button" class="bouton-zoom" disabled="@(zoom >= ZoomMax)" @onclick="() => ZoomerAsync(10)" aria-label="Agrandir le zoom">+</button>
                             </div>
-                            <a href="guide" @onclick="FermerMenus" title="Ce qu’il faut essayer, et vos remarques">Guide et retours</a>
+                            @if (!Session.AdministrationSeule) { <a href="guide" @onclick="FermerMenus" title="Ce qu’il faut essayer, et vos remarques">Guide et retours</a> }
                             <hr />
                             <button type="button" @onclick="ChangerUtilisateur" title="La caisse du poste reste ouverte">Changer d’utilisateur</button>
                             <button type="button" @onclick="SeDeconnecter">Se déconnecter</button>
@@ -188,7 +199,7 @@
             </ErrorContent>
         </ErrorBoundary>
         <FenetreContact />
-        @if (Session.EstConnecte && !Session.SuperAdmin)
+        @if (Session.EstConnecte && !Session.SuperAdmin && !Session.AdministrationSeule)
         {
             <RechercheGlobale @bind-Ouverte="rechercheOuverte" />
         }
@@ -212,8 +223,8 @@
     /// <summary>Nom enregistré en base, sinon réglage du poste (PHARMA_PHARMACIE), puis nom du poste.</summary>
     private string SousTitre => (Session.NomPharmacie ?? Poste.Pharmacie) is { } nom ? $"{nom} · {Poste.Poste}" : Poste.Poste;
 
-    private string? PremiereRubriqueAdmin =>
-        NavAdmin.Accessibles.FirstOrDefault(r => Session.A(r.Permission)).Lien;
+    private string? PremiereRubriqueAdmin => Session.AdministrationSeule ? AdministrationSeule.Accueil
+        : NavAdmin.Accessibles.FirstOrDefault(r => Session.A(r.Permission)).Lien;
     private bool EstPageConnexion => Chemin.StartsWith("connexion", StringComparison.Ordinal);
 
     private string? Actif(params string[] chemins) => chemins.Contains(Chemin) ? "active" : null;
@@ -248,7 +259,8 @@
 
     private async Task CompterUrgentesAsync()
     {
-        if (!Session.EstConnecte || Session.SuperAdmin) { urgentes = 0; return; }
+        // PC non autorisé (titulaire, Administration seulement) : ni alertes ni compteurs (le serveur les refuserait)
+        if (!Session.EstConnecte || Session.SuperAdmin || Session.AdministrationSeule) { urgentes = 0; return; }
         var (compte, erreur) = await Api.AlertesUrgentesAsync();
         urgentes = erreur is null ? compte?.Nombre ?? 0 : 0;
         await Compteurs.ActualiserAsync();   // travail en attente : au plus toutes les 30 s (aussitôt pour un nouvel employé)
@@ -295,6 +307,14 @@
             Nav.NavigateTo(EcransSuperAdmin[0], replace: true);
             return false;
         }
+        // PC non autorisé (titulaire, décision du 2026-11-27) : Administration seulement ; toute autre adresse ramène aux Postes autorisés
+        if (Session.AdministrationSeule && !AdministrationSeule.PeutOuvrir(Chemin))
+        {
+            messageAcces = $"{AdministrationSeule.Bandeau} {AdministrationSeule.Aide}";
+            redirectionAcces = AdministrationSeule.Accueil;
+            Nav.NavigateTo(redirectionAcces, replace: true);
+            return false;
+        }
         var (chemin, droits) = AccesEcrans.Reserve(Chemin);
         if (chemin is null || droits.Any(Session.A)) return true;
         messageAcces = droits.All(d => d == "role.titulaire")
@@ -310,42 +330,38 @@
     /// <summary>Accueil où l'employé vient d'être renvoyé (écran refusé) : le message y reste affiché, puis s'efface à l'écran suivant.</summary>
     private string? redirectionAcces;
 
-    private async void SurNavigation(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    // Gestionnaires d'événements synchrones (jamais « async void ») : ils lancent une tâche dont l'erreur est observée et journalisée
+    // (journal local du poste) ; l'écran reste affiché. La partie avant le premier « await » s'exécute aussitôt, comme avant.
+    private void SurNavigation(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e) => Lancer(ApresNavigationAsync);
+
+    private void SurSession() => Lancer(ApresSessionAsync);
+
+    private static void Lancer(Func<Task> travail) => _ = ObserverAsync(travail);
+
+    private static async Task ObserverAsync(Func<Task> travail)
     {
-        // Changer d'écran efface l'erreur affichée par le précédent et ferme les menus déroulants
-        // Gestionnaire d'événement « async void » : une exception non rattrapée ferait planter l'application ; elle est journalisée
-        // (journal local du poste) et l'écran reste affiché
-        try
-        {
-            garde?.Recover();
-            menuOuvert = null;
-            var refuse = !VerifierAcces();
-            if (!refuse) { if (Chemin == redirectionAcces) redirectionAcces = null; else messageAcces = null; }
-            await CompterUrgentesAsync();
-            await InvokeAsync(StateHasChanged);
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            Pharma.Desktop.App.NoterErreur(ex);
-        }
+        try { await travail(); }
+        catch (Exception ex) when (ex is not OutOfMemoryException) { Pharma.Desktop.App.NoterErreur(ex); }
     }
 
-    private async void SurSession()
+    private async Task ApresNavigationAsync()
     {
-        // Gestionnaire d'événement « async void » : une exception non rattrapée ferait planter l'application ; elle est journalisée
-        // (journal local du poste) et l'écran reste affiché
-        try
-        {
-            if (!Session.EstConnecte) bandeauMasque = false;   // le prochain employé connecté voit les tâches laissées
-            // Documents de l'ancien dossier du poste (ou restés au poste, serveur injoignable) : envoyés à la GED du serveur
-            if (Session.EstConnecte && !Session.DoitChangerMotDePasse && !Session.SuperAdmin) _ = Documents.MigrerAsync(Api);
-            await CompterUrgentesAsync();
-            await InvokeAsync(async () => { await AppliquerAffichageAsync(); StateHasChanged(); });
-        }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            Pharma.Desktop.App.NoterErreur(ex);
-        }
+        // Changer d'écran efface l'erreur affichée par le précédent et ferme les menus déroulants
+        garde?.Recover();
+        menuOuvert = null;
+        var refuse = !VerifierAcces();
+        if (!refuse) { if (Chemin == redirectionAcces) redirectionAcces = null; else messageAcces = null; }
+        await CompterUrgentesAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ApresSessionAsync()
+    {
+        if (!Session.EstConnecte) bandeauMasque = false;   // le prochain employé connecté voit les tâches laissées
+        // Documents de l'ancien dossier du poste (ou restés au poste, serveur injoignable) : envoyés à la GED du serveur
+        if (Session.EstConnecte && !Session.DoitChangerMotDePasse && !Session.SuperAdmin && !Session.AdministrationSeule) _ = Documents.MigrerAsync(Api);
+        await CompterUrgentesAsync();
+        await InvokeAsync(async () => { await AppliquerAffichageAsync(); StateHasChanged(); });
     }
 
     // ---- Affichage clair, sombre ou automatique (choix de l'employé) ----
@@ -428,7 +444,7 @@
     private async Task ChangerUtilisateur()
     {
         FermerMenus();
-        if (!Session.ReleveFaite && Session.A("caisse.vendre"))
+        if (!Session.ReleveFaite && !Session.AdministrationSeule && Session.A("caisse.vendre"))
         {
             var (etat, _) = await Api.EtatCaisseAsync();
             if (etat?.SessionId is not null) { proposerReleve = true; return; }

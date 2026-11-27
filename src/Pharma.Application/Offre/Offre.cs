@@ -28,6 +28,13 @@ public interface IActivationsOffreDepot
     /// note donne un rappel en double, jamais un rappel perdu.
     /// </summary>
     Task<bool> NoterRappelAsync(string etape, DateOnly fin, CancellationToken ct = default);
+    /// <summary>Dernière date du journal fiscal des ventes (journal_vente, chaîné et scellé) ; null si le journal est vide.</summary>
+    Task<DateTime?> DerniereDateFiscaleAsync(CancellationToken ct = default);
+    /// <summary>
+    /// Note au journal des actions (offre_horloge_reculee, sans utilisateur) que la date du serveur retarde sur la date plancher, une seule fois
+    /// pour une même date plancher ; vrai si c'est la première fois.
+    /// </summary>
+    Task<bool> SignalerHorlogeReculeeAsync(DateTime plancherUtc, DateTime serveurUtc, CancellationToken ct = default);
 }
 
 /// <summary>Limites de l'offre en vigueur, lues par les cas d'usage concernés (premier cas : le maximum de postes autorisés).</summary>
@@ -81,8 +88,13 @@ public sealed class CacheOffre
 /// <summary>Offre en vigueur.</summary>
 /// <param name="Etat">base (aucune activation valable), active, grace (échue depuis moins de 15 jours).</param>
 /// <param name="Alerte">Avertissement à montrer au titulaire (échéance proche, délai de grâce, activation refusée), sinon null.</param>
+/// <param name="Jour">Jour effectif du calcul (<see cref="DateEffectiveOffre"/>) : les rappels et la saisie s'en servent aussi.</param>
+/// <param name="EmpreinteServeur">Empreinte normalisée de la clé de CE serveur, null si la clé est absente.</param>
+/// <param name="AlerteServeur">Code version 1 en vigueur (« non lié au serveur ») ; sinon null (serveur non déclaré : dans <paramref name="Alerte"/>).</param>
+/// <param name="AlerteHorloge">Horloge du serveur reculée de plus d'une heure sur la date plancher ; sinon null.</param>
 public sealed record EtatOffre(string Etat, IReadOnlyList<string> Packs, int Postes, int ScannersMobiles, DateOnly? Fin, bool Transition,
-    DateTime? EmiseLeUtc, string? Alerte);
+    DateTime? EmiseLeUtc, string? Alerte, DateOnly? Jour = null, string? EmpreinteServeur = null, string? AlerteServeur = null,
+    string? AlerteHorloge = null);
 
 public static class EtatsOffre
 {
@@ -93,10 +105,16 @@ public static class EtatsOffre
 /// Offre en vigueur (décisions du titulaire du 2026-11-26) : la plus récente activation rangée qui passe le contrôle (signature de
 /// l'éditeur, même officine, même NIF) et n'est pas échue depuis plus de 15 jours. Sans activation valable : offre de base, 2 postes ;
 /// une activation effacée ou modifiée dans la base ramène à l'offre de base, jamais à tout ouvert.
+/// Renforcement (décision du 2026-11-27, point 5) : le calcul se fait à la date effective (<see cref="DateEffectiveOffre"/>, reculer l'horloge ne
+/// prolonge rien) ; un code version 2 n'est valable que sur un serveur qui prouve détenir l'une des clés qu'il déclare (<see cref="PreuveCleServeur"/>),
+/// sinon il suit le chemin d'une activation refusée après un délai de grâce de 15 jours depuis la première constatation.
 /// </summary>
-public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge, IReadOnlyList<byte[]>? clesPubliques = null, CacheOffre? cache = null)
+public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge, IReadOnlyList<byte[]>? clesPubliques = null, CacheOffre? cache = null,
+    ICleServeur? cleServeur = null, IDatePlancherFichier? plancher = null)
     : ILimitesOffre, IPacksOffre
 {
+    public const string ActionHorlogeReculee = "offre_horloge_reculee";
+
     /// <summary>Offre de base : 2 postes inclus (proposition du 2026-11-26, docs/offre-et-options.md).</summary>
     public const int PostesBase = 2;
     public const int GraceJours = 15;
@@ -115,6 +133,29 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
 
     /// <summary>Vide le cache (après une saisie ou une réception de code).</summary>
     public void Invalider() => cache?.Vider();
+
+    /// <summary>Message de Mon offre pour un code version 1 (toujours accepté).</summary>
+    public const string MessageNonLie = "Code non lié au serveur : demandez un nouveau code à l’éditeur (avec l’empreinte de ce serveur).";
+
+    /// <summary>Message d'un code version 2 qui ne déclare pas ce serveur (ou clé du serveur absente).</summary>
+    public static string MessageServeurNonDeclare(string? empreinte) => empreinte is null
+        ? "Clé de ce serveur absente : créez-la (Pharma.Api.exe --creer-cle-serveur, en administrateur), puis demandez un nouveau code à l’éditeur avec son empreinte (Pharma.Api.exe --empreinte-serveur)."
+        : $"Ce serveur n’est pas déclaré dans le code de l’offre : demandez un nouveau code à l’éditeur avec l’empreinte {EmpreinteServeur.Afficher(empreinte)}.";
+
+    /// <summary>Preuve de détention de la clé de ce serveur pour un code version 2 (null : code version 1, rien à prouver).</summary>
+    public PreuveServeur? ProuverServeur(ActivationOffre a) => a.Serveurs is { } s ? PreuveCleServeur.Prouver(cleServeur, s) : null;
+
+    /// <summary>
+    /// Date effective : la date du serveur, ou la date plancher si elle est plus récente (dernière date du journal fiscal des ventes, plus grande
+    /// date déjà vue gardée dans le fichier du serveur). Met le fichier à jour au plus une fois par jour ; jamais bloquant.
+    /// </summary>
+    public async Task<DateEffectiveOffre> DateEffectiveAsync(CancellationToken ct = default)
+    {
+        var fichier = plancher?.Lire();
+        var d = DateEffectiveOffre.Calculer(horloge.MaintenantUtc, horloge.Aujourdhui, await depot.DerniereDateFiscaleAsync(ct), fichier);
+        if (plancher is not null && DateEffectiveOffre.AEcrire(d.EffectiveUtc, fichier) is { } nouvelle) plancher.Ecrire(nouvelle);
+        return d;
+    }
 
     /// <summary>Contrôle une activation pour CETTE pharmacie : signature, officine, NIF. Lève <see cref="ActivationInvalideException"/>.</summary>
     public ActivationOffre Controler(string code, IdentiteOffre identite)
@@ -142,8 +183,18 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
     private async Task<EtatOffre> CalculerAsync(CancellationToken ct)
     {
         var identite = await depot.IdentiteAsync(ct);
-        var aujourdhui = horloge.Aujourdhui;
-        string? refus = null;
+        var date = await DateEffectiveAsync(ct);
+        var aujourdhui = date.Aujourdhui;
+        string? alerteHorloge = null;
+        if (date is { Reculee: true, PlancherUtc: { } p })
+        {
+            // Alerte une seule fois au journal ; le message reste dans Mon offre tant que l'horloge retarde. Rien ne bloque (la caisse continue).
+            await depot.SignalerHorlogeReculeeAsync(p, date.ServeurUtc, ct);
+            alerteHorloge = $"L’horloge de ce serveur retarde sur la dernière date déjà enregistrée ({p.ToLocalTime():dd/MM/yyyy HH:mm}) : "
+                            + "l’offre est calculée à partir de cette date. Remettez le serveur à l’heure.";
+        }
+        var empreinte = PreuveCleServeur.Empreinte(cleServeur);
+        string? refus = null, alerteServeur = null;
         foreach (var e in await depot.ListerAsync(ct))
         {
             ActivationOffre a;
@@ -158,6 +209,24 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
             if (a.Fin is { } fin && JoursAvantFermeture(fin, aujourdhui) < 0) continue;   // échue depuis plus de 15 jours
             string etat = EtatsOffre.Active;
             string? alerte = null;
+            if (ProuverServeur(a) is { Autorisee: false } preuve)
+            {
+                // Point 5 (matériel) : serveur non déclaré ou clé absente → chemin d'une activation refusée, après 15 jours de grâce depuis la
+                // première constatation (refusee_le, noté une fois au journal)
+                var motif = MessageServeurNonDeclare(preuve.Empreinte);
+                await depot.SignalerRefusAsync(e.Id, motif, ct);
+                var depuis = e.RefuseeLeUtc is { } r ? DateOnly.FromDateTime(r.ToLocalTime()) : aujourdhui;
+                var finGrace = depuis.AddDays(GraceJours);
+                if (aujourdhui > finGrace)
+                {
+                    refus ??= $"Activation du {e.EmiseLeUtc:dd/MM/yyyy} refusée : {motif}";
+                    continue;
+                }
+                return new EtatOffre(EtatsOffre.Grace, a.Packs, a.Postes, a.ScannersMobiles, a.Fin, a.Transition, a.EmiseLeUtc,
+                    $"{motif} Délai de grâce jusqu’au {finGrace:dd/MM/yyyy}, puis retour à l’offre de base (aucune donnée effacée).",
+                    aujourdhui, empreinte, null, alerteHorloge);   // le message du serveur est déjà dans l'alerte principale
+            }
+            if (!a.LieeAuxServeurs) alerteServeur = MessageNonLie;
             if (a.Fin is { } f)
             {
                 var restants = f.DayNumber - aujourdhui.DayNumber;
@@ -170,10 +239,12 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
                 else if (restants <= RappelJours)
                     alerte = $"{(a.Transition ? "Période de transition" : "Offre")} valable jusqu’au {f:dd/MM/yyyy} ({restants} jour(s)) : demandez un nouveau code à l’éditeur.";
             }
-            return new EtatOffre(etat, a.Packs, a.Postes, a.ScannersMobiles, a.Fin, a.Transition, a.EmiseLeUtc, alerte ?? refus);
+            return new EtatOffre(etat, a.Packs, a.Postes, a.ScannersMobiles, a.Fin, a.Transition, a.EmiseLeUtc, alerte ?? refus,
+                aujourdhui, empreinte, alerteServeur, alerteHorloge);
         }
         return new EtatOffre(EtatsOffre.Base, [], PostesBase, 0, null, false, null,
-            refus ?? "Aucune activation : offre de base (2 postes). Saisissez le code d’activation fourni par l’éditeur.");
+            refus ?? "Aucune activation : offre de base (2 postes). Saisissez le code d’activation fourni par l’éditeur.",
+            aujourdhui, empreinte, null, alerteHorloge);
     }
 }
 
@@ -181,7 +252,8 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
 /// Rappels de fin d'offre au titulaire (décision Q5 du 2026-11-26, puis « go rappels » du 2026-11-27) : SMS ou e-mail à 90, 60, 30, 15, 7 et
 /// 1 jour(s) avant la fin, puis au début du délai de grâce, une seule fois chacun pour une date de fin donnée ; seule l'étape la plus proche
 /// est envoyée (une offre saisie à 10 jours de sa fin n'envoie que le rappel des 15 jours). L'écran Mon offre garde son message dès 90 jours.
-/// Appelé une fois par jour par la tâche des notifications.
+/// Une étape n'est notée que si l'alerte a vraiment été mise en file (au moins un message) : sans destinataire ou en panne, elle est
+/// retentée le lendemain. Appelé une fois par jour par la tâche des notifications.
 /// </summary>
 public sealed class RappelsOffre(OffreCourante offre, IActivationsOffreDepot depot, Notifications.IAlertesTitulaire alertes, IHorloge horloge)
 {
@@ -204,11 +276,12 @@ public sealed class RappelsOffre(OffreCourante offre, IActivationsOffreDepot dep
         return etape;
     }
 
-    /// <returns>Étape envoyée, ou null.</returns>
+    /// <returns>Étape envoyée (au moins un message mis en file), ou null.</returns>
     public async Task<string?> ExecuterAsync(CancellationToken ct = default)
     {
         var e = await offre.LireAsync(ct);
-        if (e.Fin is not { } fin || Etape(fin, horloge.Aujourdhui) is not { } etape) return null;
+        var aujourdhui = e.Jour ?? horloge.Aujourdhui;   // jour effectif : reculer l'horloge ne retarde aucun rappel
+        if (e.Fin is not { } fin || Etape(fin, aujourdhui) is not { } etape) return null;
         if (await depot.RappelNoteAsync(etape, fin, ct)) return null;
         var quoi = e.Transition ? "La période de transition" : "Votre offre";
         var (objet, detail, sms) = etape switch
@@ -217,11 +290,12 @@ public sealed class RappelsOffre(OffreCourante offre, IActivationsOffreDepot dep
                 $"{quoi} a pris fin le {fin:dd/MM/yyyy}. Délai de grâce jusqu’au {fin.AddDays(OffreCourante.GraceJours):dd/MM/yyyy}, puis retour à l’offre de base (2 postes, options fermées, aucune donnée effacée). Demandez un nouveau code à l’éditeur (Administration › Mon offre).",
                 $"Pharmacie : offre echue le {fin:dd/MM}, grace jusqu au {fin.AddDays(OffreCourante.GraceJours):dd/MM}. Demandez un code a l editeur."),
             _ => ("Offre bientôt échue",
-                $"{quoi} prend fin le {fin:dd/MM/yyyy} ({fin.DayNumber - horloge.Aujourdhui.DayNumber} jour(s)). Demandez un nouveau code à l’éditeur (Administration › Mon offre) ; après la fin, {OffreCourante.GraceJours} jours de grâce puis retour à l’offre de base.",
+                $"{quoi} prend fin le {fin:dd/MM/yyyy} ({fin.DayNumber - aujourdhui.DayNumber} jour(s)). Demandez un nouveau code à l’éditeur (Administration › Mon offre) ; après la fin, {OffreCourante.GraceJours} jours de grâce puis retour à l’offre de base.",
                 $"Pharmacie : offre valable jusqu au {fin:dd/MM}. Demandez un code a l editeur.")
         };
-        // Mise en file d'abord, note ensuite : un arrêt entre les deux donne au pire un rappel en double, jamais un rappel perdu
-        await alertes.OffreAsync(objet, detail, sms, ct);
+        // Mise en file d'abord, note ensuite : un arrêt entre les deux donne au pire un rappel en double, jamais un rappel perdu ;
+        // aucun message mis en file (aucun destinataire, panne) : l'étape n'est pas notée, nouvel essai au passage du lendemain
+        if (await alertes.OffreAsync(objet, detail, sms, ct) <= 0) return null;
         await depot.NoterRappelAsync(etape, fin, ct);
         return etape;
     }
@@ -249,18 +323,31 @@ public sealed class GererOffre(IActivationsOffreDepot depot, OffreCourante offre
         return a;
     }
 
-    /// <summary>Activation transmise par le serveur central (Q2, Q7) : contrôlée ici comme une saisie ; le central ne peut pas en créer.</summary>
-    public Task<ActivationOffre> RecevoirDuCentralAsync(string? code, Guid ordre, CancellationToken ct = default) =>
-        RangerAsync(code, SourceCentral, null, ordre, ct);
+    /// <summary>
+    /// Activation transmise par le serveur central (Q2, Q7) : contrôlée ici comme une saisie ; le central ne peut pas en créer. Même entrée
+    /// de journal « offre_activee » que la saisie, sans utilisateur local, avec la source « central » et l'identifiant de l'ordre.
+    /// </summary>
+    public async Task<ActivationOffre> RecevoirDuCentralAsync(string? code, Guid ordre, CancellationToken ct = default)
+    {
+        var a = await RangerAsync(code, SourceCentral, null, ordre, ct);
+        var details = Details(a, SourceCentral);
+        details["ordre"] = ordre.ToString("D");
+        await journal.EcrireSansUtilisateurAsync(ActionActivee, "activation_offre", null, details, ct);
+        return a;
+    }
 
     private async Task<ActivationOffre> RangerAsync(string? code, string source, long? par, Guid? ordre, CancellationToken ct)
     {
         ActivationOffre a;
         try { a = offre.Controler(code ?? "", await depot.IdentiteAsync(ct)); }
         catch (ActivationInvalideException x) { throw new RegleMetierException(x.Message, "code"); }
-        if (a.Fin is { } fin && OffreCourante.JoursAvantFermeture(fin, horloge.Aujourdhui) < 0)
-            throw new RegleMetierException($"Code échu depuis le {fin:dd/MM/yyyy} (délai de grâce passé) : demandez un nouveau code à l’éditeur.", "code");
+        // Point 5 (matériel) : un code version 2 qui ne déclare pas ce serveur n'est pas pris (rien ne change dans l'offre en vigueur)
+        if (offre.ProuverServeur(a) is { Autorisee: false } preuve)
+            throw new RegleMetierException(OffreCourante.MessageServeurNonDeclare(preuve.Empreinte), "code");
         var enVigueur = await offre.LireAsync(ct);
+        // Jour effectif (point 5, horloge) : reculer l'horloge ne rend pas valable un code échu
+        if (a.Fin is { } fin && OffreCourante.JoursAvantFermeture(fin, enVigueur.Jour ?? horloge.Aujourdhui) < 0)
+            throw new RegleMetierException($"Code échu depuis le {fin:dd/MM/yyyy} (délai de grâce passé) : demandez un nouveau code à l’éditeur.", "code");
         if (enVigueur.EmiseLeUtc is { } derniere && a.EmiseLeUtc < derniere)
             throw new RegleMetierException($"Code plus ancien que l’activation en place (signée le {derniere:dd/MM/yyyy}) : il n’est pas pris.", "code");
         if (!await depot.AjouterAsync(code!.Trim(), a.EmiseLeUtc, source, par, ordre, ct))
@@ -272,6 +359,7 @@ public sealed class GererOffre(IActivationsOffreDepot depot, OffreCourante offre
     private static Dictionary<string, object?> Details(ActivationOffre a, string source) => new()
     {
         ["source"] = source, ["signee_le"] = a.EmiseLeUtc, ["packs"] = string.Join(",", a.Packs), ["postes"] = a.Postes,
-        ["scanners_mobiles"] = a.ScannersMobiles, ["fin"] = a.Fin?.ToString("yyyy-MM-dd"), ["transition"] = a.Transition
+        ["scanners_mobiles"] = a.ScannersMobiles, ["fin"] = a.Fin?.ToString("yyyy-MM-dd"), ["transition"] = a.Transition,
+        ["serveurs"] = a.Serveurs is { } s ? string.Join(",", s) : null
     };
 }

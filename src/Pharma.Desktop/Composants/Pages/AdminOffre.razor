@@ -12,7 +12,7 @@
     <div class="admin-contenu">
         <div class="titre-page">
             <div>
-                <h1>Mon offre</h1>
+                <h1>Mon offre<AideEcran Cle="admin/offre" /></h1>
                 <p class="sous-titre">Options et nombre de postes fixés par l’éditeur, par un code signé : ils ne se modifient ni ici ni dans la base</p>
             </div>
         </div>
@@ -29,6 +29,9 @@
         {
             @if (message is not null) { <div class="succes" role="status">@message</div> }
             else if (o.Alerte is not null) { <div class="info-bandeau texte-attention" role="status">@o.Alerte</div> }
+            @* Point 5 du 2026-11-27 : horloge du serveur reculée (rien ne bloque) ; code non lié au serveur ou serveur non déclaré *@
+            @if (o.AlerteHorloge is not null) { <div class="info-bandeau texte-attention" role="status">@o.AlerteHorloge</div> }
+            @if (o.AlerteServeur is not null) { <div class="info-bandeau texte-attention" role="status">@o.AlerteServeur</div> }
 
             <div class="offre-grille">
                 <section class="panneau offre-colonne" aria-labelledby="t-offre">
@@ -57,7 +60,9 @@
                         @foreach (var p in o.TousLesPacks)
                         {
                             var inclus = o.Packs.Any(x => x.Code == p.Code);
-                            <li class="@(inclus ? "" : "offre-pack-absent")"><span class="pastille @(inclus ? "ok" : "info")">@p.Code</span> @p.Libelle@(inclus ? "" : " (non inclus)")</li>
+                            @* « Inclus » ou « Non inclus » écrit pour chaque pack (revue d'ergonomie du 2026-11-27, n° 21) *@
+                            <li class="@(inclus ? "" : "offre-pack-absent")"><span class="pastille @(inclus ? "ok" : "info")">@p.Code</span> <span class="offre-pack-libelle">@p.Libelle</span>
+                                <span class="offre-pack-etat @(inclus ? "texte-reussite" : null)">@(inclus ? "✓ Inclus" : "Non inclus")</span></li>
                         }
                     </ul>
                 </section>
@@ -65,10 +70,24 @@
                 <section class="panneau offre-colonne" aria-labelledby="t-activer">
                     <h2 id="t-activer">Saisir un code d’activation</h2>
                     <p class="detail" style="margin: 0">
-                        Pour obtenir un code, donnez à l’éditeur ces deux informations :
+                        Pour obtenir un code, donnez à l’éditeur ces informations :
                         code de l’officine <strong style="font-family: monospace; user-select: all">@o.Officine</strong>
-                        et NIF <strong>@(string.IsNullOrWhiteSpace(o.Nif) ? "non saisi" : o.Nif)</strong>.
+                        <button type="button" class="lien-bouton" @onclick='() => Copier(o.Officine.ToString(), "Code de l’officine")'>Copier</button>
+                        et NIF <strong>@(string.IsNullOrWhiteSpace(o.Nif) ? "non saisi" : o.Nif)</strong>@if (!string.IsNullOrWhiteSpace(o.Nif))
+                        {
+                            <button type="button" class="lien-bouton" @onclick='() => Copier(o.Nif!, "NIF")'>Copier</button>
+                        },
+                        empreinte de ce serveur @if (o.EmpreinteServeur is { } empreinte)
+                        {
+                            <strong style="font-family: monospace; user-select: all">@empreinte</strong>
+                            <button type="button" class="lien-bouton" @onclick='() => Copier(empreinte, "Empreinte de ce serveur")'>Copier</button>
+                        }
+                        else
+                        {
+                            <strong class="texte-attention">clé absente (Pharma.Api.exe --creer-cle-serveur, en administrateur)</strong>
+                        }.
                     </p>
+                    @if (copie is not null) { <p class="detail texte-reussite" role="status" style="margin: 0">@copie</p> }
                     @if (string.IsNullOrWhiteSpace(o.Nif))
                     {
                         <p class="detail texte-attention" style="margin: 0">Saisissez d’abord le NIF de la pharmacie (Administration › <a href="admin/pharmacie">Pharmacie</a>) : un code est lié au NIF.</p>
@@ -79,7 +98,9 @@
                                   @bind="code" @bind:event="oninput"></textarea>
                     </div>
                     @if (erreur is not null) { <p class="detail texte-urgent" role="alert" style="margin: 0">@erreur</p> }
-                    <div><button type="button" class="btn btn-principal" disabled="@(enCours || string.IsNullOrWhiteSpace(code))" @onclick="ActiverAsync">Activer</button></div>
+                    <div class="ligne-bouton-raison"><button type="button" class="btn btn-principal" disabled="@(enCours || string.IsNullOrWhiteSpace(code))" @onclick="ActiverAsync">Activer</button>
+                        @* Bouton grisé : la raison à côté (revue d'ergonomie du 2026-11-27, n° 23) *@
+                        @if (!enCours && string.IsNullOrWhiteSpace(code)) { <span class="raison-grise">Collez d’abord le code reçu de l’éditeur</span> }</div>
 
                     <h3 class="offre-sous-titre">Codes enregistrés</h3>
                     <div class="tableau-cadre" data-hauteur-min="90">
@@ -111,6 +132,19 @@
     private string? erreur, message;
     private bool enCours;
 
+    // Bouton « Copier » du code de l'officine et du NIF, à donner à l'éditeur sans erreur de dictée (revue d'ergonomie du 2026-11-27, n° 21)
+    private string? copie;
+
+    private void Copier(string valeur, string quoi)
+    {
+        try
+        {
+            System.Windows.Clipboard.SetText(valeur);
+            copie = $"{quoi} copié : collez-le dans votre message à l’éditeur.";
+        }
+        catch (System.Runtime.InteropServices.ExternalException) { copie = "Copie impossible : le presse-papiers est occupé, réessayez."; }
+    }
+
     private static string Etat(OffreDto o) => o.Etat switch
     {
         "active" => o.Transition ? "Période de transition (tout compris)" : "Offre activée",
@@ -123,11 +157,13 @@
         if (Session.A("role.titulaire")) await ChargerAsync();
     }
 
-    private async Task ChargerAsync()
+    /// <returns>Vrai si l'offre a été relue (faux : erreur affichée, l'offre lue avant reste à l'écran).</returns>
+    private async Task<bool> ChargerAsync()
     {
         var (d, e) = await Api.OffreAsync();
-        if (d is null) { erreur = e; return; }
+        if (d is null) { erreur = e; return false; }
         o = d;
+        return true;
     }
 
     private async Task ActiverAsync()
@@ -139,8 +175,9 @@
             if (await Api.SaisirActivationOffreAsync(code.Trim()) is { } e) { erreur = e; return; }
             code = "";
             OffreDuPoste.Oublier();   // lot O6 : bandeaux et afficheur suivent la nouvelle offre
-            await ChargerAsync();
-            message = $"Code accepté : {Etat(o!)}, {o!.Postes} poste(s).";
+            // Le message décrit l'offre relue, jamais celle d'avant : relecture impossible, le code est tout de même enregistré
+            if (await ChargerAsync() && o is { } relue) message = $"Code accepté : {Etat(relue)}, {relue.Postes} poste(s).";
+            else (erreur, message) = (null, "Code accepté ; rechargez l’écran.");
         }
         finally { enCours = false; }
     }

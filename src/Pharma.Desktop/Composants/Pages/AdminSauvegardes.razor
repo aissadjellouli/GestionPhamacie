@@ -8,12 +8,12 @@
     <div class="admin-contenu">
         <div class="titre-page titre-actions-cote">
             <div>
-                <h1>Sauvegardes · @NavAdmin.Libelle("admin/sauvegardes", Rubrique)</h1>
+                <h1>Sauvegardes · @NavAdmin.Libelle("admin/sauvegardes", Rubrique)<AideEcran Cle="admin/sauvegardes" /></h1>
                 <p class="sous-titre">Copie quotidienne de la base sur un disque externe ; le titulaire est prévenu par SMS en cas de problème.</p>
             </div>
+            @* « Enregistrer » est passé sous les réglages qu'il enregistre (revue d'ergonomie du 2026-11-27, n° 18) *@
             <div class="actions">
                 <button type="button" class="btn" disabled="@(r is null || enCours)" @onclick="LancerAsync">Sauvegarder maintenant</button>
-                <button type="button" class="btn btn-principal" disabled="@(r is null || enCours)" @onclick="EnregistrerAsync">Enregistrer</button>
             </div>
         </div>
 
@@ -24,13 +24,13 @@
         {
             @if (rubrique == "reglages")
             {
-            @if (baseSauvegardee is not null)
-            {
-                <div class="info-bandeau" role="status">Base de données sauvegardée : <strong>@baseSauvegardee</strong>@(serveurBase is { } sv ? $" · serveur {sv}" : "")</div>
-            }
             @if (sansDisqueEnRetard)
             {
-                <div class="bandeau-attention" role="status">Aucune sauvegarde réussie sur le disque externe depuis plus de @alerteSansDisqueEnregistree jour(s) : branchez le disque de sauvegarde. Le titulaire est prévenu.</div>
+                @* « Choisir le disque » met le curseur dans le dossier du disque externe *@
+                <div class="bandeau-attention bandeau-avec-action" role="status">
+                    <span>Aucune sauvegarde réussie sur le disque externe depuis plus de @alerteSansDisqueEnregistree jour(s) : branchez le disque de sauvegarde. Le titulaire est prévenu.</span>
+                    <button type="button" class="btn btn-contour" @onclick="ChoisirDisqueAsync">Choisir le disque</button>
+                </div>
             }
             <section class="panneau" aria-labelledby="t-reg">
                 <h2 id="t-reg">Réglages</h2>
@@ -41,17 +41,27 @@
                     <div class="champ" style="flex: 0 0 200px"><label for="s-garde">Sauvegardes conservées</label><input id="s-garde" data-champ="conservation" type="number" min="1" max="365" @bind="r.Conservation" /></div>
                 </div>
                 <div class="achats-ligne">
-                    <div class="champ" style="flex: 1 1 260px"><label for="s-ged-jours">Copie de la base dans la GED : gardée (jours)</label>
+                    <div class="champ" style="flex: 1 1 260px"><label for="s-ged-jours">Copie de la base sur le serveur : gardée (jours)</label>
                         <input id="s-ged-jours" data-champ="retention_ged" type="number" min="1" max="365" placeholder="@($"{retentionParDefaut} (réglage du serveur)")" @bind="r.RetentionGedJours" /></div>
-                    <div class="champ" style="flex: 1 1 260px"><label for="s-ged-ans">Nettoyage de la GED après (années)</label>
-                        <input id="s-ged-ans" data-champ="nettoyage_ged" type="number" min="1" max="100" placeholder="jamais (la GED est gardée)" @bind="r.NettoyageGedAnnees" /></div>
+                    <div class="champ" style="flex: 1 1 260px"><label for="s-ged-ans">Nettoyage des documents archivés après (années)</label>
+                        <input id="s-ged-ans" data-champ="nettoyage_ged" type="number" min="1" max="100" placeholder="jamais (documents gardés)" @bind="r.NettoyageGedAnnees" /></div>
                     <div class="champ" style="flex: 1 1 260px"><label for="s-sans-disque">Alerte sans sauvegarde sur le disque (jours)</label>
                         <input id="s-sans-disque" data-champ="alerte_sans_disque" type="number" min="1" max="90" @bind="r.AlerteSansDisqueJours" /></div>
                 </div>
-                <label class="case"><input type="checkbox" @bind="r.Actif" /><span>Sauvegarde automatique chaque jour</span></label>
-                <p class="detail" style="margin: 0" title="@(dossierGed is { } dg ? $"Copie de la base dans la GED du serveur : {dg}\\Sauvegardes" : null)">Copie de la base sur le disque externe et dans la GED du serveur (dossier Sauvegardes), et des documents de la GED sur le disque.</p>
-                <p class="detail" style="margin: 0">Format pg_dump (restauration avec pg_restore). Dernière sauvegarde automatique : @(derniere is { } d ? Libelles.Date(d) : "jamais") · dernière sauvegarde réussie sur le disque : @(derniereReussie is { } dr ? Libelles.DateHeureLocale(dr) : "aucune").</p>
+                <div class="ligne-enregistrer">
+                    <label class="case"><input type="checkbox" @bind="r.Actif" /><span>Sauvegarde automatique chaque jour</span></label>
+                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="EnregistrerAsync">Enregistrer</button>
+                </div>
+                @* Mots simples (revue d'ergonomie du 2026-11-27, n° 18) : « base de la pharmacie », « documents archivés » ; les noms techniques
+                   (base, serveur, GED, pg_dump, pg_restore) sont repliés dans « Détails pour le technicien » *@
+                <p class="detail" style="margin: 0">Copie de la base de la pharmacie sur le disque externe et sur le serveur, et des documents archivés sur le disque.
+                    Dernière sauvegarde automatique : @(derniere is { } d ? Libelles.Date(d) : "jamais") · dernière sauvegarde réussie sur le disque : @(derniereReussie is { } dr ? Libelles.DateHeureLocale(dr) : "aucune").</p>
                 <p class="detail" style="margin: 0">Sans 2e serveur : deux disques en rotation, dont un hors de l’officine (obligatoire) ; titulaire prévenu après le délai sans sauvegarde réussie.</p>
+                <details class="details-technicien">
+                    <summary>Détails pour le technicien</summary>
+                    <p class="detail">Base sauvegardée : @(baseSauvegardee ?? "—")@(serveurBase is { } sv ? $" · serveur {sv}" : "") · format pg_dump (restauration avec pg_restore).
+                        @if (dossierGed is { } dg) { <text>Copie de la base dans la GED du serveur : @dg\Sauvegardes.</text> }</p>
+                </details>
             </section>
             }
         }
@@ -71,8 +81,8 @@
                 <div class="champ" style="flex: 0 0 240px"><label for="s-alerte">Alerte si la dernière copie a plus de (heures)</label>
                     <input id="s-alerte" data-champ="alerte_heures" type="number" min="1" max="720" @bind="alerteHeures" /></div>
             </div>
-            <p class="detail" style="margin: 0">Après chaque sauvegarde réussie, le fichier est copié à cet emplacement, puis vérifié (taille et empreinte SHA-256) ; vide : pas de copie de secours. Les copies restent dans l’officine.</p>
-            <p class="detail" style="margin: 0">Dernière copie : @(secours.DerniereCopie is { } dc ? $"{Libelles.DateHeureLocale(dc)} · {secours.Fichier}" : "aucune")@(secours.Sha256 is { } h ? $" · SHA-256 {h[..Math.Min(16, h.Length)]}…" : "")</p>
+            <p class="detail" style="margin: 0">Après chaque sauvegarde réussie, le fichier est copié à cet emplacement, puis vérifié ; vide : pas de copie de secours. Les copies restent dans l’officine.</p>
+            <p class="detail" style="margin: 0">Dernière copie : @(secours.DerniereCopie is { } dc ? Libelles.DateHeureLocale(dc) : "aucune")</p>
             @if (secours.DernierEchec is { } de)
             {
                 <p class="detail" style="margin: 0">Dernier échec : @Libelles.DateHeureLocale(de) · @secours.MessageEchec</p>
@@ -83,7 +93,12 @@
                 <span class="detail">Réservé au titulaire : restauration dans une base temporaire, vérifiée puis supprimée ; la base en service n’est pas touchée.</span>
             </div>
             <p class="detail" style="margin: 0">Dernier test : @(secours.DernierTest is { } dt ? $"{Libelles.DateHeureLocale(dt)} · {(secours.DernierTestReussi == true ? "réussi" : "échoué")} · {secours.MessageTest}" : "jamais")</p>
-            <p class="detail" style="margin: 0">PC serveur en panne : procédure « PC serveur en panne » de docs/mise-en-production.md (script scripts\basculer-pc-secours.ps1 sur le PC de secours).</p>
+            <details class="details-technicien">
+                <summary>Détails pour le technicien</summary>
+                <p class="detail">@(secours.Fichier is { } fs ? $"Fichier de la dernière copie : {fs}" : "Aucune copie")@(secours.Sha256 is { } h ? $" · SHA-256 {h[..Math.Min(16, h.Length)]}…" : "") ·
+                    vérification par la taille et l’empreinte SHA-256. PC serveur en panne : procédure « PC serveur en panne » de docs/mise-en-production.md
+                    (script scripts\basculer-pc-secours.ps1 sur le PC de secours).</p>
+            </details>
         </section>
         }
 
@@ -235,6 +250,12 @@
     private bool controleEnregistrer, controleLancer;
     private ElementReference champDossier;
     private bool DossierManque => r is not null && string.IsNullOrWhiteSpace(r.Dossier) && ((controleEnregistrer && r.Actif) || controleLancer);
+
+    /// <summary>« Choisir le disque » du bandeau : curseur dans le dossier du disque externe.</summary>
+    private async Task ChoisirDisqueAsync()
+    {
+        await champDossier.FocusAsync();
+    }
 
     private async Task EnregistrerAsync()
     {

@@ -14,9 +14,20 @@ public sealed record Session(string Jeton, string NomComplet, DateTime ExpireLe,
 /// </summary>
 public sealed class SeConnecter(
     IComptesLecture comptes, IVerificateurMotDePasse verificateur, IGenerateurJeton jetons,
-    EssaisConnexion? essais = null, IHorloge? horloge = null, IJournal? journal = null, Surveillance.Surveiller? surveillance = null)
+    EssaisConnexion? essais = null, IHorloge? horloge = null, IJournal? journal = null, Surveillance.Surveiller? surveillance = null,
+    IPermissionService? droits = null)
 {
-    public async Task<Session?> ExecuterAsync(string identifiant, string motDePasse, CancellationToken ct = default, string? poste = null)
+    /// <summary>Connexion refusée à un employé autre que le titulaire sur un PC non autorisé (décision du titulaire du 2026-11-27).</summary>
+    public const string MessageTitulaireSeulement =
+        "Ce PC n'est pas autorisé : seul le pharmacien titulaire peut s'y connecter, pour l'Administration seulement. Faites autoriser ce PC "
+        + "(code du poste donné par le titulaire, Administration › Postes autorisés).";
+
+    /// <param name="titulaireSeulement">
+    /// PC non autorisé (décision du titulaire du 2026-11-27) : seul le pharmacien titulaire se connecte (Administration seulement) ; tout autre
+    /// employé est refusé (403) après la vérification du mot de passe, sans jeton ni trace de connexion. Sans service des droits : refusé.
+    /// </param>
+    public async Task<Session?> ExecuterAsync(string identifiant, string motDePasse, CancellationToken ct = default, string? poste = null,
+        bool titulaireSeulement = false)
     {
         if (string.IsNullOrWhiteSpace(identifiant) || string.IsNullOrEmpty(motDePasse))
             return null;
@@ -44,6 +55,8 @@ public sealed class SeConnecter(
         }
 
         essais?.NoterSucces(nom);
+        if (titulaireSeulement && (droits is null || !await droits.EstTitulaireAsync(compte.Id, ct)))
+            throw new DroitRefuseException(PermissionServiceExtensions.MarqueTitulaire, "se connecter depuis un PC non autorisé", MessageTitulaireSeulement);
         await comptes.NoterConnexionAsync(compte.Id, string.IsNullOrWhiteSpace(poste) ? null : poste.Trim(), "mot_de_passe", ct);
         // Surveillance : même employé actif sur deux postes à la fois
         if (surveillance is not null) await surveillance.ExecuterAsync(ct);

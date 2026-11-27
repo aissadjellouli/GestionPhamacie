@@ -8,7 +8,9 @@ namespace Pharma.Application.Offre;
 // Une activation est signée par l'éditeur avec sa clé privée, qui n'est jamais chez la pharmacie. L'API la contrôle avec la clé publique
 // intégrée à son programme (CleEditeur) : une valeur changée à la main dans la base ne passe pas la signature. L'activation est liée à une
 // pharmacie précise (code de l'officine ET NIF). Format du code : « PO1.<contenu JSON en base64url>.<signature ECDSA P-256 / SHA-256 en
-// base64url, format IEEE P1363> ».
+// base64url, format IEEE P1363> ». Version du contenu (« v ») : 1 sans liste de serveurs (codes déjà signés pour les bases de développement,
+// toujours acceptés mais signalés « non liés au serveur ») ; 2 avec la liste des empreintes des serveurs autorisés (1 à 3, décision du
+// titulaire du 2026-11-27, point 5) : seule version que l'outil de l'éditeur signe désormais.
 
 /// <summary>Packs en option (docs/offre-et-options.md, proposition du 2026-11-26) ; la liste fermée des codes acceptés.</summary>
 public static class PacksOffre
@@ -50,8 +52,14 @@ public static class PacksOffre
 /// <param name="EmiseLeUtc">Date de signature : la plus récente activation valable l'emporte ; une plus ancienne est refusée à la saisie.</param>
 /// <param name="Fin">Dernier jour de l'activation (null : définitive) ; délai de grâce de 15 jours ensuite.</param>
 /// <param name="Transition">Code de transition « tout compris » de la mise en place (date de fin obligatoire).</param>
+/// <param name="Serveurs">Empreintes normalisées des serveurs autorisés (<see cref="EmpreinteServeur"/>), 1 à 3 : code version 2 ;
+/// null : code version 1, non lié au serveur.</param>
 public sealed record ActivationOffre(Guid Officine, string Nif, DateTime EmiseLeUtc, IReadOnlyList<string> Packs, int Postes, int ScannersMobiles,
-    DateOnly? Fin, bool Transition);
+    DateOnly? Fin, bool Transition, IReadOnlyList<string>? Serveurs = null)
+{
+    /// <summary>Version 2 : liée aux serveurs déclarés.</summary>
+    public bool LieeAuxServeurs => Serveurs is not null;
+}
 
 /// <summary>Code d'activation refusé : signature fausse, format illisible, contenu hors limites.</summary>
 public sealed class ActivationInvalideException(string message) : Exception(message);
@@ -60,7 +68,8 @@ public sealed class ActivationInvalideException(string message) : Exception(mess
 public static class CodeActivation
 {
     public const string Prefixe = "PO1";
-    public const int LongueurMax = 4000, PostesMin = 1, PostesMax = 200, ScannersMax = 200;
+    public const int LongueurMax = 4000, PostesMin = 1, PostesMax = 200, ScannersMax = 200, ServeursMax = 3;
+    public const int VersionSansServeur = 1, VersionServeurs = 2;
 
     private sealed record ContenuJson(
         [property: JsonPropertyName("v")] int Version,
@@ -71,7 +80,8 @@ public static class CodeActivation
         [property: JsonPropertyName("postes")] int Postes,
         [property: JsonPropertyName("scanners")] int Scanners,
         [property: JsonPropertyName("fin")] DateOnly? Fin,
-        [property: JsonPropertyName("transition")] bool Transition);
+        [property: JsonPropertyName("transition")] bool Transition,
+        [property: JsonPropertyName("serveurs"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string[]? Serveurs = null);
 
     /// <summary>NIF comparé sans espaces, points ni tirets, en majuscules (« 0001 2345-6 » = « 000123456 »).</summary>
     public static string NormaliserNif(string? nif) =>
@@ -89,14 +99,20 @@ public static class CodeActivation
             throw new ActivationInvalideException("Pack inconnu ou en double (A à H).");
         if (a.Transition && a.Fin is null) throw new ActivationInvalideException("Un code de transition a toujours une date de fin.");
         if (a.Fin is { } f && f < DateOnly.FromDateTime(a.EmiseLeUtc)) throw new ActivationInvalideException("Date de fin antérieure à la signature.");
+        if (a.Serveurs is { } s)
+        {
+            if (s.Count is 0 or > ServeursMax) throw new ActivationInvalideException($"Serveurs autorisés : de 1 à {ServeursMax} empreintes.");
+            if (s.Any(e => EmpreinteServeur.Normaliser(e) != e) || s.Distinct().Count() != s.Count)
+                throw new ActivationInvalideException($"Empreinte de serveur mal formée ou en double ({EmpreinteServeur.Caracteres} caractères 0-9 A-F).");
+        }
     }
 
     /// <summary>Contenu à signer (UTF-8) : JSON canonique de l'activation.</summary>
     public static byte[] Contenu(ActivationOffre a)
     {
         Controler(a);
-        var c = new ContenuJson(1, a.Officine, a.Nif, DateTime.SpecifyKind(a.EmiseLeUtc, DateTimeKind.Utc), [.. a.Packs.Order(StringComparer.Ordinal)],
-            a.Postes, a.ScannersMobiles, a.Fin, a.Transition);
+        var c = new ContenuJson(a.LieeAuxServeurs ? VersionServeurs : VersionSansServeur, a.Officine, a.Nif, DateTime.SpecifyKind(a.EmiseLeUtc, DateTimeKind.Utc),
+            [.. a.Packs.Order(StringComparer.Ordinal)], a.Postes, a.ScannersMobiles, a.Fin, a.Transition, a.Serveurs is { } s ? [.. s.Order(StringComparer.Ordinal)] : null);
         return JsonSerializer.SerializeToUtf8Bytes(c);
     }
 
@@ -133,8 +149,7 @@ public static class CodeActivation
         ContenuJson? c;
         try { c = JsonSerializer.Deserialize<ContenuJson>(contenu); }
         catch (JsonException) { throw new ActivationInvalideException("Contenu du code illisible."); }
-        if (c is null || c.Version != 1) throw new ActivationInvalideException("Version du code d’activation inconnue de ce programme.");
-        var a = new ActivationOffre(c.Officine, c.Nif ?? "", DateTime.SpecifyKind(c.Emise, DateTimeKind.Utc), c.Packs ?? [], c.Postes, c.Scanners, c.Fin, c.Transition);
+        var a = Activation(c);
         Controler(a);
         return a;
     }
@@ -144,8 +159,21 @@ public static class CodeActivation
     {
         var morceaux = code.Trim().Split('.');
         if (morceaux.Length != 3 || morceaux[0] != Prefixe) throw new ActivationInvalideException("Code d’activation illisible (format inconnu).");
-        var c = JsonSerializer.Deserialize<ContenuJson>(DeBase64Url(morceaux[1])) ?? throw new ActivationInvalideException("Contenu du code illisible.");
-        return new ActivationOffre(c.Officine, c.Nif ?? "", DateTime.SpecifyKind(c.Emise, DateTimeKind.Utc), c.Packs ?? [], c.Postes, c.Scanners, c.Fin, c.Transition);
+        return Activation(JsonSerializer.Deserialize<ContenuJson>(DeBase64Url(morceaux[1])));
+    }
+
+    /// <summary>Version 1 : aucune liste de serveurs (même absente du JSON) ; version 2 : liste obligatoire (contrôlée ensuite par <see cref="Controler"/>).</summary>
+    private static ActivationOffre Activation(ContenuJson? c)
+    {
+        if (c is null) throw new ActivationInvalideException("Contenu du code illisible.");
+        IReadOnlyList<string>? serveurs = c.Version switch
+        {
+            VersionSansServeur when c.Serveurs is null => null,
+            VersionServeurs => c.Serveurs ?? [],
+            _ => throw new ActivationInvalideException("Version du code d’activation inconnue de ce programme.")
+        };
+        return new ActivationOffre(c.Officine, c.Nif ?? "", DateTime.SpecifyKind(c.Emise, DateTimeKind.Utc), c.Packs ?? [], c.Postes, c.Scanners, c.Fin,
+            c.Transition, serveurs);
     }
 
     private static string Base64Url(byte[] o) => Convert.ToBase64String(o).TrimEnd('=').Replace('+', '-').Replace('/', '_');

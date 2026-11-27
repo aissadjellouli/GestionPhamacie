@@ -7,13 +7,15 @@
 <div class="page avec-menu">
     <NavDomaine Libelle="Rubriques des alertes">
         <a href="?rubrique=ensemble" class="@(rubrique == "ensemble" ? "active" : null)" aria-current="@(rubrique == "ensemble" ? "page" : null)">Vue d’ensemble</a>
-        <span class="nav-groupe-titre">Alertes ouvertes</span>
-        @foreach (var f in Filtres)
-        {
-            <a href="@($"?rubrique={f.Id}")" class="sous-rubrique @(rubrique == f.Id ? "active" : null)" aria-current="@(rubrique == f.Id ? "page" : null)">
-                @f.Libelle<span class="@(f.Id == "urgent" && f.Nombre > 0 ? "compteur" : "compteur neutre")">@f.Nombre</span>
-            </a>
-        }
+        @* Groupe repliable (GroupeMenu, 2026-11-27) : chevron « › » replié, « ⌄ » déplié *@
+        <GroupeMenu Cle="alertes:ouvertes" Titre="Alertes ouvertes" ContientActif="@Filtres.Any(f => f.Id == rubrique)">
+            @foreach (var f in Filtres)
+            {
+                <a href="@($"?rubrique={f.Id}")" class="sous-rubrique @(rubrique == f.Id ? "active" : null)" aria-current="@(rubrique == f.Id ? "page" : null)">
+                    @f.Libelle<span class="@(f.Id == "urgent" && f.Nombre > 0 ? "compteur" : "compteur neutre")">@f.Nombre</span>
+                </a>
+            }
+        </GroupeMenu>
         @* Valeur au prix d'achat : envoyée seulement avec le droit « rapports.marges » (titulaire : toujours) *@
         @if (donnees?.ValeurARisque is not null)
         {
@@ -87,9 +89,12 @@
                 }
                 @if (ind.ReglementsAPreparer is { } nb)
                 {
-                    @* Toute la tuile mène aux règlements (plus de lien « Payer un grossiste » dans la tuile : pas de lien dans un lien) *@
-                    <TuileLien Lien="achats?onglet=reglements" DroitsRubrique="@(new[] { "achats.regler" })" Infobulle="Ouvre Achats › Payer un grossiste">
-                        <span class="tuile-libelle">Grossistes à payer</span>
+                    @* Toute la tuile mène aux dettes envers les grossistes, dans Finances (revue d'ergonomie du 2026-11-27, n° 20) ; sans le droit
+                       d'ouvrir Dettes et créances : Achats › Payer un grossiste, l'écran le plus proche (pas de lien dans un lien) *@
+                    var versFinances = AccesEcrans.PeutOuvrir(Session, LienDettesGrossistes);
+                    <TuileLien Lien="@(versFinances ? LienDettesGrossistes : "achats?onglet=reglements")" DroitsRubrique="@(versFinances ? null : new[] { "achats.regler" })"
+                               Infobulle="@(versFinances ? "Ouvre Finances › Dettes et créances › Grossistes" : "Ouvre Achats › Payer un grossiste")">
+                        <span class="tuile-libelle">Grossistes à payer@(versFinances ? " · Finances" : "")</span>
                         <span class="tuile-valeur @(nb > 0 ? "urgent" : null)">@nb</span>
                         <span class="tuile-note">@Libelles.Dinars(ind.MontantAPreparer ?? 0) · factures en retard et traites échues ou à payer sous 7 jours</span>
                     </TuileLien>
@@ -191,6 +196,9 @@
 </div>
 
 @code {
+    /// <summary>Dettes envers les grossistes (Finances › Dettes et créances, rubrique Grossistes) : cible de la tuile « Grossistes à payer ».</summary>
+    private const string LienDettesGrossistes = "dettes?onglet=grossiste";
+
     /// <summary>Lien vers les Achats pour les actions disponibles, selon les droits de l'employé.</summary>
     private string? LienAction(AlerteDto a) => a.Type switch
     {

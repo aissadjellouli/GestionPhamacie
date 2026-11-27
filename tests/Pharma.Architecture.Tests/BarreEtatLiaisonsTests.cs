@@ -49,7 +49,7 @@ public class BarreEtatLiaisonsTests
     public void Lue_au_meme_rythme_que_la_caisse_et_la_sauvegarde()
     {
         var barre = Barre();
-        var complet = barre[barre.IndexOf("if (complet && serveurJoignable == true && Session.EstConnecte)", StringComparison.Ordinal)..];
+        var complet = barre[barre.IndexOf("if (complet && serveurJoignable == true && Session.EstConnecte && !Session.AdministrationSeule)", StringComparison.Ordinal)..];
         complet = complet[..complet.IndexOf("\n        }", StringComparison.Ordinal)];
         Assert.Contains("Api.EtatLiaisonsPosteAsync()", complet);
         Assert.Contains("Api.CompteursBarreAsync()", complet);

@@ -1744,7 +1744,7 @@ Lot 3 (M6b, conformité fiscale 2027), 2026-11-16. Le journal est séparé de la
 | Attentes abandonnées (`attentes_abandonnees`) | Ventes en attente supprimées, par employé et par jour | 3 | à partir de 6 | `seuil_attentes_abandonnees` (≥ 1) |
 | Hors horaires (`hors_horaires`) | Au moins une vente validée encaissée avant l'ouverture ou à partir de l'heure de fermeture, par employé et par jour | aucun seuil : dès 1 vente | toujours urgent | `heure_ouverture` / `heure_fermeture` (vides : pas de contrôle) |
 | Remises (`remises`) | Ventes validées avec remise, par employé et par jour | 5 ventes | à partir de 10 | `seuil_remises` (≥ 1) |
-| Remises au même patient (`remises_patient`) | Ventes validées avec remise au même patient sur 30 jours glissants (tous vendeurs) | 3 ventes | à partir de 6 | `seuil_remises_patient` (≥ 1) |
+| Remises au même patient (`remises_patient`) | Ventes validées avec remise au même patient sur 30 jours glissants (tous vendeurs) ; depuis le script 173 (2026-11-27), une remise de 0 DA (taux positif arrondi à 0) ne compte plus, ici comme pour les remises par employé | 3 ventes | à partir de 6 | `seuil_remises_patient` (≥ 1) |
 | Ajustements d'inventaire (`ajustements`) | Boîtes manquantes ajustées en inventaire (stock diminué), par employé qui a terminé ou validé, par jour | 5 boîtes | à partir de 10 | `seuil_ajustements` (≥ 1) |
 | Casses (`casses`) | Boîtes déclarées cassées, par employé et par jour | 3 boîtes | à partir de 6 | `seuil_casses` (≥ 1) |
 | Échantillons (`echantillons`) | Boîtes sorties en échantillon ou gratuité, par employé et par jour | 3 boîtes | à partir de 6 | `seuil_echantillons` (≥ 1) |
@@ -2787,7 +2787,13 @@ Revue complète de la branche `develop` (caisse, stock, factures, sécurité, se
   **Code de transition** « tout compris » (tous les packs, date de fin obligatoire) signé par l'éditeur et saisi dans Mon offre avec le
   compte du titulaire (par le titulaire, ou par l'éditeur à ses côtés) lors de la mise en place ou de la mise à jour. Saisie : Administration › Mon offre (titulaire seul ; journal
   `offre_activee`) ; ou ordre `activation_offre` du serveur central (le central transmet, ne signe rien ; contrôlé dans l'officine, appliqué
-  tout de suite). Fermeture des packs non inclus : voir la règle suivante (lot O6). — `src/Pharma.Application/Offre/`, `src/Pharma.Api/Taches/NotificationsEtSauvegardes.cs` (rappels),
+  tout de suite ; même entrée de journal `offre_activee` que la saisie, sans utilisateur, source « central », identifiant de l'ordre). **Voie
+  du central sans le pack G** (2026-11-27) : une officine dont la synchronisation est active mais sans G relève quand même les ordres toutes
+  les 5 minutes (échange léger, sans lot de données) et n'applique que `activation_offre` ; les autres ordres restent en attente sans alerte
+  (un refus serait définitif et faux ; ils s'appliquent si G revient avant leur date limite, sinon ils expirent et le central le sait) et leur
+  confirmation est refusée « Option non incluse » ; seuls les résultats d'ordres remontent (lots formés des seules lignes
+  `sync_ordre_resultat`, les autres lignes restent en file). **Rappels** : une étape n'est notée (`offre_rappel`) que si l'alerte a vraiment été
+  mise en file (au moins un message) ; sinon nouvel essai le lendemain. Fermeture des packs non inclus : voir la règle suivante (lot O6). — `src/Pharma.Application/Offre/`, `src/Pharma.Api/Taches/NotificationsEtSauvegardes.cs` (rappels),
   `src/Pharma.Infrastructure/Offre/ActivationsOffreSql.cs`, `src/Pharma.Desktop/Composants/Pages/AdminOffre.razor`, `src/Pharma.Editeur/`,
   `database/migration/172_activation_offre.sql`, `database/cloud/044_ordre_activation_offre.sql`
 - **(2026-11-26) Fermeture des packs non inclus (lot O6)** : le serveur refuse lui-même les routes d'un pack non inclus dans l'offre
@@ -2798,22 +2804,82 @@ Revue complète de la branche `develop` (caisse, stock, factures, sécurité, se
   entreprise ou un organisme refusée (à un patient : permise). Sans E : pas de rapport quotidien, pas de SMS ni d'e-mail pour un écart de
   caisse, un lot bloqué, des écarts d'inventaire ou des annulations ; **alertes de sécurité toujours envoyées** (sauvegarde, synchronisation,
   2e serveur, réglages imposés). Sans F : la paire de serveurs déjà installée continue de tourner (réplication, bascule) ; ses réglages sont
-  en consultation. Sans G : la synchronisation s'arrête ; les ordres déjà reçus sont traités et leurs résultats remontent encore. Sans H :
+  en consultation. Sans G : la synchronisation s'arrête (aucun lot de données) ; **aucun blocage** (décision du titulaire du 2026-11-27 :
+  « une officine sans le central ne doit jamais se retrouver bloquée ») : pas d'attente du contrôle de démarrage pour l'encaissement, réglages
+  imposés par le central rendus à l'officine (mode « local », modèle gardé, réimposé si G revient), ni bandeau ni alerte « synchronisation en
+  retard » ou « erreur d'envoi », rien sur le central dans la barre d'état, et la synchronisation peut être **désactivée** (pas activée) sans G ;
+  ordres : voie réduite (règle précédente). Sans H :
   afficheur client éteint, ordonnance lue par l'OCR refusée. Offre relue au plus une fois par minute au serveur et toutes les 2 minutes au
   poste (aussitôt après une saisie dans Mon offre). — `src/Pharma.Api/Securite/PackFilter.cs`, `src/Pharma.Application/Offre/Offre.cs`,
   `src/Pharma.Application/Notifications/AlertesSelonOffre.cs`, `src/Pharma.Desktop/Composants/Mise/OptionNonIncluse.razor`
+- **(2026-11-27) Liaison renforcée de l'offre : horloge + matériel** (décision du titulaire, point 5 de la revue de code,
+  [offre-et-options.md](offre-et-options.md) « Liaison renforcée de l'offre ») :
+  **Matériel** : chaque serveur de l'officine (principal, 2e serveur, PC de secours) a une clé non exportable (TPM, sinon logicielle avec
+  avertissement), créée à l'installation par `Pharma.Api.exe --creer-cle-serveur` (administrateur, idempotente) ; son **empreinte** (8 groupes
+  de 4 caractères) se lit par `--empreinte-serveur` ou dans Mon offre (bouton « Copier »). Le **code version 2** liste 1 à 3 empreintes ; à
+  chaque contrôle (au plus une fois par minute, et à la saisie) l'API fait signer un défi aléatoire par sa clé. **Saisie** d'un code qui ne
+  déclare pas ce serveur : refusée (« Ce serveur n'est pas déclaré dans le code de l'offre : demandez un nouveau code à l'éditeur avec
+  l'empreinte … »). **Code déjà rangé** sur un serveur non déclaré ou sans clé (restauration sur un autre PC, serveur remplacé) : délai de
+  grâce de 15 jours depuis la première constatation (notée une fois), puis chemin d'une activation refusée. **Code version 1** (sans
+  serveurs) : accepté, Mon offre affiche « Code non lié au serveur : demandez un nouveau code » ; l'outil de l'éditeur ne signe plus que des
+  codes version 2 (`--serveur` obligatoire, 1 à 3). **Horloge** : l'offre (échéance, grâce, rappels, code échu à la saisie) se calcule au
+  **jour effectif** = max(date du serveur, date plancher) ; date plancher = la plus grande de la dernière date du journal fiscal des ventes et
+  de la date gardée dans `C:\ProgramData\PharmaOfficine\Offre\date-plancher.json` (mise à jour au plus une fois par jour, jamais vers le passé,
+  droits restreints) : reculer l'horloge ne prolonge rien. Serveur en retard de plus d'une heure : une ligne `offre_horloge_reculee` au journal
+  (une par date plancher) et un message dans Mon offre ; **rien d'autre ne bloque** (la caisse continue). Règle des postes et voie du central
+  inchangées. — `src/Pharma.Application/Offre/ServeurOffre.cs`, `src/Pharma.Application/Offre/Offre.cs`, `src/Pharma.Application/Offre/ActivationOffre.cs`,
+  `src/Pharma.Infrastructure/Offre/CleServeur.cs`, `src/Pharma.Infrastructure/Offre/ActivationsOffreSql.cs`, `src/Pharma.Api/Securite/ConsoleCleServeur.cs`,
+  `src/Pharma.Editeur/Program.cs`, `src/Pharma.Desktop/Composants/Pages/AdminOffre.razor`, `tests/Pharma.Application.Tests/OffreTests.cs`,
+  `tests/Pharma.Architecture.Tests/CleServeurOffreTests.cs`
+- **(2026-11-27) Ergonomie, règles d'affichage décidées par le titulaire** ([ergonomie-2026-11-27.md](ergonomie-2026-11-27.md)) : un produit à
+  stock 0 s'affiche « Pas en stock » (et non « Normal ») et la liste des produits s'ouvre filtrée sur « En stock » (filtre appliqué par le
+  serveur, `ConsulterStock`) ; les pastilles techniques de la barre d'état (central, 2e serveur, sauvegarde) ne s'affichent qu'au
+  titulaire et à qui a le droit de les régler, et chaque pastille mène à l'écran qui règle le problème ; toute rubrique de menu qui a des
+  sous-rubriques se replie ou se déplie avec un chevron ; un bouton grisé dit pourquoi ; l'écran « Stock » s'appelle « Gestion du stock ».
 - Code d'autorisation : 8 caractères sans caractères ambigus (`XXXX-XXXX`), à usage unique, valable 15 minutes par défaut (5 à 60), affiché
   une seule fois ; 5 codes faux invalident les codes en attente et alertent le titulaire.
 - Renommer un poste est refusé (409 `poste_occupe`) tant que sa caisse est ouverte ou qu'il reste des ventes ou réceptions en attente sous son
   nom : ces tables gardent le nom du poste en texte ; l'historique garde l'ancien nom.
 - Le nom d'un poste prouvé est celui de la liste (prioritaire sur `PHARMA_POSTE`), pour la caisse, le tiroir, les tickets et les rapports.
-- Mode après la mise à jour : **transition** (un poste non autorisé fonctionne, avec un bandeau sur l'écran de connexion, mais ne compte pas
-  pour la bascule ; il ne peut pas prendre le nom d'un poste autorisé ; une preuve fausse ou inconnue vaut absence de preuve). Le titulaire passe
-  en **exigé** quand tous les postes sont autorisés (confirmation qui liste les noms vus ces 30 derniers jours sans preuve) : un poste non
-  autorisé est alors refusé. Poste révoqué ou horloge décalée de plus de 2 minutes : toujours refusés.
-- **Bascule du 2e serveur** (modes transition et exigé) : seuls les postes prouvés et actifs sont « vus », « connus » et votent ; tant
-  qu'aucun poste n'est autorisé, aucun poste n'est connu : le serveur principal garde la main et le 2e serveur ne se promeut jamais seul.
-  Le relais transmet les en-têtes de preuve tels quels (cible brute) ; en mode exigé, une requête sans preuve n'est jamais relayée.
+- **(2026-11-27, script 174) Preuve toujours exigée** (décision du titulaire : « Chaque poste doit être autorisé avec son code, sinon pas de
+  connexion, et un poste non autorisé n'entre pas dans le total / maximum autorisé ») : les modes « transition » et « inactif » ne s'appliquent
+  plus ; `parametre_postes.mode` est passé à `exige` et **n'est plus lu** (une valeur changée dans la base n'ouvre rien ; réglage illisible :
+  preuve toujours exigée, vérification « indisponible » plutôt qu'un poste accepté). Un PC de caisse (il s'annonce par `X-Pharma-Poste`) sans
+  preuve valide est refusé (403 `poste_non_autorise`) ; une preuve fausse, inconnue, révoquée ou une horloge décalée de plus de 2 minutes :
+  401 ; jeton ouvert sans `poste_id` : 401. **Restent ouverts** (la preuve y est seulement lue) : `/api/healthcheck`, `/api/postes/etat`,
+  `/api/postes/enrolement`, `/api/inter-serveurs/*`, `/api/vigie/rapport`, tout ce qui est hors `/api`, et les routes du **super admin**
+  (`/api/super-admin/*`, `/api/admin/reprise/*`, toujours protégées par le jeton du super admin et le code de chaque action sensible) ; les
+  clients sans poste (page mobile, pilotage mobile : ni en-tête ni preuve) sont inchangés. Écran Administration › Postes autorisés : plus de
+  choix du mode, seule la durée du code se règle (l'API ignore un mode envoyé et enregistre `exige`). Écran de connexion d'un PC non autorisé :
+  seulement le titre, « Ce PC doit d'abord être autorisé : demandez un code au titulaire (Administration › Postes autorisés). », « Code du
+  poste » et « Autoriser » ; la connexion de l'employé apparaît une fois le poste autorisé (serveur injoignable : formulaire montré, il donne
+  l'erreur). Le maximum ne compte que les postes de la liste non révoqués : un PC non autorisé n'y entre jamais (un poste créé « en attente de
+  son code » y entre, sa place est réservée). Premier poste d'une base neuve : `Pharma.Api.exe --autoriser-poste`. —
+  `src/Pharma.Api/Securite/PreuvePosteMiddleware.cs`, `src/Pharma.Application/Postes/PostesAutorises.cs` (`RegistrePostesAutorises.ModeAsync`),
+  `src/Pharma.Desktop/Composants/Mise/AutorisationPoste.razor`, `src/Pharma.Desktop/Composants/Pages/Connexion.razor`,
+  `database/migration/174_postes_preuve_exigee.sql`
+- **Titulaire sur un PC non autorisé : Administration seulement** (décision du titulaire du 2026-11-27, « le titulaire peut accéder à partir d'un
+  poste non autorisé ») : depuis un PC non prouvé (sans preuve, ou preuve d'un poste révoqué, remplacé ou inconnu ; une horloge décalée reste
+  refusée), seul le **pharmacien titulaire** se connecte (`/api/auth/connexion`) ; tout autre employé est refusé (403, « Ce PC n'est pas
+  autorisé : seul le pharmacien titulaire peut s'y connecter, pour l'Administration seulement… »), après la vérification du mot de passe, sans
+  jeton. Le jeton émis porte la marque `acces = administration_seule`, sans nom ni identifiant de poste : il n'ouvre que la **liste fermée**
+  `AccesAdministrationSeule.Prefixes` (session : connexion, mot de passe, droits, affichage ; `/api/admin/postes`, `/api/offre`,
+  `/api/admin/pharmacie`, `/api/pharmacie`, `/api/admin/organismes`, `/api/medecins`, `/api/wilayas`, `/api/suggestions/specialite_medecin` ;
+  `/api/admin/utilisateurs`, `/api/admin/droits`, `/api/admin/notifications`, `/api/parametres/formulaire-sms` ; `/api/admin/sauvegardes`,
+  `/api/admin/second-serveur`, `/api/admin/synchronisation`, `/api/reglages-mutualises`), sur tout PC (même rejoué sans en-tête de poste, même
+  après l'autorisation du PC : il faut se reconnecter) ; toute autre route : 403 `administration_seule` « Depuis un PC non autorisé, le
+  titulaire n'a accès qu'à l'Administration ; autorisez ce PC (Administration › Postes autorisés) pour le reste. » (403 : la session reste
+  ouverte). Jamais caisse, vente, stock, achats, patients ni finances. Ce PC n'est pas un poste : il n'entre pas dans le maximum. Poste :
+  lien « Connexion du titulaire (Administration seulement) » sous la saisie du code ; une fois connecté, menu du haut réduit à « Réglages »
+  (mention « PC non autorisé : Administration seulement »), accueil = Postes autorisés, écrans permis : Utilisateurs et droits, Notifications,
+  Imprimantes, Sauvegardes, 2e serveur, Synchronisation, Langue et pharmacie, Postes autorisés, Mon offre ; toute autre adresse ramène aux
+  Postes autorisés avec le bandeau « PC non autorisé : Administration seulement ; autorisez ce PC dans Postes autorisés. ». Pour autoriser ce
+  PC : le créer dans Postes autorisés, se déconnecter, taper son code. — `src/Pharma.Api/Securite/AccesAdministrationSeule.cs`,
+  `src/Pharma.Application/Securite/SeConnecter.cs`, `src/Pharma.Desktop/Services/AdministrationSeule.cs`
+- **Bascule du 2e serveur** : seuls les postes prouvés et actifs sont « vus », « connus » et votent (depuis le script 174, la présence en base
+  ne lit plus le mode : un poste non prouvé n'est jamais connu) ; tant qu'aucun poste n'est autorisé, aucun poste n'est connu : le serveur
+  principal garde la main et le 2e serveur ne se promeut jamais seul. Le relais transmet les en-têtes de preuve tels quels (cible brute) ; une
+  requête sans preuve n'est jamais relayée.
 - Révocation : effet immédiat sur le serveur qui révoque, dans les 30 secondes sur l'autre (cache des clés) ; pendant une coupure, visible
   du 2e serveur seulement si elle a été répliquée (risque accepté, plan § 7).
 - **Nom du poste renommé repris par le poste** (2026-11-26, défaut constaté : le serveur utilisait aussitôt le nouveau nom, le poste affichait

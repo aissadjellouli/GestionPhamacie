@@ -486,9 +486,13 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
 /// Passage automatique (après chaque passage de synchronisation) : expire les ordres périmés, met « à confirmer » ceux qui l'exigent,
 /// applique les autres. Alerte au titulaire pour un ordre à confirmer, refusé ou expiré, et pour un blocage appliqué (décision S5.1-D1).
 /// Rien sur une base en lecture seule (2e serveur en veille). Jamais sur le chemin d'une vente.
+/// Sans le pack G (décision du titulaire du 2026-11-27, point 3) : seuls les ordres « activation_offre » sont appliqués ; les autres restent en
+/// attente, sans alerte (choix le plus sûr : un refus serait définitif et dirait faussement au central que l'officine a refusé ; en attente, ils
+/// s'appliquent avec leurs contrôles habituels si le pack G revient avant leur date limite, sinon ils expirent d'eux-mêmes et le central le sait).
 /// </summary>
+/// <param name="packs">Offre en vigueur (null : tous les ordres, comme avant le lot O6 ; doublures de tests).</param>
 public sealed class AppliquerOrdresCentraux(IOrdresCentrauxDepot depot, ExecuterOrdreCentral executer, IHorloge horloge, IAlertesTitulaire alertes,
-    ITraceErreurs? trace = null, VerrouOrdresCentraux? verrou = null)
+    ITraceErreurs? trace = null, VerrouOrdresCentraux? verrou = null, Offre.IPacksOffre? packs = null)
 {
     private readonly VerrouOrdresCentraux verrou = verrou ?? VerrouOrdresCentraux.Partage;
 
@@ -496,19 +500,24 @@ public sealed class AppliquerOrdresCentraux(IOrdresCentrauxDepot depot, Executer
     public async Task<int> ExecuterAsync(CancellationToken ct = default)
     {
         if (await depot.BaseEnLectureSeuleAsync(ct)) return 0;
+        var avecPackG = packs is null || await packs.InclusAsync(Offre.PacksOffre.MultiOfficines, ct);
         var n = 0;
         foreach (var lu in await depot.EnCoursAsync(ct))
         {
             // Un ordre à la fois, relu sous le verrou : confirmé ou refusé entre-temps par le titulaire, il n'est plus touché ici
             using var _ = await verrou.PrendreAsync(ct);
             if (await depot.LireAsync(lu.Id, ct) is not { } o || o.Statut is not (StatutsOrdre.AConfirmer or StatutsOrdre.AAppliquer)) continue;
+            var horsOffre = !avecPackG && o.Type != TypesOrdre.ActivationOffre;
             if (horloge.MaintenantUtc >= o.ExpireLeUtc)
             {
-                await NoterEtPrevenirAsync(o, StatutsOrdre.Expire, "non traité avant sa date limite (horloge de l’officine)", ct);
+                const string motifExpire = "non traité avant sa date limite (horloge de l’officine)";
+                // Sans le pack G : ordre jamais montré au titulaire, il expire sans alerte (le résultat remonte au central)
+                if (horsOffre) await depot.NoterAsync(o.Id, StatutsOrdre.Expire, motifExpire, null, ct);
+                else await NoterEtPrevenirAsync(o, StatutsOrdre.Expire, motifExpire, ct);
                 n++;
                 continue;
             }
-            if (o.Statut != StatutsOrdre.AAppliquer) continue;
+            if (o.Statut != StatutsOrdre.AAppliquer || horsOffre) continue;
             if (!TypesOrdre.Connus.Contains(o.Type))
             {
                 await NoterEtPrevenirAsync(o, StatutsOrdre.Refuse, $"type d’ordre non pris en charge par cette version : {o.Type}", ct);
@@ -573,8 +582,9 @@ public sealed class AppliquerOrdresCentraux(IOrdresCentrauxDepot depot, Executer
 }
 
 /// <summary>Confirmation par le titulaire d'un ordre « à confirmer » ; mot de passe provisoire pour une création de compte.</summary>
+/// <param name="packs">Sans le pack G (point 3 du 2026-11-27) : seule l'activation de l'offre se confirme ; null : tous (doublures de tests).</param>
 public sealed class ConfirmerOrdreCentral(IOrdresCentrauxDepot depot, ExecuterOrdreCentral executer, IPermissionService droits, IHorloge horloge,
-    VerificationMotDePasseActuel? motDePasseActuel = null, VerrouOrdresCentraux? verrou = null)
+    VerificationMotDePasseActuel? motDePasseActuel = null, VerrouOrdresCentraux? verrou = null, Offre.IPacksOffre? packs = null)
 {
     private readonly VerrouOrdresCentraux verrou = verrou ?? VerrouOrdresCentraux.Partage;
 
@@ -590,6 +600,8 @@ public sealed class ConfirmerOrdreCentral(IOrdresCentrauxDepot depot, ExecuterOr
         using var _ = await verrou.PrendreAsync(VerrouOrdresCentraux.DelaiTitulaire, ct);
         var o = await depot.LireAsync(id, ct) ?? throw new RegleMetierException("Ordre introuvable.");
         if (o.Statut != StatutsOrdre.AConfirmer) throw new RegleMetierException("Cet ordre n’attend plus de confirmation.");
+        if (packs is not null && o.Type != TypesOrdre.ActivationOffre && !await packs.InclusAsync(Offre.PacksOffre.MultiOfficines, ct))
+            throw new Offre.OptionNonIncluseException(Offre.PacksOffre.MultiOfficines);
         if (TypesOrdre.MotDePasseTitulaireRequis(o.Type))
             await (motDePasseActuel ?? throw new RegleMetierException("Vérification du mot de passe indisponible."))
                 .VerifierAsync(titulaireId, motDePasseTitulaire, "accepter_reglages_communs", ReglagesCommunsOrdre.ChampMotDePasse, ct);

@@ -25,6 +25,7 @@
     <File Path="docs/fonctionnalites.md" />
     <File Path="docs/mise-en-production.md" />
     <File Path="docs/manuel-mep.md" />
+    <File Path="docs/ergonomie-2026-11-27.md" />
     <File Path="docs/scripts-mep.md" />
     <File Path="docs/navigation.md" />
     <File Path="docs/notifications.md" />
@@ -286,6 +287,8 @@
     <File Path="database/migration/170_pret_paiement_partiel_remboursement_anticipe.sql" />
     <File Path="database/migration/171_taux_tva_liste.sql" />
     <File Path="database/migration/172_activation_offre.sql" />
+    <File Path="database/migration/173_remise_nulle_hors_controle.sql" />
+    <File Path="database/migration/174_postes_preuve_exigee.sql" />
     <File Path="database/migration/retour/165_presence_postes_retour.sql" />
     <File Path="database/migration/retour/166_bascule_retrait_decision_retour.sql" />
     <File Path="database/migration/retour/167_postes_autorises_retour.sql" />
@@ -294,6 +297,8 @@
     <File Path="database/migration/retour/170_pret_paiement_partiel_remboursement_anticipe_retour.sql" />
     <File Path="database/migration/retour/171_taux_tva_liste_retour.sql" />
     <File Path="database/migration/retour/172_activation_offre_retour.sql" />
+    <File Path="database/migration/retour/173_remise_nulle_hors_controle_retour.sql" />
+    <File Path="database/migration/retour/174_postes_preuve_exigee_retour.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
@@ -346,6 +351,8 @@
     <File Path="database/tests/170_pret_paiement_partiel_remboursement_anticipe_tests.sql" />
     <File Path="database/tests/171_taux_tva_liste_tests.sql" />
     <File Path="database/tests/172_activation_offre_tests.sql" />
+    <File Path="database/tests/173_remise_nulle_hors_controle_tests.sql" />
+    <File Path="database/tests/174_postes_preuve_exigee_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
     <File Path="database/tests/101b_suppression_num_facture_chifa_tests.sql" />
     <File Path="database/tests/rejeu_complet.ps1" />

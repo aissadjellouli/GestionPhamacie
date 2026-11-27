@@ -46,8 +46,10 @@ public static class Program
               cle-publique --cle <cle-editeur.pem>
                   Affiche la clé publique d'une clé existante.
               signer --cle <cle-editeur.pem> --officine <code de l'officine> --nif <NIF> --postes <n>
-                     [--packs A,B,…|tous] [--scanners <n>] [--fin AAAA-MM-JJ] [--transition]
-                  Signe un code d'activation (--transition : code « tout compris » de la mise en place, --fin obligatoire).
+                     --serveur <empreinte> [--serveur <empreinte> …] [--packs A,B,…|tous] [--scanners <n>] [--fin AAAA-MM-JJ] [--transition]
+                  Signe un code d'activation version 2 (--transition : code « tout compris » de la mise en place, --fin obligatoire).
+                  --serveur : empreinte de chaque serveur de l'officine (principal, 2e serveur, PC de secours), 1 à 3, obligatoire ;
+                  lue dans Administration › Mon offre ou par « Pharma.Api.exe --empreinte-serveur » sur le serveur.
               lire --code <code> [--cle-publique <base64>]
                   Affiche le contenu d'un code ; avec la clé publique, contrôle aussi sa signature.
 
@@ -91,6 +93,7 @@ public static class Program
         Console.WriteLine($"Pharmacie {activation.Officine} · NIF {activation.Nif} · {activation.Postes} poste(s) · packs "
                           + $"{(activation.Packs.Count == 0 ? "aucun" : string.Join(",", activation.Packs))} · scanners {activation.ScannersMobiles} · "
                           + $"{(activation.Fin is { } f ? $"jusqu'au {f:dd/MM/yyyy}" : "définitive")}{(activation.Transition ? " · transition" : "")}");
+        Console.WriteLine($"Serveurs autorisés : {string.Join(", ", activation.Serveurs!.Select(EmpreinteServeur.Afficher))}");
         Console.WriteLine(code);
         return 0;
     }
@@ -119,7 +122,29 @@ public static class Program
         DateOnly? fin = Option(args, "--fin") is { } f
             ? DateOnly.TryParseExact(f, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : throw new ArgumentException("Date de fin invalide (AAAA-MM-JJ).")
             : null;
-        return new ActivationOffre(officine, nif, DateTime.SpecifyKind(maintenantUtc, DateTimeKind.Utc), packs, postes, scanners, fin, transition);
+        return new ActivationOffre(officine, nif, DateTime.SpecifyKind(maintenantUtc, DateTimeKind.Utc), packs, postes, scanners, fin, transition,
+            Serveurs(args));
+    }
+
+    /// <summary>
+    /// Empreintes des serveurs autorisés (option --serveur, répétable, 1 à 3, obligatoire) : l'outil ne signe plus que des codes version 2
+    /// (décision du titulaire du 2026-11-27, point 5).
+    /// </summary>
+    public static IReadOnlyList<string> Serveurs(string[] args)
+    {
+        var liste = new List<string>();
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (args[i] != "--serveur") continue;
+            var valeur = i + 1 < args.Length ? args[i + 1] : null;
+            liste.Add(EmpreinteServeur.Normaliser(valeur)
+                      ?? throw new ArgumentException($"Empreinte de serveur invalide : « {valeur} » (attendu : {EmpreinteServeur.Caracteres} caractères 0-9 A-F, par groupes de 4)."));
+        }
+        if (liste.Count == 0)
+            throw new ArgumentException("Option --serveur <empreinte> obligatoire (1 à 3 fois) : empreinte lue dans Mon offre ou par « Pharma.Api.exe --empreinte-serveur ».");
+        if (liste.Count > CodeActivation.ServeursMax) throw new ArgumentException($"{CodeActivation.ServeursMax} serveurs au plus (--serveur).");
+        if (liste.Distinct().Count() != liste.Count) throw new ArgumentException("Même empreinte de serveur donnée deux fois.");
+        return liste;
     }
 
     private static int Lire(string code, string? clePublique)
@@ -129,6 +154,9 @@ public static class Program
         Console.WriteLine($"Postes : {a.Postes}{Environment.NewLine}Scanners mobiles : {a.ScannersMobiles}");
         Console.WriteLine($"Packs : {(a.Packs.Count == 0 ? "aucun" : string.Join(", ", a.Packs.Select(p => $"{p} {PacksOffre.Libelle(p)}")))}");
         Console.WriteLine($"Fin : {(a.Fin is { } f ? f.ToString("yyyy-MM-dd") : "définitive")}{(a.Transition ? " (transition)" : "")}");
+        Console.WriteLine(a.Serveurs is { } s
+            ? $"Serveurs autorisés (version 2) : {string.Join(", ", s.Select(EmpreinteServeur.Afficher))}"
+            : "Serveurs autorisés : aucun (version 1, code non lié au serveur : à remplacer par un code version 2).");
         Console.WriteLine(clePublique is null ? "Signature NON contrôlée (ajoutez --cle-publique)." : "Signature contrôlée : émise par l'éditeur.");
         return 0;
     }

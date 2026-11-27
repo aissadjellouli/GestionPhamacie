@@ -8,125 +8,146 @@
    à la relève et à la clôture (écran fixe, docs/charte-graphique.md). Chaque entrée est une adresse, « ← Retour » y revient ;
    « Ouvrir le tiroir » n'est pas un écran : une confirmation, puis l'ouverture sans vente est inscrite au contrôle interne. *@
 <NavDomaine Libelle="Actions de caisse">
-    <span class="nav-groupe-titre">Comptoir</span>
-    @Lien("caisse", "Vente")
-    @if (Session.A("caisse.vendre"))
-    {
-        @* Patients en attente d'un produit (2026-11-20) : même écran que Patients › Patients en attente, droit de vendre *@
-        @Lien("patients/attente", "Patients en attente")
-    }
-    <span class="nav-groupe-titre">Opérations</span>
-    @Lien("caisse?rubrique=annulation", "Annulation ou retour")
-    @Lien("caisse?rubrique=credit", "Encaisser une dette")
-    @if (!Session.A("caisse.ouvrir_tiroir"))
-    {
-        @* Sans le droit « Ouvrir le tiroir sans vente » : rien (une action interdite n'est pas montrée, docs/navigation.md) *@
-    }
-    else if (!confirmation)
-    {
-        <a href="" class="sous-rubrique" data-raccourci="tiroir" title="Ouverture sans vente, inscrite au contrôle interne (tiroir-caisse : matériel à brancher) · raccourci F8"
-           @onclick="DemanderTiroirAsync" @onclick:preventDefault="true">Ouvrir le tiroir <span class="detail">F8</span></a>
-    }
-    else
-    {
-        <a href="" class="sous-rubrique active" @onclick:preventDefault="true">Ouvrir le tiroir <span class="detail">F8</span></a>
-        @* Motif obligatoire (2026-11-15, script 094) : liste réglée par le titulaire ; « Autre » demande un texte.
-           Motif à effet (script 096) : montant obligatoire et détail exigé ; l'argent sorti ou remis est compté dans l'attendu de la caisse
-           et écrit en trésorerie ; au-delà du seuil, « Faire autoriser » (code d'un ayant droit) ; bon de sortie imprimable. *@
-        <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-tiroir">
-            <section class="panneau" style="max-width: 560px; width: 100%; display: flex; flex-direction: column; gap: 10px">
-                <h2 id="t-tiroir">Ouvrir le tiroir sans vente</h2>
-                <p class="detail" style="margin: 0">Inscrit au contrôle interne. Une sortie ou une remise d’argent est comptée dans l’attendu de la caisse.</p>
-                <div class="champ">
-                    <label for="ti-motif" class="requis">Motif</label>
-                    <select id="ti-motif" data-champ="motif" @bind="motifTiroir" @bind:after="ChoisirMotif" autofocus>
-                        <option value="">— choisir —</option>
-                        @foreach (var m in motifsTiroir) { <option value="@m.Code">@m.Libelle</option> }
-                    </select>
-                </div>
-                @if (motifTiroir == "autre")
-                {
-                    <div class="champ"><label for="ti-texte" class="requis">Précisez</label>
-                        <input id="ti-texte" data-champ="motif_texte" type="text" maxlength="200" @bind="texteTiroir" @bind:event="oninput" /></div>
-                }
-                @if (Choisi is { Effet: not "aucun" } choisi)
-                {
-                    @if (remboursement is { } rb)
-                    {
-                        @* Trop-payé d'une régularisation Chifa (D4, script 099) : patient et montant imposés, le bon est lié à la régularisation *@
-                        <div class="info-bandeau" role="status" data-champ="regularisation">Trop-payé de la régularisation Chifa de la vente @rb.Vente à rendre à @rb.Patient : le bon sera lié à la régularisation (montant marqué rendu).</div>
-                    }
+    @* Groupes repliables (GroupeMenu, 2026-11-27) : chevron « › » replié, « ⌄ » déplié ; repliées, les entrées restent dans la page
+       (F8 « Ouvrir le tiroir » fonctionne toujours) et la confirmation du tiroir rouvre son groupe *@
+    <GroupeMenu Cle="caisse:comptoir" Titre="Comptoir" ContientActif="@(Actif is "caisse" or "patients/attente")">
+        @if (CaisseOuverte)
+        {
+            @Lien("caisse", "Vente")
+        }
+        else
+        {
+            @* Caisse fermée (2026-11-27) : le menu reste affiché ; la première entrée mène à l'ouverture *@
+            @Lien("caisse", "Ouvrir la caisse")
+        }
+        @if (Session.A("caisse.vendre"))
+        {
+            @* Patients en attente d'un produit (2026-11-20) : même écran que Patients › Patients en attente, droit de vendre *@
+            @Lien("patients/attente", "Patients en attente")
+        }
+    </GroupeMenu>
+    <GroupeMenu Cle="caisse:operations" Titre="Opérations" ContientActif="@(Actif is "caisse?rubrique=annulation" or "caisse?rubrique=credit")"
+                ForcerOuvert="@(confirmation || messageTiroir is not null || bonTiroir is not null)">
+        @* Sans caisse ouverte, ces opérations n'ont pas d'objet (le serveur les rattache à la caisse du poste) : grisées, avec la raison *@
+        @Lien("caisse?rubrique=annulation", "Annulation ou retour", ExigeCaisse)
+        @Lien("caisse?rubrique=credit", "Encaisser une dette", ExigeCaisse)
+        @if (!Session.A("caisse.ouvrir_tiroir"))
+        {
+            @* Sans le droit « Ouvrir le tiroir sans vente » : rien (une action interdite n'est pas montrée, docs/navigation.md) *@
+        }
+        else if (!CaisseOuverte)
+        {
+            @Inactif("Ouvrir le tiroir", ExigeCaisse)
+        }
+        else if (!confirmation)
+        {
+            <a href="" class="sous-rubrique" data-raccourci="tiroir" title="Ouverture sans vente, inscrite au contrôle interne (tiroir-caisse : matériel à brancher) · raccourci F8"
+               @onclick="DemanderTiroirAsync" @onclick:preventDefault="true">Ouvrir le tiroir <span class="detail">F8</span></a>
+        }
+        else
+        {
+            <a href="" class="sous-rubrique active" @onclick:preventDefault="true">Ouvrir le tiroir <span class="detail">F8</span></a>
+            @* Motif obligatoire (2026-11-15, script 094) : liste réglée par le titulaire ; « Autre » demande un texte.
+               Motif à effet (script 096) : montant obligatoire et détail exigé ; l'argent sorti ou remis est compté dans l'attendu de la caisse
+               et écrit en trésorerie ; au-delà du seuil, « Faire autoriser » (code d'un ayant droit) ; bon de sortie imprimable. *@
+            <div class="voile" role="dialog" aria-modal="true" aria-labelledby="t-tiroir">
+                <section class="panneau" style="max-width: 560px; width: 100%; display: flex; flex-direction: column; gap: 10px">
+                    <h2 id="t-tiroir">Ouvrir le tiroir sans vente</h2>
+                    <p class="detail" style="margin: 0">Inscrit au contrôle interne. Une sortie ou une remise d’argent est comptée dans l’attendu de la caisse.</p>
                     <div class="champ">
-                        <label for="ti-montant" class="requis">Montant (DA) · @(choisi.Effet == "sortie" ? "sortie du tiroir" : "entrée au tiroir")</label>
-                        <input id="ti-montant" data-champ="montant" type="number" min="0.01" step="0.01" @bind="montantTiroir" disabled="@(remboursement is not null)" />
+                        <label for="ti-motif" class="requis">Motif</label>
+                        <select id="ti-motif" data-champ="motif" @bind="motifTiroir" @bind:after="ChoisirMotif" autofocus>
+                            <option value="">— choisir —</option>
+                            @foreach (var m in motifsTiroir) { <option value="@m.Code">@m.Libelle</option> }
+                        </select>
                     </div>
-                    @switch (choisi.Detail)
+                    @if (motifTiroir == "autre")
                     {
-                        case "depense":
-                            <div style="display: flex; gap: 8px">
-                                <div class="champ" style="flex: 1"><label for="ti-categorie" class="requis">Catégorie de charge</label>
-                                    <select id="ti-categorie" data-champ="categorie" @bind="categorieTiroir">
-                                        <option value="">— choisir —</option>
-                                        @foreach (var c in categories) { <option value="@c.Code">@c.Libelle</option> }
-                                    </select></div>
-                                @* Libellés des dépenses déjà saisies proposés pendant la frappe (2026-11-18), texte libre accepté *@
-                                <ValeursSaisies Id="ti-libelle" Champ="libelle_depense_tiroir" Libelle="Libellé" Requis="true" Style="flex: 1" @bind-Valeur="libelleTiroir"
-                                                data-champ="libelle" maxlength="200" placeholder="Ex. café, ampoules, timbres" />
-                            </div>
-                            break;
-                        case "fournisseur":
-                            <div style="display: flex; gap: 8px">
-                                <div class="champ" style="flex: 1"><label for="ti-grossiste">Grossiste (dette diminuée)</label>
-                                    <select id="ti-grossiste" data-champ="fournisseur" @bind="grossisteTiroir">
-                                        <option value="0">— aucun : livreur ou autre fournisseur —</option>
-                                        @foreach (var g in grossistes) { <option value="@g.Id">@g.RaisonSociale</option> }
-                                    </select></div>
-                                <div class="champ" style="flex: 1"><label for="ti-reference" class="@(grossisteTiroir > 0 ? "requis" : null)">N° de BL ou de facture</label>
-                                    <input id="ti-reference" data-champ="reference" type="text" maxlength="200" @bind="referenceTiroir" /></div>
-                            </div>
-                            @if (grossisteTiroir == 0)
-                            {
-                                <ValeursSaisies Id="ti-beneficiaire" Champ="beneficiaire_tiroir" Libelle="Nom du livreur ou du fournisseur" Requis="true"
-                                                @bind-Valeur="beneficiaireTiroir" data-champ="beneficiaire" maxlength="200" />
-                            }
-                            break;
-                        case "patient":
-                            @* Propositions pendant la frappe (composant commun, 2026-11-18) ; trop-payé d'une régularisation : patient imposé, sans « Changer » *@
-                            <ChoixPatient Id="ti-patient" Libelle="Patient remboursé" Requis="true" data-champ="patient"
-                                          Choix="@(patientTiroir is null ? null : ChoixPatient.Nom(patientTiroir))" ChangerPermis="@(remboursement is null)"
-                                          OnChoisi="p => patientTiroir = p" OnEfface="() => patientTiroir = null" />
-                            <div class="champ"><label for="ti-raison" class="requis">Raison du remboursement</label>
-                                <input id="ti-raison" data-champ="raison" type="text" maxlength="200" @bind="raisonTiroir" /></div>
-                            break;
-                        case "coffre":
-                            <p class="detail" style="margin: 0">L’argent part au coffre de la trésorerie : l’attendu de la caisse baisse d’autant.</p>
-                            break;
-                        case "fond":
-                            <p class="detail" style="margin: 0">L’argent vient du coffre (son solde est contrôlé) : l’attendu de la caisse monte d’autant.</p>
-                            break;
+                        <div class="champ"><label for="ti-texte" class="requis">Précisez</label>
+                            <input id="ti-texte" data-champ="motif_texte" type="text" maxlength="200" @bind="texteTiroir" @bind:event="oninput" /></div>
                     }
-                }
-                @if (messageTiroir is not null && confirmation) { <div class="erreur" role="alert">@messageTiroir</div> }
-                <div style="display: flex; gap: 8px">
-                    <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="OuvrirTiroirAsync">Ouvrir</button>
-                    <button type="button" class="btn" @onclick="() => (confirmation, messageTiroir, remboursement) = (false, null, null)">Annuler</button>
-                </div>
-            </section>
-        </div>
-    }
-    @if (messageTiroir is not null && !confirmation) { <span class="detail" role="status" style="padding: 0 12px 0 24px">@messageTiroir</span> }
-    @if (bonTiroir is { } bon && !confirmation)
-    {
-        <a href="" class="sous-rubrique" @onclick="() => ImprimerBonAsync(bon)" @onclick:preventDefault="true">Imprimer le bon @bon.Numero</a>
-    }
-    <span class="nav-groupe-titre">Caisse</span>
-    @Lien("caisse/etat", "État de la caisse")
-    @if (Session.A("caisse.cloturer"))
-    {
-        @* Sans le droit « Faire la relève et clôturer la caisse » (085) : entrées masquées ; le serveur refuse de toute façon *@
-        @Lien("cloture?releve=true", "Relève")
-        @Lien("cloture", "Clôturer la caisse")
-    }
+                    @if (Choisi is { Effet: not "aucun" } choisi)
+                    {
+                        @if (remboursement is { } rb)
+                        {
+                            @* Trop-payé d'une régularisation Chifa (D4, script 099) : patient et montant imposés, le bon est lié à la régularisation *@
+                            <div class="info-bandeau" role="status" data-champ="regularisation">Trop-payé de la régularisation Chifa de la vente @rb.Vente à rendre à @rb.Patient : le bon sera lié à la régularisation (montant marqué rendu).</div>
+                        }
+                        <div class="champ">
+                            <label for="ti-montant" class="requis">Montant (DA) · @(choisi.Effet == "sortie" ? "sortie du tiroir" : "entrée au tiroir")</label>
+                            <input id="ti-montant" data-champ="montant" type="number" min="0.01" step="0.01" @bind="montantTiroir" disabled="@(remboursement is not null)" />
+                        </div>
+                        @switch (choisi.Detail)
+                        {
+                            case "depense":
+                                <div style="display: flex; gap: 8px">
+                                    <div class="champ" style="flex: 1"><label for="ti-categorie" class="requis">Catégorie de charge</label>
+                                        <select id="ti-categorie" data-champ="categorie" @bind="categorieTiroir">
+                                            <option value="">— choisir —</option>
+                                            @foreach (var c in categories) { <option value="@c.Code">@c.Libelle</option> }
+                                        </select></div>
+                                    @* Libellés des dépenses déjà saisies proposés pendant la frappe (2026-11-18), texte libre accepté *@
+                                    <ValeursSaisies Id="ti-libelle" Champ="libelle_depense_tiroir" Libelle="Libellé" Requis="true" Style="flex: 1" @bind-Valeur="libelleTiroir"
+                                                    data-champ="libelle" maxlength="200" placeholder="Ex. café, ampoules, timbres" />
+                                </div>
+                                break;
+                            case "fournisseur":
+                                <div style="display: flex; gap: 8px">
+                                    <div class="champ" style="flex: 1"><label for="ti-grossiste">Grossiste (dette diminuée)</label>
+                                        <select id="ti-grossiste" data-champ="fournisseur" @bind="grossisteTiroir">
+                                            <option value="0">— aucun : livreur ou autre fournisseur —</option>
+                                            @foreach (var g in grossistes) { <option value="@g.Id">@g.RaisonSociale</option> }
+                                        </select></div>
+                                    <div class="champ" style="flex: 1"><label for="ti-reference" class="@(grossisteTiroir > 0 ? "requis" : null)">N° de BL ou de facture</label>
+                                        <input id="ti-reference" data-champ="reference" type="text" maxlength="200" @bind="referenceTiroir" /></div>
+                                </div>
+                                @if (grossisteTiroir == 0)
+                                {
+                                    <ValeursSaisies Id="ti-beneficiaire" Champ="beneficiaire_tiroir" Libelle="Nom du livreur ou du fournisseur" Requis="true"
+                                                    @bind-Valeur="beneficiaireTiroir" data-champ="beneficiaire" maxlength="200" />
+                                }
+                                break;
+                            case "patient":
+                                @* Propositions pendant la frappe (composant commun, 2026-11-18) ; trop-payé d'une régularisation : patient imposé, sans « Changer » *@
+                                <ChoixPatient Id="ti-patient" Libelle="Patient remboursé" Requis="true" data-champ="patient"
+                                              Choix="@(patientTiroir is null ? null : ChoixPatient.Nom(patientTiroir))" ChangerPermis="@(remboursement is null)"
+                                              OnChoisi="p => patientTiroir = p" OnEfface="() => patientTiroir = null" />
+                                <div class="champ"><label for="ti-raison" class="requis">Raison du remboursement</label>
+                                    <input id="ti-raison" data-champ="raison" type="text" maxlength="200" @bind="raisonTiroir" /></div>
+                                break;
+                            case "coffre":
+                                <p class="detail" style="margin: 0">L’argent part au coffre de la trésorerie : l’attendu de la caisse baisse d’autant.</p>
+                                break;
+                            case "fond":
+                                <p class="detail" style="margin: 0">L’argent vient du coffre (son solde est contrôlé) : l’attendu de la caisse monte d’autant.</p>
+                                break;
+                        }
+                    }
+                    @if (messageTiroir is not null && confirmation) { <div class="erreur" role="alert">@messageTiroir</div> }
+                    <div style="display: flex; gap: 8px">
+                        <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="OuvrirTiroirAsync">Ouvrir</button>
+                        <button type="button" class="btn" @onclick="() => (confirmation, messageTiroir, remboursement) = (false, null, null)">Annuler</button>
+                    </div>
+                </section>
+            </div>
+        }
+        @if (messageTiroir is not null && !confirmation) { <span class="detail" role="status" style="padding: 0 12px 0 24px">@messageTiroir</span> }
+        @if (bonTiroir is { } bon && !confirmation)
+        {
+            <a href="" class="sous-rubrique" @onclick="() => ImprimerBonAsync(bon)" @onclick:preventDefault="true">Imprimer le bon @bon.Numero</a>
+        }
+    </GroupeMenu>
+    <GroupeMenu Cle="caisse:caisse" Titre="Caisse" ContientActif="@(Actif is "caisse/etat" or "cloture?releve=true" or "cloture")">
+        @Lien("caisse/etat", "État de la caisse")
+        @if (Session.A("caisse.cloturer"))
+        {
+            @* Sans le droit « Faire la relève et clôturer la caisse » (085) : entrées masquées ; le serveur refuse de toute façon *@
+            @* « Relève d'équipe » et son infobulle (revue d'ergonomie du 2026-11-27, n° 30) : le mot seul n'était pas compris d'un stagiaire *@
+            @Lien("cloture?releve=true", "Relève d’équipe", AucuneCaisse,
+                  "Changement d’équipe : vous comptez le tiroir, la caisse est clôturée puis rouverte aussitôt avec l’argent compté ; chacun répond de sa période")
+            @Lien("cloture", "Clôturer la caisse", AucuneCaisse)
+        }
+    </GroupeMenu>
 
     @if (OuverteLe is { } le)
     {
@@ -148,14 +169,35 @@
     [Parameter] public string? OuvertePar { get; set; }
     [Parameter] public decimal? Fond { get; set; }
     [Parameter] public string? Poste { get; set; }
+    /// <summary>
+    /// Faux quand on sait que le poste n'a pas de caisse ouverte (2026-11-27) : les entrées qui l'exigent sont grisées avec la raison,
+    /// le tiroir n'est pas proposé. Vrai par défaut (caisse ouverte, ou état pas encore lu).
+    /// </summary>
+    [Parameter] public bool CaisseOuverte { get; set; } = true;
+
+    private const string ExigeCaisse = "Ouvrez d’abord la caisse";
+    private const string AucuneCaisse = "Aucune caisse ouverte";
 
     private bool confirmation, enCours;
     private string? messageTiroir;
 
-    private RenderFragment Lien(string adresse, string libelle) => __builder =>
+    /// <param name="raisonSiFermee">Raison affichée à la place du lien quand la caisse n'est pas ouverte (null : lien toujours actif).</param>
+    /// <param name="infobulle">Explication de l'entrée, au survol (null : aucune).</param>
+    private RenderFragment Lien(string adresse, string libelle, string? raisonSiFermee = null, string? infobulle = null) => __builder =>
     {
+        if (!CaisseOuverte && raisonSiFermee is not null)
+        {
+            @Inactif(libelle, raisonSiFermee)
+            return;
+        }
         var actif = adresse == Actif;
-        <a href="@adresse" class="sous-rubrique @(actif ? "active" : null)" aria-current="@(actif ? "page" : null)">@libelle</a>
+        <a href="@adresse" class="sous-rubrique @(actif ? "active" : null)" aria-current="@(actif ? "page" : null)" title="@infobulle">@libelle</a>
+    };
+
+    /// <summary>Entrée grisée, non cliquable, avec sa raison en petit dessous (et en infobulle).</summary>
+    private static RenderFragment Inactif(string libelle, string raison) => __builder =>
+    {
+        <span class="nav-inactif nav-inactif-caisse" aria-disabled="true" title="@raison">@libelle<span class="detail">@raison</span></span>
     };
 
     private List<MotifReglableDto> motifsTiroir = [];
@@ -187,17 +229,20 @@
     // s'ouvre pré-remplie (patient, montant, raison « Régularisation Chifa T-… ») et liée à la régularisation
     private RemboursementsTiroir.Demande? remboursement;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized() => Remboursements.Deposee += Deposee;
+
+    // Remboursement déposé : la fenêtre du tiroir s'ouvre dès que la caisse est ouverte (jamais pris tant qu'elle est fermée :
+    // il attend l'ouverture, qui le rend à l'écran)
+    protected override async Task OnParametersSetAsync()
     {
-        Remboursements.Deposee += Deposee;
-        if (Remboursements.EnAttente is not null) await OuvrirRemboursementAsync();
+        if (CaisseOuverte && !confirmation && Remboursements.EnAttente is not null) await OuvrirRemboursementAsync();
     }
 
     private void Deposee() => _ = InvokeAsync(async () => { await OuvrirRemboursementAsync(); StateHasChanged(); });
 
     private async Task OuvrirRemboursementAsync()
     {
-        if (!Session.A("caisse.ouvrir_tiroir") || Remboursements.Prendre() is not { } d) return;
+        if (!CaisseOuverte || !Session.A("caisse.ouvrir_tiroir") || Remboursements.Prendre() is not { } d) return;
         await DemanderTiroirAsync();
         if (motifsTiroir.FirstOrDefault(m => m.Effet == "sortie" && m.Detail == "patient") is not { } motif)
         {

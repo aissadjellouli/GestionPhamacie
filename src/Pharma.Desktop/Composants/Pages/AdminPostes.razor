@@ -5,7 +5,8 @@
 
 @* Liste des postes autorisés (2026-11-24, script 167, docs/taches/2026-11-24-postes-autorises) : le titulaire autorise chaque poste (code à usage unique),
    le renomme, change son PC ou le révoque. Titulaire seul. Écran fixe : seul le tableau défile ; tableau paginé et filtré par le serveur ;
-   code, autorisation, renommage, révocation et passage en « exigé » dans une fenêtre au-dessus de l'écran (docs/charte-graphique.md). *@
+   code, autorisation, renommage et révocation dans une fenêtre au-dessus de l'écran (docs/charte-graphique.md).
+   Preuve toujours exigée (décision du titulaire du 2026-11-27, script 174) : plus de choix du mode, seule la durée du code se règle. *@
 <div class="page admin">
     <NavAdmin Actif="admin/postes" />
 
@@ -14,7 +15,7 @@
            du titre, réglage et recherche sur une seule ligne, explication du mode dans la note du bas *@
         <div class="titre-page titre-actions-cote">
             <div>
-                <h1>Postes autorisés</h1>
+                <h1>Postes autorisés<AideEcran Cle="admin/postes" /></h1>
                 @* Résultat d'une action à la place du sous-titre (2026-11-26) : empilé sous le titre, il faisait déborder l'écran de 37 px à 1 366 × 768
                    (tableau déjà à sa hauteur minimale) ; à la même place, la hauteur de l'écran ne change pas *@
                 @if (erreur is not null) { <p class="sous-titre texte-urgent" role="alert" data-champ="resultat">@erreur</p> }
@@ -29,19 +30,16 @@
             {
                 <section class="postes-reglage" aria-labelledby="t-reglage-postes">
                     <h2 id="t-reglage-postes" class="visuellement-cache">Réglage de la liste</h2>
-                    <div class="champ" style="flex: 0 0 170px"><label for="pa-mode">Preuve des postes</label>
-                        <select id="pa-mode" data-champ="mode" @bind="mode">
-                            <option value="transition">En transition</option>
-                            <option value="exige">Exigée pour tous</option>
-                            <option value="inactif">Désactivée</option>
-                        </select></div>
+                    @* Libellés en mots simples (revue d'ergonomie du 2026-11-27, n° 21) *@
                     @* Maximum fixé par l'offre signée de l'éditeur (Administration › Mon offre, script 172) : lecture seule *@
                     <div class="champ" style="flex: 0 0 130px"><label for="pa-max">Postes (offre)</label>
                         <input id="pa-max" type="text" disabled title="Fixé par votre offre (Administration › Mon offre)"
                                value="@($"{reglages.PostesComptes} sur {reglages.MaximumPostes}")" /></div>
-                    <div class="champ" style="flex: 0 0 110px"><label for="pa-duree">Code (min)</label>
+                    <div class="champ" style="flex: 0 0 172px"><label for="pa-duree">Validité du code (minutes)</label>
                         <input id="pa-duree" data-champ="dureeCodeMinutes" type="number" min="5" max="60" @bind="duree" /></div>
                     <button type="button" class="btn" disabled="@(enCours || !ReglageModifie)" @onclick="EnregistrerReglagesAsync">Enregistrer</button>
+                    @* Bouton grisé : la raison à côté (revue d'ergonomie du 2026-11-27, n° 23) *@
+                    @if (!enCours && !ReglageModifie) { <span class="raison-grise">Rien de modifié</span> }
                 </section>
             }
             <div class="filtres-liste" role="search" aria-label="Filtrer les postes">
@@ -57,8 +55,8 @@
         <section class="tableau-cadre" aria-label="Postes autorisés">
             <table class="tableau" style="min-width: 0">
                 <thead><tr>
-                    <th scope="col">Poste</th><th scope="col">Statut</th><th scope="col">Autorisé le</th><th scope="col">Dernière preuve</th>
-                    <th scope="col">Ordinateur</th><th scope="col">Empreinte</th><th scope="col"><span class="visuellement-cache">Actions</span></th>
+                    <th scope="col">Poste</th><th scope="col">Statut</th><th scope="col">Autorisé le</th><th scope="col">Dernière vérification</th>
+                    <th scope="col">Ordinateur</th><th scope="col">Identifiant du PC</th><th scope="col"><span class="visuellement-cache">Actions</span></th>
                 </tr></thead>
                 <tbody>
                     @foreach (var p in liste)
@@ -87,7 +85,7 @@
             </table>
         </section>
         <Pagination Total="total" Numero="page" Taille="taille" Libelle="Pages des postes" OnChange="p => ChargerAsync(p.Numero, p.Taille)" />
-        <p class="pied-page">@if (reglages is not null) { <strong>@ExpliquerMode(reglages.Mode)</strong> } Sur le PC à autoriser, cliquez « Autoriser ce poste » à l’écran de connexion et tapez le code. Un PC volé ou perdu se révoque ici : il est refusé dans les 30 secondes. Seuls les postes autorisés comptent pour la bascule automatique vers le 2e serveur.</p>
+        <p class="pied-page"><strong>Preuve exigée : un PC non autorisé ne peut pas se connecter et ne compte pas dans le maximum.</strong> Sur le PC à autoriser, cliquez « Autoriser ce poste » à l’écran de connexion et tapez le code. Un PC volé ou perdu se révoque ici : il est refusé dans les 30 secondes. Seuls les postes autorisés comptent pour la bascule automatique vers le 2e serveur.</p>
     </div>
 </div>
 
@@ -144,31 +142,16 @@
                         <button type="button" class="btn" @onclick="Fermer">Annuler</button>
                     </div>
                     break;
-                case Fenetre.Exiger:
-                    <h2 id="t-fenetre-poste">Exiger la preuve pour tous les postes</h2>
-                    <p class="detail" style="margin: 0 0 8px">Un poste non autorisé ne pourra plus se connecter ; un employé déjà connecté sur un tel poste devra se reconnecter après l’autorisation du poste.</p>
-                    @if (reglages?.NomsSansPreuve is { Count: > 0 } restants)
-                    {
-                        <div class="bandeau-attention" role="alert">Postes vus ces 30 derniers jours et encore non autorisés : @string.Join(", ", restants.Select(n => n.Nom)). Ils seront refusés.</div>
-                    }
-                    else { <p class="info-bandeau">Aucun poste non autorisé n’a été vu ces 30 derniers jours.</p> }
-                    @if (erreurFenetre is not null) { <div class="erreur" role="alert">@erreurFenetre</div> }
-                    <div class="actions-fenetre">
-                        <button type="button" class="btn btn-principal" disabled="@enCours" @onclick="() => EnregistrerReglagesAsync(true)">Exiger la preuve</button>
-                        <button type="button" class="btn" @onclick="Fermer">Annuler</button>
-                    </div>
-                    break;
             }
         </section>
     </div>
 }
 
 @code {
-    private enum Fenetre { Autoriser, Code, Renommer, Revoquer, Exiger }
+    private enum Fenetre { Autoriser, Code, Renommer, Revoquer }
 
     private List<PosteAutoriseDto> liste = [];
     private ReglagesPostesDto? reglages;
-    private string mode = "transition";
     private int duree = 15;
     private bool enCours, controle;
     private string? erreur, texteMessage, erreurFenetre;
@@ -183,7 +166,7 @@
     private string saisieNom = "", saisieMotif = "";
     private System.Threading.Timer? minuteur;
 
-    private bool ReglageModifie => reglages is not null && (mode != reglages.Mode || duree != reglages.DureeCodeMinutes);
+    private bool ReglageModifie => reglages is not null && duree != reglages.DureeCodeMinutes;
     private TimeSpan Restant => codeCree is null ? TimeSpan.Zero : codeCree.ExpireLe.ToUniversalTime() - DateTime.UtcNow is var r && r > TimeSpan.Zero ? r : TimeSpan.Zero;
 
     protected override async Task OnInitializedAsync()
@@ -199,7 +182,7 @@
     {
         var (r, e) = await Api.ReglagesPostesAsync();
         if (r is null) { erreur ??= e; return; }
-        (reglages, mode, duree) = (r, r.Mode, r.DureeCodeMinutes);
+        (reglages, duree) = (r, r.DureeCodeMinutes);
     }
 
     private Task PremierePageAsync() => ChargerAsync(1, taille);
@@ -220,13 +203,6 @@
         (liste, total, page, taille) = (p.Lignes.ToList(), p.Total, p.Numero, p.Taille);
     }
 
-    private static string ExpliquerMode(string m) => m switch
-    {
-        "exige" => "Preuve exigée : un poste non autorisé est refusé.",
-        "inactif" => "Preuve désactivée : les postes ne sont pas vérifiés (comme avant la liste) et la bascule compte les postes connectés.",
-        _ => "Transition : un poste non autorisé fonctionne encore, avec un bandeau, mais ne compte pas pour la bascule. Passez à « Exigée » une fois tous les postes autorisés."
-    };
-
     private static string Pastille(string statut) => statut switch { "actif" => "ok", "en_attente" => "attention", _ => "info" };
 
     private static string Statut(PosteAutoriseDto p) => p.Statut switch
@@ -238,26 +214,15 @@
 
     private static string Date(DateTime? d) => d is { } v ? v.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "—";
 
-    private async Task EnregistrerReglagesAsync() => await EnregistrerReglagesAsync(false);
-
-    private async Task EnregistrerReglagesAsync(bool confirme)
+    // Seule la durée du code se règle : le mode envoyé est ignoré par le serveur (preuve toujours exigée, script 174)
+    private async Task EnregistrerReglagesAsync()
     {
         if (reglages is null) return;
-        if (mode == "exige" && reglages.Mode != "exige" && !confirme)
-        {
-            (fenetre, erreurFenetre) = (Fenetre.Exiger, null);
-            return;
-        }
         (enCours, erreur, message) = (true, null, null);
         try
         {
-            var (e, avertissement) = await Api.ModifierReglagesPostesAsync(new ReglagesPostesDto(mode, reglages?.MaximumPostes ?? 0, duree));
-            if (e is not null)
-            {
-                if (fenetre == Fenetre.Exiger) erreurFenetre = e; else erreur = e;
-                return;
-            }
-            fenetre = null;
+            var (e, avertissement) = await Api.ModifierReglagesPostesAsync(new ReglagesPostesDto("exige", reglages.MaximumPostes, duree));
+            if (e is not null) { erreur = e; return; }
             message = avertissement is null ? "Réglage des postes enregistré (appliqué par chaque serveur dans les 30 secondes)." : $"Réglage enregistré. {avertissement}";
             attention = avertissement is not null;
             await ChargerReglagesAsync();
@@ -360,7 +325,6 @@
     {
         (fenetre, cible, erreurFenetre, controle) = (null, null, null, false);
         if (codeCree is not null) { codeCree = null; minuteur?.Dispose(); minuteur = null; }
-        if (reglages is not null && mode == "exige" && reglages.Mode != "exige") mode = reglages.Mode;
     }
 
     // Échap ferme la fenêtre sauf saisie en cours

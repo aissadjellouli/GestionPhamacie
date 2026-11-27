@@ -18,7 +18,7 @@ namespace Pharma.Architecture.Tests;
 /// Liste des postes autorisés (docs/taches/2026-11-24-postes-autorises/contrat-api.md) : chaîne signée commune au poste et au serveur, vérification des preuves
 /// (horloge, nonce, révocation, remplacement), intergiciel selon le mode, contrôle du jeton, enrôlement par code et gestion par le titulaire.
 /// </summary>
-public class PostesAutorisesTests
+public partial class PostesAutorisesTests
 {
     // ---- Doublures ---------------------------------------------------------------------------------------------------------------------
 
@@ -318,11 +318,12 @@ public class PostesAutorisesTests
     }
 
     [Fact]
-    public async Task Base_illisible_le_mode_retombe_a_inactif_et_la_preuve_est_indisponible()
+    public async Task Base_illisible_la_preuve_reste_exigee_et_est_indisponible()
     {
         var (verif, depot, horloge, registre) = Banc();
         depot.Panne = true;
-        Assert.Equal(PreuvePoste.ModeInactif, await registre.ModeAsync());
+        Assert.Equal(PreuvePoste.ModeExige, await registre.ModeAsync());
+        Assert.Equal(ReglagesPostes.ParDefaut, await registre.ReglagesAsync());
         using var cle = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         Assert.Equal(IssuePreuve.Indisponible, (await verif.VerifierAsync(Signer(cle, 1, "GET", "/api/a", horloge.Unix), "GET", "/api/a", null)).Issue);
     }
@@ -375,20 +376,26 @@ public class PostesAutorisesTests
     }
 
     [Fact]
-    public async Task Mode_inactif_rien_n_est_verifie_et_la_regle_d_avant_s_applique()
+    public async Task Un_mode_inactif_ou_transition_ecrit_dans_la_base_n_ouvre_rien()
     {
+        // Décision du titulaire du 2026-11-27 (script 174) : preuve toujours exigée, parametre_postes.mode n'est plus lu
         var horloge = new Horloge();
-        var depot = new Depot { Reglages = ReglagesPostes.Inactif };
-        var (ctx, passer) = Requete(depot, horloge, "/api/caisse", new EnTetesPreuve("1", "1", "x", "faux"), enTetePoste: "CAISSE-1");
-        Assert.True(await passer());
-        Assert.Null(ctx.PosteProuve());
-        var (autre, passerAutre) = Requete(depot, horloge, "/api/caisse", enTetePoste: "CAISSE-2", user: Connecte("CAISSE-1"));
-        Assert.False(await passerAutre());
-        Assert.Equal(403, autre.Response.StatusCode);
+        foreach (var mode in new[] { PreuvePoste.ModeInactif, PreuvePoste.ModeTransition })
+        {
+            var depot = new Depot { Reglages = new ReglagesPostes(mode, 15) };
+            Assert.Equal(PreuvePoste.ModeExige, await new RegistrePostesAutorises(depot, horloge).ModeAsync());
+            var (ctx, passer) = Requete(depot, horloge, "/api/caisse", new EnTetesPreuve("1", "1", "x", "faux"), enTetePoste: "CAISSE-1");
+            Assert.False(await passer(), mode);
+            Assert.Equal(401, ctx.Response.StatusCode);
+            // (la connexion par mot de passe y est ouverte au titulaire seul, décision du 2026-11-27 : voir PostesAutorisesAdministrationSeuleTests)
+            var (sans, passerSans) = Requete(depot, horloge, "/api/auth/connexion-code", enTetePoste: "COMPTOIR-3", methode: "POST");
+            Assert.False(await passerSans(), mode);
+            Assert.Equal(403, sans.Response.StatusCode);
+        }
     }
 
     [Fact]
-    public async Task Mode_transition_poste_prouve_poste_annonce_accepte_et_nom_reserve_refuse()
+    public async Task Poste_prouve_accepte_poste_annonce_sans_preuve_refuse_et_client_sans_poste_inchange()
     {
         var horloge = new Horloge();
         var depot = new Depot();
@@ -398,8 +405,10 @@ public class PostesAutorisesTests
         Assert.True(await passerProuve());
         Assert.Equal("CAISSE-1", prouve.Request.Poste());
 
-        var (_, passerLibre) = Requete(depot, horloge, "/api/caisse", enTetePoste: "COMPTOIR-3");
-        Assert.True(await passerLibre());
+        // PC non autorisé (nom libre) : refusé, preuve toujours exigée
+        var (libre, passerLibre) = Requete(depot, horloge, "/api/caisse", enTetePoste: "COMPTOIR-3");
+        Assert.False(await passerLibre());
+        Assert.Equal(403, libre.Response.StatusCode);
 
         var (reserve, passerReserve) = Requete(depot, horloge, "/api/caisse", enTetePoste: "caisse-1");
         Assert.False(await passerReserve());
@@ -410,25 +419,42 @@ public class PostesAutorisesTests
         Assert.False(await passerJeton());
         Assert.Equal(401, jetonReserve.Response.StatusCode);
 
-        // Client sans poste (page mobile) : inchangé
+        // Jeton lié à un nom libre, requête sans preuve : refusé aussi
+        var (jetonLibre, passerJetonLibre) = Requete(depot, horloge, "/api/caisse", user: Connecte("COMPTOIR-3"));
+        Assert.False(await passerJetonLibre());
+        Assert.Equal(401, jetonLibre.Response.StatusCode);
+
+        // Client sans poste (page mobile, pilotage mobile : ni en-tête X-Pharma-Poste ni preuve) : inchangé
         var (_, passerMobile) = Requete(depot, horloge, "/api/mobile/scan", user: Connecte());
         Assert.True(await passerMobile());
+        var (_, passerAnonyme) = Requete(depot, horloge, "/api/mobile/connexion", methode: "POST");
+        Assert.True(await passerAnonyme());
     }
 
     [Fact]
-    public async Task Mode_exige_un_poste_sans_preuve_est_refuse_sauf_sur_les_routes_ouvertes()
+    public async Task Un_poste_sans_preuve_est_refuse_sauf_sur_les_routes_ouvertes_et_celles_du_super_admin()
     {
         var horloge = new Horloge();
-        var depot = new Depot { Reglages = ReglagesPostes.ParDefaut with { Mode = PreuvePoste.ModeExige } };
+        var depot = new Depot();
         var (ctx, passer) = Requete(depot, horloge, "/api/caisse", enTetePoste: "COMPTOIR-3");
         Assert.False(await passer());
         Assert.Equal(403, ctx.Response.StatusCode);
-        foreach (var ouverte in new[] { "/api/healthcheck", "/api/postes/etat", "/api/postes/enrolement", "/api/vigie/rapport" })
+        foreach (var ouverte in new[] { "/api/healthcheck", "/api/postes/etat", "/api/postes/enrolement", "/api/vigie/rapport", "/api/inter-serveurs/etat",
+                     "/api/super-admin/connexion", "/api/super-admin/restauration/etat", "/api/admin/reprise/sessions" })
         {
             var (_, p) = Requete(depot, horloge, ouverte, enTetePoste: "COMPTOIR-3");
             Assert.True(await p(), ouverte);
         }
-        // Jeton sans poste_id (ouvert avant l'enrôlement) : refusé en mode exige
+        // Super admin connecté (aucun poste dans son jeton) depuis un PC non autorisé : ses routes répondent, les autres non
+        var superAdmin = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "0"), new Claim("super_admin", "sa")], "Bearer"));
+        var (_, passerSuper) = Requete(depot, horloge, "/api/super-admin/restauration", enTetePoste: "COMPTOIR-3", user: superAdmin, methode: "POST");
+        Assert.True(await passerSuper());
+        var (caisseSuper, passerCaisseSuper) = Requete(depot, horloge, "/api/caisse", enTetePoste: "COMPTOIR-3", user: superAdmin);
+        Assert.False(await passerCaisseSuper());
+        Assert.Equal(403, caisseSuper.Response.StatusCode);
+        Assert.False(PreuvePosteMiddleware.RouteSuperAdmin("/api/admin/postes"));
+        Assert.False(PreuvePosteMiddleware.RouteSuperAdmin("/api/super-adminx"));
+        // Jeton sans poste_id (ouvert avant l'enrôlement) : refusé
         var (ligne, cle) = depot.Actif("CAISSE-1");
         var (ancien, passerAncien) = Requete(depot, horloge, "/api/caisse", Signer(cle, ligne.Id, "GET", "/api/caisse", horloge.Unix), user: Connecte("CAISSE-1"));
         Assert.False(await passerAncien());
@@ -469,7 +495,7 @@ public class PostesAutorisesTests
     }
 
     [Fact]
-    public async Task Preuve_fausse_ou_inconnue_vaut_absence_de_preuve_en_transition_et_refus_si_exige()
+    public async Task Preuve_fausse_ou_inconnue_est_toujours_refusee()
     {
         var horloge = new Horloge();
         var depot = new Depot();
@@ -477,16 +503,9 @@ public class PostesAutorisesTests
         using var autre = ECDsa.Create(ECCurve.NamedCurves.nistP256);   // poste enrôlé sur une autre base : clé inconnue ici
         EnTetesPreuve Fausse(string chemin) => Signer(autre, ligne.Id, "GET", chemin, horloge.Unix);
 
-        var (libre, passerLibre) = Requete(depot, horloge, "/api/caisse", Fausse("/api/caisse"), enTetePoste: "COMPTOIR-3");
-        Assert.True(await passerLibre());
-        Assert.Null(libre.PosteProuve());
-        Assert.Equal("COMPTOIR-3", libre.Request.Poste());
-        // Nom réservé annoncé avec une preuve fausse : refusé (D6)
         var (reserve, passerReserve) = Requete(depot, horloge, "/api/caisse", Fausse("/api/caisse"), enTetePoste: "CAISSE-1");
         Assert.False(await passerReserve());
-        Assert.Equal(403, reserve.Response.StatusCode);
-
-        depot.Reglages = depot.Reglages with { Mode = PreuvePoste.ModeExige };
+        Assert.Equal(401, reserve.Response.StatusCode);
         var (exige, passerExige) = Requete(depot, horloge, "/api/caisse", Fausse("/api/caisse"), enTetePoste: "COMPTOIR-3");
         Assert.False(await passerExige());
         Assert.Equal(401, exige.Response.StatusCode);
@@ -642,10 +661,11 @@ public class PostesAutorisesTests
     public async Task Les_reglages_hors_bornes_sont_refuses()
     {
         var (_, gerer, depot, _, journal, _, _) = BancGestion();
-        await Assert.ThrowsAsync<Pharma.Domain.Commun.RegleMetierException>(() => gerer.ModifierReglagesAsync(1, ReglagesPostes.ParDefaut with { Mode = "ouvert" }));
         await Assert.ThrowsAsync<Pharma.Domain.Commun.RegleMetierException>(() => gerer.ModifierReglagesAsync(1, ReglagesPostes.ParDefaut with { DureeCodeMinutes = 61 }));
-        await gerer.ModifierReglagesAsync(1, ReglagesPostes.ParDefaut with { Mode = PreuvePoste.ModeExige });
-        Assert.Equal(PreuvePoste.ModeExige, depot.Reglages.Mode);
+        // Le mode demandé est ignoré (preuve toujours exigée, script 174) : « exige » est enregistré, seule la durée change
+        await gerer.ModifierReglagesAsync(1, new ReglagesPostes(PreuvePoste.ModeInactif, 20));
+        Assert.Equal(new ReglagesPostes(PreuvePoste.ModeExige, 20), depot.Reglages);
+        Assert.Equal(PreuvePoste.ModeExige, (await gerer.ReglagesAsync(1)).Reglages.Mode);
         Assert.Contains(journal.Entrees, e => e.Action == GererPostesAutorises.ActionReglages);
     }
 }

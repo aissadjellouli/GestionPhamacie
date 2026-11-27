@@ -429,6 +429,15 @@ Un seul script enchaîne tout dans le bon ordre, avec des contrôles : `scripts\
   - Les guillemets autour du chemin sont **obligatoires** (le chemin contient des espaces). Les versions précédentes de ce manuel donnaient une commande `sc.exe` sans ces guillemets : elle était fausse.
   - **Si échec** : le service se ferme aussitôt. Lire le journal du serveur (voir « Dépannage » en annexe) : le message « Démarrage refusé : l'API écoute en HTTP (non chiffré) » signifie que l'étape 4.6 n'est pas faite. Un message sur `Jwt:Cle` signifie que la variable (4.4) est absente ou trop courte.
 
+- [ ] **4.7 bis** Créer la **clé de ce serveur** pour l'offre et relever son **empreinte** (décision du titulaire du 2026-11-27, point 5). **Où** : PC serveur. **Compte** : administrateur Windows (invite de commandes « en tant qu'administrateur »).
+  ```powershell
+  & "C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" --creer-cle-serveur
+  & "C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" --empreinte-serveur
+  ```
+  - **Attendu** : « Clé de ce serveur créée. » (ou « existe déjà » : la commande ne remplace **jamais** une clé), « Fournisseur : Microsoft Platform Crypto Provider » (TPM) et « Empreinte de ce serveur … » en 8 groupes de 4 caractères. Noter l'empreinte : elle est à transmettre à l'éditeur (avec le code de l'officine et le NIF) pour qu'il la déclare dans le code d'activation (`--serveur`). La base n'est pas lue : la commande marche aussi serveur arrêté ou en veille.
+  - « ATTENTION : clé LOGICIELLE » : pas de TPM utilisable ; rien n'est bloqué, mais vérifier si le TPM est désactivé dans le BIOS/UEFI **avant** de transmettre l'empreinte (changer de clé ensuite demande un nouveau code).
+  - **Si échec** : « Droits d'administrateur nécessaires » : relancer l'invite en administrateur.
+
 - [ ] **4.8** Vérifier l'API sur le PC serveur. **Où** : PC serveur. **Compte** : administrateur Windows.
   ```powershell
   (Invoke-WebRequest http://localhost:5080/api/healthcheck -UseBasicParsing).StatusCode
@@ -631,7 +640,7 @@ L'ancienne base n'est **jamais** modifiée : on travaille sur une copie. Préreq
 
 ### 13. Options
 
-- [ ] **13.0** **Offre (code d'activation)** : relever le code de l'officine et le NIF (Administration › Mon offre ; NIF saisi d'abord dans Administration › Langue et pharmacie), faire signer par l'éditeur un **code de transition** (durée fixée ce jour-là) ou le code de l'offre vendue, puis le saisir dans Mon offre **avec le compte du titulaire** (par le titulaire, ou par l'éditeur à ses côtés) : la saisie est réservée au titulaire. **Attendu** : « Offre activée » ou « Période de transition », nombre de postes de l'offre. Sans code : offre de base, 2 postes. Voir [offre-et-options.md](offre-et-options.md), « Mise en service ».
+- [ ] **13.0** **Offre (code d'activation)** : relever le code de l'officine, le NIF et l'**empreinte de ce serveur** (Administration › Mon offre, boutons « Copier » ; NIF saisi d'abord dans Administration › Langue et pharmacie ; clé du serveur créée à l'étape 4.7 bis), plus l'empreinte du 2e serveur et du PC de secours s'il y en a, faire signer par l'éditeur un **code de transition** (durée fixée ce jour-là) ou le code de l'offre vendue, puis le saisir dans Mon offre **avec le compte du titulaire** (par le titulaire, ou par l'éditeur à ses côtés) : la saisie est réservée au titulaire. **Attendu** : « Offre activée » ou « Période de transition », nombre de postes de l'offre. Sans code : offre de base, 2 postes. Voir [offre-et-options.md](offre-et-options.md), « Mise en service » et « Liaison renforcée de l'offre ». **Remplacement d'un serveur** (PC neuf, Windows réinstallé, restauration sur un autre PC) : sa clé change, il faut un **nouveau code** ; en attendant, délai de grâce de 15 jours (Mon offre affiche l'empreinte à transmettre). L'horloge du serveur doit être juste : la reculer ne prolonge pas l'offre (message dans Mon offre, journal `offre_horloge_reculee`).
 - [ ] **13.1** Accès du titulaire hors de la pharmacie, par VPN : voir [acces-distant.md](acces-distant.md). Ne **jamais** ouvrir l'API sur internet. Si une adresse VPN est utilisée, relancer le script de l'étape 4.6 avec `-AdressesSupplementaires <adresse VPN>`.
 - [ ] **13.2** 2e serveur : parcours C (facultatif, fortement conseillé). À faire **après** la présente installation, sur un PC de l'officine.
 - [ ] **13.3** Synchronisation avec le serveur central : parcours E. La synchronisation reste **désactivée** tant que le serveur central n'est pas prêt et que le titulaire ne l'a pas activée. Ne pas la toucher avant le jour J.
@@ -879,6 +888,16 @@ Scripts (dans `scripts\second-serveur\`, à copier sur les deux serveurs avec `c
   - **Attendu** : `Running`, `Automatic` ; santé `role = veille`. Le service est réglé par `initialiser-second-serveur.ps1` pour être **relancé** quand l'API s'arrête avec le code 10 : c'est ainsi qu'après une promotion la veille s'arrête d'elle-même et redémarre en principal (`role = principal`), sans intervention.
   - **Si échec** : `role` absent ou « inconnu » = ancienne version de l'API (mettre à jour). Le service redémarre en boucle = `SecondServeur__AutreServeur` absent ou faux (le journal de l'API dit qu'elle refuse de démarrer sur une base en lecture seule).
 
+- [ ] **10 bis.** Créer la **clé de ce serveur** pour l'offre et relever son **empreinte** (décision du titulaire du 2026-11-27, point 5). **Où** : 2e serveur. **Compte** : administrateur Windows (invite de commandes « en tant qu'administrateur »).
+  ```powershell
+  & "C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" --creer-cle-serveur
+  & "C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" --empreinte-serveur
+  ```
+  - **Attendu** : « Clé de ce serveur créée. » (ou « existe déjà » : la commande ne remplace **jamais** une clé), « Fournisseur : Microsoft Platform Crypto Provider » (TPM) et « Empreinte de ce serveur … » en 8 groupes de 4 caractères. Noter l'empreinte : elle est à transmettre à l'éditeur (avec le code de l'officine et le NIF) pour qu'il la déclare dans le code d'activation (`--serveur`). La base n'est pas lue : la commande marche aussi serveur arrêté ou en veille.
+  - « ATTENTION : clé LOGICIELLE » : pas de TPM utilisable ; rien n'est bloqué, mais vérifier si le TPM est désactivé dans le BIOS/UEFI **avant** de transmettre l'empreinte (changer de clé ensuite demande un nouveau code).
+  - **Si échec** : « Droits d'administrateur nécessaires » : relancer l'invite en administrateur.
+  - **Le 2e serveur doit être déclaré dans le code de l'offre** : transmettre son empreinte à l'éditeur, qui signe un nouveau code avec les deux `--serveur` (principal et 2e serveur), à saisir dans Mon offre sur le principal. Sans cela, après une bascule l'offre passe en délai de grâce de 15 jours, puis à l'offre de base. Voir [promotion-serveurs.md](promotion-serveurs.md).
+
 - [ ] **11.** Titulaire : réglages propres à chaque serveur. **Où** : application, sur le PC serveur. **Compte** : titulaire.
   - Administration, 2e serveur, **Réglages par serveur** : cliquer sur un serveur, régler son dossier d'échange **CHIFA-Officine** et son dossier du **logiciel MDN** (vide : réglages `Chifa__DossierExport` et `Mdn:Dossier` de ce serveur), cocher « CHIFA-Officine installé », « Lecteur de carte et Token disponibles », « Logiciel MDN installé », « Douchette branchée et testée ».
   - Ces réglages sont dans la base (table `serveur_officine`) et sont répliqués. À la bascule, l'API du 2e serveur prend **les dossiers de sa propre ligne**.
@@ -1014,6 +1033,16 @@ Les copies ne sont **pas chiffrées** : les ranger comme les sauvegardes (accès
   - **Attendu** : l'empreinte affichée est **la même** que sur l'écran du titulaire.
   - Ajouter `--remplacer` seulement si le titulaire le demande. **[À CONFIRMER : comportement de `--importer-cle` si une clé existe déjà.]**
   - L'API refuse de démarrer si la clé est illisible : elle n'est jamais remplacée en silence.
+- [ ] **8 bis.** Créer la **clé de ce serveur** pour l'offre et relever son **empreinte** (décision du titulaire du 2026-11-27, point 5). **Où** : PC de secours. **Compte** : administrateur Windows (invite de commandes « en tant qu'administrateur »).
+  ```powershell
+  & "C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" --creer-cle-serveur
+  & "C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" --empreinte-serveur
+  ```
+  - **Attendu** : « Clé de ce serveur créée. » (ou « existe déjà » : la commande ne remplace **jamais** une clé), « Fournisseur : Microsoft Platform Crypto Provider » (TPM) et « Empreinte de ce serveur … » en 8 groupes de 4 caractères. Noter l'empreinte : elle est à transmettre à l'éditeur (avec le code de l'officine et le NIF) pour qu'il la déclare dans le code d'activation (`--serveur`). La base n'est pas lue : la commande marche aussi serveur arrêté ou en veille.
+  - « ATTENTION : clé LOGICIELLE » : pas de TPM utilisable ; rien n'est bloqué, mais vérifier si le TPM est désactivé dans le BIOS/UEFI **avant** de transmettre l'empreinte (changer de clé ensuite demande un nouveau code).
+  - **Si échec** : « Droits d'administrateur nécessaires » : relancer l'invite en administrateur.
+  - **Le PC de secours doit être déclaré dans le code de l'offre** (3 serveurs au plus) : transmettre son empreinte à l'éditeur, nouveau code à saisir dans Mon offre sur le PC serveur. Sinon, après la bascule, délai de grâce de 15 jours puis offre de base.
+
 - [ ] **9.** Dossier partagé de la copie de secours. **Où** : PC de secours. **Compte** : administrateur Windows.
   ```powershell
   New-Item -ItemType Directory -Force "D:\CopieSecours" | Out-Null
@@ -1670,23 +1699,36 @@ Cocher tout avant le jour J.
 
 ## Postes autorisés : autoriser chaque poste (depuis la version du 2026-11-24, script 167)
 
+> **Décision du titulaire du 2026-11-27 (script 174) : preuve toujours exigée.** Chaque poste doit être autorisé avec son code, sinon pas de
+> connexion ; un PC non autorisé ne compte pas dans le maximum. Les modes « transition » et « inactif » ne s'appliquent plus (colonne
+> `parametre_postes.mode` passée à `exige` et plus lue) ; l'écran Administration › Postes autorisés ne propose plus de choix du mode. Sur un
+> PC non autorisé, l'écran de connexion ne montre que « Code du poste » et « Autoriser » ; le super admin garde son accès (lien « Connexion
+> super admin »).
+
 **Base neuve (parcours A)** : `seed_referentiel.sql` pose la ligne de réglage `parametre_postes` avec les valeurs par défaut du schéma
-(`INSERT INTO parametre_postes DEFAULT VALUES`) : mode **transition** (`schema.sql`, `mode DEFAULT 'transition'`), code valable
-15 minutes ; la liste `poste_autorise` est **vide** (aucun poste autorisé). Le **maximum de postes vient de l'offre** : sans code
+(`INSERT INTO parametre_postes DEFAULT VALUES`) : mode `exige` depuis le script 174 (plus lu par l'API), code valable
+15 minutes ; la liste `poste_autorise` est **vide** (aucun poste autorisé) : **aucun PC ne peut se connecter** tant que le premier n'est pas
+autorisé. **Premier poste : obligatoirement par `Pharma.Api.exe --autoriser-poste "CAISSE-1"` sur le PC serveur** (étape 1 ci-dessous). Le **maximum de postes vient de l'offre** : sans code
 d'activation, offre de base, **2 postes** (`OffreCourante.PostesBase = 2`, `src\Pharma.Application\Offre\Offre.cs`) ; la colonne
 `parametre_postes.maximum_postes` (20 par défaut) n'est plus lue depuis le script 172. Saisir donc le code de l'offre (parcours A,
 étape 13.0) avant d'autoriser plus de 2 postes, puis suivre les étapes 1 à 4 ci-dessous.
 
-**Après la mise à jour** d'une officine déjà en service, la liste est aussi en mode **transition** : tout continue de fonctionner, avec
-un bandeau « Ce poste n'est pas encore autorisé » sur l'écran de connexion des postes.
+**Mise à jour d'une officine déjà en service** (version avec le script 174) : dès le redémarrage de l'API, **aucun PC non autorisé ne se
+connecte plus**. Prévoir le passage **le jour même** de la mise à jour, avec le titulaire : créer le code de chaque poste (étape 1 :
+`--autoriser-poste` pour le premier si aucun poste n'est encore autorisé, puis Administration › Postes autorisés) et le taper sur chaque PC
+(étape 2), de préférence avant l'ouverture. Liste des noms vus récemment sans preuve : fenêtre « Autoriser un poste ».
 
-1. Premier poste (aucun titulaire connecté sur un poste autorisé) : sur le PC serveur, `Pharma.Api.exe --autoriser-poste "CAISSE-1"`
-   (identifiant et mot de passe du titulaire) affiche un code ; sinon, Administration › Postes autorisés › « Autoriser un poste ».
+1. Premier poste : **depuis le PC lui-même** (décision du titulaire du 2026-11-27), écran de connexion › « Connexion du titulaire
+   (Administration seulement) » : le titulaire se connecte (Administration seulement, ni caisse ni vente), Postes autorisés › « Autoriser un
+   poste » affiche le code ; il se déconnecte et tape ce code dans « Autoriser ce poste » (étape 2), puis se reconnecte normalement.
+   `Pharma.Api.exe --autoriser-poste "CAISSE-1"` sur le PC serveur (identifiant et mot de passe du titulaire) reste possible. Les autres
+   postes : Administration › Postes autorisés, depuis n'importe quel PC (y compris non autorisé, Administration seulement). Le code de l'offre
+   se saisit de la même façon (Administration › Mon offre) avant tout poste autorisé.
 2. Sur le poste, avec le compte Windows habituel : écran de connexion, « Autoriser ce poste », taper le code. Sur un compte standard, Windows
    demande **une fois** l'accord d'un administrateur du PC (création de la clé du poste) : saisir l'identifiant et le mot de passe d'un
    administrateur du PC. Refus : « Autorisation annulée », recommencer. **[À VÉRIFIER]** au premier poste réel : la connexion avec le compte
    standard fonctionne ensuite (preuve acceptée).
-3. Une fois tous les postes autorisés (la fenêtre de confirmation liste ceux encore vus sans preuve) : Administration › Postes autorisés ›
-   « Preuve des postes » = « Exigée pour tous ».
+3. (Supprimé le 2026-11-27, script 174 : la preuve est toujours exigée, il n'y a plus de mode à régler.) Contrôle : chaque PC se connecte
+   après sa saisie du code ; Administration › Postes autorisés les liste « Autorisé ».
 4. PC remplacé : « Remplacer le PC » (nouveau code) ; PC volé ou perdu : « Révoquer ». L'heure de chaque PC doit rester à moins de
    2 minutes de celle du serveur.

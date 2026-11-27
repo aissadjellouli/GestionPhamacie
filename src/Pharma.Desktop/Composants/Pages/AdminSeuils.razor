@@ -8,10 +8,15 @@
     <div class="admin-contenu">
         <div class="titre-page">
             <div>
-                <h1>Alertes et seuils · @NavAdmin.Libelle("admin/seuils", Rubrique)</h1>
+                <h1>Alertes et seuils · @NavAdmin.Libelle("admin/seuils", Rubrique)<AideEcran Cle="admin/seuils" /></h1>
                 <p class="sous-titre">Réservé au titulaire · chaque modification est inscrite au journal</p>
             </div>
-            <button type="button" class="btn btn-principal" disabled="@(g is null || enCours || (Fixe && rubrique is "peremption" or "stock"))" @onclick="EnregistrerAsync">Enregistrer</button>
+            @* Rappel « modifications non enregistrées » à côté du bouton, et raison d'un bouton grisé (revue d'ergonomie du 2026-11-27, n° 23 et 28) *@
+            <div class="ligne-bouton-raison">
+                @if (Fixe && rubrique is "peremption" or "stock") { <span class="raison-grise">Réglages fixés par le serveur central</span> }
+                else if (g is not null && !enCours && Modifie) { <span class="raison-grise texte-attention" role="status">Modifications non enregistrées</span> }
+                <button type="button" class="btn btn-principal" disabled="@(g is null || enCours || (Fixe && rubrique is "peremption" or "stock"))" @onclick="EnregistrerAsync">Enregistrer</button>
+            </div>
         </div>
 
         @if (erreur is not null) { <div class="erreur" role="alert">@erreur</div> }
@@ -43,7 +48,7 @@
                         <span class="tuile-note">@Environ(g.JoursRouge) : vendre en priorité</span>
                     </div>
                     <div class="champ">
-                        <label for="g-horizon">Calcul du risque d’écoulement (jours)</label>
+                        <label for="g-horizon">Période de ventes prise en compte (jours)</label>
                         <input id="g-horizon" type="number" min="1" @bind="g.HorizonRisqueJours" />
                         <span class="tuile-note">anticiper les pertes selon les ventes</span>
                     </div>
@@ -215,7 +220,22 @@
         await ChargerAsync();
     }
 
+    /// <summary>Saisie telle qu'au dernier chargement : un écart affiche « Modifications non enregistrées ».</summary>
+    private string? saisieChargee;
+    private bool Modifie => saisieChargee is not null && Signature() != saisieChargee;
+
+    private string Signature() => g is null ? "" : string.Join("|",
+        $"{g.JoursOrange};{g.JoursRouge};{g.HorizonRisqueJours};{g.DelaiFournisseurJours};{g.JoursSecurite};{g.JoursCibleCommande};{g.JoursDormant};{g.SeuilLotDelaisse};{g.SeuilLotDelaisseCollectif}",
+        string.Join(",", grossistes.Select(f => $"{f.Id}:{f.DelaiRepriseJours}:{f.JoursOrange}:{f.JoursRouge}")),
+        string.Join(",", exceptions.Select(e => $"{e.ProduitId}:{e.JoursOrange}:{e.JoursRouge}")));
+
     private async Task ChargerAsync()
+    {
+        await ChargerSaisieAsync();
+        saisieChargee = g is null ? null : Signature();
+    }
+
+    private async Task ChargerSaisieAsync()
     {
         var (s, err) = await Api.SeuilsAsync();
         erreur = err;

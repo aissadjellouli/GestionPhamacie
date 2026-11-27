@@ -432,7 +432,9 @@ public static class DependencyInjection
         // Offre de base et options (script 172) : activation signée par l'éditeur, contrôlée avec la clé publique du programme
         services.AddSingleton<Offre.CacheOffre>();
         services.AddScoped<Offre.OffreCourante>(sp => new Offre.OffreCourante(sp.GetRequiredService<Offre.IActivationsOffreDepot>(),
-            sp.GetRequiredService<Commun.IHorloge>(), cache: sp.GetRequiredService<Offre.CacheOffre>()));
+            sp.GetRequiredService<Commun.IHorloge>(), cache: sp.GetRequiredService<Offre.CacheOffre>(),
+            // Point 5 du 2026-11-27 : clé de ce serveur (TPM) et date plancher hors base, fournies par l'infrastructure
+            cleServeur: sp.GetService<Offre.ICleServeur>(), plancher: sp.GetService<Offre.IDatePlancherFichier>()));
         services.AddScoped<Offre.ILimitesOffre>(sp => sp.GetRequiredService<Offre.OffreCourante>());
         services.AddScoped<Offre.IPacksOffre>(sp => sp.GetRequiredService<Offre.OffreCourante>());
         services.AddScoped<Offre.GererOffre>();

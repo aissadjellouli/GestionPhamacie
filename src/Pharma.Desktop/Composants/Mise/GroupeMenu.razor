@@ -1,0 +1,64 @@
+@inject EtatMenus Etat
+@inject NavigationManager Nav
+
+@* Rubrique repliable d'un menu de gauche (décision du titulaire du 2026-11-27 : toute rubrique qui a des sous-rubriques se replie et
+   se déplie, avec son chevron « › » replié, « ⌄ » déplié ; même comportement que les thèmes de l'Administration). Le titre est un
+   bouton (Entrée et Espace, focus visible) ; l'état reste tant que le poste est ouvert (EtatMenus). Repliées, les sous-rubriques
+   restent dans la page, masquées (hidden) : un raccourci clavier qui vise l'une d'elles (F8 « Ouvrir le tiroir ») fonctionne toujours.
+   Le cadre des sous-rubriques ne crée pas de boîte (display: contents, app.css) : le menu garde ses écarts et ses hauteurs. *@
+<button type="button" id="@idTitre" class="groupe-menu-titre @ClasseVariante @(ContientActif ? "groupe-actif" : null)"
+        aria-expanded="@(ouvert ? "true" : "false")" aria-controls="@idContenu" aria-current="@(Courant ? "page" : null)"
+        title="@Infobulle" @onclick="Basculer"><span class="chevron-menu @(ouvert ? "ouvert" : null)" aria-hidden="true"></span>@Titre@Complement</button>
+<div id="@idContenu" class="groupe-menu-contenu" role="group" aria-labelledby="@idTitre" hidden="@(!ouvert)">@ChildContent</div>
+
+@code {
+    private static int suivant;
+    private readonly string idTitre;
+    private readonly string idContenu;
+    private bool ouvert = true;
+
+    public GroupeMenu()
+    {
+        var n = Interlocked.Increment(ref suivant);
+        idTitre = $"groupe-menu-{n}";
+        idContenu = $"groupe-menu-{n}-contenu";
+    }
+
+    /// <summary>Clé unique de la rubrique dans le poste (ex. « dettes:À recevoir »), pour garder son état d'un écran à l'autre.</summary>
+    [Parameter, EditorRequired] public string Cle { get; set; } = "";
+    /// <summary>Intitulé de la rubrique.</summary>
+    [Parameter, EditorRequired] public string Titre { get; set; } = "";
+    /// <summary>Ajout après l'intitulé, dans le bouton (ex. compteur du travail en attente).</summary>
+    [Parameter] public RenderFragment? Complement { get; set; }
+    /// <summary>Sous-rubriques.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    /// <summary>La rubrique contient l'élément affiché : titre en vert ; repliée, elle se rouvre à l'arrivée sur un autre de ses éléments.</summary>
+    [Parameter] public bool ContientActif { get; set; }
+    /// <summary>État sans choix de l'employé ; faux : dépliée seulement si elle contient l'élément affiché (thèmes de l'Administration).</summary>
+    [Parameter] public bool OuvertParDefaut { get; set; } = true;
+    /// <summary>Dépliée quoi qu'il arrive (ex. confirmation « Ouvrir le tiroir » ouverte dans le groupe).</summary>
+    [Parameter] public bool ForcerOuvert { get; set; }
+    /// <summary>Rendu du titre : « groupe » (petites capitales grises), « ecran » (écran affiché, en vert) ou « theme » (thème de l'Administration).</summary>
+    [Parameter] public string Variante { get; set; } = "groupe";
+    /// <summary>Le titre est l'écran affiché (aria-current="page").</summary>
+    [Parameter] public bool Courant { get; set; }
+    /// <summary>Infobulle du titre, facultative.</summary>
+    [Parameter] public string? Infobulle { get; set; }
+
+    private string ClasseVariante => Variante switch
+    {
+        "ecran" => "titre-ecran",
+        "theme" => "nav-theme" + (ContientActif ? " theme-actif" : ""),
+        _ => "titre-groupe"
+    };
+
+    protected override void OnParametersSet() =>
+        ouvert = ForcerOuvert || Etat.Ouvert(Cle, OuvertParDefaut || ContientActif, ContientActif, Nav.Uri);
+
+    private void Basculer()
+    {
+        if (ForcerOuvert) return;
+        ouvert = !ouvert;
+        Etat.Choisir(Cle, ouvert, Nav.Uri);
+    }
+}

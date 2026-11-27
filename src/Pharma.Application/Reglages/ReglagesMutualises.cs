@@ -160,12 +160,21 @@ public sealed record BilanReglages(IReadOnlyList<string> Appliquees, IReadOnlyLi
 /// <item>valeur invalide : la table entière est rejetée (D9), avec son motif, sans message ; la valeur et le mode précédents restent.</item>
 /// </list>
 /// </summary>
+/// <param name="packs">Offre en vigueur (null : comme avant le lot O6, doublures de tests). Sans le pack G, rien n'est appliqué et les tables
+/// imposées sont rendues à l'officine (<see cref="SuspendreImpositionsAsync"/>).</param>
 public sealed class AppliquerReglagesMutualises(IReglagesMutualisesDepot depot, IMoteurAlertes? alertes = null, IAlertesTitulaire? titulaire = null,
-    ITraceErreurs? trace = null)
+    ITraceErreurs? trace = null, Offre.IPacksOffre? packs = null)
 {
+    /// <summary>Auteur noté au journal quand une imposition est suspendue faute du pack G.</summary>
+    public const string AuteurSansPackG = "Offre sans le pack G : réglage rendu à l'officine";
+
     public async Task<BilanReglages> ExecuterAsync(CancellationToken ct = default)
     {
         if (!await depot.ApplicationPossibleAsync(ct)) return BilanReglages.Aucun;
+        // Décision du titulaire du 2026-11-27 (aucun blocage sans le central ni sans le pack G) : sans G, aucun modèle n'est appliqué et un
+        // réglage imposé redevient modifiable dans l'officine ; le modèle reçu est gardé et s'impose de nouveau si le pack G revient
+        if (packs is not null && !await packs.InclusAsync(Offre.PacksOffre.MultiOfficines, ct))
+            return new BilanReglages([], [], [], await SuspendreImpositionsAsync(ct), []);
         var etats = (await depot.EtatsAsync(ct)).ToDictionary(e => e.Table);
         List<string> appliquees = [], rejetees = [], nonAdoptees = [], liberees = [];
         List<ReglageImpose> imposees = [];
@@ -192,6 +201,35 @@ public sealed class AppliquerReglagesMutualises(IReglagesMutualisesDepot depot, 
         }
         if (imposees.Count > 0 && titulaire is not null) await titulaire.ReglagesImposesAsync(imposees, ct);
         return new BilanReglages(appliquees, rejetees, nonAdoptees, liberees, imposees);
+    }
+
+    /// <summary>
+    /// Sans le pack G : chaque table imposée repasse en mode « local » (valeur gardée, journal « reglage_central_libere », auteur
+    /// <see cref="AuteurSansPackG"/>), la garde de la base ne la refuse plus. Le mode reçu reste noté : dès le retour du pack G, la table est de nouveau
+    /// « à appliquer » (mode en vigueur différent du mode reçu) et le modèle s'impose, titulaire prévenu. Rend les tables rendues.
+    /// </summary>
+    public async Task<IReadOnlyList<string>> SuspendreImpositionsAsync(CancellationToken ct = default)
+    {
+        var rendues = new List<string>();
+        foreach (var lu in await depot.EtatsAsync(ct))
+        {
+            if (lu.Mode != ValidationModele.ModeImpose) continue;
+            try
+            {
+                await using var tx = await depot.OuvrirAsync(lu.Table, ct);
+                var e = await tx.EtatAsync(ct);
+                if (e.Mode != ValidationModele.ModeImpose) continue;
+                await tx.EnregistrerEtatAsync(new MiseAJourEtat(ValidationModele.ModeLocal, null, e.Etat, null, e.MotifRejet, null, null, false), ct);
+                await tx.JournaliserAsync(ActionsReglage.Libere, e.Mode, ValidationModele.ModeLocal, e.VersionAppliquee, AuteurSansPackG, null, null, null, ct);
+                await tx.ValiderAsync(ct);
+                rendues.Add(lu.Table);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                trace?.Erreur($"Réglage mutualisé {lu.Table} : imposition non suspendue (sans le pack G)", ex);
+            }
+        }
+        return rendues;
     }
 
     /// <summary>Table à examiner : version reçue ni appliquée ni rejetée, valeur non adoptée à réévaluer, ou imposée et modifiée localement depuis.</summary>

@@ -1,0 +1,18 @@
+@inject SessionPoste Session
+
+@* État vide commun aux écrans de la caisse quand le poste n'a pas de caisse ouverte (2026-11-27, revue d'ergonomie n° 12) :
+   message neutre (pas un bandeau d'erreur), ce que l'écran affichera une fois la caisse ouverte, et le bouton « Ouvrir la caisse »
+   pour qui peut vendre. Utilisé par État de la caisse et Relève / Clôture / Comptage intermédiaire. *@
+<section class="carte caisse-fermee" role="status" aria-labelledby="t-caisse-fermee">
+    <h2 id="t-caisse-fermee">Aucune caisse ouverte sur ce poste</h2>
+    <p class="detail">@Explication</p>
+    @if (Session.A("caisse.vendre"))
+    {
+        <a href="caisse" class="btn btn-principal">Ouvrir la caisse</a>
+    }
+</section>
+
+@code {
+    /// <summary>Ce que l'écran montrera une fois la caisse ouverte (« L’état de la caisse s’affiche… »).</summary>
+    [Parameter, EditorRequired] public string Explication { get; set; } = "";
+}

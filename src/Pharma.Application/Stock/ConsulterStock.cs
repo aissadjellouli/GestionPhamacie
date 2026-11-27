@@ -26,7 +26,7 @@ public interface IStockLecture
     Task<IReadOnlyList<LigneStock>> LignesAsync(CancellationToken ct = default);
 }
 
-/// <summary>Filtres du tableau de stock : recherche (nom, DCI, code-barres, lot, emplacement), filtre (tous, commander, peremption, psychotropes, parapharmacie), rayon (« - » = non rangé).</summary>
+/// <summary>Filtres du tableau de stock : recherche (nom, DCI, code-barres, lot, emplacement), filtre (tous, en-stock, commander, peremption, psychotropes, parapharmacie), rayon (« - » = non rangé).</summary>
 public sealed record FiltreStock(string? Recherche = null, string? Filtre = null, string? Rayon = null);
 
 /// <summary>Page du tableau de stock, indicateurs de tout le stock, et propositions pour aider la saisie de la recherche.</summary>
@@ -65,6 +65,8 @@ public sealed class ConsulterStock(IStockLecture stock, IEmplacements? emplaceme
 
     private static bool PasseFiltre(LigneStock l, string? filtre) => filtre switch
     {
+        // Produits qui ont du stock : vue par défaut de l'écran Stock › Produits (2026-11-27), « tous » reste à un clic
+        "en-stock" => l.Stock > 0,
         "commander" => l.Statut is "rupture" or "critique",
         "peremption" => l.PeremptionProche,
         "psychotropes" => l.Classe is ClasseReglementaire.Psychotrope or ClasseReglementaire.Stupefiant,

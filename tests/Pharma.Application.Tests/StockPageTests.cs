@@ -62,6 +62,15 @@ public class StockPageTests
     }
 
     [Fact]
+    public async Task Filtre_en_stock_ecarte_les_produits_sans_stock()
+    {
+        var consulter = new ConsulterStock(new StockLectureEnMemoire(
+            [Ligne(1, "Paracétamol 500 mg cp", "Paracétamol"), Ligne(2, "Doliprane 1 g cp", "Paracétamol") with { Stock = 0 }]));
+        Assert.Equal(1L, Assert.Single((await consulter.PageAsync(new FiltreStock(Filtre: "en-stock"), new DemandePage())).Page.Lignes).ProduitId);
+        Assert.Equal(2, (await consulter.PageAsync(new FiltreStock(Filtre: "tous"), new DemandePage())).Page.Total);
+    }
+
+    [Fact]
     public async Task Propositions_pour_aider_la_saisie()
     {
         Assert.Empty((await Cas().PageAsync(new FiltreStock("p"), new DemandePage())).Suggestions);            // moins de 2 caractères

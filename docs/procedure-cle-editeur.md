@@ -74,26 +74,30 @@ pharmacies. **Tant que ces constantes sont vides, aucun code n'est accepté** : 
 
 > Pas à pas détaillé (chaque paramètre, saisie dans Administration › Mon offre, messages de refus) : [signer-code-activation.md](signer-code-activation.md).
 
-1. Relever, dans l'écran **Administration › Mon offre** de la pharmacie (titulaire) : le **code de l'officine** et le **NIF**. Le NIF doit
-   être saisi avant (Administration › Langue et pharmacie) : un code est lié aux deux.
+1. Relever, dans l'écran **Administration › Mon offre** de la pharmacie (titulaire) : le **code de l'officine**, le **NIF** et
+   l'**empreinte de ce serveur** (boutons « Copier »). Le NIF doit être saisi avant (Administration › Langue et pharmacie) : un code est lié
+   aux deux. Empreintes du 2e serveur et du PC de secours : sur chacun, `Pharma.Api.exe --empreinte-serveur` (après
+   `Pharma.Api.exe --creer-cle-serveur`, en administrateur, à l'installation ; voir [mise-en-production.md](mise-en-production.md)).
 2. Signer avec la **clé principale** (le mot de passe est demandé) :
    ```powershell
    cd C:\MesAtlassian\pharmaofficine
    dotnet run --project src\Pharma.Editeur -- signer --cle C:\MesAtlassian\cle-editeur\cle-editeur.pem `
-       --officine <code de l'officine> --nif <NIF> --postes <n> [--packs A,D | --packs tous] [--scanners <n>] [--fin AAAA-MM-JJ] [--transition]
+       --officine <code de l'officine> --nif <NIF> --postes <n> --serveur <empreinte> [--serveur <empreinte> …] `
+       [--packs A,D | --packs tous] [--scanners <n>] [--fin AAAA-MM-JJ] [--transition]
    ```
 
    | Option | Sens |
    |---|---|
    | `--postes <n>` | Nombre de postes autorisés (1 à 200), **obligatoire** |
+   | `--serveur <empreinte>` | Empreinte d'un serveur de l'officine (principal, 2e serveur, PC de secours), **obligatoire**, répétable 1 à 3 fois ; tirets et casse indifférents. L'outil ne signe plus que des codes version 2 (liés aux serveurs, décision du 2026-11-27) |
    | `--packs A,D` | Packs vendus (A à H, séparés par des virgules) ; `tous` = les 8 ; absent = aucun pack |
    | `--scanners <n>` | Scanners mobiles (0 par défaut) |
    | `--fin AAAA-MM-JJ` | Dernier jour de l'offre (abonnement) ; absent = définitive. Rappels au titulaire (SMS ou e-mail) 90, 60, 30, 15, 7 et 1 jour(s) avant la fin, puis au début des 15 jours de grâce |
    | `--transition` | Code « tout compris » de la mise en place ou de la mise à jour : les 8 packs, `--fin` obligatoire |
 
-   **Attendu** : une ligne de résumé (pharmacie, NIF, postes, packs, fin), puis le code `PO1.…`. Le code n'est pas secret : il ne vaut que
-   pour cette pharmacie (code de l'officine et NIF).
-3. Relire un code avant de l'envoyer (contenu et signature) :
+   **Attendu** : une ligne de résumé (pharmacie, NIF, postes, packs, fin), la liste des serveurs autorisés, puis le code `PO1.…`. Le code
+   n'est pas secret : il ne vaut que pour cette pharmacie (code de l'officine et NIF) et sur les serveurs déclarés.
+3. Relire un code avant de l'envoyer (contenu, serveurs autorisés et signature) :
    ```powershell
    dotnet run --project src\Pharma.Editeur -- lire --code <PO1.…> --cle-publique (Get-Content C:\MesAtlassian\cle-editeur\cle-editeur-publique.txt)
    ```
@@ -106,9 +110,12 @@ pharmacies. **Tant que ces constantes sont vides, aucun code n'est accepté** : 
 | `pharmacie_test` | `142d3c7d-c7a3-4e40-84dc-04d4440af2dc` | `000016000000000` |
 
 ```powershell
-dotnet run --project src\Pharma.Editeur -- signer --cle C:\MesAtlassian\cle-editeur\cle-editeur.pem --officine 1ea51897-2885-4e89-bc0c-89765d819402 --nif 000016000000000 --postes 20 --transition --fin 2027-12-31
-dotnet run --project src\Pharma.Editeur -- signer --cle C:\MesAtlassian\cle-editeur\cle-editeur.pem --officine 142d3c7d-c7a3-4e40-84dc-04d4440af2dc --nif 000016000000000 --postes 20 --transition --fin 2027-12-31
+dotnet run --project src\Pharma.Editeur -- signer --cle C:\MesAtlassian\cle-editeur\cle-editeur.pem --officine 1ea51897-2885-4e89-bc0c-89765d819402 --nif 000016000000000 --postes 20 --serveur <empreinte du PC de développement> --transition --fin 2027-12-31
+dotnet run --project src\Pharma.Editeur -- signer --cle C:\MesAtlassian\cle-editeur\cle-editeur.pem --officine 142d3c7d-c7a3-4e40-84dc-04d4440af2dc --nif 000016000000000 --postes 20 --serveur <empreinte du PC de développement> --transition --fin 2027-12-31
 ```
+
+Les codes version 1 déjà signés pour ces bases restent acceptés (Mon offre : « Code non lié au serveur ») ; pour les remplacer, créer la clé du
+PC de développement (`Pharma.Api.exe --creer-cle-serveur`, en administrateur), lire son empreinte (`--empreinte-serveur`) et signer ci-dessus.
 
 ## 4. Faire parvenir le code à la pharmacie
 
@@ -122,8 +129,10 @@ dotnet run --project src\Pharma.Editeur -- signer --cle C:\MesAtlassian\cle-edit
   ```
   Le central transmet sans rien signer ; l'officine contrôle et applique au prochain échange.
 
-**Refus possibles à la saisie** : autre pharmacie (code de l'officine), autre NIF, signature fausse, code échu (délai de grâce passé), code
-plus ancien que celui en place, code déjà enregistré. Rien ne change dans ces cas.
+**Refus possibles à la saisie** : autre pharmacie (code de l'officine), autre NIF, signature fausse, **serveur non déclaré dans le code**
+(« Ce serveur n'est pas déclaré dans le code de l'offre : demandez un nouveau code à l'éditeur avec l'empreinte … »), code échu (délai de
+grâce passé, compté au jour effectif : reculer l'horloge n'y change rien), code plus ancien que celui en place, code déjà enregistré. Rien ne
+change dans ces cas.
 
 ## 5. Vie de l'offre
 
@@ -134,6 +143,9 @@ plus ancien que celui en place, code déjà enregistré. Rien ne change dans ces
   `RappelsOffre`, `src/Pharma.Application/Offre/Offre.cs`) ; l'écran Mon offre affiche son message dès 90 jours ; après la grâce, offre de base ; aucune donnée effacée ; un nouveau code
   rouvre tout.
 - **Changement de NIF** de la pharmacie : l'offre retombe à la base ; signer un nouveau code avec le nouveau NIF.
+- **Remplacement d'un serveur** (PC neuf, Windows réinstallé, restauration sur un autre PC, nouveau 2e serveur ou PC de secours) : sa clé
+  change, donc signer un **nouveau code** avec les empreintes à jour ; en attendant, 15 jours de grâce depuis la première constatation, puis
+  offre de base. Déclarer le 2e serveur et le PC de secours **dès le premier code**.
 
 ## 6. Perte ou vol d'une clé
 

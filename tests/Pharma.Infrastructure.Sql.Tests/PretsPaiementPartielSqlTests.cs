@@ -75,4 +75,33 @@ public sealed class PretsPaiementPartielSqlTests(CopieSql copie) : IClassFixture
         Assert.Equal(80, await ScalaireAsync($"SELECT sum(montant) FROM mouvement_tresorerie WHERE categorie = 'charges_financieres' AND libelle LIKE '%SQL-170%'"));
         Assert.Equal(1000, await ScalaireAsync($"SELECT sum(montant) FROM mouvement_tresorerie WHERE nature = 'remboursement_financement' AND libelle LIKE '%SQL-170%'"));
     }
+
+    [FactSql]
+    public async Task Remboursement_anticipe_qui_solde_le_pret_leve_le_blocage_de_l_echeancier()
+    {
+        var sql = new FinancementsSql(copie.Source);
+        var titulaire = await copie.Donnees.UtilisateurAsync();
+        var coffre = await ScalaireAsync("SELECT id FROM compte_tresorerie WHERE type = 'coffre' ORDER BY id LIMIT 1");
+        await using (var cmd = copie.Verif.CreateCommand($"""
+            INSERT INTO mouvement_tresorerie (compte_id, date_mouvement, sens, montant, nature, libelle, utilisateur_id)
+            VALUES ({coffre}, current_date, 'entree', 100000, 'encaissement', 'Essai solde anticipé', {titulaire})
+            """))
+            await cmd.ExecuteNonQueryAsync();
+        var pretId = await sql.CreerPretAsync(new PretAEcrire(null, "Prêteur essai solde", "SQL-SOLDE", null, 1000, new DateOnly(2026, 1, 1), titulaire));
+        await sql.RemplacerEcheancierAsync(pretId, 0,
+        [
+            new LigneEcheancier(new DateOnly(2026, 2, 1), 500, 50, 0, 0, 550, 500),
+            new LigneEcheancier(new DateOnly(2026, 3, 1), 500, 50, 0, 0, 550, 0)
+        ]);
+
+        // Anticipé partiel (200) : échéancier à remplacer ; puis anticipé du reste (800) : prêt soldé, blocage levé, échéances retirées
+        await sql.RembourserParAnticipationAsync(new RemboursementAnticipeAEcrire(pretId, new DateOnly(2026, 1, 10), 200, 0, "especes", null, null, 0, null,
+            titulaire, 0));
+        Assert.True((await sql.PretAsync(pretId))!.Pret.EcheancierARemplacer);
+        await sql.RembourserParAnticipationAsync(new RemboursementAnticipeAEcrire(pretId, new DateOnly(2026, 1, 20), 800, 0, "especes", null, null, 0, null,
+            titulaire, 200));
+        var d = (await sql.PretAsync(pretId))!;
+        Assert.Equal((1000m, 0m, false), (d.Pret.CapitalRembourse, d.Pret.ResteDu, d.Pret.EcheancierARemplacer));
+        Assert.Empty(d.Echeances);
+    }
 }

@@ -68,8 +68,11 @@ public sealed class JetonService(IConfiguration config, IHttpContextAccessor? re
         if (comptoir) revendications.Add(new Claim(CodeComptoir.Revendication, CodeComptoir.Portee));
         // Mot de passe provisoire : aucun droit tant qu'il n'est pas changé (PermissionsComptoir, PermissionFilter)
         if (motDePasseAChanger) revendications.Add(new Claim(RegleMotDePasse.Revendication, RegleMotDePasse.AChanger));
+        // Titulaire sur un PC non autorisé (ou jeton déjà marqué) : Administration seulement, aucun poste lié (ce PC n'est pas un poste)
+        if (AccesAdministrationSeule.Demande(requeteCourante?.HttpContext))
+            revendications.Add(new Claim(AccesAdministrationSeule.Revendication, AccesAdministrationSeule.Valeur));
         // Poste de la connexion : lié au jeton (PorteeConnexion.Poste, PosteDuJeton)
-        if (!string.IsNullOrWhiteSpace(poste))
+        else if (!string.IsNullOrWhiteSpace(poste))
         {
             revendications.Add(new Claim(PorteeConnexion.RevendicationPoste, poste.Trim()));
             // Poste prouvé (signature de la requête de connexion) : identifiant lié au jeton, exigé à chaque requête (PreuvePosteMiddleware)

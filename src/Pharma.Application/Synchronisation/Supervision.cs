@@ -96,13 +96,15 @@ public sealed record BandeauSync(bool Affiche, DateTime? Depuis, long Operations
 /// titulaire et aux employés dont le rôle a le droit « sync.suivre » ; seulement si la synchronisation est activée et que la plus
 /// ancienne opération non accusée dépasse le seuil réglé. Lecture seule, jamais bloquant : toute erreur de lecture = pas de bandeau.
 /// </summary>
+/// <param name="packs">Sans le pack G, jamais de bandeau : la synchronisation est arrêtée volontairement (décision du titulaire du 2026-11-27).</param>
 public sealed class ConsulterAttenteSync(ISupervisionSyncDepot depot, MemoireSupervisionSync memoire, IPermissionService droits, IHorloge horloge,
-    ITraceErreurs? trace = null)
+    ITraceErreurs? trace = null, Offre.IPacksOffre? packs = null)
 {
     public async Task<BandeauSync> ExecuterAsync(long utilisateurId, CancellationToken ct = default)
     {
         try
         {
+            if (packs is not null && !await packs.InclusAsync(Offre.PacksOffre.MultiOfficines, ct)) return BandeauSync.Aucun;
             if (!await droits.EstTitulaireAsync(utilisateurId, ct) && !await droits.APermissionAsync(utilisateurId, Domain.Securite.Permissions.SynchronisationSuivre, ct))
                 return BandeauSync.Aucun;
             return Decider(await memoire.LireAsync(depot, ct), horloge.MaintenantUtc);
@@ -128,8 +130,10 @@ public sealed class ConsulterAttenteSync(ISupervisionSyncDepot depot, MemoireSup
 /// Appelée chaque minute par la tâche de fond ; rien n'est fait si la synchronisation est désactivée ou si la base est en lecture seule.
 /// Aucune donnée de patient dans les messages (nombres, dates et message technique du dernier envoi).
 /// </summary>
+/// <param name="packs">Sans le pack G (décision du titulaire du 2026-11-27) : la synchronisation est arrêtée volontairement, ni retard, ni erreur
+/// d'envoi, ni certificat, ni quota ne sont signalés (sinon une alerte par heure sans fin) ; intégrité et retour en arrière le restent.</param>
 public sealed class SurveillerSynchronisation(ISupervisionSyncDepot depot, ICertificatSync certificat, IAlertesTitulaire alertes, IHorloge horloge,
-    ITraceErreurs? trace = null)
+    ITraceErreurs? trace = null, Offre.IPacksOffre? packs = null)
 {
     public static readonly TimeSpan Intervalle = TimeSpan.FromHours(1);
     /// <summary>Le certificat de l'officine est renouvelé automatiquement à 60 jours de l'échéance (EnvoyerLotsSync.RenouvelerAvant) :
@@ -143,8 +147,10 @@ public sealed class SurveillerSynchronisation(ISupervisionSyncDepot depot, ICert
         if (!e.Active || e.BaseEnLectureSeule) return [];
         var maintenant = horloge.MaintenantUtc;
         var envoyees = new List<string>();
+        var avecPackG = packs is null || await packs.InclusAsync(Offre.PacksOffre.MultiOfficines, ct);
         foreach (var (nature, objet, detail, sms) in Constater(e, LireCertificat(), maintenant))
         {
+            if (!avecPackG && nature is not (NaturesAlerteSync.Integrite or NaturesAlerteSync.RetourArriere)) continue;
             if (nature == NaturesAlerteSync.Integrite)
                 // Une alerte par nouvelle anomalie du serveur central : la dernière signalée est notée AVANT l'envoi
                 await depot.NoterIntegriteSignaleeAsync(e.Integrite!.DerniereAnomalieId, ct);

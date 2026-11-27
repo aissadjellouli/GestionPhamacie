@@ -7,36 +7,39 @@
 @if (!Session.SuperAdmin)
 {
 <nav @ref="menu" class="admin-nav" aria-label="Rubriques d’administration">
-    @foreach (var r in Rubriques)
+    @* Écrans regroupés par thème repliable (revue d'ergonomie du 2026-11-27, n° 8) : le thème de l'écran affiché est ouvert, les autres
+       repliés ; un clic sur un thème l'ouvre ou le ferme (GroupeMenu, état gardé tant que le poste est ouvert). Le menu tient ainsi
+       sans défiler à 1 366 × 768. Thème sans écran permis : absent. *@
+    @foreach (var (theme, rubriques) in Themes)
     {
-        // Écran à venir ou sans droit (ex. reprise de données : super admin) : absent du menu, pas grisé (docs/navigation.md)
-        if (r.Lien is null || !Session.A(r.Permission!))
-        {
-            continue;
-        }
-        else
-        {
-            var actif = r.Lien == Actif;
-            IReadOnlyList<(string Id, string Libelle)> sous = actif ? SousRubriques(r.Lien) : [];
-            @if (sous.Count > 0)
+        // PC non autorisé (titulaire, décision du 2026-11-27) : seuls les écrans de l'Administration permis sur ce PC (Services/AdministrationSeule)
+        var permises = rubriques.Where(r => r.Lien is not null && Session.A(r.Permission!)
+                                            && (!Session.AdministrationSeule || AdministrationSeule.PeutOuvrir(r.Lien))).ToList();
+        if (permises.Count == 0) continue;
+        <GroupeMenu Cle="@($"admin-theme:{theme}")" Titre="@theme" Variante="theme" OuvertParDefaut="false" ContientActif="@permises.Any(r => r.Lien == Actif)">
+            @foreach (var r in permises)
             {
-                @* Écran affiché qui a des sous-rubriques : son nom devient un titre de groupe non cliquable (comme dans les autres menus) ;
-                   seule la sous-rubrique affichée porte le bandeau ambre *@
-                <span class="nav-groupe-titre">@r.Libelle</span>
-            }
-            else
-            {
-                <a href="@r.Lien" class="@(actif ? "active" : null)" aria-current="@(actif ? "page" : null)">@r.Libelle</a>
-            }
-            @if (sous.Count > 0)
-            {
-                foreach (var (id, libelle) in sous)
+                var actif = r.Lien == Actif;
+                IReadOnlyList<(string Id, string Libelle)> sous = actif ? SousRubriques(r.Lien!) : [];
+                @if (sous.Count > 0)
                 {
-                    var courante = id == RubriqueCourante(r.Lien, Rubrique);
-                    <a href="@(id == sous[0].Id ? r.Lien : $"{r.Lien}?rubrique={id}")" class="sous-rubrique @(courante ? "active" : null)" aria-current="@(courante ? "page" : null)">@libelle</a>
+                    @* Écran affiché qui a des sous-rubriques : son nom devient un titre qui replie ou déplie ses sous-rubriques
+                       (rubriques repliables homogènes, 2026-11-27) ; seule la sous-rubrique affichée porte le bandeau ambre *@
+                    <GroupeMenu Cle="@($"admin-ecran:{r.Lien}")" Titre="@r.Libelle" ContientActif="true">
+                        @foreach (var (id, libelle) in sous)
+                        {
+                            var courante = id == RubriqueCourante(r.Lien!, Rubrique);
+                            <a href="@(id == sous[0].Id ? r.Lien : $"{r.Lien}?rubrique={id}")" class="sous-rubrique @(courante ? "active" : null)" aria-current="@(courante ? "page" : null)">@libelle</a>
+                        }
+                    </GroupeMenu>
+                }
+                else
+                {
+                    @* Écran à sous-rubriques, replié : chevron « › » (tout menu dépliable porte son chevron, à tout niveau) *@
+                    <a href="@r.Lien" class="@(actif ? "active" : null)" aria-current="@(actif ? "page" : null)">@if (SousRubriques(r.Lien!).Count > 0) {<span class="chevron-menu" aria-hidden="true"></span>}@r.Libelle</a>
                 }
             }
-        }
+        </GroupeMenu>
     }
 </nav>
 }
@@ -97,38 +100,50 @@
         ("admin/reglage-tracabilite", "role.titulaire")
     ];
 
-    private static readonly Rubrique_[] Rubriques =
+    /// <summary>Thèmes du menu (revue d'ergonomie du 2026-11-27, n° 8), dans l'ordre d'affichage ; chaque écran dans un seul thème.</summary>
+    private static readonly (string Theme, Rubrique_[] Rubriques)[] Themes =
     [
-        new("Alertes et seuils", "admin/seuils", "admin.parametres"),
-        new("Utilisateurs et droits", "admin/droits", "admin.utilisateurs"),
-        new("Caisse et contrôle", "admin/caisse", "admin.parametres"),
-        new("Contrôle interne", "admin/controle-interne", "role.titulaire"),
-        new("Réglages fiscaux", "admin/reglage-fiscal", "role.titulaire"),
-        new("Taux de TVA", "admin/taux-tva", "role.titulaire"),
-        new("Emplacements", "admin/emplacements", "admin.parametres"),
-        new("Motifs et catégories", "admin/motifs", "admin.parametres"),
-        new("Centres payeurs Chifa", "admin/centres-payeurs", "admin.parametres"),
-        new("Conflits de n° de facture Chifa", "admin/conflits-facture-chifa", "role.titulaire"),
-        new("Prestations", "admin/prestations", "catalogue.creer"),
-        new("Indications thérapeutiques", "admin/indications", "catalogue.creer"),
-        new("Contenances des produits", "admin/contenances", "catalogue.creer"),
-        new("Imprimantes et étiquettes", "admin/imprimantes", "admin.parametres"),
-        new("Sauvegardes", "admin/sauvegardes", "admin.sauvegardes"),
-        new("2e serveur", "admin/second-serveur", "role.titulaire"),
-        new("Postes autorisés", "admin/postes", "role.titulaire"),
-        new("Mon offre", "admin/offre", "role.titulaire"),
-        new("Synchronisation", "admin/synchronisation", "admin.parametres"),
-        new("Notifications au titulaire", "admin/notifications", "role.titulaire"),
-        new("Reprise de données", "admin/reprise", "role.super_admin"),
-        new("Doublons d’import", "admin/doublons-import", "reprise.doublons"),
-        new("Profils de reprise", "admin/profils-reprise", "role.super_admin"),
-        new("Historique des organismes repris", "admin/historique-chifa", "chifa.bordereaux"),
-        new("Nomenclature nationale", "admin/nomenclature", "role.titulaire"),
-        new("Sérialisation DataMatrix", "admin/serialisation", "role.titulaire"),
-        new("Traçabilité", "admin/reglage-tracabilite", "role.titulaire"),
-        new("Psychotropes et antibiotiques", "admin/psychotropes", "role.titulaire"),
-        new("Langue et pharmacie", "admin/pharmacie", "admin.parametres")
+        ("Équipe", [
+            new("Utilisateurs et droits", "admin/droits", "admin.utilisateurs"),
+            new("Notifications au titulaire", "admin/notifications", "role.titulaire")]),
+        ("Caisse et contrôle", [
+            new("Caisse et contrôle", "admin/caisse", "admin.parametres"),
+            new("Contrôle interne", "admin/controle-interne", "role.titulaire"),
+            new("Motifs et catégories", "admin/motifs", "admin.parametres")]),
+        ("Fiscal", [
+            new("Réglages fiscaux", "admin/reglage-fiscal", "role.titulaire"),
+            new("Taux de TVA", "admin/taux-tva", "role.titulaire")]),
+        ("Stock et alertes", [
+            new("Alertes et seuils", "admin/seuils", "admin.parametres"),
+            new("Emplacements", "admin/emplacements", "admin.parametres"),
+            new("Traçabilité", "admin/reglage-tracabilite", "role.titulaire"),
+            new("Psychotropes et antibiotiques", "admin/psychotropes", "role.titulaire")]),
+        ("Produits", [
+            new("Prestations", "admin/prestations", "catalogue.creer"),
+            new("Indications thérapeutiques", "admin/indications", "catalogue.creer"),
+            new("Contenances des produits", "admin/contenances", "catalogue.creer"),
+            new("Nomenclature nationale", "admin/nomenclature", "role.titulaire"),
+            new("Sérialisation DataMatrix", "admin/serialisation", "role.titulaire")]),
+        ("Chifa", [
+            new("Centres payeurs Chifa", "admin/centres-payeurs", "admin.parametres"),
+            new("Conflits de n° de facture Chifa", "admin/conflits-facture-chifa", "role.titulaire"),
+            new("Historique des organismes repris", "admin/historique-chifa", "chifa.bordereaux")]),
+        ("Matériel et sauvegardes", [
+            new("Imprimantes et étiquettes", "admin/imprimantes", "admin.parametres"),
+            new("Sauvegardes", "admin/sauvegardes", "admin.sauvegardes"),
+            new("2e serveur", "admin/second-serveur", "role.titulaire"),
+            new("Synchronisation", "admin/synchronisation", "admin.parametres")]),
+        ("Pharmacie et offre", [
+            new("Langue et pharmacie", "admin/pharmacie", "admin.parametres"),
+            new("Postes autorisés", "admin/postes", "role.titulaire"),
+            new("Mon offre", "admin/offre", "role.titulaire")]),
+        ("Reprise de données", [
+            new("Reprise de données", "admin/reprise", "role.super_admin"),
+            new("Doublons d’import", "admin/doublons-import", "reprise.doublons"),
+            new("Profils de reprise", "admin/profils-reprise", "role.super_admin")])
     ];
+
+    private static readonly Rubrique_[] Rubriques = Themes.SelectMany(t => t.Rubriques).ToArray();
 
     /// <summary>Sous-rubriques de chaque écran d'administration (second niveau du menu) ; la première est ouverte par défaut.</summary>
     private static readonly Dictionary<string, (string Id, string Libelle)[]> Sous = new()
@@ -155,6 +170,9 @@
         var s = SousRubriques(lien);
         return s.Count == 0 ? "" : s.Any(x => x.Id == demandee) ? demandee! : s[0].Id;
     }
+
+    /// <summary>Nom d'un écran d'administration (« admin/droits » → « Utilisateurs et droits ») ; null s'il n'est pas dans le menu.</summary>
+    public static string? LibelleEcran(string lien) => Rubriques.FirstOrDefault(r => r.Lien == lien)?.Libelle;
 
     /// <summary>Libellé de la sous-rubrique affichée, pour le titre de l'écran (« Sauvegardes · Journal des sauvegardes »).</summary>
     public static string Libelle(string lien, string? demandee)

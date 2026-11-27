@@ -37,15 +37,14 @@ public sealed record PosteProuve(long Id, string Nom);
 public sealed record PosteCle(long Id, string Nom, string Statut, byte[]? ClePublique, int Generation = 1);
 
 /// <summary>
-/// Réglage de la liste (table parametre_postes). Le nombre maximum de postes n'est plus réglé ici : il vient de l'offre signée par
+/// Réglage de la liste (table parametre_postes). Mode : plus lu depuis le script 174 (décision du titulaire du 2026-11-27 : preuve toujours
+/// exigée, voir <see cref="RegistrePostesAutorises.ModeAsync"/>) ; gardé dans l'enregistrement pour la compatibilité des DTO. Le nombre maximum de postes n'est plus réglé ici : il vient de l'offre signée par
 /// l'éditeur (Administration › Mon offre, script 172 ; décision du titulaire du 2026-11-26), sans possibilité de le modifier dans la base.
 /// </summary>
 public sealed record ReglagesPostes(string Mode, int DureeCodeMinutes)
 {
     public const int DureeMin = 5, DureeMax = 60;
-    public static readonly ReglagesPostes ParDefaut = new(ConstantesPostes.ModeTransition, 15);
-    public static readonly ReglagesPostes Inactif = new(ConstantesPostes.ModeInactif, 15);
-    public static readonly IReadOnlyList<string> Modes = [ConstantesPostes.ModeInactif, ConstantesPostes.ModeTransition, ConstantesPostes.ModeExige];
+    public static readonly ReglagesPostes ParDefaut = new(ConstantesPostes.ModeExige, 15);
 }
 
 /// <summary>Poste lu pour l'écran du titulaire.</summary>
@@ -115,8 +114,10 @@ public static class CodeEnrolement
 }
 
 /// <summary>
-/// Caches de la liste des postes (singleton) : mode, clés publiques et noms réservés, relus au plus toutes les 30 s ; vidés sur le serveur qui modifie
-/// la liste. Base illisible (script 167 non passé, base arrêtée) : mode « inactif » (comportement d'avant la liste), noté au journal une fois par minute.
+/// Caches de la liste des postes (singleton) : réglage (durée du code), clés publiques et noms réservés, relus au plus toutes les 30 s ; vidés sur le
+/// serveur qui modifie la liste. Réglage illisible (base arrêtée) : valeurs par défaut, noté au journal une fois par minute. Le mode n'est plus lu :
+/// preuve toujours exigée (décision du titulaire du 2026-11-27, script 174), même base illisible (les clés illisibles rendent alors « vérification
+/// indisponible », jamais un poste accepté sans preuve).
 /// </summary>
 public sealed class RegistrePostesAutorises(IPostesAutorisesDepot depot, IHorloge horloge, ITraceErreurs? trace = null)
 {
@@ -140,13 +141,17 @@ public sealed class RegistrePostesAutorises(IPostesAutorisesDepot depot, IHorlog
         }
         catch (Exception e) when (e is not OperationCanceledException)
         {
-            Noter("réglage des postes illisible (script 167 passé ?) : liste des postes inactive", e);
-            reglages = (ReglagesPostes.Inactif, maintenant);
-            return ReglagesPostes.Inactif;
+            Noter("réglage des postes illisible (script 167 passé ?) : durée du code par défaut, preuve toujours exigée", e);
+            reglages = (ReglagesPostes.ParDefaut, maintenant);
+            return ReglagesPostes.ParDefaut;
         }
     }
 
-    public async Task<string> ModeAsync(CancellationToken ct = default) => (await ReglagesAsync(ct)).Mode;
+    /// <summary>
+    /// Mode de la liste : toujours « exige » (décision du titulaire du 2026-11-27 : chaque poste doit être autorisé avec son code, sinon pas de
+    /// connexion). La colonne parametre_postes.mode n'est plus lue (script 174) : une valeur changée dans la base n'ouvre rien.
+    /// </summary>
+    public Task<string> ModeAsync(CancellationToken ct = default) => Task.FromResult(ConstantesPostes.ModeExige);
 
     /// <summary>Clé du poste (null : inconnu). Exception si la base est illisible.</summary>
     public async Task<PosteCle?> CleAsync(long id, CancellationToken ct = default)
@@ -255,23 +260,25 @@ public sealed class GererPostesAutorises(IPostesAutorisesDepot depot, RegistrePo
         return await depot.ListerAsync(s, string.IsNullOrWhiteSpace(recherche) ? null : recherche.Trim(), page, ct);
     }
 
-    /// <returns>Réglage, noms vus sans preuve, maximum de postes de l'offre en vigueur (lecture seule) et postes déjà comptés.</returns>
+    /// <returns>Réglage (mode toujours « exige »), noms vus sans preuve, maximum de postes de l'offre en vigueur (lecture seule) et postes déjà comptés.</returns>
     public async Task<(ReglagesPostes Reglages, IReadOnlyList<NomSansPreuve> NomsSansPreuve, int Maximum, int Comptes)> ReglagesAsync(long utilisateurId,
         CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "gérer les postes autorisés", ct);
-        return (await depot.ReglagesAsync(ct), await depot.NomsSansPreuveAsync(ct), await limites.MaximumPostesAsync(ct), await depot.NombreNonRevoquesAsync(ct));
+        return ((await depot.ReglagesAsync(ct)) with { Mode = ConstantesPostes.ModeExige }, await depot.NomsSansPreuveAsync(ct), await limites.MaximumPostesAsync(ct), await depot.NombreNonRevoquesAsync(ct));
     }
 
     /// <summary>Postes non révoqués (comptés dans le maximum).</summary>
     public Task<int> NombreComptesAsync(CancellationToken ct = default) => depot.NombreNonRevoquesAsync(ct);
 
-    /// <summary>Enregistre le réglage (mode, durée du code). Rend toujours null (plus d'avertissement : le maximum vient de l'offre).</summary>
+    /// <summary>
+    /// Enregistre la durée du code. Le mode demandé est ignoré (preuve toujours exigée, décision du titulaire du 2026-11-27) : « exige » est
+    /// toujours enregistré. Rend toujours null (plus d'avertissement : le maximum vient de l'offre).
+    /// </summary>
     public async Task<string?> ModifierReglagesAsync(long utilisateurId, ReglagesPostes demande, CancellationToken ct = default)
     {
         await droits.ExigerTitulaireAsync(utilisateurId, "régler la liste des postes autorisés", ct);
-        if (!ReglagesPostes.Modes.Contains(demande.Mode))
-            throw new Domain.Commun.RegleMetierException("Mode inconnu : inactif, transition ou exige.", "mode");
+        demande = demande with { Mode = ConstantesPostes.ModeExige };
         if (demande.DureeCodeMinutes is < ReglagesPostes.DureeMin or > ReglagesPostes.DureeMax)
             throw new Domain.Commun.RegleMetierException($"Durée du code : de {ReglagesPostes.DureeMin} à {ReglagesPostes.DureeMax} minutes.", "dureeCodeMinutes");
         var avant = await depot.ReglagesAsync(ct);

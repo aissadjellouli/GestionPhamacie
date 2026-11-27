@@ -32,14 +32,16 @@
                 </label>
             </div>
         }
-        <div data-champ="produit"><ChoixProduit Id="pa-produit" PremierSurEntree="false" Libelle="Produit attendu" Requis="true" OnChoisi="p => produit = p" OnEfface="() => produit = null" /></div>
+        <div data-champ="produit"><ChoixProduit Id="pa-produit" PremierSurEntree="false" Libelle="Produit attendu" Requis="true" Placeholder="Nom, DCI ou scan" OnChoisi="p => produit = p" OnEfface="() => produit = null" /></div>
         <div class="achats-ligne" style="align-items: flex-end">
             <div class="champ" style="flex: 0 0 120px">
                 <label for="pa-qte">Quantité</label>
                 <input id="pa-qte" type="number" min="1" max="1000" data-champ="quantite" @bind="quantite" />
             </div>
-            <button type="button" class="btn btn-principal" disabled="@(enCours || patientId == 0 || produit is null || !PeutVendre)" @onclick="CreerAsync">Noter la demande</button>
+            <button type="button" class="btn btn-principal" disabled="@(enCours || RaisonNoterImpossible is not null)" aria-describedby="@(RaisonNoterImpossible is null ? null : "pa-raison")" @onclick="CreerAsync">Noter la demande</button>
         </div>
+        @* Bouton grisé : la raison est écrite dessous (ergonomie 2026-11-27, proposition 22) *@
+        @if (RaisonNoterImpossible is { } raison) { <p id="pa-raison" class="detail" style="margin: 0">@raison</p> }
 
         @if (alertes is { } al && (al.Patients.Count > 0 || al.VentesEnAttente.Count > 0))
         {
@@ -120,6 +122,15 @@
     private bool enCours, premiereLecture;
 
     private bool PeutVendre => Session.A("caisse.vendre");
+    /// <summary>Ce qui manque pour noter la demande (affiché sous le bouton grisé) ; null quand tout est prêt.</summary>
+    private string? RaisonNoterImpossible => !PeutVendre ? "Droit de vendre nécessaire pour noter une demande."
+        : (patientId == 0, produit is null) switch
+        {
+            (true, true) => "Choisissez le patient et le produit.",
+            (true, false) => "Choisissez le patient.",
+            (false, true) => "Choisissez le produit.",
+            _ => null
+        };
 
     /// <summary>Ouverture depuis la Caisse (2026-11-16) : patient de la vente en cours déjà choisi.</summary>
     [Parameter] public PatientDto? PatientInitial { get; set; }

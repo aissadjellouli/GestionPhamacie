@@ -167,20 +167,32 @@ public sealed class HistoriqueNavigation(NavigationManager nav, FichesContact fi
 
     private static bool EstIn(string[] ecrans, string relative) => ecrans.Contains(Chemin(relative));
 
-    /// <summary>Nom affiché d'un écran, d'après son adresse.</summary>
+    /// <summary>
+    /// Nom affiché d'un écran, d'après son adresse : le titre (h1) de l'écran, sans sa rubrique (revue d'ergonomie du 2026-11-27, n° 10).
+    /// Quelques titres trop longs pour le bouton « ← … » (200 px au plus, charte) sont raccourcis à leurs premiers mots ; le titre
+    /// complet reste celui de l'écran. « écran précédent » seulement pour une adresse inconnue.
+    /// </summary>
     public static string LibelleEcran(string relative) => Chemin(relative) switch
     {
-        "" => "Alertes",
-        "caisse" => "Caisse",
+        "" => "Alertes du jour",
+        "accueil" => "Accueil",
+        "caisse" => Parametre(relative, "rubrique") switch
+        {
+            "annulation" => "Annulation ou retour",
+            "credit" => "Encaisser une dette",
+            _ => "Caisse"
+        },
         "caisse/etat" => "État de la caisse",
-        "cloture" => "Clôture",
-        "stock" => "Stock",
-        "stock/registre" => "Registre",
+        "cloture" => Vrai(Parametre(relative, "intermediaire")) ? "Comptage intermédiaire"
+            : Vrai(Parametre(relative, "releve")) ? "Relève de caisse" : "Clôture de caisse",
+        "stock" => "Gestion du stock",
+        "stock/registre" => "Registre des psychotropes",
+        "stock/etiquettes" => "Étiquettes internes",
         "tracabilite" => "Traçabilité",
         "inventaire" => "Inventaire",
         "achats" => "Achats",
-        "patients" => "Patients",
-        "patients/droits-chifa" => "Droits Chifa",
+        "patients" => "Fichier des patients",
+        "patients/droits-chifa" => "Droits expirés",
         "patients/attente" => "Patients en attente",
         "rapports" => "Rapports",
         "pilotage-financier" => "Tableau de bord financier",
@@ -188,13 +200,24 @@ public sealed class HistoriqueNavigation(NavigationManager nav, FichesContact fi
         "tresorerie" => "Trésorerie",
         "dettes" => "Dettes et créances",
         "financements" => "Financements",
+        "chifa" => "Chifa",
+        "bordereaux-chifa" => "Bordereaux Chifa",
         "surveillance" => "Contrôle interne",
-        "surveillance/risques" => "Risques",
-        "guide" => "Guide",
+        "surveillance/risques" => "Pertes et vigilance",
+        "surveillance/tiroir" => "Sorties du tiroir",
+        "guide" => "Guide et retours",
         "mon-code" => "Mon code comptoir",
-        var c when c.StartsWith("admin", StringComparison.Ordinal) => "Administration",
+        "mot-de-passe" => "Mot de passe",
+        "admin/conflits-facture-chifa" => "Conflits de facture Chifa",
+        "admin/historique-chifa" => "Organismes repris",
+        "admin/psychotropes" => "Psychotropes",
+        "admin/restauration" => "Restauration",
+        var c when c.StartsWith("admin", StringComparison.Ordinal) =>
+            Pharma.Desktop.Composants.Mise.NavAdmin.LibelleEcran(c) ?? "Administration",
         _ => "écran précédent"
     };
+
+    private static bool Vrai(string? valeur) => string.Equals(valeur, "true", StringComparison.OrdinalIgnoreCase) || valeur == "1";
 
     public void Dispose()
     {

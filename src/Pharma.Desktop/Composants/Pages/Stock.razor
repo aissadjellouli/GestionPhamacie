@@ -7,7 +7,9 @@
 @* Écran fixe : menu vertical à gauche ; le tableau des produits défile dans son cadre. Rubrique dans l'adresse (stock?rubrique=…) *@
 <div class="page avec-menu">
     <NavDomaine Libelle="Rubriques du stock">
-        @foreach (var r in Rubriques.Where(r => r.Permis))
+        @* « Nouveau produit » et « Modifier un produit » sont des actions, pas des listes (revue d'ergonomie du 2026-11-27, n° 8) : boutons du
+           titre de la rubrique Produits ; dans le menu seulement quand elles sont affichées (bandeau ambre) *@
+        @foreach (var r in Rubriques.Where(r => r.Permis && (!r.Action || r.Id == rubrique)))
         {
             <a href="@($"stock?rubrique={r.Id}")" class="@(r.Id == rubrique ? "active" : null)" aria-current="@(r.Id == rubrique ? "page" : null)">@r.Libelle</a>
         }
@@ -19,11 +21,18 @@
     </NavDomaine>
 
     <div class="contenu-rubrique">
-    <div class="titre-page">
+    <div class="titre-page titre-actions-cote">
         <div>
-            <h1>Stock · @RubriqueCourante.Libelle<AideEcran Cle="stock" /></h1>
+            <h1>Gestion du stock · @RubriqueCourante.Libelle<AideEcran Cle="stock" /></h1>
             <p class="sous-titre">@RubriqueCourante.SousTitre</p>
         </div>
+        @if (rubrique == "produits" && Session.A("catalogue.creer"))
+        {
+            <div class="actions">
+                <a href="stock?rubrique=modifier" class="btn">Modifier un produit</a>
+                <a href="stock?rubrique=nouveau" class="btn btn-principal">Nouveau produit</a>
+            </div>
+        }
     </div>
 
     @if (rubrique == "nouveau")
@@ -104,16 +113,19 @@
         </div>
 
         <section class="tableau-cadre" aria-label="Liste des produits">
-            <table class="tableau">
+            @* Tableau compact (ergonomie 2026-11-27, proposition 2) : une ligne par produit, DCI et lots en petit sur la même ligne,
+               texte trop long coupé par « … » (complet en infobulle), action « Ranger » en fin de ligne *@
+            <table class="tableau tableau-compact">
                 <thead>
                     <tr>
-                        <th scope="col">Produit</th>
-                        <th scope="col">Stock</th>
+                        <th scope="col" class="principal">Produit</th>
+                        <th scope="col" class="nombre">Stock</th>
                         <th scope="col">Couverture</th>
                         <th scope="col">1re péremption</th>
                         <th scope="col">Grossistes</th>
                         <th scope="col">Emplacement</th>
                         <th scope="col">Statut</th>
+                        @if (Session.A("stock.ajuster")) { <th scope="col"><span class="visuellement-cache">Action</span></th> }
                     </tr>
                 </thead>
                 <tbody>
@@ -121,18 +133,18 @@
                     @foreach (var l in lignes)
                     {
                         <tr>
-                            <td>
-                                <span class="nom">@l.NomCommercial</span><br />
-                                <span class="detail">@Detail(l)</span>
+                            <td class="principal" title="@($"{l.NomCommercial} · {Detail(l)}")">
+                                <span class="nom">@l.NomCommercial</span><span class="detail">@Detail(l)</span>
                             </td>
-                            <td>@l.Stock</td>
+                            <td class="nombre">@l.Stock</td>
                             <td>@Couverture(l)</td>
                             <td>@(l.PremierePeremption is { } d ? Libelles.MoisAnnee(d) : "—")</td>
-                            <td>@(l.Grossistes.Count > 0 ? string.Join(", ", l.Grossistes) : "—")</td>
+                            @{ var grossistes = l.Grossistes.Count > 0 ? string.Join(", ", l.Grossistes) : "—"; }
+                            <td><span class="coupe coupe-s" title="@grossistes">@grossistes</span></td>
                             <td>
                                 @if (enRangement == l.ProduitId)
                                 {
-                                    <div style="display: flex; flex-direction: column; gap: 6px; min-width: 200px">
+                                    <div class="rangement-ligne">
                                         <select class="selection" aria-label="Emplacement de vente de @l.NomCommercial" @bind="choixVente">
                                             <option value="0">Non rangé</option>
                                             @foreach (var e in emplacements.Where(e => e.Zone == "vente" && e.Actif)) { <option value="@e.Id">@e.Code@(e.Libelle is null ? "" : $" · {e.Libelle}")</option> }
@@ -150,19 +162,19 @@
                                 else
                                 {
                                     @if (l.Emplacement is not null) { <span class="code-emplacement">@l.Emplacement</span> } else { <span class="detail">non rangé</span> }
-                                    @if (l.Reserve is not null) { <br /><span class="detail">réserve @l.Reserve</span> }
-                                    @if (Session.A("stock.ajuster"))
-                                    {
-                                        <br /><button type="button" class="lien" @onclick="() => OuvrirRangement(l)">Ranger</button>
-                                    }
+                                    @if (l.Reserve is not null) { <span class="detail">rés. @l.Reserve</span> }
                                 }
                             </td>
-                            <td><span class="pastille @Libelles.ClasseStatutStock(l.Statut)">@Libelles.StatutStock(l.Statut)</span></td>
+                            <td><span class="pastille @ClasseStatut(l)">@LibelleStatut(l)</span></td>
+                            @if (Session.A("stock.ajuster"))
+                            {
+                                <td>@if (enRangement != l.ProduitId) { <button type="button" class="lien" aria-label="@($"Ranger {l.NomCommercial}")" @onclick="() => OuvrirRangement(l)">Ranger</button> }</td>
+                            }
                         </tr>
                     }
                     @if (lignes.Count == 0)
                     {
-                        <tr><td colspan="7" class="vide">@(FiltreActif ? "Aucun produit pour ces filtres." : "Aucun produit en stock.")
+                        <tr><td colspan="@(Session.A("stock.ajuster") ? 8 : 7)" class="vide">@(FiltreActif ? "Aucun produit pour ces filtres." : "Aucun produit en stock.")
                             @if (!FiltreActif) { <ActionSuivante Libelle="Réceptionner une livraison" Lien="achats?onglet=receptions&vue=saisie" Droits='["achats.receptionner"]' /> }</td></tr>
                     }
                 </tbody>
@@ -187,14 +199,15 @@
     [SupplyParameterFromQuery(Name = "ranger")] public long? Ranger { get; set; }
     [SupplyParameterFromQuery(Name = "rubrique")] public string? Rubrique { get; set; }
 
-    private sealed record RubriqueStock(string Id, string Libelle, string SousTitre, bool Permis = true);
+    /// <summary>Action : rubrique ouverte par un bouton de la rubrique Produits, au menu seulement quand elle est affichée.</summary>
+    private sealed record RubriqueStock(string Id, string Libelle, string SousTitre, bool Permis = true, bool Action = false);
     private RubriqueStock[] Rubriques =>
     [
-        new("produits", "Produits", "Par produit, avec lots, péremptions, grossistes et emplacement"),
+        new("produits", "Liste des produits", "Par produit, avec lots, péremptions, grossistes et emplacement"),
         new("entrees", "Entrées de stock", "Un lot par ligne : n° de lot, péremption, PPA, SHP, quantité ; correction tracée"),
         new("ensemble", "Vue d’ensemble", "Références, valeur du stock et lots à date à vérifier"),
-        new("nouveau", "Nouveau produit", "Ajouter un produit au catalogue", Session.A("catalogue.creer")),
-        new("modifier", "Modifier un produit", "Nom, DCI, dosage, forme, code-barres, prix, TVA, remboursement, activation", Session.A("catalogue.creer")),
+        new("nouveau", "Nouveau produit", "Ajouter un produit au catalogue", Session.A("catalogue.creer"), Action: true),
+        new("modifier", "Modifier un produit", "Nom, DCI, dosage, forme, code-barres, prix, TVA, remboursement, activation", Session.A("catalogue.creer"), Action: true),
         new("contenance", "Contenances", "Unités par boîte : à compléter (les plus vendus d’abord) ou à corriger, à l’écran ou par un fichier", Session.A("catalogue.creer")),
         new("sortie", "Sortie de stock", "Périmés, boîtes cassées, dons et échantillons"),
         new("blocage", "Blocage des produits", "Produits bloqués à l’achat ou à la vente"),
@@ -219,8 +232,11 @@
     private int total, page = 1, taille = Pagination.TailleParDefaut;
     private string? erreur;
     private string recherche = "";
-    private string filtre = "tous";
-    private bool FiltreActif => recherche.Trim().Length > 0 || filtre != "tous" || rayon != "";
+    // Filtre par défaut « En stock » (décision du titulaire, 2026-11-27, proposition 7) : « Tous » à un clic
+    private const string FiltreParDefaut = "en-stock";
+    private string filtre = FiltreParDefaut;
+    /// <summary>« Tout afficher » : recherche, rayon ou filtre autre que les vues complètes (« En stock », « Tous »).</summary>
+    private bool FiltreActif => recherche.Trim().Length > 0 || filtre is not ("tous" or FiltreParDefaut) || rayon != "";
     private int requeteRecherche;
     // ---- Emplacements ----
     private List<EmplacementDto> emplacements = [];
@@ -275,7 +291,7 @@
     }
 
     private static readonly (string, string)[] Filtres =
-        [("tous", "Tous"), ("commander", "À commander"), ("peremption", "Péremption proche"), ("psychotropes", "Psychotropes"), ("parapharmacie", "Parapharmacie")];
+        [(FiltreParDefaut, "En stock"), ("tous", "Tous"), ("commander", "À commander"), ("peremption", "Péremption proche"), ("psychotropes", "Psychotropes"), ("parapharmacie", "Parapharmacie")];
 
     /// <summary>Recherche à appliquer à l'ouverture (produit choisi dans la recherche globale).</summary>
     [SupplyParameterFromQuery(Name = "q")] public string? Q { get; set; }
@@ -289,7 +305,7 @@
             e.Mettre("recherche", recherche); e.Mettre("filtre", filtre); e.Mettre("rayon", rayon); e.Mettre("page", page); e.Mettre("taille", taille);
         });
         var r = Historique.Restaurer("stock");
-        if (r is not null) (recherche, filtre, rayon) = (r.Texte("recherche") ?? "", r.Texte("filtre") ?? "tous", r.Texte("rayon") ?? "");
+        if (r is not null) (recherche, filtre, rayon) = (r.Texte("recherche") ?? "", r.Texte("filtre") ?? FiltreParDefaut, r.Texte("rayon") ?? "");
         // Produit choisi dans la recherche globale (Ctrl + K) : stock filtré sur son nom
         if (!string.IsNullOrWhiteSpace(Q)) (recherche, filtre, rayon) = (Q.Trim(), "tous", "");
         var lieux = Api.EmplacementsAsync();
@@ -313,6 +329,15 @@
             : l.Dci ?? "DCI non renseignée";
         return $"{produit} · {lots}{registre}";
     }
+
+    /// <summary>
+    /// Statut affiché (proposition 7) : un produit sans stock que la vue v_etat_stock classe « ok » (aucun seuil de rupture) n'est plus
+    /// « Normal » mais « Pas en stock ». Affichage seulement : statut du serveur, alertes et filtre « À commander » inchangés.
+    /// « Jamais reçu » demanderait un champ du serveur (NombreLots ne compte que les lots encore en stock).
+    /// </summary>
+    private static string LibelleStatut(LigneStockDto l) => SansStock(l) ? "Pas en stock" : Libelles.StatutStock(l.Statut);
+    private static string ClasseStatut(LigneStockDto l) => SansStock(l) ? "neutre" : Libelles.ClasseStatutStock(l.Statut);
+    private static bool SansStock(LigneStockDto l) => l.Stock <= 0 && l.Statut is not ("rupture" or "critique");
 
     private static string Couverture(LigneStockDto l) =>
         l.CouvertureJours is { } j ? $"{j} j" : l.Stock > 0 ? "aucune vente" : "—";

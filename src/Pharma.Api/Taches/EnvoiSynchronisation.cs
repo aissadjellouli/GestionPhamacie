@@ -55,11 +55,16 @@ public sealed class EnvoiSynchronisation(IServiceProvider services, ILogger<Envo
         }
         // Script 152 (2026-11-19) : une base restaurée ne le sait pas d'elle-même ; l'encaissement attend la réponse du serveur central,
         // au plus le délai réglé. Premier passage aussitôt (sans les 30 s), puis toutes les 10 s tant que l'attente dure.
+        // Sans le pack G (décision du titulaire du 2026-11-27 : une officine sans le central n'est jamais bloquée) : aucun lot ne part, le central
+        // ne peut donc pas avoir reçu de n° de ticket que cette base reprendrait ; rien n'est attendu, un contrôle laissé en suspens est levé.
         var controleAttendu = false;
         try
         {
             using var demarrage = services.CreateScope();
-            controleAttendu = await demarrage.ServiceProvider.GetRequiredService<IEnvoiSyncDepot>().NoterDemarrageAsync(stoppingToken);
+            var depotDemarrage = demarrage.ServiceProvider.GetRequiredService<IEnvoiSyncDepot>();
+            if (await PackSynchronisationAsync(demarrage.ServiceProvider, stoppingToken))
+                controleAttendu = await depotDemarrage.NoterDemarrageAsync(stoppingToken);
+            else await depotDemarrage.NoterControleDemarrageAsync(stoppingToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -71,11 +76,23 @@ public sealed class EnvoiSynchronisation(IServiceProvider services, ILogger<Envo
             try
             {
                 using var scope = services.CreateScope();
-                // Lot O6 (décision 3) : sans le pack G, la synchronisation s'arrête ; un passage n'est fait que s'il reste des résultats
-                // d'ordres déjà reçus à remonter au central (le central ne reste pas dans un état faux). Les ordres reçus sont encore traités.
-                if (!await PackSynchronisationAsync(scope.ServiceProvider, stoppingToken) && !await ResultatsOrdresEnAttenteAsync(scope.ServiceProvider, stoppingToken))
+                // Lot O6 (décision 3) et décision du titulaire du 2026-11-27 (point 3) : sans le pack G, la synchronisation s'arrête (aucun lot de
+                // données) ; toutes les 5 minutes, voie réduite : ordres du central relevés (échange léger), seuls les ordres « activation_offre »
+                // appliqués (AppliquerOrdresCentraux), puis résultats d'ordres SEULS remontés (le central ne reste pas dans un état faux)
+                if (!await PackSynchronisationAsync(scope.ServiceProvider, stoppingToken))
                 {
+                    var envoyer = scope.ServiceProvider.GetRequiredService<EnvoyerLotsSync>();
+                    var releve = await envoyer.ExecuterSansPackAsync(DateTime.UtcNow, false, stoppingToken);
+                    if (releve.EnErreur) logger.LogWarning("Synchronisation sans le pack G : ordres non relevés ({Erreur})", releve.Erreur);
                     await AppliquerOrdresAsync(scope.ServiceProvider, stoppingToken);
+                    // Réglages imposés par le central rendus à l'officine tant que le pack G manque (aucun modèle appliqué)
+                    try { await scope.ServiceProvider.GetRequiredService<Pharma.Application.Reglages.AppliquerReglagesMutualises>().ExecuterAsync(stoppingToken); }
+                    catch (Exception ex) when (ex is not OperationCanceledException) { logger.LogError(ex, "Réglages mutualisés : suspension sans le pack G impossible"); }
+                    if (await ResultatsOrdresEnAttenteAsync(scope.ServiceProvider, stoppingToken))
+                    {
+                        var r0 = await envoyer.ExecuterSansPackAsync(DateTime.UtcNow, true, stoppingToken);
+                        if (r0.EnErreur) logger.LogWarning("Synchronisation sans le pack G : résultats d'ordres non envoyés ({Erreur})", r0.Erreur);
+                    }
                     await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
                     continue;
                 }

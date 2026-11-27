@@ -388,7 +388,8 @@ public interface IAlertesTitulaire
     /// Offre de l'éditeur bientôt échue ou en délai de grâce (rappels à 30 jours, 7 jours, début de la grâce ; décision Q5 du 2026-11-26) :
     /// texte sans donnée de patient ; <paramref name="sms"/> court, sans accents ; mêmes destinataires que les alertes techniques.
     /// </summary>
-    Task OffreAsync(string objet, string detail, string sms, CancellationToken ct = default) => Task.CompletedTask;
+    /// <returns>Nombre de messages mis en file (0 : aucun destinataire, ou mise en file impossible) : le rappel n'est noté que s'il est au moins 1.</returns>
+    Task<int> OffreAsync(string objet, string detail, string sms, CancellationToken ct = default) => Task.FromResult(0);
 }
 
 /// <summary>
@@ -494,7 +495,7 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
         });
 
     // Même sujet existant que les alertes techniques (aucun nouveau sujet : il exigerait de modifier les contraintes de la base)
-    public Task OffreAsync(string objet, string detail, string sms, CancellationToken ct = default) =>
+    public Task<int> OffreAsync(string objet, string detail, string sms, CancellationToken ct = default) =>
         ProtegerAsync(TypeNotification.Synchronisation, objet, async () =>
         {
             var r = await depot.ReglagesAsync(ct);
@@ -562,7 +563,8 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
     }
 
     /// <param name="mise">Nombre de messages mis en file (négatif : rien à envoyer, pas un échec).</param>
-    private async Task ProtegerAsync(TypeNotification type, string objet, Func<Task<int>> mise)
+    /// <returns>Nombre de messages mis en file (0 en cas de panne ou sans destinataire).</returns>
+    private async Task<int> ProtegerAsync(TypeNotification type, string objet, Func<Task<int>> mise)
     {
         int misEnFile;
         try
@@ -575,12 +577,13 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
             // Au journal : le type seulement (l'objet peut citer un employé ou un patient)
             trace?.Erreur($"Alerte au titulaire non mise en file : {type}", e);
             await AlerteNonEnvoyeeSignalee.NoterAsync(nonEnvoyees, trace, type, objet, $"Mise en file impossible : {e.Message}");
-            return;
+            return 0;
         }
-        if (misEnFile != 0) return;
+        if (misEnFile != 0) return misEnFile;
         // Faute de destinataire : signalée seulement si le titulaire l'a demandé (réglage, actif par défaut ; illisible : signalée)
-        if (!await AlerteNonEnvoyeeSignalee.SansDestinataireASignalerAsync(depot, trace)) return;
+        if (!await AlerteNonEnvoyeeSignalee.SansDestinataireASignalerAsync(depot, trace)) return 0;
         await AlerteNonEnvoyeeSignalee.NoterAsync(nonEnvoyees, trace, type, objet, AucunDestinataire);
+        return 0;
     }
 }
 

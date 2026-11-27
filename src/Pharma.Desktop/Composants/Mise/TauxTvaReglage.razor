@@ -24,6 +24,8 @@ else if (message is not null) { <p class="detail texte-reussite" role="status" s
             <div class="champ" style="flex: 1 1 160px"><label for="tva-libelle" class="requis">Libellé</label>
                 <input id="tva-libelle" data-champ="libelle" type="text" maxlength="60" placeholder="Ex. Taux réduit" @bind="nouveauLibelle" @bind:event="oninput" /></div>
             <button type="button" class="btn" disabled="@(enCours || nouveauTaux is null || string.IsNullOrWhiteSpace(nouveauLibelle))" @onclick="AjouterAsync">Ajouter</button>
+            @* Bouton grisé : la raison à côté (revue d'ergonomie du 2026-11-27, n° 23) *@
+            @if (!enCours && (nouveauTaux is null || string.IsNullOrWhiteSpace(nouveauLibelle))) { <span class="raison-grise">Saisissez le taux et le libellé</span> }
         </div>
         <div class="tableau-cadre" data-hauteur-min="120">
             <table class="tableau" style="min-width: 0">
@@ -38,7 +40,8 @@ else if (message is not null) { <p class="detail texte-reussite" role="status" s
                                        @oninput="e => s.Libelle = e.Value?.ToString() ?? string.Empty" /></td>
                             <td class="nombre">@t.Produits</td>
                             <td><input aria-label="@($"Taux {Texte(t.Taux)} % actif")" type="checkbox" checked="@s.Actif" @onchange="e => s.Actif = e.Value is true" /></td>
-                            <td><button type="button" class="lien-bouton" disabled="@(enCours || (s.Libelle == t.Libelle && s.Actif == t.Actif))" @onclick="() => ModifierAsync(t)">Enregistrer</button></td>
+                            <td><button type="button" class="lien-bouton" disabled="@(enCours || (s.Libelle == t.Libelle && s.Actif == t.Actif))" @onclick="() => ModifierAsync(t)"
+                                        title="@(s.Libelle == t.Libelle && s.Actif == t.Actif ? "Rien de modifié : changez le libellé ou la case Actif" : null)">Enregistrer</button></td>
                         </tr>
                     }
                 </tbody>

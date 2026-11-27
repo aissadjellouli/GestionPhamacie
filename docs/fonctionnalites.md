@@ -25,13 +25,13 @@ Légende des états :
 
 | État | Nombre de fonctions |
 | --- | --- |
-| Fait | 230 |
+| Fait | 235 |
 | En cours | 1 |
 | En attente | 37 |
 | Bloqué | 9 |
 | Non proposé | 1 |
 | À vérifier | 0 |
-| **Total** | **278** |
+| **Total** | **283** |
 
 Recompté le 2026-11-24 à partir des lignes ci-dessous (275 lignes ; « Fait en local » compté dans « Fait ») ; « En cours » : démonstration cloud (Docker absent du poste).
 
@@ -321,7 +321,14 @@ Recompté le 2026-11-24 à partir des lignes ci-dessous (275 lignes ; « Fait en
 | Journaux du serveur et du poste sans données personnelles | Fait | securite-et-droits.md |
 | Offre de base et options : activation signée par l'éditeur (liée au code de l'officine et au NIF), écran Mon offre, outil de l'éditeur, transmission par le central ; maximum de postes fixé par l'offre | Fait (2026-11-26, script 172, central 044 ; mesuré à 0 px, clair et sombre) | offre-et-options.md |
 | Fermeture des packs non inclus dans l'offre (routes refusées par le serveur, consultation permise pour B, C, D et F, bandeau « Option non incluse », alertes et tâches selon les packs, données gardées) | Fait (2026-11-26, lot O6 ; essayé en réel, 0 px clair et sombre ; quota de scanners mobiles non compté) | offre-et-options.md |
-| Liste des postes autorisés : autorisation par code à usage unique, clé non exportable du poste, preuve signée à chaque requête, jeton lié au poste, renommer, remplacer le PC, révoquer, modes transition et exigé ; maximum de postes tenu sous verrou, avertissement quand il est baissé sous le nombre de postes (2026-11-26) | Fait (2026-11-24, script 167 ; compte Windows standard : création de la clé par la demande d'élévation de Windows, D4 option 1, à vérifier sur un vrai poste) | Administration › Postes autorisés ; securite-et-droits.md ; regles-metier.md |
+| Ergonomie du poste (revue du 2026-11-27) : raccourcis clavier de la caisse, raison des boutons grisés, menus de gauche sans défilement et rubriques repliables avec chevron à tout niveau, bouton retour nommé, aide « ? » partout, puces de période, tableaux compacts | Fait (2026-11-27 ; essai réel à finir) | ergonomie-2026-11-27.md |
+| Fichier des patients : création d'un patient hors de la caisse (« Nouveau patient ») | Fait (2026-11-27) | ergonomie-2026-11-27.md |
+| Gestion du stock : statut « Pas en stock » et filtre « En stock » par défaut | Fait (2026-11-27) | regles-metier.md |
+| Postes : preuve toujours exigée (un PC non autorisé ne se connecte pas) ; le titulaire peut se connecter depuis un PC non autorisé pour l'Administration seulement (9 écrans, contrôle par le serveur) | Fait (2026-11-27, script 174 ; essai réel à faire) | regles-metier.md |
+| Offre : liaison renforcée (date plancher contre le recul de l'horloge ; clé TPM de chaque serveur, empreintes dans le code d'activation version 2) | Fait (2026-11-27 ; essai réel TPM à faire) | offre-et-options.md |
+| Officine sans le central ou sans le pack G jamais bloquée : pas d'attente de l'encaissement au démarrage, réglages imposés rendus à l'officine, ni bandeau ni alerte de retard, synchronisation désactivable sans G | Fait (2026-11-27 ; à essayer en réel) | offre-et-options.md (décisions du 2026-11-27) ; regles-metier.md |
+| Code d'offre transmis par le central sans le pack G : ordres relevés (échange léger), seul `activation_offre` appliqué, résultats d'ordres seuls remontés ; rappels de fin d'offre notés seulement s'ils sont mis en file | Fait (2026-11-27 ; à essayer en réel avec le central) | offre-et-options.md ; regles-metier.md |
+| Liste des postes autorisés : autorisation par code à usage unique, clé non exportable du poste, preuve signée à chaque requête, jeton lié au poste, renommer, remplacer le PC, révoquer ; **preuve toujours exigée** depuis le 2026-11-27 (script 174 : plus de modes transition ni inactif, plus de choix du mode à l'écran ; PC non autorisé : écran de connexion réduit à la saisie du code ; super admin, page mobile et routes ouvertes inchangés) ; maximum de postes tenu sous verrou, avertissement quand il est baissé sous le nombre de postes (2026-11-26) | Fait (2026-11-24, script 167 ; compte Windows standard : création de la clé par la demande d'élévation de Windows, D4 option 1, à vérifier sur un vrai poste) | Administration › Postes autorisés ; securite-et-droits.md ; regles-metier.md |
 | Poste renommé par le titulaire : nouveau nom repris par le poste (écran de connexion, aussitôt sur le poste qui renomme), sans redémarrage | Fait (2026-11-26, vérifié en réel) | regles-metier.md « Nom du poste renommé repris par le poste » |
 | Bascule du 2e serveur : présence, postes connus, votes et relais limités aux postes prouvés | Fait (essai réel du 2026-11-25 : vote prouvé, preuve acceptée par le serveur promu ; relais d'un poste prouvé essayé, § 16 ; limite d'un rapport par seconde par poste prouvé, plusieurs postes derrière une même adresse votent tous, essai réel du 2026-11-25) | second-serveur-local.md § 14 ; regles-metier.md |
 | Port 5432 de la base fermé aux autres postes (écoute sur 127.0.0.1 seulement, contrôle à l'installation) | Fait (procédure écrite, à dérouler sur le vrai PC serveur) | mise-en-production.md, étapes 2.4 et 4 bis |

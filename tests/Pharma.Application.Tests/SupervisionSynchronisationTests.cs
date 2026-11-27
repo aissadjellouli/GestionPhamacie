@@ -250,6 +250,27 @@ public class SupervisionSynchronisationTests
         Assert.Equal([NaturesAlerteSync.Quota], await surveillance.ExecuterAsync());
     }
 
+    private sealed class SansPackG : Pharma.Application.Offre.IPacksOffre
+    {
+        public Task<bool> InclusAsync(string pack, CancellationToken ct = default) => Task.FromResult(pack != Pharma.Application.Offre.PacksOffre.MultiOfficines);
+        public Task<int> ScannersMobilesAsync(CancellationToken ct = default) => Task.FromResult(0);
+    }
+
+    [Fact]
+    public async Task Sans_le_pack_G_ni_retard_ni_erreur_ni_bandeau_la_synchronisation_est_arretee_volontairement()
+    {
+        // Décision du titulaire du 2026-11-27 : sans G, pas d'alerte « en retard » toutes les heures sans fin, pas de bandeau sur les postes
+        var (depot, alertes, horloge) = (new Depot { Etat = UnEtat(attente: new AttenteSync(Maintenant.AddDays(-20), 500), erreurDepuis: Maintenant.AddDays(-2),
+            nature: NaturesErreurSync.Autre) }, new Alertes(), new Horloge(Maintenant));
+        Assert.Empty(await new SurveillerSynchronisation(depot, new Certificat(Maintenant.AddDays(10)), alertes, horloge, packs: new SansPackG()).ExecuterAsync());
+        Assert.Empty(alertes.Envoyees);
+        var bandeau = await new ConsulterAttenteSync(depot, new MemoireSupervisionSync(horloge), new DroitsFactices { Titulaire = true }, horloge, packs: new SansPackG())
+            .ExecuterAsync(7);
+        Assert.False(bandeau.Affiche);
+        // Avec le pack G (aucune offre transmise) : le retard est signalé comme avant
+        Assert.Contains(NaturesAlerteSync.Retard, await new SurveillerSynchronisation(depot, new Certificat(null), alertes, horloge).ExecuterAsync());
+    }
+
     [Fact]
     public async Task Rien_si_desactivee_ou_en_lecture_seule()
     {

@@ -2,6 +2,31 @@
 
 Point d'avancement du 2026-11-26 (soir) : lot 2 (scripts 168 à 171 : réception abandonnée, contenances, prêts, TVA réglable), miroir du central et essai bascule à deux postes **commités** (`dc82c32`) ; **32 commits à pousser** par l'utilisateur (`origin/develop..develop`). Aucune instance de l'assistant ne tourne (montage d'essai arrêté, aucun port d'essai ouvert). Scripts 168 à 171 passés sur `pharmacie_dev` et `pharmacie_test`, sauvegardes avant dans `C:\MesAtlassian\sauvegardes-bd`. **Bases à supprimer par l'utilisateur** : `pharmacie_cmp170`, `pharmacie_jetable_renommage_202611260005`, `pharmacie_essai_v28`. Détail : [a-faire.md](a-faire.md), [fonctionnalites.md](fonctionnalites.md) (inventaire complet), [second-serveur-local.md](second-serveur-local.md) (essais réels de la bascule, § 15 à 18), [diagrammes-sequence.md](diagrammes-sequence.md). À mettre à jour à chaque point d'avancement.
 
+**Point du 2026-11-27 (non commité depuis `343ff58`)** — **Fait** :
+- **Ergonomie du poste** (revue du 2026-11-27, P1 + P2 + P3, 31 propositions) : caisse au clavier, raisons des boutons grisés, menus sans
+  défilement, **rubriques repliables avec chevron à tout niveau**, bouton retour nommé, aide « ? », puces de période, tableaux compacts,
+  « Nouveau patient », « Pas en stock » et filtre « En stock », écran **« Gestion du stock »** ; détail : [ergonomie-2026-11-27.md](ergonomie-2026-11-27.md).
+  Mesures : 111 écrans sur 112 sans débordement (Postes autorisés 21 px à 1 366, à remesurer).
+- **Script 173** (une remise de 0 DA ne compte plus au contrôle interne) et **script 174** (postes : **preuve toujours exigée**, un PC non
+  autorisé ne se connecte pas, n'entre pas dans le maximum ; un poste en attente de son code y entre) : passés sur dev et test après
+  sauvegarde, init régénérée ; suite complète 001 à 174 rejouée sur dev et test (données intactes).
+- **Revue de code de la branche** : quota de postes, **aucun blocage sans central ni sans pack G** (démarrage, encaissement, réglages
+  imposés, alertes, bandeau), code d'offre transmis par le central sans G, rappels notés seulement s'ils sont en file, prêt soldé, journal de
+  l'offre reçue du central, Mon offre robuste, plus d'`async void` ni de `.Result` ; super admin accessible depuis un PC non autorisé.
+- **Rappels de fin d'offre** à 90, 60, 30, 15, 7 et 1 jour(s), puis début de la grâce ; documents : manuel de MEP, scripts de MEP,
+  signature des codes, bascule de base dev/test (poste-de-developpement.md), promotion des serveurs, clé de l'éditeur (clés réelles
+  intégrées le 2026-11-26).
+Tests au dernier passage : architecture 668, application 2210, SQL 80.
+**Fait aussi** : accès du **titulaire depuis un PC non autorisé** (Administration seulement, 9 écrans, contrôle par le serveur, jeton marqué) ;
+**point 5 « renforcer »** : horloge (date plancher = journal fiscal + fichier du serveur) et **liaison matérielle** (clé TPM de chaque serveur,
+`--creer-cle-serveur` / `--empreinte-serveur`, codes d'activation v2 avec `--serveur`) ; voir offre-et-options.md, « Liaison renforcée de
+l'offre ». Tests : application 2224, architecture 680, SQL 80, central 162 + 54, domaine 736.
+**À valider par le titulaire** : écrans permis au titulaire depuis un PC non autorisé ; refus à la saisie d'un code v2 qui ne déclare pas le
+serveur ; service de l'API en LocalSystem ; limites (nouvelle grâce, horloge mise dans le futur).
+**Reste** : essai réel avec un poste autorisé (connexion réduite, menus, écrans, mesures clair et sombre) ; trancher 14 px des tableaux
+compacts et les compteurs à 0 de Dettes ; code de transition de `pharmacie_test` à signer (l'activation saisie est notée) ; points du titulaire
+(AWaRe, comptable, coordonnées de l'éditeur, identifiants du central) ; commit sur demande.
+
 **Point du 2026-11-26 (nuit), lot O6 « fermer les packs » (non commité)** — tour des packs : recommandations acceptées, puis « 1 reco, 2 reco, 3 reco, go O6 ». **Fait** : filtre `ExigerPack` sur les routes des 8 packs (figé par `PacksOffreRoutesTests`), comportements sans A, D, E, G, H, alertes selon les packs (sécurité toujours), bandeau « Option non incluse » sur 12 écrans. Essai réel (clé d'essai jetable, programme d'essai seulement) : offre de base, consultation D et F permise, A et E refusés, intégrité ouverte ; packs A et D activés : routes et écrans rouverts ; 0 px. Tests : application 2200, architecture 661, SQL 78. **Attention** : clé publique encore vide, **toutes les bases (dev et test comprises) sont à l'offre de base, packs fermés**, jusqu'à la vraie clé et un code de transition. **Limites** : quota de scanners mobiles non compté, pas de bandeau dans l'onglet multi-grossistes ni sur l'ordonnance scannée, boutons non grisés.
 
 **Point du 2026-11-26 (soir), « go all lot » de l'offre et des options (commité `918fe58`)** — 8 questions répondues puis précisées (code + NIF, clé de l'éditeur en fichier chiffré, code de transition ; commit `a70beb6`). **Fait** : O1 activation signée (script 172, passé sur dev et test après sauvegarde), O2 maximum de postes lu dans l'offre, O3 outil de l'éditeur `src/Pharma.Editeur`, O4 écran Administration › Mon offre (0 px, clair et sombre), O5 ordre `activation_offre` du central (script central 044, console `--ordre-activation`). Essai réel (API et poste d'essai, base jetable, **clé d'essai jetable** compilée seulement dans le programme d'essai) : offre de base, code d'une autre pharmacie refusé, code valable (6 postes), 7e poste refusé, code modifié en base ramené à l'offre de base avec une ligne au journal. Tests : application 2197, architecture 659, SQL 78, domaine 736, central 162 + 54. **À faire par l'utilisateur** : (1) générer la vraie clé de l'éditeur (`generer-cle`, mot de passe choisi par vous) et me donner la clé publique à intégrer : **d'ici là, toutes les pharmacies sont à l'offre de base, 2 postes** ; (2) passer le script central 044 sur `pharmacie_cloud_dev` (refusé à l'assistant), supprimer le fichier vide `sauvegardes-bd\pharmacie_cloud_dev_avant_044_20261126_213651.dump`. **Reste** : O6 (fermer les packs) après le tour des packs A à H ; coordonnées de l'éditeur à afficher dans Mon offre (non fournies).

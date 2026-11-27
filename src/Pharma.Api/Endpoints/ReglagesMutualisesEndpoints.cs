@@ -93,7 +93,8 @@ internal static class ReglagesMutualisesEndpoints
                 return Results.Ok(new OffreDto(e.Etat, e.Packs.Select(p => new PackOffreDto(p, Pharma.Application.Offre.PacksOffre.Libelle(p))).ToList(),
                     e.Postes, comptes, e.ScannersMobiles, e.Fin, e.Transition, e.EmiseLeUtc, e.Alerte, id.Officine, id.Nif,
                     historique.Select(h => new ActivationOffreDto(h.Id, h.EmiseLeUtc, h.Source, h.SaisieLeUtc, h.SaisiePar, h.RefuseeLeUtc, h.MotifRefus)).ToList(),
-                    Pharma.Application.Offre.PacksOffre.Tous.Select(p => new PackOffreDto(p.Code, p.Libelle)).ToList()));
+                    Pharma.Application.Offre.PacksOffre.Tous.Select(p => new PackOffreDto(p.Code, p.Libelle)).ToList(),
+                    e.EmpreinteServeur is { } empreinte ? Pharma.Application.Offre.EmpreinteServeur.Afficher(empreinte) : null, e.AlerteServeur, e.AlerteHorloge));
             })
            .ExigerTitulaire();
         // Lot O6 : packs de l'offre en vigueur, pour tout employé connecté (jamais le code de l'officine ni le NIF)

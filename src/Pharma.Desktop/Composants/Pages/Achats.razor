@@ -10,24 +10,19 @@
 <div class="page avec-menu">
     <NavDomaine Libelle="Rubriques des achats">
         @* Rubrique sans droit : absente (pas grisée) ; groupe dont aucune rubrique n'est permise : absent aussi *@
-        @for (var i = 0; i < Rubriques.Length; i++)
+        @* Groupes repliables (GroupeMenu, 2026-11-27) : chevron « › » replié, « ⌄ » déplié *@
+        @foreach (var (g, membres) in GroupesMenu())
         {
-            var r = Rubriques[i];
-            if (r.Groupe is { } g)
-            {
-                if (Rubriques.Skip(i + 1).TakeWhile(x => x.Groupe is null).Any(x => x.Permis))
+            <GroupeMenu Cle="@($"achats:{g}")" Titre="@g" ContientActif="@membres.Any(EstActive)">
+                @foreach (var r in membres)
                 {
-                    <span class="nav-groupe-titre">@g</span>
+                    var active = EstActive(r);
+                    var attente = r.Vue switch { "attente" => Compteurs.Receptions, "bons" => Compteurs.Brouillons, _ => null };
+                    <a href="@Lien(r)" class="@(r.SousRubrique ? "sous-rubrique" : null) @(active ? "active" : null)" aria-current="@(active ? "page" : null)">
+                        @r.Libelle@if (attente is > 0) { <span class="compteur neutre" aria-label="@($"{attente} en attente")">@attente</span> }
+                    </a>
                 }
-            }
-            else if (r.Permis)
-            {
-                var active = r.Onglet == onglet && (r.Vue is null || r.Vue == vue);
-                var attente = r.Vue switch { "attente" => Compteurs.Receptions, "bons" => Compteurs.Brouillons, _ => null };
-                <a href="@Lien(r)" class="@(r.SousRubrique ? "sous-rubrique" : null) @(active ? "active" : null)" aria-current="@(active ? "page" : null)">
-                    @r.Libelle@if (attente is > 0) { <span class="compteur neutre" aria-label="@($"{attente} en attente")">@attente</span> }
-                </a>
-            }
+            </GroupeMenu>
         }
     </NavDomaine>
 
@@ -116,6 +111,20 @@
         new("traites", null, "Traites à payer", "Traites échues ou à 7 jours ; paiement confirmé par le titulaire", Session.A("achats.regler"), true),
         new("grossistes", null, "Grossistes", "Fiches des grossistes, dette et délai de reprise", true, true)
     ];
+
+    private bool EstActive(Rubrique r) => r.Onglet == onglet && (r.Vue is null || r.Vue == vue);
+
+    /// <summary>Groupes du menu et leurs rubriques permises, dans l'ordre ; groupe sans rubrique permise : absent.</summary>
+    private List<(string Groupe, List<Rubrique> Membres)> GroupesMenu()
+    {
+        var groupes = new List<(string Groupe, List<Rubrique> Membres)>();
+        foreach (var r in Rubriques)
+        {
+            if (r.Groupe is { } g) groupes.Add((g, []));
+            else if (r.Permis && groupes.Count > 0) groupes[^1].Membres.Add(r);
+        }
+        return groupes.Where(x => x.Membres.Count > 0).ToList();
+    }
 
     private Rubrique Courante => Rubriques.FirstOrDefault(r => r.Groupe is null && r.Onglet == onglet && (r.Vue is null || r.Vue == vue))
                                  ?? Rubriques.First(r => r.Groupe is null && r.Onglet == onglet);

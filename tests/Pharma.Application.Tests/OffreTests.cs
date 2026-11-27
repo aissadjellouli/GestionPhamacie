@@ -45,21 +45,48 @@ public class OffreTests
             Refus.Add((id, motif));
             return Task.FromResult(true);
         }
+
+        /// <summary>Dernière date du journal fiscal des ventes (null : journal vide).</summary>
+        public DateTime? DerniereFiscale { get; set; }
+        public Task<DateTime?> DerniereDateFiscaleAsync(CancellationToken ct = default) => Task.FromResult(DerniereFiscale);
+
+        /// <summary>Dates plancher notées au journal (offre_horloge_reculee), une fois chacune.</summary>
+        public HashSet<DateTime> HorlogeReculee { get; } = [];
+        public Task<bool> SignalerHorlogeReculeeAsync(DateTime plancherUtc, DateTime serveurUtc, CancellationToken ct = default) =>
+            Task.FromResult(HorlogeReculee.Add(plancherUtc));
     }
 
     private static readonly ECDsa Cle = ECDsa.Create(ECCurve.NamedCurves.nistP256);
     private static byte[] Publique => Cle.ExportSubjectPublicKeyInfo();
 
     private static string Code(int postes = 5, string[]? packs = null, DateOnly? fin = null, DateTime? emise = null, Guid? officine = null,
-        string nif = Nif, bool transition = false, ECDsa? cle = null) =>
+        string nif = Nif, bool transition = false, ECDsa? cle = null, string[]? serveurs = null) =>
         Program.Signer(new ActivationOffre(officine ?? Officine, nif, emise ?? new DateTime(2026, 11, 20, 8, 0, 0, DateTimeKind.Utc), packs ?? ["A", "D"],
-            postes, 0, fin, transition), cle ?? Cle);
+            postes, 0, fin, transition, serveurs), cle ?? Cle);
+
+    /// <summary>Clé de serveur en mémoire (doublure de la clé TPM). PubliqueAnnoncee : clé publique annoncée à la place de la vraie (tricherie).</summary>
+    private sealed class CleServeurFactice : ICleServeur
+    {
+        public ECDsa? Cle { get; set; } = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        public byte[]? PubliqueAnnoncee { get; set; }
+        public List<byte[]> Defis { get; } = [];
+        public string Empreinte => EmpreinteServeur.Calculer(ClePublique()!);
+        public byte[]? ClePublique() => PubliqueAnnoncee ?? Cle?.ExportSubjectPublicKeyInfo();
+        public byte[]? Signer(byte[] donnees)
+        {
+            Defis.Add(donnees);
+            return Cle?.SignData(donnees, HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+        }
+    }
+
+    /// <summary>Clé de CE serveur dans les bancs d'essai (les codes version 2 des tests la déclarent par défaut).</summary>
+    private static readonly CleServeurFactice ServeurLocal = new();
 
     private static (Depot D, OffreCourante O, GererOffre G, JournalEspion J) Banc(DateOnly? jour = null, bool titulaire = true)
     {
         var d = new Depot();
         var h = new HorlogeFixe(jour ?? Aujourdhui);
-        var o = new OffreCourante(d, h, [Publique]);
+        var o = new OffreCourante(d, h, [Publique], cleServeur: ServeurLocal);
         var j = new JournalEspion();
         return (d, o, new GererOffre(d, o, new DroitsFactices { Titulaire = titulaire }, j, h), j);
     }
@@ -166,7 +193,8 @@ public class OffreTests
     public async Task Code_de_transition_tout_compris_et_seul_le_titulaire_saisit()
     {
         var (_, o, g, _) = Banc();
-        var a = Program.Activation(["signer", "--officine", Officine.ToString(), "--nif", "0001-16001234567", "--postes", "10", "--transition", "--fin", "2027-05-31"],
+        var a = Program.Activation(["signer", "--officine", Officine.ToString(), "--nif", "0001-16001234567", "--postes", "10", "--transition", "--fin", "2027-05-31",
+                "--serveur", EmpreinteServeur.Afficher(ServeurLocal.Empreinte)],
             new DateTime(2026, 11, 26, 8, 0, 0, DateTimeKind.Utc));
         Assert.Equal(8, a.Packs.Count);
         await g.SaisirAsync(1, Program.Signer(a, Cle));
@@ -183,7 +211,7 @@ public class OffreTests
         Assert.Throws<ArgumentException>(() => Program.Activation(["signer", "--officine", "pas-un-code", "--nif", Nif, "--postes", "2"], DateTime.UtcNow));
         Assert.Throws<ArgumentException>(() => Program.Activation(["signer", "--officine", Officine.ToString(), "--nif", Nif], DateTime.UtcNow));
         Assert.Throws<ActivationInvalideException>(() => CodeActivation.Controler(Program.Activation(
-            ["signer", "--officine", Officine.ToString(), "--nif", Nif, "--postes", "2", "--packs", "A,Z"], DateTime.UtcNow)));
+            ["signer", "--officine", Officine.ToString(), "--nif", Nif, "--postes", "2", "--packs", "A,Z", "--serveur", ServeurLocal.Empreinte], DateTime.UtcNow)));
 
         var dossier = Path.Combine(Path.GetTempPath(), "offre-tests-" + Guid.NewGuid().ToString("N"));
         try
@@ -203,12 +231,18 @@ public class OffreTests
     [Fact]
     public async Task Un_code_transmis_par_le_central_est_controle_comme_une_saisie()
     {
-        var (d, o, g, _) = Banc();
+        var (d, o, g, j) = Banc();
         var ordre = Guid.NewGuid();
         await g.RecevoirDuCentralAsync(Code(postes: 3), ordre);
         Assert.Equal(("central", (Guid?)ordre), (d.Lignes[0].Source, d.Lignes[0].OrdreCentral));
         Assert.Equal(3, await o.MaximumPostesAsync());
+        // Même entrée de journal que la saisie, sans utilisateur local, source « central » et identifiant de l'ordre
+        Assert.Equal([GererOffre.ActionActivee], j.SansUtilisateur);
+        Assert.Equal(GererOffre.SourceCentral, j.Details[0]["source"]);
+        Assert.Equal(ordre.ToString("D"), j.Details[0]["ordre"]);
+        Assert.Equal(3, j.Details[0]["postes"]);
         await Assert.ThrowsAsync<RegleMetierException>(() => g.RecevoirDuCentralAsync(Code(officine: Guid.NewGuid()), Guid.NewGuid()));
+        Assert.Single(j.Actions);   // code refusé : rien au journal
     }
 
     // ---- Lot O6 : packs ----------------------------------------------------------------------------------------------------------------
@@ -225,7 +259,9 @@ public class OffreTests
         public Task SurveillanceAsync(string message, bool urgent, CancellationToken ct = default) { Envoyees.Add("surveillance"); return Task.CompletedTask; }
         public Task SynchronisationAsync(string objet, string detail, string sms, CancellationToken ct = default) { Envoyees.Add("synchronisation"); return Task.CompletedTask; }
         public Task SecondServeurAsync(string objet, string detail, string sms, CancellationToken ct = default) { Envoyees.Add("second_serveur"); return Task.CompletedTask; }
-        public Task OffreAsync(string objet, string detail, string sms, CancellationToken ct = default) { Envoyees.Add("offre:" + objet); return Task.CompletedTask; }
+        /// <summary>Messages mis en file à chaque alerte d'offre (0 : aucun destinataire).</summary>
+        public int MessagesOffre { get; set; } = 1;
+        public Task<int> OffreAsync(string objet, string detail, string sms, CancellationToken ct = default) { Envoyees.Add("offre:" + objet); return Task.FromResult(MessagesOffre); }
     }
 
     [Fact]
@@ -326,6 +362,28 @@ public class OffreTests
     }
 
     [Fact]
+    public async Task Un_rappel_sans_message_mis_en_file_n_est_pas_note_et_repart_le_lendemain()
+    {
+        var fin = new DateOnly(2027, 6, 30);
+        var (d, _, g, _) = Banc();
+        await g.SaisirAsync(1, Code(fin: fin));
+        var espion = new AlertesEspion { MessagesOffre = 0 };   // aucun destinataire, ou mise en file impossible
+        async Task<string?> Le(int joursAvant)
+        {
+            var h = new HorlogeFixe(fin.AddDays(-joursAvant));
+            return await new RappelsOffre(new OffreCourante(d, h, [Publique]), d, espion, h).ExecuterAsync();
+        }
+
+        Assert.Null(await Le(30));
+        Assert.Empty(d.Rappels);                    // étape non notée
+        espion.MessagesOffre = 1;
+        Assert.Equal("30j", await Le(29));          // retentée le lendemain, notée cette fois
+        Assert.Equal(["30j:2027-06-30"], d.Rappels);
+        Assert.Null(await Le(28));                  // plus de double
+        Assert.Equal(2, espion.Envoyees.Count);
+    }
+
+    [Fact]
     public async Task Sept_rappels_une_seule_fois_chacun_seulement_le_plus_proche_et_jamais_perdus()
     {
         var fin = new DateOnly(2027, 6, 30);
@@ -362,5 +420,212 @@ public class OffreTests
     {
         var e = Assert.Throws<ActivationInvalideException>(() => CodeActivation.Lire(Code(), Array.Empty<byte[]>()));
         Assert.Contains("Clé de l’éditeur absente", e.Message);
+    }
+
+    // ---- Point 5 du 2026-11-27 : horloge (date effective) ------------------------------------------------------------------------------
+
+    private sealed class PlancherFactice : IDatePlancherFichier
+    {
+        public DateTime? Valeur { get; set; }
+        public int Ecritures { get; private set; }
+        public DateTime? Lire() => Valeur;
+        public void Ecrire(DateTime utc) { Valeur = utc; Ecritures++; }
+    }
+
+    private static DateTime Midi(DateOnly jour) => jour.ToDateTime(new TimeOnly(12, 0), DateTimeKind.Utc);
+
+    [Fact]
+    public void Date_effective_max_du_serveur_et_du_plancher_alerte_au_dela_d_une_heure()
+    {
+        var serveur = Midi(Aujourdhui);
+        var enAvance = DateEffectiveOffre.Calculer(serveur, Aujourdhui, serveur.AddDays(-3), serveur.AddDays(-1));
+        Assert.Equal((serveur, Aujourdhui, false), (enAvance.EffectiveUtc, enAvance.Aujourdhui, enAvance.Reculee));
+        Assert.Equal(serveur.AddDays(-1), enAvance.PlancherUtc);                       // la plus grande des deux
+
+        var recul = DateEffectiveOffre.Calculer(serveur, Aujourdhui, Midi(Aujourdhui.AddDays(40)), null);
+        Assert.Equal((Midi(Aujourdhui.AddDays(40)), Aujourdhui.AddDays(40), true), (recul.EffectiveUtc, recul.Aujourdhui, recul.Reculee));
+
+        var leger = DateEffectiveOffre.Calculer(serveur, Aujourdhui, null, serveur.AddMinutes(50));   // 50 minutes : toléré, sans alerte
+        Assert.Equal((serveur.AddMinutes(50), false), (leger.EffectiveUtc, leger.Reculee));
+        Assert.Equal((serveur, (DateTime?)null), (DateEffectiveOffre.Calculer(serveur, Aujourdhui, null, null).EffectiveUtc, DateEffectiveOffre.Calculer(serveur, Aujourdhui, null, null).PlancherUtc));
+
+        // Fichier mis à jour au plus une fois par jour, jamais vers le passé
+        Assert.Equal(serveur, DateEffectiveOffre.AEcrire(serveur, null));
+        Assert.Null(DateEffectiveOffre.AEcrire(serveur.AddHours(5), serveur));
+        Assert.Equal(serveur.AddDays(1), DateEffectiveOffre.AEcrire(serveur.AddDays(1), serveur));
+        Assert.Null(DateEffectiveOffre.AEcrire(serveur.AddDays(-10), serveur));
+    }
+
+    [Fact]
+    public async Task Reculer_l_horloge_ne_prolonge_pas_l_offre_et_l_alerte_n_est_notee_qu_une_fois()
+    {
+        var fin = new DateOnly(2026, 12, 20);   // grâce jusqu'au 04/01/2027
+        var (d, _, g, _) = Banc();
+        await g.SaisirAsync(1, Code(postes: 6, fin: fin));
+        // Le journal fiscal a déjà vu le 10/01/2027 : l'horloge du serveur remise au 26/11/2026 ne rouvre rien
+        d.DerniereFiscale = Midi(new DateOnly(2027, 1, 10));
+        var h = new HorlogeFixe(Aujourdhui);
+        var e = await new OffreCourante(d, h, [Publique]).LireAsync();
+        Assert.Equal((EtatsOffre.Base, 2, (DateOnly?)new DateOnly(2027, 1, 10)), (e.Etat, e.Postes, e.Jour));
+        Assert.Contains("L’horloge de ce serveur retarde", e.AlerteHorloge);
+        await new OffreCourante(d, h, [Publique]).LireAsync();
+        Assert.Single(d.HorlogeReculee);                                    // une seule fois au journal, le message reste
+
+        // Même chose avec la date gardée hors de la base seulement (journal fiscal vide, ou effacé)
+        d.DerniereFiscale = null;
+        var fichier = new PlancherFactice { Valeur = Midi(new DateOnly(2026, 12, 28)) };
+        var grace = await new OffreCourante(d, h, [Publique], plancher: fichier).LireAsync();
+        Assert.Equal((EtatsOffre.Grace, 6), (grace.Etat, grace.Postes));      // le 28/12 : délai de grâce, pas « active »
+        Assert.NotNull(grace.AlerteHorloge);
+        Assert.Equal(0, fichier.Ecritures);                                 // rien de plus récent à écrire
+
+        // Horloge juste : pas d'alerte, le fichier avance au plus une fois par jour
+        var juste = new PlancherFactice();
+        var h2 = new HorlogeFixe(new DateOnly(2026, 12, 1));
+        var ok = await new OffreCourante(d, h2, [Publique], plancher: juste).LireAsync();
+        Assert.Equal((EtatsOffre.Active, (string?)null), (ok.Etat, ok.AlerteHorloge));
+        await new OffreCourante(d, h2, [Publique], plancher: juste).LireAsync();
+        Assert.Equal((1, (DateTime?)h2.MaintenantUtc), (juste.Ecritures, juste.Valeur));
+    }
+
+    [Fact]
+    public async Task Rappels_et_saisie_suivent_le_jour_effectif()
+    {
+        var fin = new DateOnly(2027, 6, 30);
+        var (d, _, g, _) = Banc();
+        await g.SaisirAsync(1, Code(fin: fin));
+        // Serveur à 40 jours de la fin, journal fiscal à 7 jours : c'est le rappel des 7 jours qui part
+        d.DerniereFiscale = Midi(fin.AddDays(-7));
+        var h = new HorlogeFixe(fin.AddDays(-40));
+        var espion = new AlertesEspion();
+        Assert.Equal("7j", await new RappelsOffre(new OffreCourante(d, h, [Publique]), d, espion, h).ExecuterAsync());
+
+        // Code échu d'après le jour effectif : refusé même si l'horloge du serveur a été reculée
+        var (d2, _, _, _) = Banc();
+        d2.DerniereFiscale = Midi(new DateOnly(2027, 3, 1));
+        var o2 = new OffreCourante(d2, new HorlogeFixe(Aujourdhui), [Publique], cleServeur: ServeurLocal);
+        var g2 = new GererOffre(d2, o2, new DroitsFactices { Titulaire = true }, new JournalEspion(), new HorlogeFixe(Aujourdhui));
+        Assert.Contains("Code échu", (await Assert.ThrowsAsync<RegleMetierException>(() => g2.SaisirAsync(1, Code(fin: new DateOnly(2027, 1, 31))))).Message);
+    }
+
+    // ---- Point 5 du 2026-11-27 : matériel (codes version 2 liés aux serveurs) --------------------------------------------------------
+
+    [Fact]
+    public async Task Un_code_version_1_reste_accepte_mais_signale_non_lie_au_serveur()
+    {
+        var (_, o, g, _) = Banc();
+        await g.SaisirAsync(1, Code(postes: 5));
+        var e = await o.LireAsync();
+        Assert.Equal((EtatsOffre.Active, 5, (string?)null), (e.Etat, e.Postes, e.Alerte));
+        Assert.Equal(OffreCourante.MessageNonLie, e.AlerteServeur);
+        Assert.Equal(ServeurLocal.Empreinte, e.EmpreinteServeur);
+        Assert.Null(CodeActivation.LireSansControle(Code()).Serveurs);
+    }
+
+    [Fact]
+    public async Task Un_code_version_2_qui_declare_ce_serveur_ouvre_l_offre_apres_un_defi_signe()
+    {
+        var (_, o, g, j) = Banc();
+        var autre = new CleServeurFactice();
+        var avant = ServeurLocal.Defis.Count;
+        await g.SaisirAsync(1, Code(postes: 9, serveurs: [autre.Empreinte, ServeurLocal.Empreinte]));
+        var e = await o.LireAsync();
+        Assert.Equal((EtatsOffre.Active, 9, (string?)null, (string?)null), (e.Etat, e.Postes, e.Alerte, e.AlerteServeur));
+        Assert.Equal(2, ((string)j.Details[0]["serveurs"]!).Split(',').Length);
+        // Un défi par contrôle (saisie, évaluation), jamais le même
+        var defis = ServeurLocal.Defis.Skip(avant).ToList();
+        Assert.True(defis.Count >= 2);
+        Assert.Equal(defis.Count, defis.Select(Convert.ToBase64String).Distinct().Count());
+    }
+
+    [Fact]
+    public async Task Un_code_version_2_d_un_autre_serveur_est_refuse_a_la_saisie_avec_l_empreinte_de_ce_serveur()
+    {
+        var (d, _, g, _) = Banc();
+        var ailleurs = new CleServeurFactice();
+        var x = await Assert.ThrowsAsync<RegleMetierException>(() => g.SaisirAsync(1, Code(serveurs: [ailleurs.Empreinte])));
+        Assert.Contains("Ce serveur n’est pas déclaré dans le code de l’offre", x.Message);
+        Assert.Contains(EmpreinteServeur.Afficher(ServeurLocal.Empreinte), x.Message);
+        Assert.Equal("code", x.Champ);
+        Assert.Empty(d.Lignes);
+    }
+
+    [Fact]
+    public async Task Activation_copiee_vers_un_autre_serveur_quinze_jours_de_grace_puis_offre_de_base()
+    {
+        // Base restaurée sur un autre PC : le code rangé déclare l'ancien serveur, pas celui-ci
+        var (d, _, g, _) = Banc();
+        await g.SaisirAsync(1, Code(postes: 7, packs: ["A", "B"], serveurs: [ServeurLocal.Empreinte]));
+        var autrePc = new CleServeurFactice();
+        var h = new HorlogeFixe(Aujourdhui);
+        var e = await new OffreCourante(d, h, [Publique], cleServeur: autrePc).LireAsync();
+        Assert.Equal((EtatsOffre.Grace, 7), (e.Etat, e.Postes));
+        Assert.Contains($"l’empreinte {EmpreinteServeur.Afficher(autrePc.Empreinte)}", e.Alerte);
+        Assert.Contains("Délai de grâce jusqu’au 11/12/2026", e.Alerte);
+        Assert.Single(d.Refus);                                                 // noté une fois (refusee_le, journal)
+
+        // Grâce comptée depuis la première constatation (refusee_le) : 16 jours après, offre de base
+        d.Lignes[0] = d.Lignes[0] with { RefuseeLeUtc = Midi(Aujourdhui.AddDays(-16)) };
+        var apres = await new OffreCourante(d, h, [Publique], cleServeur: autrePc).LireAsync();
+        Assert.Equal((EtatsOffre.Base, 2), (apres.Etat, apres.Postes));
+        Assert.Contains("n’est pas déclaré", apres.Alerte);
+
+        // Clé du serveur absente : même chemin, message de création de la clé
+        var sansCle = await new OffreCourante(d, h, [Publique], cleServeur: new CleServeurFactice { Cle = null }).LireAsync();
+        Assert.Equal(EtatsOffre.Base, sansCle.Etat);
+        Assert.Contains("Clé de ce serveur absente", sansCle.Alerte);
+        Assert.Null(sansCle.EmpreinteServeur);
+        Assert.Contains("Clé de ce serveur absente", OffreCourante.MessageServeurNonDeclare(null));
+    }
+
+    [Fact]
+    public void La_preuve_exige_la_cle_privee_pas_seulement_l_empreinte()
+    {
+        var vrai = new CleServeurFactice();
+        Assert.Equal(new PreuveServeur(vrai.Empreinte, true), PreuveCleServeur.Prouver(vrai, [vrai.Empreinte]));
+        Assert.Equal(new PreuveServeur(vrai.Empreinte, false), PreuveCleServeur.Prouver(vrai, [new CleServeurFactice().Empreinte]));
+        Assert.Equal(new PreuveServeur(null, false), PreuveCleServeur.Prouver(null, [vrai.Empreinte]));
+        // Tricheur : annonce la clé publique du serveur déclaré, mais signe avec une autre clé
+        var tricheur = new CleServeurFactice { PubliqueAnnoncee = vrai.ClePublique() };
+        Assert.Equal(new PreuveServeur(vrai.Empreinte, false), PreuveCleServeur.Prouver(tricheur, [vrai.Empreinte]));
+    }
+
+    [Fact]
+    public void Format_du_code_version_2_et_de_l_empreinte()
+    {
+        var e1 = ServeurLocal.Empreinte;
+        Assert.Equal(32, e1.Length);
+        var affichee = EmpreinteServeur.Afficher(e1);
+        Assert.Matches("^([0-9A-F]{4}-){7}[0-9A-F]{4}$", affichee);
+        Assert.Equal(e1, EmpreinteServeur.Normaliser(affichee.ToLowerInvariant()));
+        Assert.Null(EmpreinteServeur.Normaliser("XYZ"));
+        Assert.Null(EmpreinteServeur.Normaliser(e1 + "0"));
+
+        var lu = CodeActivation.LireSansControle(Code(serveurs: [e1]));
+        Assert.Equal([e1], lu.Serveurs);
+        Assert.True(lu.LieeAuxServeurs);
+        var a = new ActivationOffre(Officine, Nif, DateTime.UtcNow, [], 2, 0, null, false, [e1]);
+        Assert.Throws<ActivationInvalideException>(() => CodeActivation.Controler(a with { Serveurs = [] }));
+        Assert.Throws<ActivationInvalideException>(() => CodeActivation.Controler(a with { Serveurs = [e1, e1] }));
+        Assert.Throws<ActivationInvalideException>(() => CodeActivation.Controler(a with { Serveurs = ["ABC"] }));
+        var quatre = Enumerable.Range(0, 4).Select(_ => new CleServeurFactice().Empreinte).ToList();
+        Assert.Throws<ActivationInvalideException>(() => CodeActivation.Controler(a with { Serveurs = quatre }));
+        // Un code version 1 garde exactement son contenu d'avant (aucune clé « serveurs ») : les codes déjà signés se relisent
+        Assert.DoesNotContain("serveurs", System.Text.Encoding.UTF8.GetString(CodeActivation.Contenu(a with { Serveurs = null })));
+    }
+
+    [Fact]
+    public void L_outil_ne_signe_plus_que_des_codes_version_2()
+    {
+        string[] Base(params string[] plus) => ["signer", "--officine", Officine.ToString(), "--nif", Nif, "--postes", "3", .. plus];
+        Assert.Contains("--serveur", Assert.Throws<ArgumentException>(() => Program.Activation(Base(), DateTime.UtcNow)).Message);
+        Assert.Throws<ArgumentException>(() => Program.Activation(Base("--serveur", "pas-une-empreinte"), DateTime.UtcNow));
+        Assert.Throws<ArgumentException>(() => Program.Activation(Base("--serveur", ServeurLocal.Empreinte, "--serveur", ServeurLocal.Empreinte.ToLowerInvariant()), DateTime.UtcNow));
+        var quatre = Enumerable.Range(0, 4).SelectMany(_ => new[] { "--serveur", new CleServeurFactice().Empreinte }).ToArray();
+        Assert.Throws<ArgumentException>(() => Program.Activation(Base(quatre), DateTime.UtcNow));
+        var autre = new CleServeurFactice().Empreinte;
+        var a = Program.Activation(Base("--serveur", EmpreinteServeur.Afficher(ServeurLocal.Empreinte).ToLowerInvariant(), "--serveur", autre), DateTime.UtcNow);
+        Assert.Equal([ServeurLocal.Empreinte, autre], a.Serveurs);
+        Assert.Equal(a.Serveurs.Order(StringComparer.Ordinal), CodeActivation.Lire(Program.Signer(a, Cle), Publique).Serveurs!);
     }
 }
