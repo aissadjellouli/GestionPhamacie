@@ -259,6 +259,7 @@ public sealed class AppliquerReglagesMutualises(IReglagesMutualisesDepot depot, 
 
     private enum Issue { Rien, Appliquee, Rejetee, NonAdoptee, Liberee }
 
+    [System.Reflection.Obfuscation(Exclude = true, ApplyToMembers = true)]
     private sealed record Resultat(Issue Issue, ReglageImpose? Imposee = null);
 
     private async Task<Resultat> TraiterAsync(string table, bool adoption, long? utilisateurId, CancellationToken ct, long? versionAttendue = null)

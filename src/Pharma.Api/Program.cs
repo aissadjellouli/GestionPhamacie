@@ -39,8 +39,16 @@ static string? Chemin(string? valeur) => Pharma.Infrastructure.Systeme.DossiersD
 // Journal du serveur en fichiers (un par jour, taille et durée de conservation réglables : section « Journaux »)
 var optionsJournal = builder.Configuration.GetSection("Journaux").Get<Pharma.Shared.Journalisation.OptionsJournalFichier>()
                      ?? new Pharma.Shared.Journalisation.OptionsJournalFichier();
+// Sans réglage : C:\Logs\PharmaOfficine\Api sous Windows (dossier commun des journaux, 2026-11-28), sinon l'ancien dossier sous la racine
+// des données, qui sert aussi de repli si le dossier commun ne peut pas être créé ou écrit.
+// Les fichiers de décision de bascule (relus au démarrage) ne suivent pas les journaux : ils restent où ils étaient (dossierDecisions).
+var ancienDossierJournal = Path.Combine(dossierPharma, "Journaux");
+var dossierDecisions = ancienDossierJournal;
 if (builder.Configuration["Journaux:Dossier"] is not { } reglageJournal || (reglageJournal.Length > 0 && Chemin(reglageJournal) is null))
-    optionsJournal.Dossier = Path.Combine(dossierPharma, "Journaux");
+    optionsJournal.Dossier = Pharma.Shared.Journalisation.DossiersJournaux.Choisir(
+        Pharma.Shared.Journalisation.DossiersJournaux.Windows(Pharma.Shared.Journalisation.DossiersJournaux.Api), ancienDossierJournal);
+else
+    dossierDecisions = optionsJournal.Dossier;   // dossier réglé par l'officine : inchangé, décisions de bascule comprises
 builder.Logging.AddProvider(new Pharma.Shared.Journalisation.JournalFichierProvider(optionsJournal));
 
 // GED : un dossier du serveur pour tous les documents (réglage Ged:Dossier). Les ordonnances y vont par défaut, et celles de
@@ -182,7 +190,7 @@ TacheSuspendueSiEcarte.Envelopper(builder.Services, typeof(Pharma.Api.Taches.Env
     typeof(VerificationIntegriteNocturne), typeof(ScellementMensuelRegistre), typeof(ClotureFiscaleMensuelle), typeof(SerialisationHorsLigne));
 builder.Services.AddProblemDetails();
 // Vigie du 2e serveur (V2-3) : rapports des postes, décision de promotion (verdict seulement). Mode veille = IVeilleServeur (lot V2-1)
-builder.Services.AjouterVigieSecondServeur(builder.Configuration, optionsJournal.Dossier);
+builder.Services.AjouterVigieSecondServeur(builder.Configuration, dossierDecisions);
 builder.Services.AddHostedService<Pharma.Api.Taches.VigieSecondServeurTache>();
 // Relais du 2e serveur en veille vers le serveur 1 (V2-5) : enregistré seulement si deux serveurs sont déclarés et la clé des jetons présente
 builder.Services.AjouterRelaisVeille(builder.Configuration);

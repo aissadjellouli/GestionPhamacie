@@ -24,8 +24,11 @@ n'est absolue contre un administrateur du serveur de l'officine.
 - **Lot P3 (avec le certificat)** : signature des `.exe`, `.dll` et `.ps1` dans la fabrication du paquet, et contrôle au démarrage de l'API
   (refus de démarrer si un de ses fichiers n'est pas signé par l'éditeur) ; option : règle Windows « seulement les programmes signés par
   l'éditeur » (WDAC) sur les serveurs.
-- **Lot P4 (étude seulement)** : compilation de l'API en code machine (NativeAOT) ; favorable : 412 routes simples, aucun contrôleur ;
-  bibliothèques non vérifiées ; impossible pour le poste (WPF + WebView2).
+- **Lot P4, étude FAITE (2026-11-27, protection-du-code.md § 6.1)** : compilation de l'API en code machine (NativeAOT) ; les règles
+  (Domain, Application, Infrastructure) ne sont livrées qu'avec l'API, donc toutes protégées ; essai de publication native : 69 appels
+  JSON à corriger dans 35 fichiers, aucune réflexion libre, arrêt faute d'outils C++ sur ce PC ; bibliothèques non garanties par leur
+  éditeur : **MigraDoc (tous les PDF)** et **ODBC (reprise)** ; impossible pour le poste (WPF + WebView2). **Suite sur go** : P4-0,
+  essai de faisabilité (installer les outils C++, publier en natif, essayer PDF, connexion, e-mail, reprise).
 - **Volet juridique (titulaire, hors code)** : dépôt du logiciel pour dater la création (droit d'auteur ; organisme et démarche **à
   confirmer avec un juriste**) ; contrat de licence signé par chaque officine (interdiction de copier, décompiler, céder) ; historique git et
   codes d'activation signés comme preuves d'antériorité et d'usage.
@@ -35,12 +38,37 @@ n'est absolue contre un administrateur du serveur de l'officine.
   essai prévu sur une copie du paquet (Blazor Hybrid obfusqué non confirmé par les éditeurs), NativeAOT possible pour l'API seulement.
 - **Scripts PowerShell et SQL dans le livrable (remarque du titulaire du 2026-11-27)** : les `.sql` sont livrés sans commentaires (P1) mais
   leur logique reste lisible ; le manuel fait copier tout le dossier `scripts\` du dépôt, dont des scripts inutiles en officine (`dev\`,
-  `initialiser_base_locale.ps1`, `creer_paquet_essai.ps1`). **Lot P1 bis proposé** : `creer_livraison.ps1` fabrique un `scripts\` de livraison
-  ne contenant que les scripts utiles (mep, second-serveur, bascule, sauvegarde, restauration, certificat HTTPS), commentaires retirés par
-  l'analyseur PowerShell (en gardant `#Requires` et l'aide `<# … #>`), puis signés (P3) ; le manuel ne copierait plus le dossier `scripts\`
-  du dépôt. **Zip/hash/chiffrement des scripts** : voir protection-du-code.md § 6 bis (hash = intégrité, pas secret ; chiffrement utile
+  `initialiser_base_locale.ps1`, `creer_paquet_essai.ps1`). **Lot P1 bis FAIT (2026-11-27, « go P1 bis », non commité)** :
+  `creer_livraison.ps1` fabrique un `scripts\` de livraison de 17 scripts (certificat HTTPS, sauvegarde, restauration, PC de secours,
+  `mep\` de l'officine, `second-serveur\` ; pas `creer_base_centrale.ps1`), commentaires retirés par l'analyseur PowerShell (`#Requires`
+  et aide de tête gardés, refus si les instructions changent) ; manuels passés au `scripts` de la livraison ; essai réel sous Windows
+  PowerShell 5.1 et tests `ScriptsLivraisonTests` ; détail et limites : protection-du-code.md § 8. Reste : signature des scripts (P3). **Zip/hash/chiffrement des scripts** : voir protection-du-code.md § 6 bis (hash = intégrité, pas secret ; chiffrement utile
   seulement après P2 ; PostgreSQL exige du SQL en clair ; signature du paquet = meilleur gain).
 - **Licence .NET Reactor** (contrat lu le 2026-11-27) : nombre de logiciels illimité, sans redevance ; 199 USD = 1 développeur nommé, 2 machines ; 349 USD = toute la société (une entité juridique).
+- **Essai P2 EN COURS (2026-11-27, « go P2 », .NET Reactor 7.7.2.0, licence achetée et activée par le titulaire le 2026-11-27 ;
+  outil dans `%LOCALAPPDATA%\Programs\dotNET_Reactor`, fichiers de licence dans `C:\MesAtlassian\NetReactor`, hors dépôt)** :
+  7 assemblys obfusqués en version complète. **Correctif JSON fait (non commité)** : 17 enregistrements non publics marqués
+  `[Obfuscation(Exclude = true, ApplyToMembers = true)]`, test `ObjetsJsonObfuscationTests` (protection-du-code.md § 9.7). Après
+  correctif : autorisation de poste réussie, 115 routes GET identiques au témoin, aucun écart de temps à chaud, poste obfusqué
+  connecté et 57 écrans balayés sans erreur (§ 9.8). **Reste** : vente, retour, PDF, code d'activation, JSON déjà enregistrés,
+  synchronisation, super admin. **Vente, ticket PDF et retour faits sur le poste obfusqué (2026-11-28).** **Intégration FAITE
+  (2026-11-28, « go intégration P2 », non commité)** : `creer_livraison.ps1` obfusque les sept assemblys (`-licensed`, refus si
+  l'outil manque ou n'est pas activé, correspondances dans `<Sortie>-correspondances`, `-SansObfuscation` pour un essai interne).
+  **Paquet d'essai obfusqué (2026-11-28, « go paquet d'essai », non commité)** : script commun `obfusquer_livraison.ps1`, appelé
+  par `creer_livraison.ps1` et `creer_paquet_essai.ps1` ; fabrication réelle faite, paquet non installé.
+  **Preuve de poste, étude faite (2026-11-28, aucun code)** : la preuve n'est exigée que d'un client qui s'annonce comme poste
+  (en-tête `X-Pharma-Poste`) ; un client « sans poste » (ni en-tête ni preuve : page mobile, pilotage mobile, outils) se connecte
+  avec n'importe quel compte et lit les routes de ses droits : c'est le comportement écrit dans le code et dans regles-metier.md,
+  mais « un PC non autorisé ne se connecte pas » ne vaut donc que pour le logiciel du poste. **Décision attendue** : laisser, ou
+  limiter les jetons sans poste à une liste fermée de routes (page mobile). **Journaux du logiciel entier dans `C:\Logs` : FAIT (2026-11-28, « go journaux », non commité)** : `C:\Logs\PharmaOfficine\Api`,
+  `Central`, `Poste\<nom du PC>`, repli sur l'ancien emplacement, décisions de bascule et copie de la GED non déplacées, script
+  `creer_dossier_journaux.ps1` (droits : `Poste` en modification pour les utilisateurs du PC, et non en écriture seule comme proposé,
+  pour que l'essai d'écriture du poste réussisse) ; essai réel de l'API fait ; **à essayer** : poste en compte Windows standard, droits
+  réglés par le script. **Revue de code du 2026-11-27 (effort maximal) : 15 constats importants, aucun corrigé** : liste rendue au
+  titulaire en séance, correctifs sur go (port 5080 dans `appsettings.json`, caisse au clavier, scripts livrés `pg_hba.conf` et
+  bascule, contrôle des remises depuis le script 173, alertes de sécurité sans pack A, grâce et dates de l'offre, gardes de dossier
+  des scripts de fabrication, paquet d'essai et poste non autorisé). **À nettoyer en fin d'essai** : base `pharmacie_jetable_p2_20261127`, API d'essai sur 5083 et 5084,
+  poste d'essai, dossier temporaire de l'essai. Fichiers obfusqués par la version d'essai : inutilisables après 14 jours.
 - **Décisions attendues** : accord pour l'essai de .NET Reactor (version d'essai puis achat éventuel) ou autre outil ;
   « go signature » quand le certificat sera disponible ; démarche juridique.
 

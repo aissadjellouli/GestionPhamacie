@@ -21,12 +21,31 @@ exact, tenu à jour jusqu'au dernier script (le script de création refuse de d�
 | `database\init\163b_droit_identifiant_base.sql` | Oui (par le script) | Droit de lire l'identifiant de la base (2e serveur) |
 | `database\init\166b_droit_promotion_base.sql` | Oui (par le script) | Droit de promouvoir la base (2e serveur) |
 | `scripts\mep\outils_mep.ps1` | Oui (chargé par les scripts de `scripts\mep`) | Fonctions communes ; **jamais lancé seul** |
-| `scripts\mep\creer_livraison.ps1` | Oui, sur le **PC des sources** (installation et mise à jour) | Publie l'API et le poste dans le dossier de livraison, puis lance `nettoyer_livraison.ps1` (2026-11-27) |
-| `scripts\mep\nettoyer_livraison.ps1` | Oui (lancé par `creer_livraison.ps1` et `creer_paquet_essai.ps1`) | Nettoie la **copie livrée** : plus de `.pdb` ni de configuration de développement, scripts SQL sans commentaires (`NettoyageSql.cs`), contrôles ; refuse le dépôt des sources |
+| `scripts\mep\creer_livraison.ps1` | Oui, sur le **PC des sources** (installation et mise à jour) | Publie l'API et le poste dans le dossier de livraison, **obfusque nos sept assemblys** (.NET Reactor en version complète, `-licensed` ; correspondances rangées hors livraison ; refus si l'outil manque ou n'est pas activé ; `-SansObfuscation` pour un essai interne), y copie les **seuls scripts utiles en officine** (`<livraison>\scripts`, liste fermée, § 1 bis), puis lance `nettoyer_livraison.ps1` (2026-11-28) |
+| `scripts\mep\nettoyer_livraison.ps1` | Oui (lancé par `creer_livraison.ps1` et `creer_paquet_essai.ps1`) | Nettoie la **copie livrée** : plus de `.pdb` ni de configuration de développement, scripts SQL sans commentaires (`NettoyageSql.cs`), scripts PowerShell sans commentaires (aide de tête et `#Requires` gardés ; refus si les instructions changent), contrôles (dont : aucun fichier de l'outil d'obfuscation, `.nrmap`, `.license`, `.v3lic`) ; refuse le dépôt des sources |
 | `scripts\certificat_https.ps1` | **Oui** | HTTPS de l'API sur le réseau, une seule autorité pour toute la pharmacie |
 | `scripts\sauvegarde_pharmacie.ps1` | Seulement en dépannage | Script planifié de secours ; la sauvegarde normale est faite par l'application |
 | `database\init\clean.sql` | **Jamais** | Remise à vierge : supprime tout |
 | `101b` (suppression de `num_facture_chifa`) | **Jamais** à l'installation | — |
+
+## 1 bis. Scripts copiés en officine : le dossier `scripts` de la livraison (lot P1 bis, 2026-11-27)
+
+En officine, on copie **`<dossier de livraison>\scripts`**, jamais le dossier `scripts` du dépôt. `creer_livraison.ps1` n'y met que
+18 fichiers, sans leurs commentaires :
+
+| Dossier de la livraison | Scripts |
+|---|---|
+| `scripts\` | `certificat_https.ps1`, `sauvegarde_pharmacie.ps1`, `restaurer_pharmacie.ps1`, `basculer-pc-secours.ps1` |
+| `scripts\mep\` | `creer_base_officine.ps1`, `mettre_a_jour_base_officine.ps1`, `outils_mep.ps1`, `creer_dossier_journaux.ps1` (dossier commun des journaux `C:\Logs\PharmaOfficine` et ses droits, 2026-11-28) |
+| `scripts\second-serveur\` | les dix scripts du 2e serveur (`commun.ps1` compris) |
+
+**Jamais livrés** : `scripts\dev\*`, `scripts\paquet\*`, `initialiser_base_locale.ps1`, `creer_paquet_essai.ps1`, `creer_livraison.ps1`,
+`nettoyer_livraison.ps1`, `obfusquer_livraison.ps1` (obfuscation de nos assemblys, appelé par `creer_livraison.ps1` et
+`creer_paquet_essai.ps1`), `NettoyageSql.cs` (PC des sources) et `mep\creer_base_centrale.ps1` (serveur central, jamais en officine).
+
+Tout nouveau fichier de `scripts\` doit être classé : livré (liste `$scriptsLivres` de `creer_livraison.ps1`) ou non livré (test
+`ScriptsLivraisonTests`, qui échoue tant que le fichier n'est pas classé). `creer_base_officine.ps1` et `mettre_a_jour_base_officine.ps1`
+se lancent avec `-DossierDepot` et `-DossierMigration` pointant sur le dossier publié de l'API (manuel de MEP, A17 et B).
 
 ## 2. Mise à jour d'une officine en service (parcours B)
 

@@ -180,11 +180,14 @@
     }
 
     /// <summary>Facture en préparation, gardée par l'historique pour « ← Retour ».</summary>
+    [System.Reflection.Obfuscation(Exclude = true, ApplyToMembers = true)]
     private sealed record Preparation(string Destinataire, PatientDto? Patient, long ClientId, long OrganismeId, DateOnly Du, DateOnly Au,
         DateOnly DateFacture, DateOnly DateEcheance, bool EcheanceSaisie, string? Commentaire, string? Motif, string? RecherchePatient,
         string? RechercheVente, List<long> Ventes, List<LibreRetenue> Libres, bool VentesChargees);
+    [System.Reflection.Obfuscation(Exclude = true, ApplyToMembers = true)]
     private sealed record LibreRetenue(string Designation, decimal Quantite, decimal Prix, decimal Tva);
 
+    [System.Reflection.Obfuscation(Exclude = true, ApplyToMembers = true)]
     private sealed record VenteAffichee(long VenteId, string Numero, DateTime Date, string? Patient, long? OrdonnanceId, string? OrdonnanceNumero,
         string Produits, decimal Montant, bool DejaFacturee);
 

@@ -219,6 +219,8 @@ public sealed class DatePlancherFichier(string fichier, ILogger<DatePlancherFich
     public const string FichierNom = "date-plancher.json";
     private readonly object verrou = new();
 
+    // Relu depuis un fichier JSON : noms gardés à l'obfuscation (docs/protection-du-code.md § 9.7)
+    [System.Reflection.Obfuscation(Exclude = true, ApplyToMembers = true)]
     private sealed record Contenu(DateTime? Utc, DateTime? Centrale = null);
 
     public static string CheminParDefaut(string racineDonnees) => Path.Combine(racineDonnees, "Offre", FichierNom);

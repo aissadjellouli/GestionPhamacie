@@ -1389,6 +1389,7 @@
         public decimal Plafond { get; set; }
     }
 
+    [System.Reflection.Obfuscation(Exclude = true, ApplyToMembers = true)]
     private sealed record Bandeau(string Titre, string? Detail);
 
     private static readonly (string, string)[] Modes = [("especes", "Espèces"), ("carte", "Carte"), ("cheque", "Chèque")];
@@ -1769,6 +1770,7 @@
     // ---- Bascule du poste sur le 2e serveur (lot V2-6) ----
     /// <summary>Panier mis de côté EN MÉMOIRE quand le nouveau serveur refuse le jeton (jamais sur disque) : lignes, clé d'encaissement, client, mode.</summary>
     /// <param name="CleEnDoute">Encaissement de ce panier interrompu par la panne : la vente est peut-être déjà enregistrée sous cette clé.</param>
+    [System.Reflection.Obfuscation(Exclude = true, ApplyToMembers = true)]
     private sealed record PanierCapture(List<LignePanier> Lignes, Guid Cle, PatientDto? Patient, string Mode, decimal RemisePct, bool CleEnDoute = false);
 
     private Task MettreDeCoteBasculeAsync() => InvokeAsync(() =>

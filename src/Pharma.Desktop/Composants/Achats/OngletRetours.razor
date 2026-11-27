@@ -158,8 +158,10 @@
     [Parameter] public string? Motif { get; set; }
 
     /// <summary>Lot choisi avant « Préparer le retour », gardé par l'historique pour « ← Retour » (session du poste).</summary>
+    [System.Reflection.Obfuscation(Exclude = true, ApplyToMembers = true)]
     private sealed record LotEnPreparation(LotRetournableDto Lot, int Quantite, List<string> Codes);
     /// <summary>Retour en préparation laissé au « Changer d'utilisateur » : lots et motif, repris par l'employé suivant.</summary>
+    [System.Reflection.Obfuscation(Exclude = true, ApplyToMembers = true)]
     private sealed record RetourLaisse(List<LotEnPreparation> Lots, string Motif);
 
     private string LotsEnJson() =>

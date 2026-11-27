@@ -10,6 +10,7 @@ namespace Pharma.Infrastructure.Sauvegardes;
 /// </summary>
 public sealed class CopieSecoursFichier(string chemin) : ICopieSecoursDepot
 {
+    [System.Reflection.Obfuscation(Exclude = true, ApplyToMembers = true)]
     private sealed record Contenu(ReglagesCopieSecours? Reglages, EtatCopieSecours? Etat);
 
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };

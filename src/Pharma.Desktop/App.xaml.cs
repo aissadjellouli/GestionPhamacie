@@ -119,14 +119,14 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Journal local des erreurs imprévues du poste : %LOCALAPPDATA%\PharmaOfficine\erreurs.log.
+    /// Journal local des erreurs imprévues du poste : erreurs.log du dossier des journaux du poste (Services.JournauxPoste).
     /// Message et pile masqués (téléphones, e-mails, n° d'assuré) : aucune donnée personnelle au journal.
     /// </summary>
     internal static void NoterErreur(Exception ex)
     {
         try
         {
-            var dossier = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PharmaOfficine");
+            var dossier = Pharma.Desktop.Services.JournauxPoste.Dossier;
             System.IO.Directory.CreateDirectory(dossier);
             System.IO.File.AppendAllText(System.IO.Path.Combine(dossier, "erreurs.log"), $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {Pharma.Shared.MasqueurJournal.Masquer(ex)}{Environment.NewLine}{Environment.NewLine}");
         }

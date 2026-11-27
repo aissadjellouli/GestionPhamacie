@@ -57,6 +57,7 @@ public sealed class ComptagesReceptionSql(NpgsqlDataSource db) : IComptagesRecep
         LEFT JOIN utilisateur uf ON uf.id = c.facture_par
         """;
 
+    [System.Reflection.Obfuscation(Exclude = true, ApplyToMembers = true)]
     private sealed record EcartJson(long ProduitId, string Nom, string NumeroLot, int Facture, int Compte);
 
     private async Task<List<ComptageReception>> LireAsync(string condition, Action<NpgsqlParameterCollection> parametres, CancellationToken ct)

@@ -13,6 +13,54 @@ public sealed class JournalFichierTests : IDisposable
         try { Directory.Delete(dossier, recursive: true); } catch (IOException) { }
     }
 
+    // ---- Dossier commun des journaux (décision du titulaire du 2026-11-28) : C:\Logs\PharmaOfficine\<application>, repli sur l'ancien dossier ----
+
+    [Fact]
+    public void Dossier_commun_sous_le_lecteur_du_systeme_et_nom_de_poste_sans_caractere_interdit()
+    {
+        if (!OperatingSystem.IsWindows()) { Assert.Null(DossiersJournaux.Windows(DossiersJournaux.Api)); return; }
+        var lecteur = Path.GetPathRoot(Environment.SystemDirectory)!;
+        Assert.Equal(Path.Combine(lecteur, "Logs", "PharmaOfficine", "Api"), DossiersJournaux.Windows(DossiersJournaux.Api));
+        Assert.Equal(Path.Combine(lecteur, "Logs", "PharmaOfficine", "Central"), DossiersJournaux.Windows(DossiersJournaux.Central));
+        Assert.Equal(Path.Combine(lecteur, "Logs", "PharmaOfficine", "Poste", "CAISSE_1"), DossiersJournaux.Windows(DossiersJournaux.Poste, "CAISSE:1"));
+        Assert.Equal("inconnu", DossiersJournaux.NomSur("  "));
+        Assert.Equal("PC", DossiersJournaux.NomSur("PC. "));
+    }
+
+    [Fact]
+    public void Dossier_prefere_retenu_s_il_est_inscriptible_sinon_repli_sans_exception()
+    {
+        var prefere = Path.Combine(dossier, "prefere");
+        var repli = Path.Combine(dossier, "repli");
+        Assert.Equal(prefere, DossiersJournaux.Choisir(prefere, repli));
+        Assert.True(Directory.Exists(prefere));
+        Assert.Empty(Directory.GetFiles(prefere));   // le fichier d'essai d'écriture ne reste pas
+
+        Assert.Equal(repli, DossiersJournaux.Choisir(null, repli));
+        Assert.Equal(repli, DossiersJournaux.Choisir("  ", repli));
+        // Dossier impossible à créer : un fichier porte déjà ce nom
+        var occupe = Path.Combine(dossier, "occupe");
+        File.WriteAllText(occupe, "x");
+        Assert.Equal(repli, DossiersJournaux.Choisir(Path.Combine(occupe, "journaux"), repli));
+        Assert.False(Directory.Exists(repli));        // le repli n'est pas créé ici : le journal le crée à sa première ligne
+    }
+
+    [Fact]
+    public void Les_programmes_ecrivent_leurs_journaux_dans_le_dossier_commun_et_gardent_les_decisions_de_bascule_a_part()
+    {
+        var src = Path.Combine(BaseJetableM4.RacineDepot(), "src");
+        var api = File.ReadAllText(Path.Combine(src, "Pharma.Api", "Program.cs"));
+        Assert.Contains("DossiersJournaux.Windows(Pharma.Shared.Journalisation.DossiersJournaux.Api)", api);
+        Assert.Contains("AjouterVigieSecondServeur(builder.Configuration, dossierDecisions)", api);   // fichiers relus au démarrage : pas dans C:\Logs
+        foreach (var central in new[] { "Pharma.Cloud.Api", "Pharma.Cloud.Web" })
+            Assert.Contains(@"""Dossier"": ""C:\\Logs\\PharmaOfficine\\Central""", File.ReadAllText(Path.Combine(src, central, "appsettings.json")));
+        // Poste : plus aucun journal écrit directement dans %LOCALAPPDATA%
+        var poste = Path.Combine(src, "Pharma.Desktop");
+        Assert.Contains("JournauxPoste.Dossier", File.ReadAllText(Path.Combine(poste, "Services", "JournalLiaison.cs")));
+        Assert.Contains("JournauxPoste.Dossier", File.ReadAllText(Path.Combine(poste, "App.xaml.cs")));
+        Assert.Contains("JournauxPoste.Dossier", File.ReadAllText(Path.Combine(poste, "Services", "FichierTachesLaissees.cs")));
+    }
+
     [Fact]
     public async Task DisposeAsync_ecrit_les_dernieres_lignes_sans_bloquer_et_Dispose_reste_sur()
     {

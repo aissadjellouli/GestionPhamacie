@@ -232,8 +232,10 @@ Détail : mise-en-production.md, « Variables d'environnement de l'API », A 4.5
 | `C:\ProgramData\PharmaOfficine\cle-integrite.dat` | PC serveur | Clé de scellement des journaux, chiffrée pour ce PC | **Oui**, sur le disque externe |
 | `C:\ProgramData\PharmaOfficine\archives-fiscales\AAAA\MM` | PC serveur | Rapports scellés, à conserver 6 ans au moins | **Oui** |
 | `C:\ProgramData\PharmaOfficine\GED` | PC serveur | Documents (ordonnances, Chifa, factures, rapports…) | Oui (sous-dossier `GED` du disque externe) |
-| `C:\ProgramData\PharmaOfficine\Journaux` | PC serveur | Journal du serveur (`pharma-api-AAAAMMJJ.log`) | Non |
-| `C:\ProgramData\PharmaOfficine\Journaux\Central` | serveur central | Journaux `central-api-AAAAMMJJ.log` et `central-ecrans-AAAAMMJJ.log` | Non |
+| `C:\Logs\PharmaOfficine\Api` | PC serveur | Journal du serveur (`pharma-api-AAAAMMJJ.log`) ; dossier commun des journaux depuis le 2026-11-28 (repli sur `C:\ProgramData\PharmaOfficine\Journaux` si le dossier commun ne peut pas être écrit ; les anciens fichiers y restent) | Non |
+| `C:\ProgramData\PharmaOfficine\Journaux` | PC serveur | Fichiers de décision de bascule du 2e serveur (`bascule-*.json`, relus au démarrage) : **ne sont pas des journaux, ne se déplacent pas** | Non |
+| `C:\Logs\PharmaOfficine\Poste\<nom du PC>` | chaque PC | Journaux du poste (`erreurs.log`, `liaison.log`) ; repli sur `%LOCALAPPDATA%\PharmaOfficine` | Non |
+| `C:\Logs\PharmaOfficine\Central` | serveur central | Journaux `central-api-AAAAMMJJ.log` et `central-ecrans-AAAAMMJJ.log` | Non |
 | `C:\ProgramData\PharmaOfficine\poste.json` | chaque poste | Réglages du poste (imprimantes, adresse de secours) | Non |
 | `C:\ProgramData\PharmaOfficine\copie-secours.json` | PC serveur | Réglages et état de la copie de secours | Non |
 | `C:\ProgramData\PharmaOfficine\Synchronisation` | PC serveur | Clé privée de synchronisation (DPAPI, ce PC seulement) | **Ne jamais copier sur un autre serveur** |
@@ -270,7 +272,7 @@ Détail : mise-en-production.md, « Fichiers et dossiers à connaître », A 4.1
 
 **Supports** :
 
-- [ ] Clé USB **des postes** (`E:\`) : `autorite-pharmacie.crt`, `empreinte-autorite-pharmacie.txt`, livraison (`Api`, `Poste`), dossier `scripts`.
+- [ ] Clé USB **des postes** (`E:\`) : `autorite-pharmacie.crt`, `empreinte-autorite-pharmacie.txt`, livraison (`Api`, `Poste`, `scripts`).
 - [ ] Clé USB **du coffre** (`F:\`) : `autorite-pharmacie.pfx` ; une **seconde copie** du PFX sur une autre clé, rangée ailleurs.
 - [ ] **Deux disques externes** de sauvegarde (même lettre de lecteur, même dossier), dont un toujours hors de l'officine.
 - [ ] Fichier de la nomenclature nationale (`database\data\NOMENCLATURE NATIONALE - VERSION JUIN 2026.xlsx` ou plus récent).
@@ -295,7 +297,8 @@ Détail : mise-en-production.md A 1.1, A 1.4, A 4.4, A 4.6, A 10.1, A 11.2 bis ;
   ```
 - psql demande le mot de passe à chaque connexion. PostgreSQL accepte un fichier `pgpass.conf`. **[À CONFIRMER : le technicien le crée-t-il ?]**
 - Si PowerShell refuse un script (stratégie d'exécution) : `powershell -ExecutionPolicy Bypass -File .\scripts\<script>.ps1 <paramètres>`.
-- Les scripts se lancent **depuis le dossier du dépôt** (ou de la livraison), là où se trouve le dossier `scripts`.
+- Les scripts se lancent **depuis le dossier parent du dossier `scripts`** : celui de la **livraison** en officine (seuls scripts à y
+  copier, A20), celui du dépôt sur le PC des sources.
 
 Détail : mise-en-production.md, « Conventions de commandes ».
 
@@ -508,6 +511,14 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
     2026-11-27) : plus de fichiers `.pdb` ni de configuration de développement, scripts SQL **sans commentaires** (le dépôt garde les
     versions commentées), en-têtes « 001 à NNN » gardés ; il s'arrête si un contrôle échoue. Dossier existant non vide : refusé (ou `-Remplacer`).
     Détail : scripts-mep.md, protection-du-code.md.
+  - Il **obfusque nos sept assemblys** (lot P2, 2026-11-28) avec .NET Reactor **en version complète** : l'outil doit être installé
+    et activé sur le PC des sources (protection-du-code.md § 9) ; sans lui, ou s'il n'est pas activé (code 101), **la livraison est
+    refusée**. Les fichiers de correspondance vont dans `<dossier de livraison>-correspondances\<date-heure>\`, à côté de la
+    livraison : **les archiver avec la version livrée, ne jamais les copier sur la clé USB ni en officine** (ils contiennent les
+    noms réels et servent à décoder une trace d'erreur de cette livraison). `-SansObfuscation` : essai interne seulement.
+  - Il crée aussi `<dossier de livraison>\scripts` (lot P1 bis, 2026-11-27) : **les seuls scripts utiles en officine** (18 fichiers :
+    `certificat_https.ps1`, `sauvegarde_pharmacie.ps1`, `restaurer_pharmacie.ps1`, `basculer-pc-secours.ps1`, `mep\` pour la base de
+    l'officine, `second-serveur\`), **sans commentaires** (l'aide de tête de chaque script est gardée : `Get-Help .\<script>.ps1`).
   - `--self-contained true` : aucun runtime .NET à installer sur le PC serveur. Contrepartie : les correctifs de sécurité .NET n'arrivent
     qu'avec une nouvelle publication (chapitre B).
   - Le dossier publié contient `Pharma.Api.exe`, `database\` (scripts numérotés, à plat) et `database\init\` (`schema.sql`, `seed_referentiel.sql`, `fuseau_horaire.sql`,
@@ -525,11 +536,27 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
   - **Attendu** : `True`.
   - Détail : MEP § A 4.2.
 
-- [ ] **A20 — Copier le dossier `scripts`** du dépôt (ou de la livraison) sur le PC serveur. **Qui** : technicien. **Où** : PC serveur,
-  administrateur Windows. Il contient `certificat_https.ps1`, `sauvegarde_pharmacie.ps1`, `restaurer_pharmacie.ps1`, `basculer-pc-secours.ps1`
-  et `second-serveur\`. Ces scripts **ne sont pas** dans le dossier publié de l'API.
+- [ ] **A20 — Copier le dossier `scripts` de la livraison** (`<dossier de livraison>\scripts`, créé à A18) sur le PC serveur ; **jamais
+  le dossier `scripts` du dépôt** (il contient des scripts de développement et les versions commentées). **Qui** : technicien. **Où** : PC
+  serveur, administrateur Windows. Il contient `certificat_https.ps1`, `sauvegarde_pharmacie.ps1`, `restaurer_pharmacie.ps1`,
+  `basculer-pc-secours.ps1`, `mep\` (création et mise à jour de la base de l'officine, dossier des journaux) et `second-serveur\`. Ces scripts **ne sont pas**
+  dans le dossier publié de l'API.
   **[À CONFIRMER : dossier de destination officiel sur le PC serveur, par exemple `C:\Program Files\PharmaOfficine\scripts`.]**
   - Détail : MEP § A 4.3.
+
+- [ ] **A20 bis — Préparer le dossier des journaux** (2026-11-28). **Qui** : technicien. **Où** : PC serveur, puis chaque PC de caisse
+  (`-Roles Poste`), PowerShell en administrateur, dossier parent de `scripts`.
+  ```powershell
+  .\scripts\mep\creer_dossier_journaux.ps1 -WhatIf
+  .\scripts\mep\creer_dossier_journaux.ps1
+  ```
+  - Crée `C:\Logs\PharmaOfficine\Api` et `...\Poste` et règle leurs droits : `Api` réservé aux administrateurs et au compte système
+    (`-CompteService` si le service de l'API tourne sous un autre compte) ; `Poste` : les utilisateurs du PC peuvent y écrire.
+  - **Facultatif pour le fonctionnement** : sans ce script, le logiciel crée lui-même le dossier s'il le peut (il est alors lisible par
+    tous les comptes du PC), sinon il écrit à l'ancien emplacement (`C:\ProgramData\PharmaOfficine\Journaux`, `%LOCALAPPDATA%\PharmaOfficine`).
+  - **Mise à jour d'une officine en service** : les anciens journaux ne sont ni déplacés ni supprimés ; les nouveaux vont dans
+    `C:\Logs` au premier démarrage. Un dossier réglé par `Journaux__Dossier` reste prioritaire.
+  - **Attendu** : `[OK]` pour chaque dossier. **Non essayé en réel avec les droits réglés** (à faire à la première installation).
 
 - [ ] **A21 — Variables d'environnement de l'API.** **Qui** : technicien. **Où** : PC serveur, **nouvelle** fenêtre PowerShell en
   administrateur. Remplacer les `<...>` :
@@ -977,7 +1004,7 @@ Option facultative, **fortement conseillée**. À faire **après** la partie A. 
     **clé USB du coffre** ; heure à moins d'une minute entre les deux serveurs, à moins de 2 minutes entre poste et serveur.
   - Détail : MEP § C 1 ; procedure-deux-serveurs.md § 1.
 
-- [ ] **C-02 — Copier `scripts\second-serveur`** (avec `commun.ps1`) sur les **deux** serveurs. **Où** : les deux, administrateur Windows.
+- [ ] **C-02 — Copier `scripts\second-serveur` de la livraison** (avec `commun.ps1`) sur les **deux** serveurs. **Où** : les deux, administrateur Windows.
   **[À CONFIRMER : dossier de destination.]** Détail : MEP § C 2.
 
 ### Phase C2 — PC serveur (principal)
@@ -1614,7 +1641,7 @@ Les scripts `database\migration\NNN_*.sql` sont réexécutables sans dégât ; `
   ```
   - Publication de l'API et du poste, et nettoyage de la copie livrée (voir A18).
   - Copier `<dossier de livraison>` (scripts numérotés **à plat** dans `Api\database\`, init dans `Api\database\init\` :
-    `Pharma.Api.csproj`) et le dossier `scripts` sur la clé USB. `111b`, `163b`, `166b` sont dans `Api\database\init\` : rien à copier à part.
+    `Pharma.Api.csproj`), dossier `scripts` de la livraison compris, sur la clé USB. `111b`, `163b`, `166b` sont dans `Api\database\init\` : rien à copier à part.
   - **Attendu** : `Api\Pharma.Api.exe`, le **dernier script numéroté** dans `Api\database\` (`174_postes_preuve_exigee.sql` à ce jour : le
     numéro le plus haut de `database\migration` du dépôt), `Api\database\init\111b_roles_integrite.sql` et `Poste\Pharma.Desktop.exe` sur la
     clé (écart n° 18 : corrigé).

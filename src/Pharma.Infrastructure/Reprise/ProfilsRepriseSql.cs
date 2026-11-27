@@ -22,6 +22,7 @@ public sealed class ProfilsRepriseSql(NpgsqlDataSource db) : IProfilsReprise
         """;
 
     /// <summary>Correspondance stockée en JSON : cible (code de l'écran), feuille ou table, colonnes.</summary>
+    [System.Reflection.Obfuscation(Exclude = true, ApplyToMembers = true)]
     private sealed record CorrespondanceJson(string Cible, string Table, Dictionary<string, string> Colonnes);
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);

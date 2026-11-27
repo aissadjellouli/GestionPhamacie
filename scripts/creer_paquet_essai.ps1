@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Fabrique le paquet d'essai de Tracodex Officine, à copier sur le PC d'un pharmacien qui veut l'essayer.
 
@@ -12,6 +12,8 @@
       demarrer.cmd  lance le serveur puis le poste ;
       LISEZMOI.txt  le mode d'emploi.
     Aucune clé ni aucun mot de passe n'est mis dans le paquet : installer.ps1 les tire au sort sur le PC du pharmacien.
+    Nos assemblys y sont obfusqués (scripts\mep\obfusquer_livraison.ps1, .NET Reactor en version complète) ; les fichiers de correspondance
+    restent hors du paquet (« <Sortie>-correspondances »).
     Le paquet est fabriqué en local ; il n'est publié nulle part.
 
 .EXAMPLE
@@ -24,12 +26,20 @@
 #>
 param(
     [string]$Sortie = "",
-    [switch]$Zip
+    [switch]$Zip,
+    [string]$Obfuscateur = "",          # dotNET_Reactor.Console.exe ; vide : cherché par scripts\mep\obfusquer_livraison.ps1
+    [string]$Correspondances = "",      # archive des fichiers de correspondance ; vide : « <Sortie>-correspondances », hors du paquet
+    [switch]$SansObfuscation            # paquet en clair : essai interne seulement, jamais remis à un pharmacien
 )
 
 $ErrorActionPreference = "Stop"
 $racine = Split-Path $PSScriptRoot -Parent
 if (-not $Sortie) { $Sortie = Join-Path (Split-Path $racine -Parent) "PharmaOfficine-essai" }
+
+# Lot P2 de la protection du code (2026-11-28) : le paquet remis à un pharmacien est obfusqué comme une livraison. L'outil est cherché avant
+# toute publication ; sans lui (ou s'il n'est pas activé), le paquet est refusé.
+$obfusquer = Join-Path $PSScriptRoot "mep\obfusquer_livraison.ps1"
+if (-not $SansObfuscation) { $Obfuscateur = & $obfusquer -ChercherOutil -Obfuscateur $Obfuscateur }
 
 if (Test-Path $Sortie) {
     Write-Host "Le dossier $Sortie existe : il est vidé."
@@ -52,6 +62,9 @@ Remove-Item (Join-Path $Sortie "api\appsettings.Development.json") -ErrorAction 
 # Contrôle : aucun mot de passe dans la configuration livrée (il est tiré au sort par installer.ps1)
 $livree = Get-Content (Join-Path $Sortie "api\appsettings.json") -Raw
 if ($livree -match "Password=[^;`"]+") { throw "Mot de passe présent dans api\appsettings.json : paquet refusé" }
+
+if ($SansObfuscation) { Write-Warning "Paquet NON obfusqué (-SansObfuscation) : essai interne seulement, ne pas le remettre à un pharmacien." }
+else { & $obfusquer -Dossier $Sortie -Obfuscateur $Obfuscateur -Correspondances $Correspondances }
 
 # Base : scripts numérotés (structure et référentiel), puis données fictives de démonstration
 $db = New-Item -ItemType Directory -Force (Join-Path $Sortie "database\data")

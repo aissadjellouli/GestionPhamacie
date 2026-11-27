@@ -71,6 +71,7 @@ public static class CodeActivation
     public const int LongueurMax = 4000, PostesMin = 1, PostesMax = 200, ScannersMax = 200, ServeursMax = 3;
     public const int VersionSansServeur = 1, VersionServeurs = 2;
 
+    [System.Reflection.Obfuscation(Exclude = true, ApplyToMembers = true)]
     private sealed record ContenuJson(
         [property: JsonPropertyName("v")] int Version,
         [property: JsonPropertyName("officine")] Guid Officine,

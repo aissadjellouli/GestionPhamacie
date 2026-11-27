@@ -117,7 +117,7 @@ public sealed class FichierTachesLaissees
         }
     }
 
-    /// <summary>Dossier des fichiers locaux du poste : %LOCALAPPDATA%\PharmaOfficine (comme erreurs.log et liaison.log).</summary>
+    /// <summary>Dossier des fichiers locaux du poste : %LOCALAPPDATA%\PharmaOfficine (les journaux, eux, vont dans <see cref="JournauxPoste"/>).</summary>
     public static string DossierParDefaut() =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PharmaOfficine");
 
@@ -233,11 +233,14 @@ public sealed class FichierTachesLaissees
     {
         try
         {
-            Directory.CreateDirectory(dossier);
-            File.AppendAllText(Path.Combine(dossier, "erreurs.log"), $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {message}{Environment.NewLine}{Environment.NewLine}");
+            // Dossier par défaut du fichier : journal dans le dossier des journaux du poste ; dossier fourni (essais) : journal à côté du fichier
+            var journaux = string.Equals(dossier, DossierParDefaut(), StringComparison.OrdinalIgnoreCase) ? JournauxPoste.Dossier : dossier;
+            Directory.CreateDirectory(journaux);
+            File.AppendAllText(Path.Combine(journaux, "erreurs.log"), $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {message}{Environment.NewLine}{Environment.NewLine}");
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
     }
 
+    [System.Reflection.Obfuscation(Exclude = true, ApplyToMembers = true)]
     private sealed record Contenu(int Version, List<TacheLaissee>? Taches);
 }

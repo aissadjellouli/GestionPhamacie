@@ -11,6 +11,7 @@ namespace Pharma.Api.Demo;
 /// </summary>
 public static class FonctionsCoupeesDemo
 {
+    [System.Reflection.Obfuscation(Exclude = true, ApplyToMembers = true)]
     private sealed record Regle(Regex Chemin, bool LectureAutorisee, string Fonction);
 
     // Routage d'ASP.NET Core insensible à la casse : les règles aussi
