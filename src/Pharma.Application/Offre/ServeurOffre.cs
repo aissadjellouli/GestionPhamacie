@@ -19,6 +19,9 @@ public interface ICleServeur
 
     /// <summary>Signature ECDSA P-256 / SHA-256 (IEEE P1363) des données ; null si la clé n'existe pas ou n'est pas lisible.</summary>
     byte[]? Signer(byte[] donnees);
+
+    /// <summary>Vrai si la clé est protégée par le TPM, faux si c'est une clé logicielle, null si elle est absente ou si on ne sait pas.</summary>
+    bool? Materielle() => null;
 }
 
 /// <summary>
@@ -96,29 +99,61 @@ public interface IDatePlancherFichier
 {
     DateTime? Lire();
     void Ecrire(DateTime utc);
+
+    /// <summary>Dernière date du serveur central mémorisée (correction du 2026-11-27, point 4) ; null : jamais reçue.</summary>
+    DateTime? LireCentrale();
+    /// <summary>Mémorise la date du serveur central (même fichier ; la date plancher du fichier n'est pas touchée).</summary>
+    void NoterCentrale(DateTime utc);
+}
+
+/// <summary>
+/// Date du serveur central (décision du titulaire du 2026-11-27, point 4) : portée par chaque réponse de la voie descendante (échange léger,
+/// accusé d'un lot ; champ facultatif <c>DateCentrale</c>), elle fait foi et sert de date plancher supplémentaire. Mémorisée au plus une fois
+/// par heure et jamais vers le passé (un central restauré ou une réponse ancienne ne fait rien reculer). Sans central : rien ne change.
+/// </summary>
+public static class DateCentraleOffre
+{
+    public static readonly TimeSpan Pas = TimeSpan.FromHours(1);
+
+    /// <summary>Vrai si la date reçue a été mémorisée. Jamais bloquant (une erreur d'écriture est ignorée par le fichier).</summary>
+    public static bool Noter(IDatePlancherFichier? fichier, DateTime? centraleUtc)
+    {
+        if (fichier is null || centraleUtc is not { } c) return false;
+        c = DateTime.SpecifyKind(c, DateTimeKind.Utc);
+        if (fichier.LireCentrale() is { } deja && c < deja + Pas) return false;
+        fichier.NoterCentrale(c);
+        return true;
+    }
 }
 
 /// <summary>Date avec laquelle l'offre se calcule (échéance, grâce, rappels).</summary>
 /// <param name="ServeurUtc">Date du serveur.</param>
-/// <param name="PlancherUtc">Date plancher : la plus grande de la dernière date du journal fiscal des ventes et de la date du fichier ; null si aucune.</param>
+/// <param name="PlancherUtc">Date plancher : la plus grande de la dernière date du journal fiscal des ventes, de la date du fichier et de la
+/// dernière date reçue du serveur central ; null si aucune.</param>
 /// <param name="EffectiveUtc">max(date du serveur, date plancher).</param>
 /// <param name="Aujourdhui">Jour effectif (jour du serveur, ou jour de la date plancher si elle est plus récente).</param>
 /// <param name="Reculee">Date du serveur en retard de plus d'une heure sur la date plancher.</param>
-public sealed record DateEffectiveOffre(DateTime ServeurUtc, DateTime? PlancherUtc, DateTime EffectiveUtc, DateOnly Aujourdhui, bool Reculee)
+/// <param name="Avance">Date du serveur en avance de plus de <see cref="PasMax"/> sur la date plancher (correction du 2026-11-27) : le
+/// fichier n'est pas écrit, alerte « horloge du serveur en avance ».</param>
+public sealed record DateEffectiveOffre(DateTime ServeurUtc, DateTime? PlancherUtc, DateTime EffectiveUtc, DateOnly Aujourdhui, bool Reculee,
+    bool Avance = false)
 {
     /// <summary>Retard toléré (changement d'heure, horloge un peu dérivée) avant l'alerte au titulaire.</summary>
     public static readonly TimeSpan Tolerance = TimeSpan.FromHours(1);
 
-    public static DateEffectiveOffre Calculer(DateTime serveurUtc, DateOnly aujourdhuiServeur, DateTime? fiscaleUtc, DateTime? fichierUtc)
+    /// <summary>
+    /// Plus grand pas du fichier de la date plancher (correction du 2026-11-27) : une date du serveur plus de 2 jours au-delà de la date
+    /// plancher (fichier, journal fiscal, date du central) n'est pas écrite. En marche normale le fichier avance d'un jour à la fois ; un
+    /// serveur arrêté plus de 2 jours sans vente déclenche l'alerte jusqu'à la première vente ou au premier échange avec le central.
+    /// </summary>
+    public static readonly TimeSpan PasMax = TimeSpan.FromDays(2);
+
+    public static DateEffectiveOffre Calculer(DateTime serveurUtc, DateOnly aujourdhuiServeur, DateTime? fiscaleUtc, DateTime? fichierUtc,
+        DateTime? centraleUtc = null)
     {
-        DateTime? plancher = (fiscaleUtc, fichierUtc) switch
-        {
-            ({ } a, { } b) => a > b ? a : b,
-            ({ } a, null) => a,
-            (null, { } b) => b,
-            _ => null
-        };
-        if (plancher is not { } p || p <= serveurUtc) return new DateEffectiveOffre(serveurUtc, plancher, serveurUtc, aujourdhuiServeur, false);
+        DateTime? plancher = new[] { fiscaleUtc, fichierUtc, centraleUtc }.Max();
+        if (plancher is not { } p || p <= serveurUtc)
+            return new DateEffectiveOffre(serveurUtc, plancher, serveurUtc, aujourdhuiServeur, false, plancher is { } q && serveurUtc - q > PasMax);
         var jourPlancher = DateOnly.FromDateTime(DateTime.SpecifyKind(p, DateTimeKind.Utc).ToLocalTime());
         return new DateEffectiveOffre(serveurUtc, p, p, jourPlancher > aujourdhuiServeur ? jourPlancher : aujourdhuiServeur, p - serveurUtc > Tolerance);
     }
@@ -126,4 +161,10 @@ public sealed record DateEffectiveOffre(DateTime ServeurUtc, DateTime? PlancherU
     /// <summary>Nouvelle valeur à écrire dans le fichier (au plus une fois par jour : seulement quand le jour UTC avance), sinon null.</summary>
     public static DateTime? AEcrire(DateTime effectiveUtc, DateTime? fichierUtc) =>
         fichierUtc is { } f && DateOnly.FromDateTime(f) >= DateOnly.FromDateTime(effectiveUtc) ? null : effectiveUtc;
+
+    /// <summary>
+    /// Nouvelle valeur à écrire pour CE calcul : rien si l'horloge est en avance de plus de <see cref="PasMax"/> sur la date plancher (saut
+    /// refusé), sinon <see cref="AEcrire(DateTime, DateTime?)"/>. Sans aucune date plancher (première mise en service) : la date est écrite.
+    /// </summary>
+    public DateTime? AEcrire(DateTime? fichierUtc) => Avance ? null : AEcrire(EffectiveUtc, fichierUtc);
 }

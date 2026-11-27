@@ -59,6 +59,41 @@ public class DescendantsBornesCentralTests
         Assert.Equal(limite, DepotCentral.Borner([Element(1, limite)]).Single().DonneesJson);
     }
 
+    /// <summary>Forme de la réponse avant le 2026-11-27 (sans DateCentrale), telle que la lit une officine antérieure.</summary>
+    private sealed record AncienneReponse(string Contrat, long VersionMax, IReadOnlyList<ChangementDescendantDto> Changements);
+
+    private sealed class TempsFixe(DateTimeOffset t) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => t;
+    }
+
+    [Fact]
+    public void La_reponse_descendante_porte_la_date_du_central_et_une_officine_anterieure_la_lit_encore()
+    {
+        // Décision du titulaire du 2026-11-27 (point 4) : date du central, date plancher de l'offre de l'officine ; champ facultatif
+        var maintenant = new DateTimeOffset(2026, 11, 27, 10, 15, 0, TimeSpan.Zero);
+        var d = DepotCentral.Dater(new ChangementsDescendantsDto(ChangementsDescendantsDto.ContratV1, 3, [Element(3, "{\"a\":1}")]), new TempsFixe(maintenant));
+        Assert.Equal(maintenant, d.DateCentrale);
+        Assert.Equal(ChangementsDescendantsDto.ContratV1, d.Contrat);   // contrat desc-v1 inchangé
+        var json = System.Text.Json.JsonSerializer.Serialize(new AccuseLotDto(1, 1, StatutsLot.Accepte, 1, d), DepotCentral.OptionsReponse);
+        Assert.Contains("\"dateCentrale\":\"2026-11-27T10:15:00+00:00\"", json);
+        // Officine antérieure : le champ inconnu est ignoré, les éléments se lisent comme avant
+        var ancienne = System.Text.Json.JsonSerializer.Deserialize<AncienneReponse>(System.Text.Json.JsonSerializer.Serialize(d, DepotCentral.OptionsReponse),
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!;
+        Assert.Equal((3L, 1), (ancienne.VersionMax, ancienne.Changements.Count));
+        // Échange léger et accusé d'un lot : les deux passent par DescendantsAsync, qui date la réponse
+        var source = File.ReadAllText(Path.Combine(Racine(), "src", "Pharma.Cloud.Api", "Reception", "DepotCentral.cs"));
+        var bloc = source[source.IndexOf("public async Task<Pharma.Shared.ChangementsDescendantsDto> DescendantsAsync", StringComparison.Ordinal)..];
+        Assert.Contains("return Dater(", bloc[..bloc.IndexOf("public static async Task LigneAttendueAsync", StringComparison.Ordinal)]);
+    }
+
+    private static string Racine()
+    {
+        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d is not null; d = d.Parent)
+            if (File.Exists(Path.Combine(d.FullName, "PharmaOfficine.slnx"))) return d.FullName;
+        throw new DirectoryNotFoundException("Racine du dépôt introuvable.");
+    }
+
     private sealed class JournalEssai : Microsoft.Extensions.Logging.ILogger
     {
         public readonly List<string> Messages = [];

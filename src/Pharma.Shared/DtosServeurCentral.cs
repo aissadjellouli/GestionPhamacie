@@ -26,8 +26,12 @@ public sealed record AccuseLotDto(int Epoque, long Numero, string Statut, long D
 /// Chaque élément : table locale de destination, clé, version (monotone par officine) et données (objet JSON). L'officine n'applique
 /// jamais une version plus ancienne que celle qu'elle a, et redonne la plus grande version appliquée à l'échange suivant (acquittement) ;
 /// le serveur central ne renvoie que les versions plus grandes.
+/// DateCentrale (facultatif, 2026-11-27) : date du serveur central au moment de la réponse (échange léger et accusé d'un lot) ; l'officine
+/// s'en sert comme date plancher de l'offre (docs/offre-et-options.md). Absente (null) pour un serveur central antérieur ; une officine
+/// antérieure ignore ce champ. Ne change ni le contrat desc-v1 ni sync-v1.
 /// </summary>
-public sealed record ChangementsDescendantsDto(string Contrat, long VersionMax, IReadOnlyList<ChangementDescendantDto> Changements)
+public sealed record ChangementsDescendantsDto(string Contrat, long VersionMax, IReadOnlyList<ChangementDescendantDto> Changements,
+    DateTimeOffset? DateCentrale = null)
 {
     public const string ContratV1 = "desc-v1";
     /// <summary>En-tête HTTP portant la plus grande version descendante appliquée par l'officine.</summary>

@@ -26,9 +26,11 @@ public sealed record ChangementDescendantSync(string Table, string Cle, long Ver
 /// <summary>
 /// Éléments descendants reçus et version maximale annoncée par le serveur central. Ecartes : éléments reçus mais écartés à la lecture
 /// (mal formés ou trop gros) : jamais appliqués ni redonnés, signalés dans la note du passage. VersionEcarteeMax : plus grande version
-/// parmi eux (0 : aucun), acquittée comme les autres pour qu'ils ne soient pas redonnés.
+/// parmi eux (0 : aucun), acquittée comme les autres pour qu'ils ne soient pas redonnés. DateCentraleUtc : date du serveur central portée
+/// par la réponse (champ facultatif, 2026-11-27 ; null : central antérieur), date plancher de l'offre, même sans élément.
 /// </summary>
-public sealed record DescendantsRecus(IReadOnlyList<ChangementDescendantSync> Changements, long VersionMax, int Ecartes = 0, long VersionEcarteeMax = 0)
+public sealed record DescendantsRecus(IReadOnlyList<ChangementDescendantSync> Changements, long VersionMax, int Ecartes = 0, long VersionEcarteeMax = 0,
+    DateTime? DateCentraleUtc = null)
 {
     public static readonly DescendantsRecus Aucun = new([], 0);
 }
@@ -237,8 +239,11 @@ public sealed record ResultatEnvoi(int LotsAccuses, string? Arret, string? Erreu
 
 /// <summary>Un passage d'envoi : constitue les lots en attente puis envoie, dans l'ordre, chaque lot non accusé.</summary>
 /// <param name="chargement">Chargement complet (lot S6) ; null : aucun (tests du lot S2).</param>
+/// <param name="datePlancher">Fichier de la date plancher de l'offre (correction du 2026-11-27, point 4) : la date du serveur central reçue
+/// à chaque échange y est mémorisée ; null : non mémorisée.</param>
 public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync constitution, IFormatLotSync format, ICertificatSync certificat,
-    IClientServeurCentral client, VerrouSync verrou, ChargementCompletSync? chargement = null, Reglages.AppliquerReglagesMutualises? reglages = null)
+    IClientServeurCentral client, VerrouSync verrou, ChargementCompletSync? chargement = null, Reglages.AppliquerReglagesMutualises? reglages = null,
+    Offre.IDatePlancherFichier? datePlancher = null)
 {
     public const string ArretDesactivee = "Synchronisation désactivée.";
     public const string ArretSansAdresse = "Adresse du serveur central non réglée.";
@@ -479,6 +484,8 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
     /// </summary>
     private async Task AppliquerDescendantsAsync(DescendantsRecus d, CancellationToken ct)
     {
+        // Date du central (échange léger, accusé d'un lot) : date plancher de l'offre, mémorisée hors de la base ; jamais bloquant
+        Offre.DateCentraleOffre.Noter(datePlancher, d.DateCentraleUtc);
         if (d.Ecartes > 0)
             erreurDescendante = $"{d.Ecartes} élément(s) descendant(s) écarté(s) à la réception (mal formés ou trop gros) : non appliqués, voir le journal du serveur.";
         if (d.Changements.Count == 0 && d.VersionEcarteeMax <= 0) return;

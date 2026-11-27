@@ -84,6 +84,14 @@ public sealed class CleServeurCng : ICleServeurLocale
         return new InfoCleServeur(o.Fournisseur.Provider, o.Fournisseur == Tpm, EmpreinteServeur.Calculer(cle.ExportSubjectPublicKeyInfo()), false);
     }
 
+    /// <summary>Clé ouverte par le fournisseur TPM : vrai ; fournisseur logiciel : faux ; absente : null (sans exporter la clé publique).</summary>
+    public bool? Materielle()
+    {
+        if (Ouvrir() is not { } o) return null;
+        o.Cle.Dispose();
+        return o.Fournisseur == Tpm;
+    }
+
     public InfoCleServeur CreerSiAbsente()
     {
         if (Lire() is { } existante) return existante;
@@ -155,6 +163,9 @@ public sealed class CleServeurFichier(string fichier) : ICleServeurLocale
     public InfoCleServeur? Lire() =>
         ClePublique() is { } spki ? new InfoCleServeur(Fournisseur, false, EmpreinteServeur.Calculer(spki), false) : null;
 
+    /// <summary>Toujours logicielle (faux) ; null si le fichier est absent ou illisible.</summary>
+    public bool? Materielle() => ClePublique() is null ? null : false;
+
     public InfoCleServeur CreerSiAbsente()
     {
         if (Lire() is { } existante) return existante;
@@ -173,50 +184,68 @@ public sealed class CleServeurFichier(string fichier) : ICleServeurLocale
 /// Date plancher hors base (point 5 du 2026-11-27) : plus grande date déjà vue, dans racine\Offre\date-plancher.json (par défaut
 /// C:\ProgramData\PharmaOfficine\Offre\date-plancher.json), écrit à côté puis remplacé, lisible et modifiable par SYSTEM, les Administrateurs et
 /// le compte de l'API seulement. Rien de secret : effacer le fichier ne rend que la date du journal fiscal ; le reculer à la main demande un
-/// compte d'administrateur. Écriture au plus une fois par jour (OffreCourante).
+/// compte d'administrateur. Écriture au plus une fois par jour, jamais d'un saut de plus de 2 jours (OffreCourante). Le même fichier garde la
+/// dernière date reçue du serveur central (« Centrale », correction du 2026-11-27, point 4 ; au plus une fois par heure) ; un fichier
+/// d'avant cette correction (sans « Centrale ») se relit tel quel.
 /// </summary>
 public sealed class DatePlancherFichier(string fichier, ILogger<DatePlancherFichier>? journal = null) : IDatePlancherFichier
 {
     public const string FichierNom = "date-plancher.json";
     private readonly object verrou = new();
 
-    private sealed record Contenu(DateTime Utc);
+    private sealed record Contenu(DateTime? Utc, DateTime? Centrale = null);
 
     public static string CheminParDefaut(string racineDonnees) => Path.Combine(racineDonnees, "Offre", FichierNom);
 
+    private static DateTime? Utc(DateTime? d) => d is { } v ? DateTime.SpecifyKind(v, DateTimeKind.Utc) : null;
+
+    private Contenu? LireContenu()
+    {
+        try
+        {
+            if (!File.Exists(fichier)) return null;
+            return JsonSerializer.Deserialize<Contenu>(File.ReadAllText(fichier));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
+        {
+            journal?.LogWarning("Date plancher de l'offre illisible ({Fichier}) : seule la date du journal fiscal compte. {Erreur}", fichier, e.Message);
+            return null;
+        }
+    }
+
     public DateTime? Lire()
     {
-        lock (verrou)
-        {
-            try
-            {
-                if (!File.Exists(fichier)) return null;
-                return JsonSerializer.Deserialize<Contenu>(File.ReadAllText(fichier)) is { } c ? DateTime.SpecifyKind(c.Utc, DateTimeKind.Utc) : null;
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
-            {
-                journal?.LogWarning("Date plancher de l'offre illisible ({Fichier}) : seule la date du journal fiscal compte. {Erreur}", fichier, e.Message);
-                return null;
-            }
-        }
+        lock (verrou) return Utc(LireContenu()?.Utc);
+    }
+
+    public DateTime? LireCentrale()
+    {
+        lock (verrou) return Utc(LireContenu()?.Centrale);
     }
 
     public void Ecrire(DateTime utc)
     {
-        lock (verrou)
+        lock (verrou) EcrireContenu((LireContenu() ?? new Contenu(null)) with { Utc = DateTime.SpecifyKind(utc, DateTimeKind.Utc) });
+    }
+
+    public void NoterCentrale(DateTime utc)
+    {
+        lock (verrou) EcrireContenu((LireContenu() ?? new Contenu(null)) with { Centrale = DateTime.SpecifyKind(utc, DateTimeKind.Utc) });
+    }
+
+    private void EcrireContenu(Contenu c)
+    {
+        try
         {
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(fichier)!);
-                var temporaire = fichier + ".partiel";
-                File.WriteAllText(temporaire, JsonSerializer.Serialize(new Contenu(DateTime.SpecifyKind(utc, DateTimeKind.Utc))));
-                FichiersProteges.Restreindre(temporaire);
-                File.Move(temporaire, fichier, overwrite: true);
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException)
-            {
-                journal?.LogWarning("Date plancher de l'offre non enregistrée ({Fichier}) : {Erreur}", fichier, e.Message);
-            }
+            Directory.CreateDirectory(Path.GetDirectoryName(fichier)!);
+            var temporaire = fichier + ".partiel";
+            File.WriteAllText(temporaire, JsonSerializer.Serialize(c with { Utc = Utc(c.Utc), Centrale = Utc(c.Centrale) }));
+            FichiersProteges.Restreindre(temporaire);
+            File.Move(temporaire, fichier, overwrite: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            journal?.LogWarning("Date plancher de l'offre non enregistrée ({Fichier}) : {Erreur}", fichier, e.Message);
         }
     }
 }

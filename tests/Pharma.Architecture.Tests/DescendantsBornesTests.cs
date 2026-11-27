@@ -45,6 +45,25 @@ public class DescendantsBornesTests
     }
 
     [Fact]
+    public void La_date_du_central_est_lue_meme_sans_element_et_absente_pour_un_central_anterieur()
+    {
+        // Décision du titulaire du 2026-11-27 (point 4) : champ facultatif DateCentrale, date plancher de l'offre
+        var date = new DateTimeOffset(2027, 1, 10, 13, 0, 0, TimeSpan.FromHours(1));
+        Assert.Equal(date.UtcDateTime, Client().Descendants(new ChangementsDescendantsDto(ChangementsDescendantsDto.ContratV1, 0, [], date)).DateCentraleUtc);
+        Assert.Equal(DateTimeKind.Utc, Client().Descendants(new ChangementsDescendantsDto(ChangementsDescendantsDto.ContratV1, 0, [], date)).DateCentraleUtc!.Value.Kind);
+        var avecElement = Client().Descendants(new ChangementsDescendantsDto(ChangementsDescendantsDto.ContratV1, 1,
+            [new("reglage_central", "a", 1, "{}")], date));
+        Assert.Equal((1, (DateTime?)date.UtcDateTime), (avecElement.Changements.Count, avecElement.DateCentraleUtc));
+        Assert.Equal(date.UtcDateTime, Client().Descendants(new ChangementsDescendantsDto("desc-v9", 1, [new("t", "a", 1, "{}")], date)).DateCentraleUtc);
+        Assert.Null(Client().Descendants(new ChangementsDescendantsDto(ChangementsDescendantsDto.ContratV1, 0, [])).DateCentraleUtc);
+        Assert.Null(Client().Descendants(null).DateCentraleUtc);
+        // Réponse d'un central antérieur (JSON sans le champ) : se lit comme avant
+        var ancien = System.Text.Json.JsonSerializer.Deserialize<ChangementsDescendantsDto>("""{"contrat":"desc-v1","versionMax":0,"changements":[]}""",
+            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!;
+        Assert.Null(ancien.DateCentrale);
+    }
+
+    [Fact]
     public void Plafonds_communs_avec_le_serveur_central()
     {
         // Le central borne ses réponses avec les mêmes valeurs que celles lues par l'officine

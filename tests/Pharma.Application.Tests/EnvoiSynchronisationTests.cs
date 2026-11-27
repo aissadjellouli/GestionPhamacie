@@ -185,8 +185,10 @@ public class EnvoiSynchronisationTests
             if (VersionReglage > apres) l.Add(new("reglage_central", "familles_envoyees", VersionReglage, System.Text.Json.JsonSerializer.Serialize(new { familles = reglage })));
             var ecartesCeTour = VersionEcartee == 0 || VersionEcartee > apres ? Ecartes : 0;
             return new DescendantsRecus(l, Math.Max(VersionReglage, Autres.Select(a => a.Version).DefaultIfEmpty(0).Max()), ecartesCeTour,
-                VersionEcartee > apres ? VersionEcartee : 0);
+                VersionEcartee > apres ? VersionEcartee : 0, DateCentrale);
         }
+        /// <summary>Date du serveur central portée par chaque réponse (null : central antérieur au 2026-11-27).</summary>
+        public DateTime? DateCentrale;
         /// <summary>Éléments écartés par le client à la réception (mal formés ou trop gros).</summary>
         public int Ecartes;
         /// <summary>Plus grande version parmi les éléments écartés (0 : non précisée) ; ils ne sont plus rendus une fois acquittés.</summary>
@@ -252,6 +254,45 @@ public class EnvoiSynchronisationTests
         Assert.Equal(EnvoyerLotsSync.ArretNonActivee, (await Envoi(b, c, s).ExecuterAsync(Maintenant)).Arret);
         Assert.Empty(b.Lots);
         Assert.Equal(0, s.Dernier);
+    }
+
+    /// <summary>Fichier de la date plancher de l'offre en mémoire.</summary>
+    private sealed class PlancherOffre : Pharma.Application.Offre.IDatePlancherFichier
+    {
+        public DateTime? Centrale;
+        public int Ecritures;
+        public DateTime? Lire() => null;
+        public void Ecrire(DateTime utc) => throw new InvalidOperationException("La synchronisation n'écrit jamais la date plancher du fichier.");
+        public DateTime? LireCentrale() => Centrale;
+        public void NoterCentrale(DateTime utc) { Centrale = utc; Ecritures++; }
+    }
+
+    [Fact]
+    public async Task La_date_du_central_est_memorisee_pour_l_offre_meme_sans_lot_et_jamais_en_arriere()
+    {
+        // Décision du titulaire du 2026-11-27 (point 4) : la date du central fait foi, date plancher supplémentaire de l'offre
+        var (b, c, s) = (new Base(), new Certificat(), new Central { DateCentrale = Maintenant.AddMinutes(3) });
+        var plancher = new PlancherOffre();
+        var f = new FormatV1();
+        EnvoyerLotsSync Envoi() => new(b, new ConstitutionLotsSync(b, f), f, c, s, new VerrouSync(), datePlancher: plancher);
+        Assert.Null((await Envoi().ExecuterAsync(Maintenant)).Erreur);          // échange léger seul, aucun lot
+        Assert.Equal((Maintenant.AddMinutes(3), 1), (plancher.Centrale, plancher.Ecritures));
+        // Au plus une fois par heure ; une date plus ancienne (central restauré) ne fait rien reculer
+        s.DateCentrale = Maintenant.AddMinutes(30);
+        await Envoi().ExecuterAsync(Maintenant);
+        s.DateCentrale = Maintenant.AddDays(-3);
+        await Envoi().ExecuterAsync(Maintenant);
+        Assert.Equal((Maintenant.AddMinutes(3), 1), (plancher.Centrale, plancher.Ecritures));
+        // Avec l'accusé d'un lot aussi ; central antérieur (sans date) : rien ne change
+        s.DateCentrale = Maintenant.AddHours(2);
+        b.Ajouter(1);
+        Assert.Equal(1, (await Envoi().ExecuterAsync(Maintenant)).LotsAccuses);
+        Assert.Equal((Maintenant.AddHours(2), 2), (plancher.Centrale, plancher.Ecritures));
+        s.DateCentrale = null;
+        await Envoi().ExecuterAsync(Maintenant);
+        Assert.Equal(2, plancher.Ecritures);
+        // Sans fichier (tests, autre usage) : rien n'est mémorisé, rien ne casse
+        Assert.False(Pharma.Application.Offre.DateCentraleOffre.Noter(null, Maintenant));
     }
 
     [Fact]

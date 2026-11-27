@@ -83,11 +83,13 @@ public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogge
     /// </summary>
     public DescendantsRecus Descendants(ChangementsDescendantsDto? d)
     {
-        if (d is null || d.Changements is null || d.Changements.Count == 0) return DescendantsRecus.Aucun;
+        // Date du serveur central (champ facultatif, 2026-11-27) : gardée même sans élément et quel que soit le contrat des éléments
+        var aucun = DescendantsRecus.Aucun with { DateCentraleUtc = d?.DateCentrale?.UtcDateTime };
+        if (d is null || d.Changements is null || d.Changements.Count == 0) return aucun;
         if (d.Contrat != ChangementsDescendantsDto.ContratV1)
         {
             logger.LogWarning("Synchronisation : contrat descendant {Contrat} non pris en charge, éléments ignorés", d.Contrat);
-            return DescendantsRecus.Aucun;
+            return aucun;
         }
         var gardes = new List<ChangementDescendantSync>();
         var ecartes = 0;
@@ -105,7 +107,7 @@ public sealed class ClientServeurCentralHttp(ICertificatSync certificats, ILogge
         }
         if (d.Changements.Count > MaxElements)
             logger.LogWarning("Synchronisation : {Nombre} éléments descendants reçus, {Max} gardés pour ce passage", d.Changements.Count, MaxElements);
-        return new DescendantsRecus(gardes, d.VersionMax, ecartes, ecarteeMax);
+        return new DescendantsRecus(gardes, d.VersionMax, ecartes, ecarteeMax, aucun.DateCentraleUtc);
     }
 
     private static bool ObjetJson(string json)

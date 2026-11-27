@@ -1112,11 +1112,13 @@ public sealed record ActivationOffreDto(long Id, DateTime SigneeLe, string Sourc
 /// <summary>
 /// Offre en vigueur. Etat : base, active, grace. Officine, Nif et EmpreinteServeur (clé de CE serveur, par groupes de 4 ; null : clé absente) : à
 /// transmettre à l'éditeur pour obtenir un code. AlerteServeur : code version 1 « non lié au serveur » (serveur non déclaré : dans Alerte) ; AlerteHorloge : horloge reculée
-/// (point 5 du 2026-11-27).
+/// ou en avance de plus de 2 jours (point 5 du 2026-11-27). AlerteCle : clé de ce serveur logicielle, non protégée par le TPM (texte court,
+/// rien n'est bloqué ; correction du 2026-11-27).
 /// </summary>
 public sealed record OffreDto(string Etat, IReadOnlyList<PackOffreDto> Packs, int Postes, int PostesComptes, int ScannersMobiles, DateOnly? Fin,
     bool Transition, DateTime? SigneeLe, string? Alerte, Guid Officine, string? Nif, IReadOnlyList<ActivationOffreDto> Historique,
-    IReadOnlyList<PackOffreDto> TousLesPacks, string? EmpreinteServeur = null, string? AlerteServeur = null, string? AlerteHorloge = null);
+    IReadOnlyList<PackOffreDto> TousLesPacks, string? EmpreinteServeur = null, string? AlerteServeur = null, string? AlerteHorloge = null,
+    string? AlerteCle = null);
 
 public sealed record ActivationOffreRequete(string Code);
 

@@ -54,6 +54,23 @@ public class OffreTests
         public HashSet<DateTime> HorlogeReculee { get; } = [];
         public Task<bool> SignalerHorlogeReculeeAsync(DateTime plancherUtc, DateTime serveurUtc, CancellationToken ct = default) =>
             Task.FromResult(HorlogeReculee.Add(plancherUtc));
+
+        /// <summary>Dates plancher notées au journal (offre_horloge_avance), une fois chacune.</summary>
+        public HashSet<DateTime> HorlogeAvance { get; } = [];
+        public Task<bool> SignalerHorlogeAvanceAsync(DateTime plancherUtc, DateTime serveurUtc, CancellationToken ct = default) =>
+            Task.FromResult(HorlogeAvance.Add(plancherUtc));
+
+        /// <summary>Marques de refus levées (offre_activation_refus_leve) : n° de l'activation.</summary>
+        public List<long> Levees { get; } = [];
+        public Task<bool> LeverRefusAsync(long id, CancellationToken ct = default)
+        {
+            var i = Lignes.FindIndex(l => l.Id == id);
+            if (i < 0 || Lignes[i].RefuseeLeUtc is null) return Task.FromResult(false);
+            Lignes[i] = Lignes[i] with { RefuseeLeUtc = null, MotifRefus = null };
+            Refus.RemoveAll(r => r.Item1 == id);
+            Levees.Add(id);
+            return Task.FromResult(true);
+        }
     }
 
     private static readonly ECDsa Cle = ECDsa.Create(ECCurve.NamedCurves.nistP256);
@@ -69,6 +86,9 @@ public class OffreTests
     {
         public ECDsa? Cle { get; set; } = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         public byte[]? PubliqueAnnoncee { get; set; }
+        /// <summary>Protection annoncée de la clé (null : inconnue, comme une doublure qui ne le dit pas).</summary>
+        public bool? EstMaterielle { get; set; }
+        public bool? Materielle() => EstMaterielle;
         public List<byte[]> Defis { get; } = [];
         public string Empreinte => EmpreinteServeur.Calculer(ClePublique()!);
         public byte[]? ClePublique() => PubliqueAnnoncee ?? Cle?.ExportSubjectPublicKeyInfo();
@@ -430,6 +450,10 @@ public class OffreTests
         public int Ecritures { get; private set; }
         public DateTime? Lire() => Valeur;
         public void Ecrire(DateTime utc) { Valeur = utc; Ecritures++; }
+        public DateTime? Centrale { get; set; }
+        public int EcrituresCentrale { get; private set; }
+        public DateTime? LireCentrale() => Centrale;
+        public void NoterCentrale(DateTime utc) { Centrale = utc; EcrituresCentrale++; }
     }
 
     private static DateTime Midi(DateOnly jour) => jour.ToDateTime(new TimeOnly(12, 0), DateTimeKind.Utc);
@@ -627,5 +651,140 @@ public class OffreTests
         var a = Program.Activation(Base("--serveur", EmpreinteServeur.Afficher(ServeurLocal.Empreinte).ToLowerInvariant(), "--serveur", autre), DateTime.UtcNow);
         Assert.Equal([ServeurLocal.Empreinte, autre], a.Serveurs);
         Assert.Equal(a.Serveurs.Order(StringComparer.Ordinal), CodeActivation.Lire(Program.Signer(a, Cle), Publique).Serveurs!);
+    }
+
+    // ---- Corrections et compléments du point 5 (décisions du titulaire du 2026-11-27, points 3 et 4) -----------------------------------
+
+    [Fact]
+    public async Task Un_code_redevenu_valable_perd_sa_marque_de_refus_et_un_nouveau_refus_ouvre_un_nouveau_delai_de_grace()
+    {
+        var (d, _, g, _) = Banc();
+        await g.SaisirAsync(1, Code(postes: 7, serveurs: [ServeurLocal.Empreinte]));
+        var h = new HorlogeFixe(Aujourdhui);
+        var autrePc = new CleServeurFactice();
+        // Refus constaté il y a 16 jours (base restaurée sur un autre PC) : grâce passée, offre de base
+        d.Lignes[0] = d.Lignes[0] with { RefuseeLeUtc = Midi(Aujourdhui.AddDays(-16)), MotifRefus = "Ce serveur n’est pas déclaré" };
+        Assert.Equal(EtatsOffre.Base, (await new OffreCourante(d, h, [Publique], cleServeur: autrePc).LireAsync()).Etat);
+        Assert.Empty(d.Levees);
+
+        // Retour sur le serveur déclaré : le code repasse le contrôle, sa marque est levée (une seule fois, journal)
+        var ok = await new OffreCourante(d, h, [Publique], cleServeur: ServeurLocal).LireAsync();
+        Assert.Equal((EtatsOffre.Active, 7), (ok.Etat, ok.Postes));
+        Assert.Equal([d.Lignes[0].Id], d.Levees);
+        Assert.Null(d.Lignes[0].RefuseeLeUtc);
+        Assert.Null(d.Lignes[0].MotifRefus);
+        await new OffreCourante(d, h, [Publique], cleServeur: ServeurLocal).LireAsync();
+        Assert.Single(d.Levees);
+
+        // Nouveau refus : nouveau délai de grâce de 15 jours, compté depuis cette nouvelle constatation
+        var e = await new OffreCourante(d, h, [Publique], cleServeur: autrePc).LireAsync();
+        Assert.Equal((EtatsOffre.Grace, 7), (e.Etat, e.Postes));
+        Assert.Contains("Délai de grâce jusqu’au 11/12/2026", e.Alerte);
+    }
+
+    [Fact]
+    public async Task Un_code_valable_sans_marque_de_refus_ne_leve_rien()
+    {
+        var (d, o, g, _) = Banc();
+        await g.SaisirAsync(1, Code(postes: 4));
+        await o.LireAsync();
+        Assert.Empty(d.Levees);
+        // Code échu (après la grâce) avec une marque : il n'est pas « redevenu valable », la marque reste
+        var (d2, _, g2, _) = Banc();
+        await g2.SaisirAsync(1, Code(fin: new DateOnly(2026, 12, 1)));
+        d2.Lignes[0] = d2.Lignes[0] with { RefuseeLeUtc = Midi(Aujourdhui) };
+        await new OffreCourante(d2, new HorlogeFixe(new DateOnly(2027, 2, 1)), [Publique]).LireAsync();
+        Assert.Empty(d2.Levees);
+    }
+
+    [Fact]
+    public void Horloge_en_avance_de_plus_de_deux_jours_sur_la_date_plancher_rien_n_est_ecrit()
+    {
+        var plancher = Midi(Aujourdhui);
+        var juste = DateEffectiveOffre.Calculer(plancher.Add(DateEffectiveOffre.PasMax), Aujourdhui.AddDays(2), plancher, null);
+        Assert.Equal((false, false), (juste.Avance, juste.Reculee));
+        Assert.Equal(plancher.AddDays(2), juste.AEcrire(plancher));                    // 2 jours exactement : écrit
+        var saut = DateEffectiveOffre.Calculer(plancher.AddDays(2).AddMinutes(1), Aujourdhui.AddDays(2), null, plancher);
+        Assert.True(saut.Avance);
+        Assert.Null(saut.AEcrire(plancher));                                          // au-delà : pas écrit
+        Assert.Equal(plancher.AddDays(2).AddMinutes(1), saut.EffectiveUtc);           // l'offre se calcule quand même à la date du serveur
+        // Première mise en service (aucune date plancher) : la date du serveur est écrite
+        var premiere = DateEffectiveOffre.Calculer(plancher.AddYears(5), Aujourdhui.AddYears(5), null, null);
+        Assert.Equal((false, (DateTime?)plancher.AddYears(5)), (premiere.Avance, premiere.AEcrire(null)));
+        // La date du central compte dans la date plancher, pour le recul comme pour l'avance
+        Assert.True(DateEffectiveOffre.Calculer(plancher, Aujourdhui, null, null, plancher.AddHours(3)).Reculee);
+        Assert.True(DateEffectiveOffre.Calculer(plancher.AddDays(10), Aujourdhui.AddDays(10), plancher.AddDays(-20), null, plancher).Avance);
+    }
+
+    [Fact]
+    public async Task Horloge_mise_par_erreur_loin_dans_le_futur_ne_bloque_pas_la_date_plancher_et_alerte_une_fois()
+    {
+        var (d, _, g, _) = Banc();
+        await g.SaisirAsync(1, Code(postes: 6, fin: new DateOnly(2027, 6, 30)));
+        d.DerniereFiscale = Midi(Aujourdhui.AddDays(-1));
+        var fichier = new PlancherFactice { Valeur = Midi(Aujourdhui) };
+        // Horloge du serveur mise en 2031 par erreur, avant toute vente
+        var futur = new HorlogeFixe(new DateOnly(2031, 1, 15));
+        var e = await new OffreCourante(d, futur, [Publique], plancher: fichier).LireAsync();
+        Assert.Contains("L’horloge de ce serveur est en avance de", e.AlerteHorloge);
+        Assert.Contains("avant d’encaisser", e.AlerteHorloge);
+        await new OffreCourante(d, futur, [Publique], plancher: fichier).LireAsync();
+        Assert.Single(d.HorlogeAvance);                                     // une seule fois au journal, le message reste
+        Assert.Equal((0, (DateTime?)Midi(Aujourdhui)), (fichier.Ecritures, fichier.Valeur));   // le saut n'est pas écrit
+
+        // Horloge corrigée : rien n'est resté dans le fichier, l'offre est de nouveau active, sans alerte, et le fichier reprend
+        var corrigee = new HorlogeFixe(Aujourdhui.AddDays(1));
+        var ok = await new OffreCourante(d, corrigee, [Publique], plancher: fichier).LireAsync();
+        Assert.Equal((EtatsOffre.Active, (string?)null), (ok.Etat, ok.AlerteHorloge));
+        Assert.Equal((1, (DateTime?)corrigee.MaintenantUtc), (fichier.Ecritures, fichier.Valeur));
+    }
+
+    [Fact]
+    public async Task La_date_du_serveur_central_fait_foi_comme_date_plancher()
+    {
+        var fin = new DateOnly(2026, 12, 20);   // grâce jusqu'au 04/01/2027
+        var (d, _, g, _) = Banc();
+        await g.SaisirAsync(1, Code(postes: 6, fin: fin));
+        // Journal fiscal vide, fichier ancien, mais le central a répondu le 10/01/2027 : l'horloge reculée au 26/11/2026 ne rouvre rien
+        var fichier = new PlancherFactice { Valeur = Midi(Aujourdhui.AddDays(-5)), Centrale = Midi(new DateOnly(2027, 1, 10)) };
+        var e = await new OffreCourante(d, new HorlogeFixe(Aujourdhui), [Publique], plancher: fichier).LireAsync();
+        Assert.Equal((EtatsOffre.Base, (DateOnly?)new DateOnly(2027, 1, 10)), (e.Etat, e.Jour));
+        Assert.Contains("L’horloge de ce serveur retarde", e.AlerteHorloge);
+        // Sans central (jamais de date reçue) : rien ne change
+        var sans = new PlancherFactice { Valeur = Midi(Aujourdhui.AddDays(-1)) };
+        Assert.Equal((EtatsOffre.Active, (string?)null), ((await new OffreCourante(d, new HorlogeFixe(Aujourdhui), [Publique], plancher: sans).LireAsync()) is var s ? (s.Etat, s.AlerteHorloge) : default));
+    }
+
+    [Fact]
+    public void La_date_du_central_est_memorisee_au_plus_une_fois_par_heure_et_jamais_en_arriere()
+    {
+        var f = new PlancherFactice();
+        var t = Midi(Aujourdhui);
+        Assert.True(DateCentraleOffre.Noter(f, t));
+        Assert.False(DateCentraleOffre.Noter(f, t.AddMinutes(59)));
+        Assert.False(DateCentraleOffre.Noter(f, t.AddDays(-2)));
+        Assert.False(DateCentraleOffre.Noter(f, null));
+        Assert.True(DateCentraleOffre.Noter(f, t.AddHours(1)));
+        Assert.Equal((2, (DateTime?)t.AddHours(1)), (f.EcrituresCentrale, f.Centrale));
+        Assert.Equal(0, f.Ecritures);                                       // la date plancher du fichier n'est pas touchée
+    }
+
+    [Fact]
+    public async Task Mon_offre_avertit_d_une_cle_de_serveur_logicielle_sans_bloquer()
+    {
+        var (d, _, g, _) = Banc();
+        await g.SaisirAsync(1, Code(postes: 5));
+        var h = new HorlogeFixe(Aujourdhui);
+        var logicielle = await new OffreCourante(d, h, [Publique], cleServeur: new CleServeurFactice { EstMaterielle = false }).LireAsync();
+        Assert.Equal((EtatsOffre.Active, 5, OffreCourante.MessageCleLogicielle), (logicielle.Etat, logicielle.Postes, logicielle.AlerteCle));
+        Assert.Null((await new OffreCourante(d, h, [Publique], cleServeur: new CleServeurFactice { EstMaterielle = true }).LireAsync()).AlerteCle);
+        Assert.Null((await new OffreCourante(d, h, [Publique], cleServeur: new CleServeurFactice { EstMaterielle = null }).LireAsync()).AlerteCle);
+        // Clé absente : l'alerte de la clé absente suffit, pas d'avertissement « logicielle »
+        Assert.Null((await new OffreCourante(d, h, [Publique], cleServeur: new CleServeurFactice { Cle = null, EstMaterielle = false }).LireAsync()).AlerteCle);
+        // Offre de base aussi
+        var (_, ob, _, _) = Banc();
+        Assert.Null((await ob.LireAsync()).AlerteCle);   // ServeurLocal ne dit pas sa protection
+        Assert.Equal(OffreCourante.MessageCleLogicielle,
+            (await new OffreCourante(new Depot(), h, [Publique], cleServeur: new CleServeurFactice { EstMaterielle = false }).LireAsync()).AlerteCle);
     }
 }

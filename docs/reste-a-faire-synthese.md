@@ -21,8 +21,15 @@ Tests au dernier passage : architecture 668, application 2210, SQL 80.
 **point 5 « renforcer »** : horloge (date plancher = journal fiscal + fichier du serveur) et **liaison matérielle** (clé TPM de chaque serveur,
 `--creer-cle-serveur` / `--empreinte-serveur`, codes d'activation v2 avec `--serveur`) ; voir offre-et-options.md, « Liaison renforcée de
 l'offre ». Tests : application 2224, architecture 680, SQL 80, central 162 + 54, domaine 736.
-**À valider par le titulaire** : écrans permis au titulaire depuis un PC non autorisé ; refus à la saisie d'un code v2 qui ne déclare pas le
-serveur ; service de l'API en LocalSystem ; limites (nouvelle grâce, horloge mise dans le futur).
+**Décisions du titulaire (2026-11-27)** : (1) écrans permis au titulaire depuis un PC non autorisé : **ok** ; (2) refus à la saisie d'un
+code v2 qui ne déclare pas le serveur : **gardé** ; (3) limites : **corrigé** (nouvelle grâce : marque de refus levée quand le code
+redevient valable ; horloge en avance de plus de 2 jours non écrite dans la date plancher, alerte « horloge en avance » ; limite restante
+documentée : une vente faite sous une horloge fausse reste dans le journal fiscal) ; (4) manques : **fait** (date du serveur central comme
+date plancher, champ facultatif des réponses descendantes ; avertissement « clé logicielle » dans Mon offre ; tests SQL de la date fiscale,
+des alertes d'horloge et de la levée du refus). Voir offre-et-options.md « Limites et corrections du 2026-11-27 ». Aucun script. Tests :
+application 2232, architecture 683, SQL 83, central 163 (+ 1 ignoré). Service de l'API en LocalSystem : gardé (décision 2 du titulaire, 2026-11-27 ;
+clé du serveur et fichier de date lisibles par SYSTEM et les administrateurs). **Essais réels à faire** :
+clé TPM et clé logicielle (texte de Mon offre à 1 366 × 768, clair et sombre), date du central reçue par une officine réelle.
 **Reste** : essai réel avec un poste autorisé (connexion réduite, menus, écrans, mesures clair et sombre) ; trancher 14 px des tableaux
 compacts et les compteurs à 0 de Dettes ; code de transition de `pharmacie_test` à signer (l'activation saisie est notée) ; points du titulaire
 (AWaRe, comptable, coordonnées de l'éditeur, identifiants du central) ; commit sur demande.

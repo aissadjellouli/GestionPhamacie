@@ -58,6 +58,46 @@ public sealed class CleServeurOffreTests
     }
 
     [Fact]
+    public void La_date_du_central_se_garde_dans_le_meme_fichier_sans_toucher_la_date_plancher()
+    {
+        // Correction du 2026-11-27 (point 4) : un fichier d'avant (sans « Centrale ») se relit ; chaque date garde l'autre
+        var dossier = Dossier();
+        try
+        {
+            var fichier = DatePlancherFichier.CheminParDefaut(dossier);
+            Directory.CreateDirectory(Path.GetDirectoryName(fichier)!);
+            File.WriteAllText(fichier, """{"Utc":"2026-11-20T12:00:00Z"}""");
+            var p = new DatePlancherFichier(fichier);
+            Assert.Equal((new DateTime(2026, 11, 20, 12, 0, 0, DateTimeKind.Utc), (DateTime?)null), (p.Lire(), p.LireCentrale()));
+            var centrale = new DateTime(2026, 11, 27, 8, 30, 0, DateTimeKind.Utc);
+            p.NoterCentrale(centrale);
+            Assert.Equal((new DateTime(2026, 11, 20, 12, 0, 0, DateTimeKind.Utc), (DateTime?)centrale), (new DatePlancherFichier(fichier).Lire(), new DatePlancherFichier(fichier).LireCentrale()));
+            p.Ecrire(new DateTime(2026, 11, 27, 9, 0, 0, DateTimeKind.Utc));
+            Assert.Equal(centrale, new DatePlancherFichier(fichier).LireCentrale());
+            Assert.Equal(DateTimeKind.Utc, new DatePlancherFichier(fichier).LireCentrale()!.Value.Kind);
+            // Sans fichier : la date du central s'écrit seule
+            var neuf = new DatePlancherFichier(Path.Combine(dossier, "autre", DatePlancherFichier.FichierNom));
+            neuf.NoterCentrale(centrale);
+            Assert.Equal(((DateTime?)null, (DateTime?)centrale), (neuf.Lire(), neuf.LireCentrale()));
+        }
+        finally { if (Directory.Exists(dossier)) Directory.Delete(dossier, true); }
+    }
+
+    [Fact]
+    public void Une_cle_en_fichier_est_toujours_logicielle()
+    {
+        var dossier = Dossier();
+        try
+        {
+            var cle = new CleServeurFichier(Path.Combine(dossier, CleServeurFichier.FichierNom));
+            Assert.Null(((ICleServeur)cle).Materielle());   // absente
+            cle.CreerSiAbsente();
+            Assert.False(((ICleServeur)cle).Materielle());
+        }
+        finally { if (Directory.Exists(dossier)) Directory.Delete(dossier, true); }
+    }
+
+    [Fact]
     public void Les_commandes_de_la_cle_du_serveur_passent_avant_la_base()
     {
         var programme = File.ReadAllText(Path.Combine(Racine(), "src", "Pharma.Api", "Program.cs"));

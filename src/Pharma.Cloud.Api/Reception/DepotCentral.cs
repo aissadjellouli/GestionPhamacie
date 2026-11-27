@@ -13,7 +13,7 @@ public sealed record CodeValable(Guid Officine, string Serveur, bool DejaActivee
 /// reçues se fait dans une transaction où l'officine courante est posée (set_config('app.officine_id', …, true) = SET LOCAL) :
 /// la Row Level Security cloisonne même une requête sans filtre.
 /// </summary>
-public sealed class DepotCentral(NpgsqlDataSource db, Microsoft.Extensions.Logging.ILogger<DepotCentral>? journal = null)
+public sealed class DepotCentral(NpgsqlDataSource db, Microsoft.Extensions.Logging.ILogger<DepotCentral>? journal = null, TimeProvider? temps = null)
 {
     public async Task<CodeValable?> CodeValableAsync(string empreinteCode, CancellationToken ct)
     {
@@ -222,8 +222,15 @@ public sealed class DepotCentral(NpgsqlDataSource db, Microsoft.Extensions.Loggi
         }
         var liste = Borner(lus, journal);
         await tx.CommitAsync(ct);
-        return new(Pharma.Shared.ChangementsDescendantsDto.ContratV1, max, liste);
+        return Dater(new(Pharma.Shared.ChangementsDescendantsDto.ContratV1, max, liste), temps ?? TimeProvider.System);
     }
+
+    /// <summary>
+    /// Date du serveur central ajoutée à la réponse de la voie descendante (échange léger et accusé d'un lot ; champ facultatif, 2026-11-27) :
+    /// l'officine s'en sert comme date plancher de son offre. Aucune donnée d'officine : la seule horloge du central.
+    /// </summary>
+    public static Pharma.Shared.ChangementsDescendantsDto Dater(Pharma.Shared.ChangementsDescendantsDto d, TimeProvider temps) =>
+        d with { DateCentrale = temps.GetUtcNow() };
 
     /// <summary>
     /// Ligne unique attendue d'une fonction SQL (revue du 2026-11-22) : aucune ligne (filtre de cloisonnement, fonction modifiée) donne

@@ -29,7 +29,7 @@
         {
             @if (message is not null) { <div class="succes" role="status">@message</div> }
             else if (o.Alerte is not null) { <div class="info-bandeau texte-attention" role="status">@o.Alerte</div> }
-            @* Point 5 du 2026-11-27 : horloge du serveur reculée (rien ne bloque) ; code non lié au serveur ou serveur non déclaré *@
+            @* Point 5 du 2026-11-27 : horloge du serveur reculée ou en avance (rien ne bloque) ; code non lié au serveur ou serveur non déclaré *@
             @if (o.AlerteHorloge is not null) { <div class="info-bandeau texte-attention" role="status">@o.AlerteHorloge</div> }
             @if (o.AlerteServeur is not null) { <div class="info-bandeau texte-attention" role="status">@o.AlerteServeur</div> }
 
@@ -81,6 +81,8 @@
                         {
                             <strong style="font-family: monospace; user-select: all">@empreinte</strong>
                             <button type="button" class="lien-bouton" @onclick='() => Copier(empreinte, "Empreinte de ce serveur")'>Copier</button>
+                            @* Correction du 2026-11-27 : clé du serveur non protégée par le TPM (texte court venu de l'API, rien n'est bloqué) *@
+                            @if (o.AlerteCle is not null) { <span class="texte-attention" role="status">(@o.AlerteCle)</span> }
                         }
                         else
                         {

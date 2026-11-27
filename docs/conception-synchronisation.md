@@ -485,6 +485,16 @@ une table locale = un cas de `sync_appliquer_descendant`). Un autre contrat est 
 Jeton : la réponse de `POST /api/v1/jeton` ne porte pas d'éléments (le jeton est obtenu à l'intérieur du client HTTP) ; l'échange léger de chaque
 passage joue ce rôle. Le central continue d'effacer à la réception ce qui n'est pas autorisé (§ 14.1).
 
+**Date du central (champ facultatif `dateCentrale`, 2026-11-27, décision du titulaire, point 4)** : chaque réponse de la voie descendante
+(échange léger et `AccuseLotDto.Descendants`) porte la date du serveur central au moment de la réponse (`DepotCentral.Dater`, horloge du
+central, aucune donnée d'officine). Règle N-1 respectée : champ **ajouté et facultatif**, contrats `desc-v1` et `sync-v1` inchangés ; une
+officine antérieure l'ignore ; un central antérieur ne l'envoie pas (null : rien ne change). L'officine la lit même sans élément et quel que
+soit le contrat des éléments (`ClientServeurCentralHttp.Descendants` → `DescendantsRecus.DateCentraleUtc`) et la mémorise, hors de la base,
+dans le fichier de la date plancher de l'offre (`date-plancher.json`, champ `Centrale`, au plus une fois par heure, jamais vers le passé) :
+elle fait foi comme date plancher de l'offre ([offre-et-options.md](offre-et-options.md) « Limites et corrections du 2026-11-27 »). Elle n'est
+pas utilisée pour la synchronisation elle-même (ordres, certificats : chacun garde ses règles d'horloge). Tests : `DescendantsBornesCentralTests`
+(central), `DescendantsBornesTests` et `EnvoiSynchronisationTests` (officine).
+
 **Essais (2026-11-16, copie jetable de `pharmacie_test`, supprimée)** : activation → réglage version 1 descendu au premier passage, chargement
 complet sans nom d'employé ; famille décochée au central → version 2 descendue par un passage **sans rien à envoyer** ; **central coupé** : réglage
 local gardé (version 2), lot formé sans le téléphone du fournisseur modifié, réponse 502 avec message ; central relancé : lot accepté sans

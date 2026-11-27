@@ -35,6 +35,17 @@ public interface IActivationsOffreDepot
     /// pour une même date plancher ; vrai si c'est la première fois.
     /// </summary>
     Task<bool> SignalerHorlogeReculeeAsync(DateTime plancherUtc, DateTime serveurUtc, CancellationToken ct = default);
+    /// <summary>
+    /// Note au journal des actions (offre_horloge_avance, sans utilisateur) que la date du serveur est en avance de plus de 2 jours sur la
+    /// date plancher (correction du 2026-11-27), une seule fois pour une même date plancher ; vrai si c'est la première fois. Jamais bloquant.
+    /// </summary>
+    Task<bool> SignalerHorlogeAvanceAsync(DateTime plancherUtc, DateTime serveurUtc, CancellationToken ct = default);
+    /// <summary>
+    /// Lève la marque de refus (refusee_le, motif) d'une activation rangée qui repasse le contrôle (correction du 2026-11-27), avec une ligne
+    /// au journal des actions (offre_activation_refus_leve) : un nouveau refus ouvrira un nouveau délai de grâce. Vrai si une marque a été
+    /// levée ; jamais bloquant (base en lecture seule : rien n'est fait).
+    /// </summary>
+    Task<bool> LeverRefusAsync(long id, CancellationToken ct = default);
 }
 
 /// <summary>Limites de l'offre en vigueur, lues par les cas d'usage concernés (premier cas : le maximum de postes autorisés).</summary>
@@ -91,10 +102,11 @@ public sealed class CacheOffre
 /// <param name="Jour">Jour effectif du calcul (<see cref="DateEffectiveOffre"/>) : les rappels et la saisie s'en servent aussi.</param>
 /// <param name="EmpreinteServeur">Empreinte normalisée de la clé de CE serveur, null si la clé est absente.</param>
 /// <param name="AlerteServeur">Code version 1 en vigueur (« non lié au serveur ») ; sinon null (serveur non déclaré : dans <paramref name="Alerte"/>).</param>
-/// <param name="AlerteHorloge">Horloge du serveur reculée de plus d'une heure sur la date plancher ; sinon null.</param>
+/// <param name="AlerteHorloge">Horloge du serveur reculée de plus d'une heure, ou en avance de plus de 2 jours, sur la date plancher ; sinon null.</param>
+/// <param name="AlerteCle">Clé de CE serveur logicielle (non protégée par le TPM) : avertissement court, sans blocage ; sinon null.</param>
 public sealed record EtatOffre(string Etat, IReadOnlyList<string> Packs, int Postes, int ScannersMobiles, DateOnly? Fin, bool Transition,
     DateTime? EmiseLeUtc, string? Alerte, DateOnly? Jour = null, string? EmpreinteServeur = null, string? AlerteServeur = null,
-    string? AlerteHorloge = null);
+    string? AlerteHorloge = null, string? AlerteCle = null);
 
 public static class EtatsOffre
 {
@@ -113,7 +125,11 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
     ICleServeur? cleServeur = null, IDatePlancherFichier? plancher = null)
     : ILimitesOffre, IPacksOffre
 {
-    public const string ActionHorlogeReculee = "offre_horloge_reculee";
+    public const string ActionHorlogeReculee = "offre_horloge_reculee", ActionHorlogeAvance = "offre_horloge_avance",
+        ActionRefusLeve = "offre_activation_refus_leve";
+
+    /// <summary>Avertissement de Mon offre pour une clé de serveur logicielle (correction du 2026-11-27, point 4).</summary>
+    public const string MessageCleLogicielle = "clé logicielle, sans TPM : moins bien protégée contre la copie du serveur (rien n’est bloqué)";
 
     /// <summary>Offre de base : 2 postes inclus (proposition du 2026-11-26, docs/offre-et-options.md).</summary>
     public const int PostesBase = 2;
@@ -147,13 +163,16 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
 
     /// <summary>
     /// Date effective : la date du serveur, ou la date plancher si elle est plus récente (dernière date du journal fiscal des ventes, plus grande
-    /// date déjà vue gardée dans le fichier du serveur). Met le fichier à jour au plus une fois par jour ; jamais bloquant.
+    /// date déjà vue gardée dans le fichier du serveur, dernière date reçue du serveur central). Met le fichier à jour au plus une fois par
+    /// jour, jamais d'un saut de plus de 2 jours (correction du 2026-11-27 : une horloge mise par erreur dans le futur n'y laisse rien) ;
+    /// jamais bloquant.
     /// </summary>
     public async Task<DateEffectiveOffre> DateEffectiveAsync(CancellationToken ct = default)
     {
         var fichier = plancher?.Lire();
-        var d = DateEffectiveOffre.Calculer(horloge.MaintenantUtc, horloge.Aujourdhui, await depot.DerniereDateFiscaleAsync(ct), fichier);
-        if (plancher is not null && DateEffectiveOffre.AEcrire(d.EffectiveUtc, fichier) is { } nouvelle) plancher.Ecrire(nouvelle);
+        var d = DateEffectiveOffre.Calculer(horloge.MaintenantUtc, horloge.Aujourdhui, await depot.DerniereDateFiscaleAsync(ct), fichier,
+            plancher?.LireCentrale());
+        if (plancher is not null && d.AEcrire(fichier) is { } nouvelle) plancher.Ecrire(nouvelle);
         return d;
     }
 
@@ -193,7 +212,14 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
             alerteHorloge = $"L’horloge de ce serveur retarde sur la dernière date déjà enregistrée ({p.ToLocalTime():dd/MM/yyyy HH:mm}) : "
                             + "l’offre est calculée à partir de cette date. Remettez le serveur à l’heure.";
         }
+        else if (date is { Avance: true, PlancherUtc: { } pa })
+        {
+            // Correction du 2026-11-27 : saut de plus de 2 jours non écrit dans le fichier ; alerte une fois au journal, message tant que dure l'écart
+            await depot.SignalerHorlogeAvanceAsync(pa, date.ServeurUtc, ct);
+            alerteHorloge = MessageHorlogeAvance(pa, date.ServeurUtc);
+        }
         var empreinte = PreuveCleServeur.Empreinte(cleServeur);
+        var alerteCle = empreinte is not null && CleMaterielle() is false ? MessageCleLogicielle : null;
         string? refus = null, alerteServeur = null;
         foreach (var e in await depot.ListerAsync(ct))
         {
@@ -224,8 +250,11 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
                 }
                 return new EtatOffre(EtatsOffre.Grace, a.Packs, a.Postes, a.ScannersMobiles, a.Fin, a.Transition, a.EmiseLeUtc,
                     $"{motif} Délai de grâce jusqu’au {finGrace:dd/MM/yyyy}, puis retour à l’offre de base (aucune donnée effacée).",
-                    aujourdhui, empreinte, null, alerteHorloge);   // le message du serveur est déjà dans l'alerte principale
+                    aujourdhui, empreinte, null, alerteHorloge, alerteCle);   // le message du serveur est déjà dans l'alerte principale
             }
+            // Correction du 2026-11-27 (a) : un code rangé qui redevient valable perd sa marque de refus (journal) ; un nouveau refus ouvrira
+            // un nouveau délai de grâce, compté depuis cette nouvelle constatation
+            if (e.RefuseeLeUtc is not null) await depot.LeverRefusAsync(e.Id, ct);
             if (!a.LieeAuxServeurs) alerteServeur = MessageNonLie;
             if (a.Fin is { } f)
             {
@@ -240,11 +269,23 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
                     alerte = $"{(a.Transition ? "Période de transition" : "Offre")} valable jusqu’au {f:dd/MM/yyyy} ({restants} jour(s)) : demandez un nouveau code à l’éditeur.";
             }
             return new EtatOffre(etat, a.Packs, a.Postes, a.ScannersMobiles, a.Fin, a.Transition, a.EmiseLeUtc, alerte ?? refus,
-                aujourdhui, empreinte, alerteServeur, alerteHorloge);
+                aujourdhui, empreinte, alerteServeur, alerteHorloge, alerteCle);
         }
         return new EtatOffre(EtatsOffre.Base, [], PostesBase, 0, null, false, null,
             refus ?? "Aucune activation : offre de base (2 postes). Saisissez le code d’activation fourni par l’éditeur.",
-            aujourdhui, empreinte, null, alerteHorloge);
+            aujourdhui, empreinte, null, alerteHorloge, alerteCle);
+    }
+
+    /// <summary>Message de Mon offre quand l'horloge du serveur est en avance de plus de 2 jours sur la date plancher.</summary>
+    public static string MessageHorlogeAvance(DateTime plancherUtc, DateTime serveurUtc) =>
+        $"L’horloge de ce serveur est en avance de {(int)(serveurUtc - plancherUtc).TotalDays} jour(s) sur la dernière date enregistrée "
+        + $"({DateTime.SpecifyKind(plancherUtc, DateTimeKind.Utc).ToLocalTime():dd/MM/yyyy HH:mm}) : vérifiez sa date et son heure avant d’encaisser "
+        + "(une vente garde la date du serveur). Si le serveur est seulement resté arrêté, ce message disparaît à la première vente.";
+
+    private bool? CleMaterielle()
+    {
+        try { return cleServeur?.Materielle(); }
+        catch (System.Security.Cryptography.CryptographicException) { return null; }
     }
 }
 

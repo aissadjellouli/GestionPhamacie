@@ -95,38 +95,76 @@ public sealed class ActivationsOffreSql(NpgsqlDataSource db) : IActivationsOffre
         return await cmd.ExecuteScalarAsync(ct) is DateTime d ? DateTime.SpecifyKind(d, DateTimeKind.Utc) : null;
     }
 
-    public async Task<bool> SignalerHorlogeReculeeAsync(DateTime plancherUtc, DateTime serveurUtc, CancellationToken ct = default)
+    public Task<bool> SignalerHorlogeReculeeAsync(DateTime plancherUtc, DateTime serveurUtc, CancellationToken ct = default) =>
+        SignalerHorlogeAsync(OffreCourante.ActionHorlogeReculee, plancherUtc, serveurUtc, ct);
+
+    public Task<bool> SignalerHorlogeAvanceAsync(DateTime plancherUtc, DateTime serveurUtc, CancellationToken ct = default) =>
+        SignalerHorlogeAsync(OffreCourante.ActionHorlogeAvance, plancherUtc, serveurUtc, ct);
+
+    private async Task<bool> SignalerHorlogeAsync(string action, DateTime plancherUtc, DateTime serveurUtc, CancellationToken ct)
     {
         // Jamais bloquant : base en lecture seule (serveur écarté, 2e serveur en veille) → rien n'est noté, le message reste dans Mon offre
-        try { return await NoterHorlogeReculeeAsync(plancherUtc, serveurUtc, ct); }
+        try { return await NoterHorlogeAsync(action, plancherUtc, serveurUtc, ct); }
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.ReadOnlySqlTransaction) { return false; }
     }
 
-    private async Task<bool> NoterHorlogeReculeeAsync(DateTime plancherUtc, DateTime serveurUtc, CancellationToken ct)
+    private static string Iso(DateTime utc) =>
+        DateTime.SpecifyKind(utc, DateTimeKind.Utc).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture);
+
+    private async Task<bool> NoterHorlogeAsync(string action, DateTime plancherUtc, DateTime serveurUtc, CancellationToken ct)
     {
-        // Une seule ligne par date plancher (à la seconde) ; verrou de transaction : deux évaluations simultanées n'en écrivent qu'une
-        var plancher = DateTime.SpecifyKind(plancherUtc, DateTimeKind.Utc).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture);
+        // Une seule ligne par action et par date plancher (à la seconde) ; verrou de transaction : deux évaluations simultanées n'en écrivent qu'une
+        var plancher = Iso(plancherUtc);
         await using var cnx = await db.OpenConnectionAsync(ct);
         await using var tx = await cnx.BeginTransactionAsync(ct);
-        await using (var verrou = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtext('offre_horloge_reculee'))", cnx, tx))
-            await verrou.ExecuteNonQueryAsync(ct);
-        await using (var deja = new NpgsqlCommand(
-            "SELECT EXISTS (SELECT 1 FROM journal_audit WHERE action = 'offre_horloge_reculee' AND details ->> 'plancher' = $1)", cnx, tx))
+        await using (var verrou = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtext($1))", cnx, tx))
         {
+            verrou.Parameters.AddWithValue(action);
+            await verrou.ExecuteNonQueryAsync(ct);
+        }
+        await using (var deja = new NpgsqlCommand(
+            "SELECT EXISTS (SELECT 1 FROM journal_audit WHERE action = $1 AND details ->> 'plancher' = $2)", cnx, tx))
+        {
+            deja.Parameters.AddWithValue(action);
             deja.Parameters.AddWithValue(plancher);
             if (await deja.ExecuteScalarAsync(ct) is true) return false;
         }
         await using (var note = new NpgsqlCommand("""
             INSERT INTO journal_audit (utilisateur_id, action, table_cible, details)
-            VALUES (NULL, 'offre_horloge_reculee', 'activation_offre', jsonb_build_object('plancher', $1::text, 'serveur', $2::text))
+            VALUES (NULL, $1, 'activation_offre', jsonb_build_object('plancher', $2::text, 'serveur', $3::text))
             """, cnx, tx))
         {
+            note.Parameters.AddWithValue(action);
             note.Parameters.AddWithValue(plancher);
-            note.Parameters.AddWithValue(DateTime.SpecifyKind(serveurUtc, DateTimeKind.Utc).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture));
+            note.Parameters.AddWithValue(Iso(serveurUtc));
             await note.ExecuteNonQueryAsync(ct);
         }
         await tx.CommitAsync(ct);
         return true;
+    }
+
+    /// <summary>
+    /// Une seule instruction (atomique) : marque levée seulement si elle est posée, et la ligne de journal (ancienne date et ancien motif)
+    /// écrite avec elle. Base en lecture seule : rien n'est fait.
+    /// </summary>
+    public async Task<bool> LeverRefusAsync(long id, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand("""
+            WITH avant AS (
+                SELECT id, refusee_le, motif_refus FROM activation_offre WHERE id = $1 AND refusee_le IS NOT NULL FOR UPDATE
+            ), levee AS (
+                UPDATE activation_offre a SET refusee_le = NULL, motif_refus = NULL FROM avant WHERE a.id = avant.id
+                RETURNING avant.id, avant.refusee_le, avant.motif_refus
+            )
+            INSERT INTO journal_audit (utilisateur_id, action, table_cible, enregistrement_id, details)
+            SELECT NULL, $2, 'activation_offre', levee.id,
+                   jsonb_build_object('refusee_le', to_char(levee.refusee_le AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'motif', levee.motif_refus)
+            FROM levee
+            """);
+        cmd.Parameters.AddWithValue(id);
+        cmd.Parameters.AddWithValue(OffreCourante.ActionRefusLeve);
+        try { return await cmd.ExecuteNonQueryAsync(ct) == 1; }
+        catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.ReadOnlySqlTransaction) { return false; }
     }
 
     /// <summary>Première constatation seulement : refusee_le et motif posés, puis une ligne au journal des actions (sans utilisateur).</summary>

@@ -231,14 +231,58 @@ signature du programme par un certificat de code protégerait contre cela.
   code échu à la saisie se calculent avec le **jour effectif**.
 - **Horloge en retard de plus d'une heure** sur la date plancher : une ligne `offre_horloge_reculee` au journal des actions (une seule par date
   plancher ; rien n'est noté si la base est en lecture seule) et un message dans Mon offre tant que le retard dure. Rien d'autre ne bloque.
-- **Date du serveur central** : non utilisée ; les accusés de synchronisation ne transmettent aucune date du central (il faudrait la faire
-  ajouter au contrat de synchronisation).
-- **À savoir** : une horloge mise par erreur loin **dans le futur** (puis corrigée) fait avancer la date plancher ; le fichier peut être
-  effacé par un administrateur, mais la date du journal fiscal reste.
+- **Date du serveur central** : voir les compléments du 2026-11-27 ci-dessous (elle fait foi depuis).
+- Le fichier peut être effacé par un administrateur, mais la date du journal fiscal reste.
 
 **Aucun changement de schéma** (journal des actions et `activation_offre` existants). Tests : `OffreTests` (date effective, recul d'horloge,
 rappels et saisie au jour effectif, codes v1/v2, serveur non déclaré, clé absente, défi signé, outil) et `CleServeurOffreTests`
 (commande idempotente, fichier de la date plancher, commandes avant la base).
+
+### Limites et corrections du 2026-11-27 (décisions du titulaire, points 3 et 4)
+
+**(a) Nouveau délai de grâce après un nouveau refus** — *limite* : la grâce d'un code refusé partait de `activation_offre.refusee_le`, posée
+à la première constatation et jamais remise à zéro ; un code redevenu valable (retour sur le serveur déclaré, NIF corrigé) puis refusé de
+nouveau n'avait plus de grâce. *Correction* : à chaque évaluation, un code rangé qui **repasse le contrôle** (signature, officine, NIF, non
+échu, serveur déclaré) et porte une marque de refus la perd (`refusee_le` et `motif_refus` remis à vide, une instruction unique) avec une
+ligne `offre_activation_refus_leve` au journal des actions (sans utilisateur ; ancienne date et ancien motif dans les détails). Un nouveau
+refus est une nouvelle constatation : nouvelle date, nouvelle ligne `offre_activation_refusee`, **nouveau délai de grâce de 15 jours**. Un
+code échu n'est pas « redevenu valable » : sa marque reste. Base en lecture seule : rien n'est levé (aucune erreur).
+
+**(b) Horloge mise par erreur loin dans le futur** — *limite* : la date du serveur en avance était écrite dans `date-plancher.json` et
+bloquait ensuite la date effective dans le futur. *Règle retenue (la plus simple et sûre)* : la date plancher (fichier, journal fiscal, date
+du central) sert de référence ; **une date du serveur plus de 2 jours au-delà de la date plancher n'est pas écrite** dans le fichier et
+déclenche l'alerte « horloge du serveur en avance » (ligne `offre_horloge_avance` au journal, une seule par date plancher ; message dans
+Mon offre tant que l'écart dure). Justification : en marche normale le fichier avance d'un jour à la fois (écrit une fois par jour), donc
+jamais de plus de 2 jours ; une seule comparaison, sans état de plus ; on n'écrit jamais une date douteuse (refuser coûte au pire un
+plancher un peu ancien, que la date du serveur dépasse de toute façon) ; 2 jours couvrent un week-end prolongé serveur éteint sans fausse
+alerte. Un serveur resté arrêté plus de 2 jours sans vente ni échange avec le central donne l'alerte jusqu'à la première vente (le message
+le dit). Première mise en service (aucune date plancher) : la date du serveur est écrite. L'offre se calcule quand même avec la date du
+serveur en avance : cela ne peut que rapprocher l'échéance, jamais la prolonger.
+
+**Limite restante (documentée, non corrigeable)** : une **vente enregistrée sous une horloge fausse reste dans le journal fiscal** (chaîné,
+non modifiable) ; sa date devient la date plancher. *Comment le titulaire s'en aperçoit* : l'alerte « horloge en avance » apparaît dès la
+première évaluation de l'offre (connexion, au plus une minute), **avant** l'encaissement, et dit de vérifier la date avant d'encaisser ; si
+une vente a quand même été faite puis l'horloge corrigée, l'alerte « l'horloge de ce serveur retarde » apparaît (journal
+`offre_horloge_reculee`) et reste jusqu'à ce que la date réelle rattrape la date de cette vente. *Ce que cela change pour l'offre* : elle se
+calcule à cette date future jusque-là : échéance, délai de grâce et rappels arrivent **plus tôt** (jamais plus tard) ; si une offre datée
+paraît échue à tort, l'éditeur signe un nouveau code (fin repoussée). Aucune donnée n'est effacée, la caisse n'est pas bloquée.
+
+**Date du serveur central (fait)** : chaque réponse de la voie descendante (échange léger à chaque passage, et accusé d'un lot) porte le
+champ facultatif `DateCentrale` (date du central, `ChangementsDescendantsDto`) ; une officine antérieure l'ignore, un central antérieur ne
+l'envoie pas (rien ne change). L'officine la mémorise dans le même fichier `date-plancher.json` (champ `Centrale`, **au plus une fois par
+heure, jamais vers le passé** : un central restauré ne fait rien reculer) ; elle **fait foi** et entre dans la date plancher (recul comme
+avance de l'horloge). Sans central : rien ne change. La voie réduite sans le pack G (échange léger seul) la transmet aussi.
+
+**Avertissement « clé logicielle » (fait)** : si la clé de CE serveur existe mais n'est pas protégée par le TPM (fournisseur logiciel, ou
+clé en fichier hors Windows), Mon offre l'écrit à côté de l'empreinte : « clé logicielle, sans TPM : moins bien protégée contre la copie du
+serveur (rien n'est bloqué) » (champ `AlerteCle` de `OffreDto`, calculé par l'API).
+
+Tests : `OffreTests` (marque levée puis nouvelle grâce, code échu non levé, saut de plus de 2 jours non écrit, horloge future puis corrigée,
+date du central comme plancher, mémorisation une fois par heure, clé logicielle), `EnvoiSynchronisationTests` (date du central mémorisée par
+l'échange et l'accusé, jamais en arrière), `DescendantsBornesTests` et `CleServeurOffreTests` (lecture du champ, fichier ancien relu, clé
+en fichier logicielle), `DescendantsBornesCentralTests` (réponse datée, lue par une officine antérieure) et `ActivationsOffreSqlTests` sur
+copie jetable (`DerniereDateFiscaleAsync`, alertes d'horloge une fois par date plancher et en lecture seule, marque levée avec journal).
+**Aucun changement de schéma**, aucun script.
 
 ## Décisions
 

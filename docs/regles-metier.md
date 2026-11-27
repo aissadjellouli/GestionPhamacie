@@ -2831,6 +2831,23 @@ Revue complète de la branche `develop` (caisse, stock, factures, sécurité, se
   `src/Pharma.Infrastructure/Offre/CleServeur.cs`, `src/Pharma.Infrastructure/Offre/ActivationsOffreSql.cs`, `src/Pharma.Api/Securite/ConsoleCleServeur.cs`,
   `src/Pharma.Editeur/Program.cs`, `src/Pharma.Desktop/Composants/Pages/AdminOffre.razor`, `tests/Pharma.Application.Tests/OffreTests.cs`,
   `tests/Pharma.Architecture.Tests/CleServeurOffreTests.cs`
+- **(2026-11-27) Liaison renforcée de l'offre : corrections et compléments** (décisions du titulaire, points 3 et 4,
+  [offre-et-options.md](offre-et-options.md) « Limites et corrections du 2026-11-27 ») :
+  **Nouveau délai de grâce** : un code rangé qui repasse le contrôle (signature, officine, NIF, non échu, serveur déclaré) perd sa marque
+  de refus (`refusee_le`, motif), avec une ligne `offre_activation_refus_leve` au journal ; un nouveau refus ouvre un **nouveau délai de grâce
+  de 15 jours** depuis cette nouvelle constatation ; un code échu garde sa marque. **Horloge en avance** : une date du serveur **plus de 2 jours
+  au-delà de la date plancher** n'est pas écrite dans `date-plancher.json` et donne l'alerte « horloge du serveur en avance » (une ligne
+  `offre_horloge_avance` par date plancher, message dans Mon offre tant que l'écart dure ; disparaît à la première vente si le serveur était
+  seulement arrêté) ; rien ne bloque ; première mise en service (aucune date plancher) : la date est écrite. Limite : une vente enregistrée sous
+  une horloge fausse reste dans le journal fiscal et fait la date plancher (offre calculée plus tôt, jamais plus tard ; alerte « horloge
+  retarde » une fois l'horloge corrigée ; nouveau code de l'éditeur si besoin). **Date du serveur central** : chaque réponse de la voie
+  descendante porte la date du central (champ facultatif) ; mémorisée dans le même fichier au plus une fois par heure et jamais vers le passé,
+  elle fait foi et entre dans la date plancher ; sans central rien ne change. **Clé logicielle** : clé du serveur sans TPM → Mon offre l'écrit
+  à côté de l'empreinte (« clé logicielle, sans TPM… »), sans rien bloquer. — `src/Pharma.Application/Offre/ServeurOffre.cs`,
+  `src/Pharma.Application/Offre/Offre.cs`, `src/Pharma.Application/Synchronisation/EnvoiLots.cs`, `src/Pharma.Infrastructure/Offre/CleServeur.cs`,
+  `src/Pharma.Infrastructure/Offre/ActivationsOffreSql.cs`, `src/Pharma.Api/Synchronisation/ClientServeurCentralHttp.cs`,
+  `src/Pharma.Cloud.Api/Reception/DepotCentral.cs`, `src/Pharma.Shared/DtosServeurCentral.cs`, `src/Pharma.Desktop/Composants/Pages/AdminOffre.razor`,
+  `tests/Pharma.Application.Tests/OffreTests.cs`, `tests/Pharma.Infrastructure.Sql.Tests/ActivationsOffreSqlTests.cs`
 - **(2026-11-27) Ergonomie, règles d'affichage décidées par le titulaire** ([ergonomie-2026-11-27.md](ergonomie-2026-11-27.md)) : un produit à
   stock 0 s'affiche « Pas en stock » (et non « Normal ») et la liste des produits s'ouvre filtrée sur « En stock » (filtre appliqué par le
   serveur, `ConsulterStock`) ; les pastilles techniques de la barre d'état (central, 2e serveur, sauvegarde) ne s'affichent qu'au
