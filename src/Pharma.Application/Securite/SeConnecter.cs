@@ -19,8 +19,8 @@ public sealed class SeConnecter(
 {
     /// <summary>Connexion refusée à un employé autre que le titulaire sur un PC non autorisé (décision du titulaire du 2026-11-27).</summary>
     public const string MessageTitulaireSeulement =
-        "Ce PC n'est pas autorisé : seul le pharmacien titulaire peut s'y connecter, pour l'Administration seulement. Faites autoriser ce PC "
-        + "(code du poste donné par le titulaire, Administration › Postes autorisés).";
+        "Ce PC n'est pas autorisé : seul le pharmacien titulaire peut s'y connecter. Les autres employés tapent le code du poste "
+        + "(Retour à l'autorisation du poste).";
 
     /// <param name="titulaireSeulement">
     /// PC non autorisé (décision du titulaire du 2026-11-27) : seul le pharmacien titulaire se connecte (Administration seulement) ; tout autre

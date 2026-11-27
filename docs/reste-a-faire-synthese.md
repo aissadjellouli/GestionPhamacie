@@ -2,7 +2,7 @@
 
 Point d'avancement du 2026-11-26 (soir) : lot 2 (scripts 168 à 171 : réception abandonnée, contenances, prêts, TVA réglable), miroir du central et essai bascule à deux postes **commités** (`dc82c32`) ; **32 commits à pousser** par l'utilisateur (`origin/develop..develop`). Aucune instance de l'assistant ne tourne (montage d'essai arrêté, aucun port d'essai ouvert). Scripts 168 à 171 passés sur `pharmacie_dev` et `pharmacie_test`, sauvegardes avant dans `C:\MesAtlassian\sauvegardes-bd`. **Bases à supprimer par l'utilisateur** : `pharmacie_cmp170`, `pharmacie_jetable_renommage_202611260005`, `pharmacie_essai_v28`. Détail : [a-faire.md](a-faire.md), [fonctionnalites.md](fonctionnalites.md) (inventaire complet), [second-serveur-local.md](second-serveur-local.md) (essais réels de la bascule, § 15 à 18), [diagrammes-sequence.md](diagrammes-sequence.md). À mettre à jour à chaque point d'avancement.
 
-**Point du 2026-11-27 (non commité depuis `343ff58`)** — **Fait** :
+**Point du 2026-11-27 (commité `6665f80` et `f5187e8` ; 40 commits à pousser par l'utilisateur)** — **Fait** :
 - **Ergonomie du poste** (revue du 2026-11-27, P1 + P2 + P3, 31 propositions) : caisse au clavier, raisons des boutons grisés, menus sans
   défilement, **rubriques repliables avec chevron à tout niveau**, bouton retour nommé, aide « ? », puces de période, tableaux compacts,
   « Nouveau patient », « Pas en stock » et filtre « En stock », écran **« Gestion du stock »** ; détail : [ergonomie-2026-11-27.md](ergonomie-2026-11-27.md).
@@ -30,7 +30,8 @@ des alertes d'horloge et de la levée du refus). Voir offre-et-options.md « Lim
 application 2232, architecture 683, SQL 83, central 163 (+ 1 ignoré). Service de l'API en LocalSystem : gardé (décision 2 du titulaire, 2026-11-27 ;
 clé du serveur et fichier de date lisibles par SYSTEM et les administrateurs). **Essais réels à faire** :
 clé TPM et clé logicielle (texte de Mon offre à 1 366 × 768, clair et sombre), date du central reçue par une officine réelle.
-**Reste** : essai réel avec un poste autorisé (connexion réduite, menus, écrans, mesures clair et sombre) ; trancher 14 px des tableaux
+**Essai réel fait (2026-11-27, soir)** : PC non autorisé, code v2 lié au TPM (empreinte du PC de développement `B704-7238-E4F5-D2F7-9207-987C-1E90-820B`), autorisation du poste, menus, 64 mesures à 0 px après correction de deux débordements (connexion du titulaire, Mon offre) ; voir ergonomie-2026-11-27.md. API lancée sans droits d'administrateur (Visual Studio) : la clé du serveur n'est pas lisible et le message dit à tort « Aucune clé » (correction proposée, en attente du go).
+**Reste** : trancher 14 px des tableaux
 compacts et les compteurs à 0 de Dettes ; code de transition de `pharmacie_test` à signer (l'activation saisie est notée) ; points du titulaire
 (AWaRe, comptable, coordonnées de l'éditeur, identifiants du central) ; commit sur demande.
 

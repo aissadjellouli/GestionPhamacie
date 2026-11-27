@@ -70,10 +70,19 @@
 ## Points encore ouverts
 - **Taille du texte des tableaux compacts** : 14 px au lieu des 15 px de la charte. À trancher à l'essai réel (nombre de lignes visibles).
 - **Compteurs à 0 masqués dans le menu de Dettes** : la charte dit de les afficher même à zéro. À trancher.
-- **Postes autorisés** : 21 px de débordement mesurés à 1 366 × 768 avant le retrait du choix du mode ; à remesurer.
-- Essai réel avec un poste autorisé : chevrons et rubriques repliables, connexion réduite d'un PC non autorisé, tous les écrans ci-dessus
-  en clair et sombre aux deux tailles.
 
 ## Vérifications faites
 Mesures réelles de l'état « après ergonomie » (avant menus repliables et preuve exigée) : 28 écrans × clair et sombre × 1 366 × 768 et
 1 536 × 890 = 112 captures, **111 sans débordement** (Postes autorisés : 21 px à 1 366). Tests : architecture et application au vert à chaque lot.
+
+### Essai réel du 2026-11-27 (PC non autorisé, clé du serveur dans le TPM)
+- **Postes autorisés** : 0 px à 1 366 × 768 (les 21 px venaient du choix du mode, retiré).
+- **Connexion du titulaire sur un PC non autorisé** : 102 px de débordement avec le refus d'un vendeur ; corrigé (intro d'une ligne, phrase
+  « Chaque employé… » retirée dans ce mode, message de refus du serveur raccourci) : 0 px, clair et sombre, aux deux tailles.
+- **Mon offre** : 93 px avec l'alerte d'horloge ; corrigé (toutes les alertes dans un seul bandeau, une ligne chacune ; explications de
+  l'horloge dans l'aide « ? » ; champ du code sur 2 lignes ; espacement des cartes 8 px) : 0 px, clair et sombre, aux deux tailles.
+- **Essai complet** : PC non autorisé (écran réduit, vendeur refusé, titulaire en Administration seulement, caisse refusée), code
+  d'activation version 2 lié au TPM saisi depuis ce PC, code du poste, autorisation Windows, connexion normale avec accès complet ;
+  rubriques repliables vérifiées au clic (Administration › Équipe, Stock › Gestion du stock) ; **16 écrans × clair et sombre × 1 366 × 768
+  et 1 536 × 890 = 64 mesures, toutes à 0 px** (Accueil, Gestion du stock, Caisse, Factures, Registre, Patients, Trésorerie, Dettes,
+  Financements, Rapports, Contrôle interne, Utilisateurs, Postes autorisés, Mon offre, Sauvegardes, Alertes et seuils).

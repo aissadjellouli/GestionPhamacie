@@ -28,10 +28,15 @@
         else
         {
             @if (message is not null) { <div class="succes" role="status">@message</div> }
-            else if (o.Alerte is not null) { <div class="info-bandeau texte-attention" role="status">@o.Alerte</div> }
-            @* Point 5 du 2026-11-27 : horloge du serveur reculée ou en avance (rien ne bloque) ; code non lié au serveur ou serveur non déclaré *@
-            @if (o.AlerteHorloge is not null) { <div class="info-bandeau texte-attention" role="status">@o.AlerteHorloge</div> }
-            @if (o.AlerteServeur is not null) { <div class="info-bandeau texte-attention" role="status">@o.AlerteServeur</div> }
+            @* Point 5 du 2026-11-27 : horloge du serveur reculée ou en avance (rien ne bloque) ; code non lié au serveur ou serveur non déclaré.
+               Un seul bandeau pour toutes les alertes (une ligne chacune) : l'écran ne défile pas à 1 366 × 768 (essai réel du 2026-11-27). *@
+            var alertes = new[] { message is null ? o.Alerte : null, o.AlerteHorloge, o.AlerteServeur }.Where(a => a is not null).ToList();
+            @if (alertes.Count > 0)
+            {
+                <div class="info-bandeau texte-attention" role="status">
+                    @foreach (var a in alertes) { <div>@a</div> }
+                </div>
+            }
 
             <div class="offre-grille">
                 <section class="panneau offre-colonne" aria-labelledby="t-offre">
@@ -96,7 +101,7 @@
                     }
                     <div class="champ">
                         <label for="o-code" class="requis">Code d’activation</label>
-                        <textarea id="o-code" data-champ="code" rows="3" spellcheck="false" autocomplete="off" placeholder="PO1.…"
+                        <textarea id="o-code" data-champ="code" rows="2" spellcheck="false" autocomplete="off" placeholder="PO1.…"
                                   @bind="code" @bind:event="oninput"></textarea>
                     </div>
                     @if (erreur is not null) { <p class="detail texte-urgent" role="alert" style="margin: 0">@erreur</p> }

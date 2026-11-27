@@ -593,7 +593,7 @@ label.requis::after, .etiquette-champ.requis::after { content: " *"; color: var(
 .tva-colonne { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 /* Administration › Mon offre (script 172) : offre en vigueur et saisie d'un code côte à côte ; seul l'historique défile dans son cadre */
 .offre-grille { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
-.offre-colonne { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.offre-colonne { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .offre-valeurs { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
 .offre-valeurs dt { color: var(--texte-2); }
 .offre-valeurs dd { margin: 0; font-weight: 600; }

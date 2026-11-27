@@ -210,7 +210,7 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
             // Alerte une seule fois au journal ; le message reste dans Mon offre tant que l'horloge retarde. Rien ne bloque (la caisse continue).
             await depot.SignalerHorlogeReculeeAsync(p, date.ServeurUtc, ct);
             alerteHorloge = $"L’horloge de ce serveur retarde sur la dernière date déjà enregistrée ({p.ToLocalTime():dd/MM/yyyy HH:mm}) : "
-                            + "l’offre est calculée à partir de cette date. Remettez le serveur à l’heure.";
+                            + "remettez-le à l’heure.";
         }
         else if (date is { Avance: true, PlancherUtc: { } pa })
         {
@@ -279,8 +279,7 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
     /// <summary>Message de Mon offre quand l'horloge du serveur est en avance de plus de 2 jours sur la date plancher.</summary>
     public static string MessageHorlogeAvance(DateTime plancherUtc, DateTime serveurUtc) =>
         $"L’horloge de ce serveur est en avance de {(int)(serveurUtc - plancherUtc).TotalDays} jour(s) sur la dernière date enregistrée "
-        + $"({DateTime.SpecifyKind(plancherUtc, DateTimeKind.Utc).ToLocalTime():dd/MM/yyyy HH:mm}) : vérifiez sa date et son heure avant d’encaisser "
-        + "(une vente garde la date du serveur). Si le serveur est seulement resté arrêté, ce message disparaît à la première vente.";
+        + $"({DateTime.SpecifyKind(plancherUtc, DateTimeKind.Utc).ToLocalTime():dd/MM/yyyy HH:mm}) : vérifiez-la avant d’encaisser.";
 
     private bool? CleMaterielle()
     {

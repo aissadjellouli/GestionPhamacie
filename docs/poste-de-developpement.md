@@ -358,6 +358,41 @@ Côté API, le dossier des images d'ordonnances scannées se règle dans `appset
 
 Exemple (une fois, puis redémarrer Visual Studio) : `setx PHARMA_PHARMACIE "Pharmacie [Nom]"` et `setx PHARMA_POSTE "Poste caisse 1"`.
 
+### Clé du serveur et offre liée au serveur (depuis le 2026-11-27)
+
+Depuis le point 5 de la revue (« horloge + matériel »), chaque serveur a une clé de machine Windows (`PharmaOfficine-Serveur`, protégée
+par le TPM) et les codes d'activation **version 2** ne valent que sur les serveurs dont ils listent l'empreinte
+([offre-et-options.md](offre-et-options.md), « Liaison renforcée de l'offre »).
+
+- **La clé n'est lisible que par SYSTEM et les administrateurs** (en production, l'API tourne en service LocalSystem).
+- **API lancée depuis Visual Studio (sans droits d'administrateur)** : l'API démarre et tout fonctionne (connexion, caisse, écrans),
+  **sauf la clé du serveur**, qu'elle ne peut pas lire. Conséquences : Mon offre affiche « clé absente » ; un code version 2 est refusé à la
+  saisie, ou passe en délai de grâce s'il est déjà enregistré. Les codes **version 1** (sans serveur, ex. bases de l'éditeur) restent
+  acceptés avec l'avertissement « Code non lié au serveur ». Constaté le 2026-11-27.
+- **Pour essayer l'offre liée au serveur** (clé, empreinte, code version 2) : lancer **Visual Studio en administrateur**, ou l'API
+  d'essai avec le script ci-dessous.
+- **Clé du PC de développement** : créée le 2026-11-27 (TPM) ; empreinte `B704-7238-E4F5-D2F7-9207-987C-1E90-820B`. Un code version 2
+  signé avec cette empreinte vaut pour les bases de ce PC qui ont le même code d'officine et le même NIF (ex. `pharmacie_test` et ses
+  copies jetables).
+
+#### Script d'essai réel `C:\MesAtlassian\essai-sync\lancer-essai-final.ps1` (hors dépôt)
+
+À lancer dans un **PowerShell administrateur** :
+`powershell -ExecutionPolicy Bypass -File C:\MesAtlassian\essai-sync\lancer-essai-final.ps1`. Il ne fait pas partie du logiciel
+(en production, ces étapes sont celles du manuel de MEP) ; il sert seulement aux essais réels de l'offre liée au serveur :
+
+1. **crée la clé de ce PC** (`Pharma.Api.exe --creer-cle-serveur`) ; une clé existante n'est jamais remplacée (relancer le script est sans
+   risque) ;
+2. **lit l'empreinte** (`--empreinte-serveur`) et l'écrit dans `C:\MesAtlassian\essai-sync\empreinte-serveur.txt` (à donner à
+   l'outil de l'éditeur : `--serveur <empreinte>`) ;
+3. **lance l'API d'essai** sur la base jetable (`base-renommage.txt`, refus si le nom ne commence pas par `pharmacie_jetable_`), port
+   **5086**, avec les droits d'administrateur (comme le service LocalSystem) ; le mot de passe de la base est lu dans la variable
+   utilisateur `ConnectionStrings__Pharmacie`, sans être affiché ; données dans `essai-sync\donnees-final`.
+
+L'API utilisée est celle compilée dans `essai-sync\api-bin-final3` (le chemin est dans le script) : après une correction côté serveur,
+recompiler dans un nouveau dossier, mettre à jour le chemin, puis **Ctrl+C** et relancer le script. Le poste d'essai se lance à part
+(`PHARMA_POSTE_IDENTITE` vers un dossier neuf pour un PC « non autorisé »).
+
 ## 5. Ligne de commande
 
 ```powershell
