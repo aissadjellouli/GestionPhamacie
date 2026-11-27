@@ -1,6 +1,8 @@
 ﻿<#
 .SYNOPSIS
-    Bascule sur le 2e serveur : CE PC (2e serveur) devient le serveur principal. Décidée par une personne, jamais automatique.
+    Bascule sur le 2e serveur : CE PC (2e serveur) devient le serveur principal. Bascule MANUELLE (ce script) : décidée par une personne, jamais lancée automatiquement.
+    La promotion AUTOMATIQUE du 2e serveur existe par ailleurs (API de veille, docs/promotion-serveurs.md) ; ce script reste la voie
+    manuelle (procédure F3 de docs/mise-en-production.md), par exemple si la promotion automatique est désactivée ou impossible.
 
 .DESCRIPTION
     À lancer sur le 2e serveur, en administrateur Windows, à la demande du titulaire (docs/mise-en-production.md, « 2e serveur »,

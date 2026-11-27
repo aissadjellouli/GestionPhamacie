@@ -330,7 +330,7 @@ Recompté le 2026-11-24 à partir des lignes ci-dessous (275 lignes ; « Fait en
 
 | Fonction | État | Où / référence |
 | --- | --- | --- |
-| Identité de la pharmacie (en-tête des postes, rapport de clôture), caisse et journal des actions sensibles | Fait | Administration › Pharmacie, Caisse |
+| Identité de la pharmacie (en-tête des postes, rapport de clôture), caisse et journal des actions sensibles | Fait | Administration › Langue et pharmacie, Caisse |
 | Imprimantes et étiquettes (par poste) : imprimante de tickets parmi celles de Windows, rouleau 80 ou 58 mm, ticket automatique, adresse IP de l’imprimante d’étiquettes, impressions d’essai | Fait | Administration › Imprimantes |
 | Motifs et catégories réglables (tiroir, attente, charges, sorties, retours, Chifa) | Fait | Administration › Motifs |
 | Reprise de données (super admin) : assistant ODBC, correspondance proposée puis confirmée, données des patients masquées, rapprochement des produits, contrôles, chargement en une transaction, vérification des totaux ; profils de reprise par logiciel précédent ; doublons d’import | Fait (à essayer sur une vraie base de l’ancien logiciel) | Administration › Reprise, Profils, Doublons |

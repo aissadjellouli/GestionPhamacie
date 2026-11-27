@@ -58,7 +58,7 @@ Options communes : `-Hote` (défaut `localhost`), `-Port` (défaut 5432), `-PgBi
 | `-ContinuerMalgreConflitsChifa` | Reprend après un arrêt sur n° de facture Chifa, une fois la décision du titulaire prise |
 | `-ScriptDepart <NNN>` | Premier script à rejouer. Défaut : **001, toujours**. Réservé à la reprise après incident (voir ci-dessous) |
 | `-CompteSuperUtilisateur <compte>` | Défaut `postgres` ; demandé seulement si les rôles sont ou vont être séparés |
-| `-DossierMigration <dossier>` | Dossier des scripts (défaut : `database\migration` du dépôt). Pour une livraison : `<livraison>\Api\database\migration` |
+| `-DossierMigration <dossier>` | Dossier des scripts (défaut : `database\migration` du dépôt). Pour une livraison : `<livraison>\Api\database` (scripts numérotés à plat, `Pharma.Api.csproj`) ; `111b`, `163b`, `166b` sont alors pris dans son sous-dossier `init` |
 | `-Script111b <fichier>` | Chemin de `111b_roles_integrite.sql` (défaut : `database\init` de la livraison, sinon du dépôt) |
 | `-Script163b <fichier>` | Chemin de `163b_droit_identifiant_base.sql` (défaut : `database\init` de la livraison, sinon du dépôt) |
 | `-SansDroitIdentifiantBase` | Ne lance pas `163b` (la détection de lignée de l'API rend alors « inconnu », voir 3.9) |
@@ -102,7 +102,7 @@ Options communes : `-Hote` (défaut `localhost`), `-Port` (défaut 5432), `-PgBi
 | `-AvecTests` | Passe aussi les tests de `database\cloud\tests` (transaction annulée) |
 | `-WhatIf` | Simulation |
 
-**Ce que fait le script** : contrôle la suite `database\cloud\001` au dernier (`042` à ce jour, sans trou) ; refuse si la base contient déjà des tables centrales ; crée la base si elle n'existe pas ; passe `001` au dernier dans l'ordre avec le compte propriétaire (il n'y a pas de `schema.sql` central : un seul endroit à tenir à jour) ; vérifie les tables, la sécurité au niveau des lignes sur les tables miroir, le rôle `pharma_cloud_api` (créé **sans connexion** par `001`, propriétaire d'aucune table), les rôles `pharma_cloud_etat` (`029`) et `pharma_cloud_ecrans` (`030`, sans connexion ni droit sur les tables) ; avec `-AvecTests`, chaque fichier de test doit finir par « tous réussis ».
+**Ce que fait le script** : contrôle la suite `database\cloud\001` au dernier (`044` à ce jour, sans trou) ; refuse si la base contient déjà des tables centrales ; crée la base si elle n'existe pas ; passe `001` au dernier dans l'ordre avec le compte propriétaire (il n'y a pas de `schema.sql` central : un seul endroit à tenir à jour) ; vérifie les tables, la sécurité au niveau des lignes sur les tables miroir, le rôle `pharma_cloud_api` (créé **sans connexion** par `001`, propriétaire d'aucune table), les rôles `pharma_cloud_etat` (`029`) et `pharma_cloud_ecrans` (`030`, sans connexion ni droit sur les tables) ; avec `-AvecTests`, chaque fichier de test doit finir par « tous réussis ».
 
 **Après le script** : le mot de passe de `pharma_cloud_api` se règle à part, par le superutilisateur (parcours E, étape 2.4) : `ALTER ROLE pharma_cloud_api LOGIN;` puis `\password pharma_cloud_api`. Ne jamais lancer les tests sur la base de production du central (parcours E, étape 2.2, **[À CONFIRMER]**).
 
@@ -116,7 +116,7 @@ Pour une mise à jour qui a échoué ou qu'on abandonne : la sauvegarde `.dump` 
 | --- | --- |
 | `database\init\` | **Tous les scripts de mise en production** (décision du titulaire du 2026-11-24), livrés avec l'API dans `Api\database\init\` (sauf `clean.sql`) : `fuseau_horaire.sql` (copie du 083, identique : test `InitCompletMepTests`) et les scripts d'administrateur `111b`, `163b`, `166b` (3.1, 3.9, 3.10). **Base neuve** d'officine : `schema.sql` (toute la structure) et `seed_referentiel.sql` (référentiel de départ) équivalent aux scripts 001 à NNN. À tenir à jour **à chaque nouveau script** : leur en-tête cite « 001 à NNN » et `creer_base_officine.ps1` refuse de créer une base si NNN n'est pas le dernier script. `clean.sql` remet une base à vierge (jamais en service) |
 | `database\migration\` | **Mise à jour** d'une base existante : scripts `NNN_nom.sql` rejoués dans l'ordre, idempotents. Seul script « b » restant : `101b` (irréversible, jamais automatique, 3.2) |
-| `database\cloud\` | Base **centrale** : scripts `001` à `042` (`030` à `042` : écrans du central, lots S7.1 à S7.6 ; `041` : délai de grâce des mots de passe provisoires ; `042` : motif de la déconnexion après inactivité), jamais sur une base d'officine |
+| `database\cloud\` | Base **centrale** : scripts `001` au dernier, `044` à ce jour (`030` à `042` : écrans du central, lots S7.1 à S7.6 ; `041` : délai de grâce des mots de passe provisoires ; `042` : motif de la déconnexion après inactivité ; `043` : règles de rattachement des ordres du central ; `044` : ordre `activation_offre`), jamais sur une base d'officine |
 | `database\tests\` | Tests SQL des scripts de `migration` (transaction annulée) ; `rejeu_complet.ps1` : rejeu de toute la suite sur une copie jetable (pas un test SQL) |
 | `database\cloud\tests\` | Tests SQL des scripts du central (lancés par `-AvecTests`) |
 | `database\data\` | Données **fictives** de démonstration (`9xx_*.sql`) : développement et recette seulement, **jamais en production** |

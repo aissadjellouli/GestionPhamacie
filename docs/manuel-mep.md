@@ -5,7 +5,7 @@ l'ouverture. Il condense [mise-en-production.md](mise-en-production.md) (la réf
 [promotion-serveurs.md](promotion-serveurs.md), [procedure-cle-editeur.md](procedure-cle-editeur.md) et [offre-et-options.md](offre-et-options.md).
 Chaque étape renvoie à sa section source (« détail : … »). Les commandes sont recopiées **à l'identique** des sources.
 
-Rédigé le 2026-11-26, à partir des sources à cette date.
+Rédigé le 2026-11-26, à partir des sources à cette date. Écarts entre les sources corrigés le 2026-11-26 (annexe A8).
 
 **Mode d'emploi**
 
@@ -84,7 +84,7 @@ Toutes ces règles viennent des sources (référence entre parenthèses).
 | **Technicien** | personne qui installe | Commandes PowerShell, services, pare-feu, base |
 | **Titulaire** | pharmacien titulaire | Réglages dans l'application, décisions (sauvegardes, Chifa, synchronisation, suppression de données) |
 | **Éditeur** | éditeur du logiciel | Signe le code d'activation de l'offre (sur **son** PC) ; administre le serveur central |
-| **Super admin** | compte créé sur le PC serveur (A 10.1) | Reprise de données et restauration depuis l'application. Voir aussi l'écart n° 9 de l'annexe « Écarts » |
+| **Super admin** | compte créé sur le PC serveur (A 10.1) | Reprise de données et restauration depuis l'application (rôle `super_admin`). Il ne signe aucune offre et ne fixe aucune limite : c'est l'**éditeur** (écart n° 9 de l'annexe A8 : corrigé) |
 | **Administrateur Windows** | compte qui a les droits d'administrateur sur le PC | Installe, change les variables système, lance les scripts |
 | **Superutilisateur PostgreSQL** | compte `postgres` (mot de passe noté à l'installation) | Crée les rôles, lance `111b`, `163b`, `166b`, les procédures de rôles |
 | **Compte `pharma_app`** | compte de l'application, propriétaire de la base avant `111b` | Compte de connexion de l'API ; lance les scripts de la base tant que les rôles ne sont pas séparés |
@@ -111,14 +111,18 @@ Détail : mise-en-production.md, « Les PC et les lieux » ; procedure-cle-edite
 
 Concerne le **PC serveur** et le **2e serveur** (même configuration : en bascule, il porte toute la charge).
 
-**Version minimale de Windows** (exigée par le chiffrement résistant au quantique) :
+**Version minimale de Windows pour le chiffrement résistant au quantique** : ce chiffrement relève du **lot 9, pas encore codé**
+(chiffrement-data.md, « Statut » et § 11 : « rien n'est lancé »). Le tableau ci-dessous est donc le minimum **exigé le jour où le lot 9
+sera mis en service** ; pour faire tourner le logiciel aujourd'hui, le minimum est celui de A02 (Windows 10 ou Windows Server 2016).
+Choisir dès maintenant un PC serveur qui passe en Windows 11 24H2 évite de le changer au lot 9.
 
 | Fonction | Windows 11 Pro | Windows Server |
 | --- | --- | --- |
 | ML-KEM et ML-DSA (.NET 10, chiffrement et signature) | **24H2** ou 25H2, mise à jour de novembre 2025 (KB5068861, build 26100.7171) ou plus | **2025**, même mise à jour |
 | Échange de clé hybride en HTTPS (Schannel, TLS 1.3, `X25519_MLKEM768`) | 24H2 et 25H2 : KB5089573 (builds 26100.8524 et 26200.8524) ; 26H1 : KB5095091 (build 28000.2340) | **2025** : KB5099536 (build 26100.33158, 14 juillet 2026) |
 
-- Windows 10, Windows 11 23H2 et avant, Windows Server 2022 et avant : non cités par Microsoft, donc considérés comme non pris en charge.
+- Windows 10, Windows 11 23H2 et avant, Windows Server 2022 et avant : non cités par Microsoft, donc considérés comme non pris en charge **pour le
+  chiffrement du lot 9** (pas pour le fonctionnement actuel, voir A02).
 - Listes complétées par Microsoft au fil des mises à jour : **à revérifier avant la mise en service**.
 - Postes : minimum (application du poste et Chifa_Officine) non mesuré **[À VÉRIFIER]**. Un poste sous Windows 10 n'a plus de mises à jour
   de sécurité depuis octobre 2025 : sujet à traiter à part.
@@ -136,7 +140,7 @@ AMD Ryzen 2000 ou plus), 4 Go de mémoire, 64 Go de disque, UEFI avec Secure Boo
 | Sauvegarde | Deux disques externes en rotation, dont un toujours hors de l'officine (**obligatoire** sans 2e serveur) |
 | Réseau | Ethernet gigabit, pas de Wi-Fi |
 | Onduleur | **Obligatoire** |
-| Windows | Windows 11 Pro 24H2 ou plus, à jour |
+| Windows | Windows 11 Pro 24H2 ou plus, à jour (exigé pour le lot 9, conseillé dès maintenant) |
 
 **Licence Windows** : Windows 11 Pro recommandé (≈ 200 $, **[À VÉRIFIER]**). Les clés vendues 1 000 à 5 000 DA sur les petites annonces
 sont déconseillées : exiger la facture d'un revendeur agréé. Chiffres exacts **[À VÉRIFIER]** (nombre d'officines, prix d'un revendeur
@@ -195,7 +199,7 @@ Détail : mise-en-production.md, « Services Windows ».
 | `Jwt__Cle` | oui | 64 caractères minimum, aléatoire | Signature des connexions. Même valeur sur les deux serveurs (chapitre C) |
 | `Chifa__DossierExport` | oui | `<dossier d'export de CHIFA-Officine sur ce PC>` | Par défaut `D:\CHIFA_OFFICINE\CNAS_SIGNED` : **à remplacer** |
 | `Ged__Dossier` | non | `C:\ProgramData\PharmaOfficine\GED` (défaut) | Dossier de tous les documents |
-| `Ged__RetentionSauvegardesJours` | non | `7` (défaut) | Conservation des copies de base dans `GED\Sauvegardes` |
+| `Ged__RetentionSauvegardesJours` | non | `7` (défaut) | Conservation (en jours) des copies de base dans `GED\Sauvegardes`, si le titulaire n'a pas fixé la sienne (Administration, Sauvegardes). Distinct du nombre de sauvegardes gardées sur le disque externe (14 par défaut) |
 | `Ordonnances__Dossier` | non | défaut : `GED\Ordonnances` | Scans d'ordonnances |
 | `Journaux__Dossier`, `Journaux__Prefixe`, `Journaux__TailleMaxMo` (50), `Journaux__RetentionMois` (3), `Journaux__Niveau` | non | | Journal du serveur |
 | `LimiteConnexions__ParMinute` | non | `20` (défaut) | Essais de connexion par minute et par adresse |
@@ -345,10 +349,11 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
   | Machine | Minimum technique | Recommandé |
   | --- | --- | --- |
   | Poste de caisse | Windows 10 version 2004 (build 19041) | Windows 11 (22H2 ou plus), ou Windows 10 IoT Enterprise LTSC |
-  | PC serveur | Windows 10 ou Windows Server 2016 | Windows 11 Pro, ou Windows Server 2019, 2022 ou 2025 |
+  | PC serveur | Windows 10 ou Windows Server 2016 (fonctionnement actuel, sans le lot 9) | Windows 11 Pro 24H2 ou plus, ou Windows Server 2025 : **exigé** le jour où le chiffrement du lot 9 sera mis en service (§ 0.4) |
 
-  - Attention : le chiffrement résistant au quantique exige Windows 11 Pro 24H2 ou Windows Server 2025 sur le PC serveur (§ 0.4). Voir
-    l'écart n° 2 de l'annexe « Écarts ».
+  - Le minimum « Windows 10 ou Windows Server 2016 » vaut pour le logiciel d'aujourd'hui. Le chiffrement résistant au quantique (lot 9,
+    pas encore codé) exigera Windows 11 Pro 24H2 ou Windows Server 2025 sur le PC serveur et le 2e serveur (§ 0.4) : un PC sous
+    Windows 10 ou Server 2016 à 2022 devra alors être mis à niveau ou remplacé. Écart n° 2 de l'annexe A8 : corrigé.
   - Le logiciel n'a été essayé que sous Windows 11 : **faire un essai sur le système réel avant le jour J**. Les téléphones n'ont besoin que
     d'un navigateur récent.
   - Détail : MEP § A 1.2 et « Matériel et Windows du PC serveur ».
@@ -434,12 +439,16 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
 ### Phase A3 — Base de données
 
 - [ ] **A15 — Créer la base complète** (structure, fuseau, référentiel, séparation des rôles, droits `163b` et `166b`).
-  **Qui** : technicien. **Où** : PC serveur, **depuis le dossier du dépôt ou de la livraison**. **Compte** : `postgres` (création du compte et
-  de la base, `111b`, `163b`, `166b`), puis `pharma_app` (structure). Mots de passe saisis à l'écran, jamais dans la commande.
+  **Prérequis** : faire **d'abord A18 (publication), A19 (copie de l'API, qui apporte `database\init` et les scripts numérotés) et A20
+  (copie du dossier `scripts`)**, puis revenir ici ; A21 et la suite se font ensuite, dans l'ordre.
+  **Qui** : technicien. **Où** : PC serveur, PowerShell ouvert dans le dossier parent du dossier `scripts` copié à A20. **Compte** :
+  `postgres` (création du compte et de la base, `111b`, `163b`, `166b`), puis `pharma_app` (structure). Mots de passe saisis à l'écran,
+  jamais dans la commande.
   ```powershell
-  .\scripts\mep\creer_base_officine.ps1 -Base <base>
+  .\scripts\mep\creer_base_officine.ps1 -Base <base> -DossierDepot "C:\Program Files\PharmaOfficine\Api"
   ```
-  - `<base>` : exemple `pharmacie`. Pour voir le plan sans rien créer : ajouter `-WhatIf`.
+  - `<base>` : exemple `pharmacie`. Pour voir le plan sans rien créer : ajouter `-WhatIf`. Depuis le dépôt (PC des sources, essais),
+    `-DossierDepot` est inutile.
   - Le script, dans l'ordre : vérifie que l'init est à jour (« 001 à NNN » = dernier script, aujourd'hui `172`) ; vérifie que PostgreSQL
     répond et que la base **n'existe pas** ; crée `pharma_app` s'il manque (`LOGIN CREATEDB`) ; crée la base ; passe `schema.sql`,
     `fuseau_horaire.sql` (copie du `083`), `seed_referentiel.sql` ; puis, avec `postgres`, `111b` (journaux inaltérables), `163b` (lire
@@ -453,9 +462,10 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
   - **Si échec** : le script s'arrête à la première erreur. « La base existe déjà » : normal, voir « Recommencer depuis zéro » (annexe A7).
     « L'en-tête de schema.sql ne cite pas 001 à NNN » : init en retard, rien n'a été fait, voir le développeur. `à exécuter par un
     superutilisateur` : le compte d'administration n'est pas `postgres`.
-  - Le script cherche `database\init` et `database\migration` à la racine du dépôt ou de la livraison (paramètre `-DossierDepot`). La source
-    ne copie le dossier `scripts` sur le PC serveur qu'à l'étape A20 : **[À CONFIRMER : d'où lancer A15 sur le PC serveur (dépôt, livraison,
-    `-DossierDepot`)]** (voir l'écart n° 15).
+  - Le script lit `<DossierDepot>\database\init` et `<DossierDepot>\database\migration`, ou à défaut les scripts numérotés à plat dans
+    `<DossierDepot>\database` (cas du dossier publié de l'API) ; sans `-DossierDepot`, il prend le dossier parent de `scripts`
+    (`creer_base_officine.ps1`, paramètre `DossierDepot` et lignes 99 à 102). D'où `-DossierDepot` vers le dossier de l'API sur le PC
+    serveur (écart n° 15 : corrigé).
   - Détail : MEP § A 3.1 ; [scripts-base-de-donnees.md](scripts-base-de-donnees.md) ; en-tête de `scripts\mep\creer_base_officine.ps1`.
 
 - [ ] **A16 — Contrôler la base** (contrôle indépendant, facultatif). **Qui** : technicien. **Où** : PC serveur, compte `pharma_app`.
@@ -476,7 +486,8 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
   ```
   - **Attendu** : `t`.
   - **Si `f`** : passer `166b` sur la base de la pharmacie (commande de promotion-serveurs.md § 3, recopiée telle quelle ; le chemin y est
-    celui du dépôt, sur le PC serveur le fichier est dans `C:\Program Files\PharmaOfficine\Api\database\init`, voir l'écart n° 11) :
+    celui du dépôt ; sur le PC serveur, le fichier est dans `C:\Program Files\PharmaOfficine\Api\database\init`, comme le précise
+    désormais promotion-serveurs.md § 3, écart n° 11) :
     ```powershell
     & 'C:\Program Files\PostgreSQL\18\bin\psql.exe' -h localhost -p 5432 -U postgres -d <base de la pharmacie> -v ON_ERROR_STOP=1 `
         -f C:\MesAtlassian\pharmaofficine\database\init\166b_droit_promotion_base.sql
@@ -495,7 +506,7 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
   ```
   - `--self-contained true` : aucun runtime .NET à installer sur le PC serveur. Contrepartie : les correctifs de sécurité .NET n'arrivent
     qu'avec une nouvelle publication (chapitre B).
-  - Le dossier publié contient `Pharma.Api.exe`, `database\` et `database\init\` (`schema.sql`, `seed_referentiel.sql`, `fuseau_horaire.sql`,
+  - Le dossier publié contient `Pharma.Api.exe`, `database\` (scripts numérotés, à plat) et `database\init\` (`schema.sql`, `seed_referentiel.sql`, `fuseau_horaire.sql`,
     `111b`, `163b`, `166b` ; jamais `clean.sql` ni `101b`).
   - **Attendu** : `Pharma.Api.exe` et `database` présents dans `<dossier de livraison>\Api`.
   - **Si échec** : SDK absent (A06) ou version différente de .NET 10.
@@ -725,7 +736,7 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
 
 ### Phase A9 — Paramétrage (titulaire, dans l'application, dans l'ordre)
 
-- [ ] **A43 — Identité de la pharmacie.** **Qui** : titulaire. Administration, Langue et pharmacie : nom, titulaire, adresse, téléphone,
+- [ ] **A43 — Identité de la pharmacie.** **Qui** : titulaire. Administration › Langue et pharmacie (onglet « Pharmacie et langue ») : nom, titulaire, adresse, téléphone,
   **RC, NIF, NIS, AI**, n° d'officine Chifa (imprimés sur tickets, factures, rapports). **Le NIF doit être saisi avant A45** (le code
   d'activation est lié au NIF). Détail : MEP § A 9.1 ; procedure-cle-editeur.md § 3.
 
@@ -733,7 +744,7 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
 
 - [ ] **A45 — Offre et code d'activation.** **Qui** : titulaire (relevé et saisie), **éditeur** (signature, sur **son** PC).
   - [ ] **A45.1** Titulaire, dans **Administration › Mon offre** : relever le **code de l'officine** et le **NIF** (NIF saisi d'abord, A43,
-    Administration › Pharmacie). Les transmettre à l'éditeur.
+    Administration › Langue et pharmacie). Les transmettre à l'éditeur.
   - [ ] **A45.2** Éditeur, **sur le PC de l'éditeur** (jamais sur le serveur de l'officine), dans sa propre fenêtre PowerShell, signer un
     **code de transition** (durée fixée ce jour-là) ou le code de l'offre vendue. Mot de passe de la clé demandé :
     ```powershell
@@ -750,18 +761,27 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
     ```powershell
     dotnet run --project src\Pharma.Editeur -- lire --code <PO1.…> --cle-publique (Get-Content C:\MesAtlassian\cle-editeur\cle-editeur-publique.txt)
     ```
-  - [ ] **A45.4** Titulaire : **Administration › Mon offre**, coller le code dans « Code d'activation », **Activer**. (Pharmacie synchronisée :
+  - [ ] **A45.4** Avec le **compte du titulaire** (par le titulaire, ou par l'éditeur à ses côtés : la saisie est réservée au titulaire,
+    `.ExigerTitulaire()` sur `/offre/activation`) : **Administration › Mon offre**, coller le code dans « Code d'activation », **Activer**. (Pharmacie synchronisée :
     possible aussi par le central, `Pharma.Cloud.Api.exe --ordre-activation --officine <code de l'officine> --code <PO1.…> --auteur <nom>`.)
   - **Attendu** : « Code accepté : Offre activée (ou Période de transition), N postes » ; les écrans des packs se rouvrent (au plus 2 minutes
     sur les autres postes).
   - **Sans code** : offre de base, **2 postes**, écrans des packs A à H fermés.
+  - **Offre à date de fin** : l'écran Mon offre prévient dès 90 jours ; alerte au titulaire par SMS ou e-mail (mêmes destinataires que les
+    alertes techniques) 90, 60, 30, 15, 7 et 1 jour(s) avant la fin, puis au début du délai de grâce de 15 jours, une seule fois chacune pour une date de fin
+    donnée (journal `offre_rappel`), seule l'étape la plus proche étant envoyée (`RappelsOffre`, `src\Pharma.Application\Offre\Offre.cs`).
   - **Si échec** (refus, rien ne change) : autre pharmacie (code de l'officine), autre NIF, signature fausse, code échu, code plus ancien que
     celui en place, code déjà enregistré.
   - Détail : MEP § A 13.0 ; [procedure-cle-editeur.md](procedure-cle-editeur.md) § 3 et § 4 ; offre-et-options.md, « Mise en service ».
 
 - [ ] **A46 — Autoriser chaque poste.** **Qui** : titulaire, puis technicien sur chaque poste. Le **maximum de postes vient de l'offre** (A45).
-  Après la mise à jour (version du 2026-11-24, script 167), la liste est en mode **transition** : tout fonctionne, avec un bandeau « Ce poste
-  n'est pas encore autorisé » sur l'écran de connexion des postes. **[À CONFIRMER : état de la liste sur une base neuve, la source ne le dit pas.]**
+  - **Base neuve** : `seed_referentiel.sql` pose la ligne `parametre_postes` avec les défauts du schéma (`INSERT INTO parametre_postes
+    DEFAULT VALUES`) : mode **transition** (`schema.sql`, `mode DEFAULT 'transition'`), code valable 15 minutes ; liste `poste_autorise`
+    **vide**. Maximum : celui de l'offre ; sans code d'activation, offre de base, **2 postes** (`OffreCourante.PostesBase = 2`) ; la colonne
+    `parametre_postes.maximum_postes` (20 par défaut) n'est plus lue depuis le script 172. Saisir le code (A45) avant d'autoriser plus de
+    2 postes.
+  - **Après la mise à jour** d'une officine en service (version du 2026-11-24, script 167) : même mode **transition**.
+  - En mode transition, tout fonctionne, avec un bandeau « Ce poste n'est pas encore autorisé » sur l'écran de connexion des postes.
   - [ ] **A46.1** Premier poste (aucun titulaire connecté sur un poste autorisé) : sur le PC serveur, `Pharma.Api.exe --autoriser-poste "CAISSE-1"`
     (identifiant et mot de passe du titulaire) affiche un code ; sinon, Administration › Postes autorisés › « Autoriser un poste ».
   - [ ] **A46.2** Sur le poste, avec le compte Windows habituel : écran de connexion, « Autoriser ce poste », taper le code. Sur un compte
@@ -826,7 +846,8 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
 ### Phase A11 — Sauvegardes (avant toute vraie donnée)
 
 - [ ] **A63 — Un seul mécanisme : la sauvegarde de l'application** (option a, décision du 2026-11-26). Elle copie la base sur le disque
-  externe et dans `GED\Sauvegardes` (7 jours par défaut), et les documents de la GED dans le sous-dossier `GED` du disque. Le script planifié
+  externe (les **14 dernières** gardées par défaut, réglage « conservation », 1 à 365) et dans `GED\Sauvegardes` (gardée **7 jours** par
+  défaut : réglage du titulaire, sinon `Ged__RetentionSauvegardesJours`), et les documents de la GED dans le sous-dossier `GED` du disque. Le script planifié
   `scripts\sauvegarde_pharmacie.ps1` (option b) n'est qu'un **dépannage** (A66), jamais en même temps. Détail : MEP § A 11.1.
 - [ ] **A64 — Régler et lancer la première sauvegarde.** **Qui** : titulaire. **Où** : un poste ou le PC serveur. Administration, Sauvegardes :
   dossier (disque externe), rétention, puis **première sauvegarde**.
@@ -1284,7 +1305,7 @@ officine. **Ordre de mise à jour : serveur central d'abord, officines ensuite.*
   .\scripts\mep\creer_base_centrale.ps1 -Base <base centrale> -Proprietaire <propriétaire>
   ```
   - `-WhatIf` pour voir le plan ; `-Hote <hôte>` si distant. Le compte `<propriétaire>` doit exister (E-03). Passe tous les scripts numérotés
-    de `database\cloud` dans l'ordre (voir l'écart n° 5 sur leur nombre) ; `001` crée `pharma_cloud_api` sans connexion ; `029` crée
+    de `database\cloud` dans l'ordre, de `001` au dernier (`044` à ce jour ; écart n° 5 : corrigé) ; `001` crée `pharma_cloud_api` sans connexion ; `029` crée
     `pharma_cloud_etat` sans connexion.
   - **Attendu** : « Terminé », code de sortie 0.
   - **Si échec** : le script nomme le script en erreur. « Le compte propriétaire n'existe pas » : E-03. « contient déjà des tables centrales » :
@@ -1496,7 +1517,8 @@ défaut. **[À VÉRIFIER]** l'application d'un modèle dans l'officine (lot M4) 
   Contraintes d'ordre avec les scripts des officines : central `019` avant officines `147` ; `020` avant `149` ; `022` à `024` avant `151` ;
   `025` avant `152` ; `002` régénéré avant `148` ; `027` et `028` demandent `022` ; `020` et `021` demandent PostgreSQL 18 ; `036` à repasser
   après un `002` régénéré. Scripts idempotents. Détail : MEP § E 10.2.
-- [ ] **E-45 — Relancer les tests** sur la copie (la source renvoie à « l'étape 2.3 » : voir l'écart n° 6). Détail : MEP § E 10.3.
+- [ ] **E-45 — Relancer les tests** de l'étape E 2.2 (`creer_base_centrale.ps1 -AvecTests`, sur une base d'essai ou une copie) (écart n° 6 :
+  corrigé dans la source). Détail : MEP § E 10.3.
 - [ ] **E-46 — Redémarrer le serveur central**, **avant** toute mise à jour des officines. Détail : MEP § E 10.4.
 
 ---
@@ -1538,10 +1560,11 @@ Les scripts `database\migration\NNN_*.sql` sont réexécutables sans dégât ; `
   dotnet publish src\Pharma.Api -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Api"
   dotnet publish src\Pharma.Desktop -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Poste"
   ```
-  - Copier `<dossier de livraison>` (avec `Api\database\migration`) et le dossier `scripts` sur la clé USB. `111b`, `163b`, `166b` sont dans
-    `Api\database\init\` : rien à copier à part.
-  - **Attendu** : `Api\Pharma.Api.exe`, `Api\database\migration\148_sauvegarde_alerte_sans_disque_externe.sql` et `Poste\Pharma.Desktop.exe`
-    sur la clé (voir l'écart n° 18).
+  - Copier `<dossier de livraison>` (scripts numérotés **à plat** dans `Api\database\`, init dans `Api\database\init\` :
+    `Pharma.Api.csproj`) et le dossier `scripts` sur la clé USB. `111b`, `163b`, `166b` sont dans `Api\database\init\` : rien à copier à part.
+  - **Attendu** : `Api\Pharma.Api.exe`, le **dernier script numéroté** dans `Api\database\` (`172_activation_offre.sql` à ce jour : le
+    numéro le plus haut de `database\migration` du dépôt), `Api\database\init\111b_roles_integrite.sql` et `Poste\Pharma.Desktop.exe` sur la
+    clé (écart n° 18 : corrigé).
   - Détail : MEP § B 1.
 - [ ] **B-02 — Officine synchronisée** : **mettre le serveur central à jour d'abord** (E-43 à E-46). Détail : MEP § B 2.
 - [ ] **B-03 — Arrêter le service.** **Où** : PC serveur, administrateur Windows.
@@ -1553,9 +1576,12 @@ Les scripts `database\migration\NNN_*.sql` sont réexécutables sans dégât ; `
 - [ ] **B-04 — Mettre la base à jour** (sauvegarde, détection des rôles, contrôle Chifa, rejeu). **Où** : PC serveur. **Compte** : `pharma_app`
   (et `postgres` si les rôles sont séparés ou à séparer), mots de passe saisis à l'écran.
   ```powershell
-  .\scripts\mep\mettre_a_jour_base_officine.ps1 -Base <base> -DossierSauvegarde "E:\Sauvegardes\Pharmacie" -DossierMigration "E:\<dossier de livraison>\Api\database\migration" -Script111b "E:\111b_roles_integrite.sql"
+  .\scripts\mep\mettre_a_jour_base_officine.ps1 -Base <base> -DossierSauvegarde "E:\Sauvegardes\Pharmacie" -DossierMigration "E:\<dossier de livraison>\Api\database"
   ```
-  - `-DossierMigration` et `-Script111b` : inutiles depuis le dépôt (voir l'écart n° 3 sur l'emplacement de `111b`). `-SeparerRoles` si les
+  - `-DossierMigration` : le dossier `Api\database` de la livraison (scripts numérotés à plat). Le script y prend `111b`, `163b` et `166b`
+    dans le sous-dossier `init` (valeurs par défaut de `-Script111b`, `-Script163b`, `-Script166b`) : `-Script111b` est inutile (écart
+    n° 3 : corrigé). Depuis le dépôt, ces options sont inutiles. `111b` est lancé **par ce script** avec `-SeparerRoles`, `163b` et `166b`
+    en fin de rejeu ; seul `101b` se lance à part (B-08) (écart n° 4 : corrigé). `-SeparerRoles` si les
     rôles ne sont pas encore séparés et qu'on les sépare maintenant (B-06). `-WhatIf` pour voir le plan. `-ScriptDepart` : incidents seulement.
   - Sauvegarde `pg_dump -Fc` (`<base>_avant_maj_<date>_<heure>.dump`) relue par `pg_restore --list` (sans sauvegarde valide, rien n'est modifié).
   - Copier aussi `super-admin.dat`, `cle-integrite.dat` et le `.dump` hors du PC serveur (disque externe ; vérifier qu'ils sont à jour).
@@ -1580,7 +1606,7 @@ Les scripts `database\migration\NNN_*.sql` sont réexécutables sans dégât ; `
 - [ ] **B-08 — Script `101b`** (suppression de `num_facture_chifa`) : **jamais lancé par le script**. Décision du titulaire du 2026-11-26 : le
   passer sur toute officine installée **avant** cette date, une fois, **seulement après son « go »**. Base créée depuis `database\init` : rien à
   faire. Opération **destructive et irréversible** (sauf restauration). Fichier : `database/migration/101b_suppression_num_facture_chifa.sql`,
-  pris dans le dépôt.
+  pris dans le dépôt (il n'est **pas** dans le dossier publié : exclu par `Pharma.Api.csproj`, contrairement à `111b`, `163b`, `166b`).
   1. **Prérequis** : `101` exécuté, logiciel et API **arrêtés**, aucune autre session sur la base.
   2. **Sauvegarde complète obligatoire**, vérifiée lisible, copiée hors du PC serveur.
   3. **Contrôles en lecture seule** (psql interactif), tous à **0** :
@@ -1644,7 +1670,9 @@ Résumé actionnable. Chaque procédure se lit de haut en bas ; le détail est d
 ### F1. Restauration (base ou GED détruite) — MEP § F1
 
 Sauvegardes utiles : **disque externe** (`pharmacie_AAAAMMJJ_HHMMSS.dump`, GED dans son sous-dossier `GED`). La copie dans `GED\Sauvegardes`
-disparaît avec le PC.
+disparaît avec le PC. Trois conservations **distinctes** : sur le disque externe, la sauvegarde de l'application garde les **N dernières**
+(14 par défaut) ; la copie dans `GED\Sauvegardes` est gardée **7 jours** par défaut ; le script planifié (option b) supprime les `.dump`
+de **plus de 30 jours** (`$RetentionJours`).
 
 **Méthode 1 : depuis l'application** (API en marche ; super admin).
 - [ ] F1-M1.1 Sur un poste, « Connexion super admin », écran **Restauration**.
@@ -1687,8 +1715,13 @@ Prérequis : chapitre D. Les opérations faites depuis la dernière copie sont p
   .\basculer-pc-secours.ps1 -Copies "D:\CopieSecours"
   ```
   **Attendu** : fin sans erreur, adresse du PC de secours affichée (le dernier script rejoué doit être le dernier de la version installée).
-- [ ] F2.4 Chaque poste : bouton **« Basculer sur le 2e serveur »** du bandeau, ou rubrique Serveur et PC de secours ; fermer et rouvrir. Certificat
-  refusé : autorité absente (A30) ou adresse absente du certificat (D-06). Journal du poste : `%LOCALAPPDATA%\PharmaOfficine\liaison.log`.
+- [ ] F2.4 Chaque poste : bouton du bandeau **« Basculer sur le 2e serveur (<adresse de secours>) sur ce poste »**, ou rubrique Serveur et PC
+  de secours ; fermer et rouvrir. Certificat refusé : autorité absente (A30) ou adresse absente du certificat (D-06). Journal du poste :
+  `%LOCALAPPDATA%\PharmaOfficine\liaison.log`.
+  - Le poste n'a qu'**une** adresse de secours : bouton et messages disent toujours « 2e serveur », même pour le PC de secours
+    (`BarreEtat.razor` l. 37-39, `LiaisonServeur.cs` l. 40-48) ; les lire comme « PC de secours ». « … joignable mais n'est pas encore
+    basculé… » renvoie à `basculer-second-serveur.ps1` : ici, c'est F2.3 qui n'est pas terminée. Le message de fin de `basculer-pc-secours.ps1`
+    cite un bouton « Utiliser le PC de secours », absent du poste : c'est le bouton ci-dessus (écart n° 13 : corrigé).
 - [ ] F2.5 GED : `.\scripts\restaurer_pharmacie.ps1 -SansBase` (paramètre `-DossierGed` du PC de secours).
 - [ ] F2.6 Ressaisir les opérations et le mot de passe des notifications.
 - [ ] F2.6 bis Synchronisation activée : nouvelle époque (E-35).
@@ -1856,8 +1889,8 @@ Renouveler **au moins 2 mois avant** l'échéance. L'autorité dure 10 ans (son 
 | Service `Running`, mais rien ne répond | Pare-feu ou mauvais port | `netstat -ano \| findstr :5443`, puis règle `PharmaOfficine API (https 5443)` |
 | Avertissement de certificat sur un poste | Autorité non installée, ou nom du serveur absent du certificat | A30 ; relancer A23 avec `-NomsSupplementaires` / `-AdressesSupplementaires` ; 2e serveur ou PC de secours : C-11 |
 | « Le certificat du 2e serveur est refusé par ce poste… » | Autorité absente, ou adresse absente du certificat du PC de secours | A30, ou corriger l'adresse ; F2.4 |
-| « Le 2e serveur ne répond pas… » | 2e serveur éteint, service arrêté, 5443 fermé, adresse erronée | Vérifier le 2e serveur, le pare-feu, l'adresse (voir l'écart n° 12) |
-| « Le 2e serveur est joignable mais n'est pas encore basculé… » | API répond mais base pas encore promue | Lancer la bascule sur le 2e serveur (la source renvoie à F2 ; voir l'écart n° 12) |
+| « Le 2e serveur ne répond pas… » | 2e serveur éteint, service arrêté (sur le 2e serveur, l'API tourne **en veille en permanence** : un service arrêté est une anomalie ; sur un PC de secours, il ne démarre qu'après F2), 5443 fermé, adresse erronée | Vérifier le 2e serveur (service `Running`), le pare-feu, l'adresse (écart n° 12 : corrigé) |
+| « Le 2e serveur est joignable mais n'est pas encore basculé… » | API de veille qui répond, base pas encore promue (promotion automatique pas faite ou impossible) | 2e serveur : bascule manuelle **F3** ; PC de secours : F2.3 (écart n° 12 : corrigé) |
 | « Le certificat du serveur est refusé par ce poste… » (principal) | Autorité absente ou `PHARMA_API` absente du certificat | A30 ; vérifier l'adresse |
 | `Première exécution : … Préciser -FichierSauvegardeAutorite` | Autorité absente sur ce PC | A23 (nouvelle pharmacie) ou F2 bis |
 | Avertissement d'heure au démarrage | Fuseau Windows incorrect | A12 |
@@ -1902,31 +1935,42 @@ d'essai fictive, jamais pour une officine réelle. API sous Linux (démonstratio
    (`& $psql -h localhost -U postgres -d postgres`), taper la commande de suppression de la base `<base>` en toute connaissance de cause, puis `\q`.
 3. Reprendre à A15. (`database\init\clean.sql` ne sert plus à ce parcours.)
 
-### A8. Écarts relevés entre les sources (à trancher)
+### A8. Écarts relevés entre les sources (traités le 2026-11-26)
 
-| N° | Écart | Où |
-| --- | --- | --- |
-| 1 | Date « Mise à jour : 2026-11-16 » alors que le contenu va jusqu'au 2026-11-26 | mise-en-production.md l. 5 |
-| 2 | Windows minimum du PC serveur : « Windows 10 ou Windows Server 2016 » (étape 1.2) contre Windows 11 24H2 / Server 2025 exigés pour le chiffrement, Windows 10 « non pris en charge » | mise-en-production.md l. 216 et l. 254, contre l. 56-63 et l. 87 |
-| 3 | `111b` : présent dans `Api\database\init` publié (« rien à copier à part ») contre « pas dans le dossier des scripts publiés (comme 111b) : le prendre dans le dépôt » et `-Script111b "E:\111b_roles_integrite.sql"` « copié à l'étape 1 » | mise-en-production.md l. 328, 665 contre l. 676-678, 696 |
-| 4 | « Les scripts b (101b, 111b) se lancent à part (étapes 6 et 8) » contre `111b` lancé par le script avec `-SeparerRoles` | mise-en-production.md l. 655 contre l. 687 |
-| 5 | Nombre de scripts centraux : « 042 à ce jour », « 001 à 028 », « 001 à 029 », « 036 à ce jour » ; en-tête du script : « 040 à ce jour » ; dossier `database\cloud` : dernier fichier `044_ordre_activation_offre.sql` | mise-en-production.md l. 1045, 1055, 1060, 1318 ; `scripts\mep\creer_base_centrale.ps1` l. 3 et l. 16 |
-| 6 | E 10.3 « Relancer les tests de l'étape 2.3 » : les tests sont à l'étape 2.2 (2.3 = contrôle indépendant) | mise-en-production.md l. 1319 |
-| 7 | Étape 13.0 (offre) numérotée après 13.1 et 13.2 | mise-en-production.md l. 630-632 |
-| 8 | Rappel d'échéance de l'offre : « 30 puis 7 jours avant, délai de grâce de 15 jours » contre « 30 jours avant, puis 15 jours de grâce » | offre-et-options.md l. 170 contre procedure-cle-editeur.md l. 89 et l. 129 |
-| 9 | « Super admin » : l'éditeur du logiciel (fixe le maximum de postes) contre le compte super admin créé sur le PC serveur pour la reprise et la restauration | offre-et-options.md l. 165-166 contre mise-en-production.md l. 560-573 |
-| 10 | Conservation des sauvegardes : « les 14 dernières par défaut » (F1) contre `Ged__RetentionSauvegardesJours` 7 jours et `$RetentionJours = 30` du script planifié (réglages peut-être distincts) | mise-en-production.md l. 1332 contre l. 151, 578 ; `scripts\sauvegarde_pharmacie.ps1` (configuration) |
-| 11 | Commande `166b` avec le chemin du dépôt de développement `C:\MesAtlassian\pharmaofficine\database\init\…` alors que sur le PC serveur le fichier est dans `C:\Program Files\PharmaOfficine\Api\database\init` | promotion-serveurs.md l. 40-41 contre mise-en-production.md l. 173 |
-| 12 | Dépannage : 2e serveur « il ne démarre qu'après la bascule » contre API en veille permanente (vague 2) ; « Lancer la bascule … (procédure F2) » alors que la bascule du 2e serveur est F3 | mise-en-production.md l. 1583-1584 contre l. 139 et § C 10 |
-| 13 | F2 (PC de secours) emploie le bouton et les messages « 2e serveur » | mise-en-production.md l. 1383-1384 |
-| 14 | Section « Postes autorisés » écrite pour « après la mise à jour », rien sur une base neuve | mise-en-production.md l. 1666-1668 (procedure-deux-serveurs.md § 6.1 la place dans la mise en place) |
-| 15 | Étape 3.1 lancée « depuis le dossier du dépôt » sur le PC serveur, alors que `scripts` n'y est copié qu'à l'étape 4.3 et l'API (avec `database\init`) à l'étape 4.2 | mise-en-production.md l. 293-297 contre l. 333-342 |
-| 16 | Nom du menu : « Administration, Langue et pharmacie » contre « Administration › Pharmacie » | mise-en-production.md l. 544 contre l. 632 et procedure-cle-editeur.md l. 75-76 |
-| 17 | Checklist après mise à jour : « Scripts 112 et suivants lancés avec le rôle propriétaire » contre parcours B : toute la suite depuis `001` rejouée avec `SET ROLE` après `111b` | mise-en-production.md l. 1657 contre l. 679 et l. 692 |
-| 18 | Fichier attendu sur la clé `148_sauvegarde_alerte_sans_disque_externe.sql` : exemple daté, le dernier script est `172` | mise-en-production.md l. 666 ; en-tête de `schema.sql` |
-| 19 | Description du script de l'étape 3.1 sans `163b` ni `166b`, alors que l'en-tête de `creer_base_officine.ps1` (étapes 6 bis et 6 ter) et le parcours C les citent | mise-en-production.md l. 300 contre `scripts\mep\creer_base_officine.ps1` et l. 760 |
-| 20 | Code de transition « saisi par l'éditeur » contre saisie « connecté en titulaire » dans Mon offre | offre-et-options.md l. 176 contre procedure-cle-editeur.md l. 113 et mise-en-production.md l. 632 |
-| 21 | En-tête de `basculer-second-serveur.ps1` : « Décidée par une personne, jamais automatique » (vrai pour ce script manuel, mais la promotion est automatique par ailleurs) | `scripts\second-serveur\basculer-second-serveur.ps1` l. 3 |
+Les numéros de ligne de la colonne « Où » sont ceux du relevé, avant correction. Colonne « État » : « corrigé le 2026-11-26 » avec la
+preuve tirée du code ou des scripts, ou « à confirmer » avec la raison.
+
+| N° | Écart | Où | État |
+| --- | --- | --- | --- |
+| 1 | Date « Mise à jour : 2026-11-16 » alors que le contenu va jusqu'au 2026-11-26 | mise-en-production.md l. 5 | **Corrigé le 2026-11-26** : 2026-11-26 |
+| 2 | Windows minimum du PC serveur : « Windows 10 ou Windows Server 2016 » (étape 1.2) contre Windows 11 24H2 / Server 2025 exigés pour le chiffrement, Windows 10 « non pris en charge » | mise-en-production.md l. 216 et l. 254, contre l. 56-63 et l. 87 | **Corrigé le 2026-11-26** (mise-en-production.md « Matériel et Windows du PC serveur » et 1.2 ; ici § 0.4 et A02) : Windows 10 / Server 2016 = minimum pour le logiciel d'aujourd'hui ; Windows 11 24H2 / Server 2025 = exigé pour le chiffrement du **lot 9, pas encore codé** (chiffrement-data.md, « Statut » : « aucun script, aucun code » ; § 11 : « rien n'est lancé »). Le minimum « Windows 10 / Server 2016 » lui-même reste celui de la source, non mesuré (le logiciel n'a été essayé que sous Windows 11) |
+| 3 | `111b` : présent dans `Api\database\init` publié (« rien à copier à part ») contre « pas dans le dossier des scripts publiés (comme 111b) : le prendre dans le dépôt » et `-Script111b "E:\111b_roles_integrite.sql"` « copié à l'étape 1 » | mise-en-production.md l. 328, 665 contre l. 676-678, 696 | **Corrigé le 2026-11-26** (mise-en-production.md B 1, B 4, B 8 ; ici B-01, B-04, B-08 ; scripts-base-de-donnees.md) : `Pharma.Api.csproj` copie `database\init\*.sql` (sauf `clean.sql`) dans `Api\database\init` et les scripts numérotés **à plat** dans `Api\database` (`101b` exclu) ; `mettre_a_jour_base_officine.ps1` prend `111b`, `163b`, `166b` par défaut dans `<DossierMigration>\init` (l. 176-187). Commande : `-DossierMigration "…\Api\database"`, sans `-Script111b`. Le chemin `Api\database\migration` des sources n'existe pas dans la publication |
+| 4 | « Les scripts b (101b, 111b) se lancent à part (étapes 6 et 8) » contre `111b` lancé par le script avec `-SeparerRoles` | mise-en-production.md l. 655 contre l. 687 | **Corrigé le 2026-11-26** (mise-en-production.md intro du parcours B ; ici B-04) : `111b` lancé par `mettre_a_jour_base_officine.ps1` avec `-SeparerRoles` (en-tête, étape 6), `163b` et `166b` en fin de rejeu, seul `101b` à part (en-tête l. 32) |
+| 5 | Nombre de scripts centraux : « 042 à ce jour », « 001 à 028 », « 001 à 029 », « 036 à ce jour » ; en-tête du script : « 040 à ce jour » ; dossier `database\cloud` : dernier fichier `044_ordre_activation_offre.sql` | mise-en-production.md l. 1045, 1055, 1060, 1318 ; `scripts\mep\creer_base_centrale.ps1` l. 3 et l. 16 | **Corrigé le 2026-11-26** : « 001 au dernier (044 à ce jour) » dans mise-en-production.md (E intro, 2.1, 10.2), scripts-base-de-donnees.md et le **commentaire** d'en-tête de `creer_base_centrale.ps1` (l. 3, 16, 60). Le code du script n'a **aucun** dernier numéro codé en dur (suite lue dans le dossier, contrôlée sans trou, l. 96-101) ; il vérifie seulement des scripts précis (001, 029, 030, 037 à 040), et son message d'erreur PostgreSQL 18 cite « scripts 020 à 031 » (texte du code, non modifié) |
+| 6 | E 10.3 « Relancer les tests de l'étape 2.3 » : les tests sont à l'étape 2.2 (2.3 = contrôle indépendant) | mise-en-production.md l. 1319 | **Corrigé le 2026-11-26** : « étape 2.2 » (mise-en-production.md E 10.3 ; ici E-45) |
+| 7 | Étape 13.0 (offre) numérotée après 13.1 et 13.2 | mise-en-production.md l. 630-632 | **Corrigé le 2026-11-26** : 13.0 remise avant 13.1 et 13.2 (ce manuel la suivait déjà : A45 avant A68 et A69) |
+| 8 | Rappel d'échéance de l'offre : « 30 puis 7 jours avant, délai de grâce de 15 jours » contre « 30 jours avant, puis 15 jours de grâce » | offre-et-options.md l. 170 contre procedure-cle-editeur.md l. 89 et l. 129 | **Corrigé le 2026-11-26** (offre-et-options.md, procedure-cle-editeur.md, regles-metier.md « Offre de base et options : activation signée par l'éditeur », ici A45) : codé dans `src\Pharma.Application\Offre\Offre.cs`, classe `RappelsOffre` (constantes l. 99 : 30, 7, 15) ; alerte SMS ou e-mail à 30 jours, à 7 jours, puis au début des 15 jours de grâce, une fois chacune par date de fin (journal `offre_rappel`), seule l'étape la plus proche ; Mon offre prévient dès 30 jours. **Étendu le 2026-11-27** (« go rappels ») : 90, 60, 30, 15, 7 et 1 jour(s) avant, Mon offre dès 90 jours |
+| 9 | « Super admin » : l'éditeur du logiciel (fixe le maximum de postes) contre le compte super admin créé sur le PC serveur pour la reprise et la restauration | offre-et-options.md l. 165-166 contre mise-en-production.md l. 560-573 | **Corrigé le 2026-11-26** : « l'éditeur » dans offre-et-options.md (besoin, questions, quotas, étapes, décisions annotées « appelé alors super admin ») ; « super admin » = seulement le compte de reprise et de restauration (rôle `super_admin`), note de vocabulaire ajoutée ; ici, tableau des rôles |
+| 10 | Conservation des sauvegardes : « les 14 dernières par défaut » (F1) contre `Ged__RetentionSauvegardesJours` 7 jours et `$RetentionJours = 30` du script planifié (réglages peut-être distincts) | mise-en-production.md l. 1332 contre l. 151, 578 ; `scripts\sauvegarde_pharmacie.ps1` (configuration) | **Corrigé le 2026-11-26** : trois réglages **distincts**, écrits dans mise-en-production.md (variables, 11.1, F1) et ici (variables, A63, F1). (1) Disque externe : les N dernières, `parametre_sauvegarde.conservation DEFAULT 14` (schema.sql), 1 à 365, `Sauvegardes.cs` l. 125. (2) `GED\Sauvegardes` : jours, `retention_ged_jours` du titulaire sinon `Ged:RetentionSauvegardesJours` (7, `Program.cs` l. 46), `Sauvegardes.cs` l. 167. (3) Script planifié : `.dump` de plus de 30 jours supprimés (`$RetentionJours = 30`, `Purger-Anciennes`) |
+| 11 | Commande `166b` avec le chemin du dépôt de développement `C:\MesAtlassian\pharmaofficine\database\init\…` alors que sur le PC serveur le fichier est dans `C:\Program Files\PharmaOfficine\Api\database\init` | promotion-serveurs.md l. 40-41 contre mise-en-production.md l. 173 | **Vérifié le 2026-11-26** : promotion-serveurs.md § 3 donne bien le chemin sur le PC serveur (`C:\Program Files\PharmaOfficine\Api\database\init\166b_droit_promotion_base.sql`), sous la commande |
+| 12 | Dépannage : 2e serveur « il ne démarre qu'après la bascule » contre API en veille permanente (vague 2) ; « Lancer la bascule … (procédure F2) » alors que la bascule du 2e serveur est F3 | mise-en-production.md l. 1583-1584 contre l. 139 et § C 10 | **Corrigé le 2026-11-26** (mise-en-production.md « Dépannage » ; ici annexe « Dépannage ») : API du 2e serveur en veille permanente (promotion-serveurs.md, rôles) ; renvoi **F3** pour le 2e serveur, F2 étape 3 pour le PC de secours. Le texte du bandeau du poste dit encore « il ne démarre qu'après la bascule » (`src\Pharma.Shared\LiaisonServeur.cs` l. 44) : vrai pour le PC de secours seulement ; **texte du code non modifié**, à revoir par le développeur |
+| 13 | F2 (PC de secours) emploie le bouton et les messages « 2e serveur » | mise-en-production.md l. 1383-1384 | **Corrigé le 2026-11-26** (mise-en-production.md F2 étape 4 ; ici F2.4) : c'est bien ce que voit l'utilisateur. Le poste n'a qu'une adresse de secours ; bouton « Basculer sur le 2e serveur (<adresse>) sur ce poste » (`BarreEtat.razor` l. 39) et messages « 2e serveur » (`LiaisonServeur.cs` l. 40-48), aussi pour le PC de secours. Restent dans le code, **non modifiés** : le 3e message renvoie à `basculer-second-serveur.ps1`, et `basculer-pc-secours.ps1` (l. 209) cite un bouton « Utiliser le PC de secours » qui n'existe pas sur le poste |
+| 14 | Section « Postes autorisés » écrite pour « après la mise à jour », rien sur une base neuve | mise-en-production.md l. 1666-1668 (procedure-deux-serveurs.md § 6.1 la place dans la mise en place) | **Corrigé le 2026-11-26** (mise-en-production.md « Postes autorisés » ; ici A46, marqueur retiré) : `seed_referentiel.sql` l. 54 `INSERT INTO parametre_postes DEFAULT VALUES` ; `schema.sql` `mode DEFAULT 'transition'`, `duree_code_minutes DEFAULT 15` ; aucun poste dans `poste_autorise` ; maximum lu dans l'offre (`PostesAutorises.cs` l. 299-300), offre de base 2 postes (`Offre.cs` l. 98, `PostesBase = 2`) ; `maximum_postes` plus lu (script 172, l. 10) |
+| 15 | Étape 3.1 lancée « depuis le dossier du dépôt » sur le PC serveur, alors que `scripts` n'y est copié qu'à l'étape 4.3 et l'API (avec `database\init`) à l'étape 4.2 | mise-en-production.md l. 293-297 contre l. 333-342 | **Corrigé le 2026-11-26** (mise-en-production.md § 3 et 3.1 ; ici A15) : faire 4.1 à 4.3 (A18 à A20) avant 3.1 (A15), puis `creer_base_officine.ps1 -Base <base> -DossierDepot "C:\Program Files\PharmaOfficine\Api"` : le script lit `<DossierDepot>\database\init` et, sans `database\migration`, les scripts à plat de `<DossierDepot>\database` (l. 91, 99-102). Le dossier de destination de `scripts` sur le PC serveur reste **à confirmer** (4.3 / A20, marqueur de la source) |
+| 16 | Nom du menu : « Administration, Langue et pharmacie » contre « Administration › Pharmacie » | mise-en-production.md l. 544 contre l. 632 et procedure-cle-editeur.md l. 75-76 | **Corrigé le 2026-11-26** : libellé réel « Langue et pharmacie » (`NavAdmin.razor` l. 130, route `admin/pharmacie` ; onglet « Pharmacie et langue », l. 147), partout : mise-en-production.md 9.1 et 13.0, procedure-cle-editeur.md § 3, fonctionnalites.md, ici A43 et A45.1 |
+| 17 | Checklist après mise à jour : « Scripts 112 et suivants lancés avec le rôle propriétaire » contre parcours B : toute la suite depuis `001` rejouée avec `SET ROLE` après `111b` | mise-en-production.md l. 1657 contre l. 679 et l. 692 | **Corrigé le 2026-11-26** (les deux checklists) : toute la suite depuis `001` (`mettre_a_jour_base_officine.ps1`, en-tête l. 8 et 18) |
+| 18 | Fichier attendu sur la clé `148_sauvegarde_alerte_sans_disque_externe.sql` : exemple daté, le dernier script est `172` | mise-en-production.md l. 666 ; en-tête de `schema.sql` | **Corrigé le 2026-11-26** (mise-en-production.md B 1 ; ici B-01) : « le dernier script numéroté, `172_activation_offre.sql` à ce jour », dans `Api\database\` (à plat) |
+| 19 | Description du script de l'étape 3.1 sans `163b` ni `166b`, alors que l'en-tête de `creer_base_officine.ps1` (étapes 6 bis et 6 ter) et le parcours C les citent | mise-en-production.md l. 300 contre `scripts\mep\creer_base_officine.ps1` et l. 760 | **Corrigé le 2026-11-26** : `163b` et `166b` ajoutés à la description de 3.1, lancés avec `postgres` même avec `-SansSeparationRoles` (`creer_base_officine.ps1` l. 201-210) |
+| 20 | Code de transition « saisi par l'éditeur » contre saisie « connecté en titulaire » dans Mon offre | offre-et-options.md l. 176 contre procedure-cle-editeur.md l. 113 et mise-en-production.md l. 632 | **Corrigé le 2026-11-26** : « saisi dans Mon offre avec le compte du titulaire (par le titulaire, ou par l'éditeur à ses côtés) » dans offre-et-options.md, procedure-cle-editeur.md, regles-metier.md, mise-en-production.md 13.0 et ici A45.4 ; preuve : `.ExigerTitulaire()` sur `POST /offre/activation` (`ReglagesMutualisesEndpoints.cs` l. 107-112) |
+| 21 | En-tête de `basculer-second-serveur.ps1` : « Décidée par une personne, jamais automatique » (vrai pour ce script manuel, mais la promotion est automatique par ailleurs) | `scripts\second-serveur\basculer-second-serveur.ps1` l. 3 | **Corrigé le 2026-11-26** (commentaire d'en-tête seulement) : ce script est la bascule **manuelle** (F3) ; la promotion automatique existe par ailleurs (promotion-serveurs.md). Restent à revoir, hors de ce lot : l'écran `AdminSecondServeur.razor` l. 60 (« Bascule : jamais automatique », texte du code) et la règle datée du 2026-11-16 de regles-metier.md (« Bascule décidée par une personne, jamais automatique ») |
+
+**Écarts nouveaux relevés pendant ces corrections (à confirmer, textes du code non modifiés)** :
+
+- `mettre_a_jour_base_officine.ps1` : l'aide de `-DossierMigration` (l. 75) cite encore `<livraison>\Api\database\migration`, et les
+  messages d'erreur l. 188-190 disent que `111b`, `163b`, `166b` « ne sont pas dans le dossier publié » : faux depuis que
+  `Pharma.Api.csproj` les copie dans `Api\database\init`. À corriger par le développeur.
+- `basculer-pc-secours.ps1` l. 209 : bouton « Utiliser le PC de secours » inexistant sur le poste (écart n° 13).
+- `LiaisonServeur.cs` l. 44 et 48 : messages pensés pour le 2e serveur d'avant la veille permanente (écarts n° 12 et 13).
 
 ---
 
@@ -1974,7 +2018,7 @@ Lignes de la source (mise-en-production.md, « Checklist après chaque mise à j
 - [ ] Serveur central mis à jour d'abord (si l'officine est synchronisée)
 - [ ] Service arrêté puis redémarré, `http://localhost:5080/api/healthcheck` répond
 - [ ] Scripts `database\migration` appliqués dans l'ordre, sans erreur ; pas de `schema.sql` ni de `clean.sql`
-- [ ] Scripts 112 et suivants lancés avec le rôle propriétaire (`pharma_proprietaire`), jamais avec `pharma_app` (voir l'écart n° 17)
+- [ ] Toute la suite des scripts, depuis `001`, rejouée par `mettre_a_jour_base_officine.ps1` ; après `111b`, avec `postgres` et `SET ROLE pharma_proprietaire`, jamais avec `pharma_app` (écart n° 17 : corrigé)
 - [ ] API republiée et remplacée ; `appsettings.Https.json` toujours présent
 - [ ] Postes republiés ; chaque poste ouvre l'écran de connexion
 - [ ] Nomenclature réimportée si elle a changé

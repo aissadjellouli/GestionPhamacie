@@ -436,6 +436,7 @@ public static class DependencyInjection
         services.AddScoped<Offre.ILimitesOffre>(sp => sp.GetRequiredService<Offre.OffreCourante>());
         services.AddScoped<Offre.IPacksOffre>(sp => sp.GetRequiredService<Offre.OffreCourante>());
         services.AddScoped<Offre.GererOffre>();
+        services.AddScoped<Offre.RappelsOffre>();
         return services;
     }
 }

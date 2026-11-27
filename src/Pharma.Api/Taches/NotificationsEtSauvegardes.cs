@@ -11,6 +11,8 @@ public sealed class EnvoiNotifications(IServiceProvider services, ILogger<EnvoiN
 {
     private static readonly TimeSpan Periode = TimeSpan.FromSeconds(30);
 
+    private DateOnly? rappelsOffreVerifiesLe;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
@@ -24,6 +26,22 @@ public sealed class EnvoiNotifications(IServiceProvider services, ILogger<EnvoiN
                         .InclusAsync(Pharma.Application.Offre.PacksOffre.Pilotage, stoppingToken)
                     && await scope.ServiceProvider.GetRequiredService<EnvoyerRapportQuotidien>().ExecuterAsync(DateTime.Now, stoppingToken))
                     logger.LogInformation("Rapport quotidien mis en file");
+                // Rappels de fin d'offre (90, 60, 30, 15, 7, 1 jours, délai de grâce ; une fois chacun) : une vérification par jour,
+                // jamais bloquant pour la file ; refaite au jour suivant ou au redémarrage de l'API
+                try
+                {
+                    var jour = DateOnly.FromDateTime(DateTime.Now);
+                    if (rappelsOffreVerifiesLe != jour)
+                    {
+                        if (await scope.ServiceProvider.GetRequiredService<Pharma.Application.Offre.RappelsOffre>().ExecuterAsync(stoppingToken) is { } rappel)
+                            logger.LogInformation("Rappel de fin d'offre mis en file ({Etape})", rappel);
+                        rappelsOffreVerifiesLe = jour;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogError(ex, "Rappel de fin d'offre non envoyé");
+                }
                 var bilan = await scope.ServiceProvider.GetRequiredService<TraiterFileAttente>().ExecuterAsync(DateTime.UtcNow, stoppingToken);
                 if (bilan.Envoyes + bilan.Echecs > 0)
                     logger.LogInformation("Notifications : {Envoyes} envoyée(s), {Echecs} en échec (nouvel essai prévu)", bilan.Envoyes, bilan.Echecs);

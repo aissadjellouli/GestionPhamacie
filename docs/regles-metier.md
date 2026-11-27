@@ -2779,11 +2779,15 @@ Revue complète de la branche `develop` (caisse, stock, factures, sécurité, se
   points ni tirets ; NIF à saisir avant). **Sans activation valable : offre de base, 2 postes** ; une activation effacée ou modifiée dans la
   base (signature fausse) ramène à l'offre de base, jamais à tout ouvert, avec une ligne au journal (`offre_activation_refusee`, une seule
   fois) et un message dans Mon offre. La **plus récente** activation valable (date de signature) l'emporte ; un code plus ancien, déjà
-  enregistré, échu (délai de grâce passé), d'une autre pharmacie ou d'un autre NIF est refusé. **Échéance** facultative : rappel à 30 jours,
-  puis **15 jours de grâce**, puis offre de base, **aucune donnée effacée**. **Code de transition** « tout compris » (tous les packs, date de
-  fin obligatoire) saisi lors de la mise en place ou de la mise à jour. Saisie : Administration › Mon offre (titulaire seul ; journal
+  enregistré, échu (délai de grâce passé), d'une autre pharmacie ou d'un autre NIF est refusé. **Échéance** facultative : l'écran Mon offre
+  prévient dès 90 jours ; **alerte au titulaire** par SMS ou e-mail (mêmes destinataires que les alertes techniques) **90, 60, 30, 15, 7 et
+  1 jour(s) avant la fin** (« go rappels » du 2026-11-27), puis au **début du délai de grâce de 15 jours**, une seule fois chacune pour une
+  date de fin donnée (journal `offre_rappel`), vérifiée une fois par jour ; l'alerte part avant d'être notée (au pire un rappel en double,
+  jamais un rappel perdu) ; seule l'étape la plus proche est envoyée (`RappelsOffre`) ; après les **15 jours de grâce**, offre de base, **aucune donnée effacée**.
+  **Code de transition** « tout compris » (tous les packs, date de fin obligatoire) signé par l'éditeur et saisi dans Mon offre avec le
+  compte du titulaire (par le titulaire, ou par l'éditeur à ses côtés) lors de la mise en place ou de la mise à jour. Saisie : Administration › Mon offre (titulaire seul ; journal
   `offre_activee`) ; ou ordre `activation_offre` du serveur central (le central transmet, ne signe rien ; contrôlé dans l'officine, appliqué
-  tout de suite). Fermeture des packs non inclus : pas encore faite (lot O6, après le tour des packs). — `src/Pharma.Application/Offre/`,
+  tout de suite). Fermeture des packs non inclus : voir la règle suivante (lot O6). — `src/Pharma.Application/Offre/`, `src/Pharma.Api/Taches/NotificationsEtSauvegardes.cs` (rappels),
   `src/Pharma.Infrastructure/Offre/ActivationsOffreSql.cs`, `src/Pharma.Desktop/Composants/Pages/AdminOffre.razor`, `src/Pharma.Editeur/`,
   `database/migration/172_activation_offre.sql`, `database/cloud/044_ordre_activation_offre.sql`
 - **(2026-11-26) Fermeture des packs non inclus (lot O6)** : le serveur refuse lui-même les routes d'un pack non inclus dans l'offre

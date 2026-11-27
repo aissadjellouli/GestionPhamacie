@@ -21,7 +21,7 @@ Une clé ne se régénère **jamais à l'identique** : perdue sans copie, elle e
 | Toujours | Jamais |
 |---|---|
 | Générer et utiliser les clés sur le **PC de l'éditeur** | Sur le serveur d'une officine |
-| Lancer les commandes dans **sa propre fenêtre PowerShell** | Avec le préfixe `!` dans Claude Code (le mot de passe passerait par la conversation) |
+| Lancer les commandes dans **sa propre fenêtre PowerShell** | Dans un outil d'assistance ou de discussion qui garde la trace des commandes (le mot de passe passerait dans son historique) |
 | Deux clés, deux dossiers, **deux mots de passe différents** | Le même mot de passe pour les deux |
 | Une **clé USB par clé**, rangées dans deux lieux différents | `cle-editeur.pem` dans un dépôt git, par e-mail ou messagerie |
 | Mots de passe notés à part (coffre de mots de passe ou papier rangé) | Donner un mot de passe à qui que ce soit, assistant compris |
@@ -72,8 +72,10 @@ pharmacies. **Tant que ces constantes sont vides, aucun code n'est accepté** : 
 
 ## 3. Signer un code pour une pharmacie
 
+> Pas à pas détaillé (chaque paramètre, saisie dans Administration › Mon offre, messages de refus) : [signer-code-activation.md](signer-code-activation.md).
+
 1. Relever, dans l'écran **Administration › Mon offre** de la pharmacie (titulaire) : le **code de l'officine** et le **NIF**. Le NIF doit
-   être saisi avant (Administration › Pharmacie) : un code est lié aux deux.
+   être saisi avant (Administration › Langue et pharmacie) : un code est lié aux deux.
 2. Signer avec la **clé principale** (le mot de passe est demandé) :
    ```powershell
    cd C:\MesAtlassian\pharmaofficine
@@ -86,7 +88,7 @@ pharmacies. **Tant que ces constantes sont vides, aucun code n'est accepté** : 
    | `--postes <n>` | Nombre de postes autorisés (1 à 200), **obligatoire** |
    | `--packs A,D` | Packs vendus (A à H, séparés par des virgules) ; `tous` = les 8 ; absent = aucun pack |
    | `--scanners <n>` | Scanners mobiles (0 par défaut) |
-   | `--fin AAAA-MM-JJ` | Dernier jour de l'offre (abonnement) ; absent = définitive. Rappel au titulaire 30 jours avant, puis 15 jours de grâce |
+   | `--fin AAAA-MM-JJ` | Dernier jour de l'offre (abonnement) ; absent = définitive. Rappels au titulaire (SMS ou e-mail) 90, 60, 30, 15, 7 et 1 jour(s) avant la fin, puis au début des 15 jours de grâce |
    | `--transition` | Code « tout compris » de la mise en place ou de la mise à jour : les 8 packs, `--fin` obligatoire |
 
    **Attendu** : une ligne de résumé (pharmacie, NIF, postes, packs, fin), puis le code `PO1.…`. Le code n'est pas secret : il ne vaut que
@@ -110,7 +112,8 @@ dotnet run --project src\Pharma.Editeur -- signer --cle C:\MesAtlassian\cle-edit
 
 ## 4. Faire parvenir le code à la pharmacie
 
-- **Sur place** : Administration › **Mon offre**, connecté en titulaire, coller le code dans « Code d'activation », **Activer**.
+- **Sur place** : Administration › **Mon offre**, avec le compte du titulaire (par le titulaire, ou par l'éditeur à ses côtés : la saisie
+  est réservée au titulaire), coller le code dans « Code d'activation », **Activer**.
   **Attendu** : « Code accepté : Offre activée (ou Période de transition), N postes » ; les écrans des packs se rouvrent (au plus 2 minutes
   sur les autres postes).
 - **Par le serveur central** (pharmacie synchronisée), sur le serveur central :
@@ -126,7 +129,9 @@ plus ancien que celui en place, code déjà enregistré. Rien ne change dans ces
 
 - **Vente d'une option, ajout de postes, renouvellement** : signer un **nouveau** code avec tout le contenu voulu (le code ne s'ajoute pas
   au précédent : le plus récent remplace l'offre).
-- **Fin d'abonnement** : rappel au titulaire à 30 jours, puis 15 jours de grâce, puis offre de base ; aucune donnée effacée ; un nouveau code
+- **Fin d'abonnement** : alerte au titulaire par SMS ou e-mail (mêmes destinataires que les alertes techniques) 90, 60, 30, 15, 7 et 1 jour(s) avant la fin,
+  puis au début des 15 jours de grâce, une seule fois chacune pour une date de fin donnée (seule l'étape la plus proche est envoyée ;
+  `RappelsOffre`, `src/Pharma.Application/Offre/Offre.cs`) ; l'écran Mon offre affiche son message dès 90 jours ; après la grâce, offre de base ; aucune donnée effacée ; un nouveau code
   rouvre tout.
 - **Changement de NIF** de la pharmacie : l'offre retombe à la base ; signer un nouveau code avec le nouveau NIF.
 

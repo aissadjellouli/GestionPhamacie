@@ -35,6 +35,10 @@ public class OffreTests
             return Task.FromResult(true);
         }
 
+        public HashSet<string> Rappels { get; } = [];
+        public Task<bool> RappelNoteAsync(string etape, DateOnly fin, CancellationToken ct = default) => Task.FromResult(Rappels.Contains($"{etape}:{fin:yyyy-MM-dd}"));
+        public Task<bool> NoterRappelAsync(string etape, DateOnly fin, CancellationToken ct = default) => Task.FromResult(Rappels.Add($"{etape}:{fin:yyyy-MM-dd}"));
+
         public Task<bool> SignalerRefusAsync(long id, string motif, CancellationToken ct = default)
         {
             if (Refus.Any(r => r.Item1 == id)) return Task.FromResult(false);
@@ -124,7 +128,7 @@ public class OffreTests
     }
 
     [Fact]
-    public async Task Echeance_rappel_a_30_jours_puis_15_jours_de_grace_puis_offre_de_base()
+    public async Task Echeance_message_des_90_jours_puis_15_jours_de_grace_puis_offre_de_base()
     {
         var fin = new DateOnly(2026, 12, 20);
         var (d, _, g, _) = Banc();
@@ -132,7 +136,8 @@ public class OffreTests
 
         async Task<EtatOffre> Le(DateOnly jour) => await new OffreCourante(d, new HorlogeFixe(jour), [Publique]).LireAsync();
         Assert.Contains("jusqu’au 20/12/2026 (24 jour(s))", (await Le(Aujourdhui)).Alerte);
-        Assert.Null((await Le(new DateOnly(2026, 11, 1))).Alerte);
+        Assert.NotNull((await Le(new DateOnly(2026, 9, 21))).Alerte);   // 90 jours
+        Assert.Null((await Le(new DateOnly(2026, 9, 20))).Alerte);      // 91 jours
         var grace = await Le(new DateOnly(2026, 12, 30));
         Assert.Equal((EtatsOffre.Grace, 4), (grace.Etat, grace.Postes));
         Assert.Contains("délai de grâce jusqu’au 04/01/2027", grace.Alerte);
@@ -220,6 +225,7 @@ public class OffreTests
         public Task SurveillanceAsync(string message, bool urgent, CancellationToken ct = default) { Envoyees.Add("surveillance"); return Task.CompletedTask; }
         public Task SynchronisationAsync(string objet, string detail, string sms, CancellationToken ct = default) { Envoyees.Add("synchronisation"); return Task.CompletedTask; }
         public Task SecondServeurAsync(string objet, string detail, string sms, CancellationToken ct = default) { Envoyees.Add("second_serveur"); return Task.CompletedTask; }
+        public Task OffreAsync(string objet, string detail, string sms, CancellationToken ct = default) { Envoyees.Add("offre:" + objet); return Task.CompletedTask; }
     }
 
     [Fact]
@@ -304,6 +310,51 @@ public class OffreTests
         }
         Assert.True(CleEditeur.PrincipaleBase64 != CleEditeur.SecoursBase64 || CleEditeur.PrincipaleBase64.Length == 0,
             "La clé de secours doit être une autre clé que la principale.");
+    }
+
+    [Fact]
+    public void Etape_du_rappel_de_fin_d_offre()
+    {
+        var fin = new DateOnly(2026, 12, 31);
+        string? Le(int joursAvant) => RappelsOffre.Etape(fin, fin.AddDays(-joursAvant));
+        Assert.Null(Le(91));
+        Assert.Equal(["90j", "90j", "60j", "60j", "30j", "30j", "15j", "15j", "7j", "7j", "1j", "1j"],
+            new[] { 90, 61, 60, 31, 30, 16, 15, 8, 7, 2, 1, 0 }.Select(Le));
+        Assert.Equal(RappelsOffre.EtapeGrace, Le(-1));
+        Assert.Equal(RappelsOffre.EtapeGrace, Le(-15));
+        Assert.Null(Le(-16));                                   // grâce passée : offre de base
+    }
+
+    [Fact]
+    public async Task Sept_rappels_une_seule_fois_chacun_seulement_le_plus_proche_et_jamais_perdus()
+    {
+        var fin = new DateOnly(2027, 6, 30);
+        var (d, _, g, _) = Banc();
+        await g.SaisirAsync(1, Code(fin: fin));
+        var espion = new AlertesEspion();
+        async Task<string?> Le(int joursAvant)
+        {
+            var h = new HorlogeFixe(fin.AddDays(-joursAvant));
+            return await new RappelsOffre(new OffreCourante(d, h, [Publique]), d, espion, h).ExecuterAsync();
+        }
+
+        Assert.Null(await Le(120));
+        var envoyes = new List<string?>();
+        foreach (var j in new[] { 90, 89, 60, 45, 30, 20, 15, 10, 7, 3, 1, 0, -1, -2 }) envoyes.Add(await Le(j));
+        Assert.Equal(new string?[] { "90j", null, "60j", null, "30j", null, "15j", null, "7j", null, "1j", null, "grace", null }, envoyes);
+        Assert.Equal(7, espion.Envoyees.Count);
+
+        // Offre saisie à 10 jours de sa fin : seul le rappel des 15 jours part
+        var fin2 = new DateOnly(2027, 9, 30);
+        var (d2, _, g2, _) = Banc();
+        await g2.SaisirAsync(1, Code(fin: fin2));
+        var h2 = new HorlogeFixe(fin2.AddDays(-10));
+        Assert.Equal("15j", await new RappelsOffre(new OffreCourante(d2, h2, [Publique]), d2, espion, h2).ExecuterAsync());
+
+        // Offre définitive : jamais de rappel
+        var (d3, _, g3, _) = Banc();
+        await g3.SaisirAsync(1, Code());
+        Assert.Null(await new RappelsOffre(new OffreCourante(d3, new HorlogeFixe(Aujourdhui), [Publique]), d3, espion, new HorlogeFixe(Aujourdhui)).ExecuterAsync());
     }
 
     [Fact]

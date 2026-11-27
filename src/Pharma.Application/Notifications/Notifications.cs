@@ -384,6 +384,11 @@ public interface IAlertesTitulaire
     /// de patient ; <paramref name="sms"/> court, sans accents. Mêmes destinataires que les alertes de synchronisation, SMS selon « SMS sauvegarde ».
     /// </summary>
     Task SecondServeurAsync(string objet, string detail, string sms, CancellationToken ct = default) => Task.CompletedTask;
+    /// <summary>
+    /// Offre de l'éditeur bientôt échue ou en délai de grâce (rappels à 30 jours, 7 jours, début de la grâce ; décision Q5 du 2026-11-26) :
+    /// texte sans donnée de patient ; <paramref name="sms"/> court, sans accents ; mêmes destinataires que les alertes techniques.
+    /// </summary>
+    Task OffreAsync(string objet, string detail, string sms, CancellationToken ct = default) => Task.CompletedTask;
 }
 
 /// <summary>
@@ -481,6 +486,15 @@ public sealed class AlertesTitulaire(INotificationsDepot depot, INotificationSer
 
     // Pas de nouveau sujet de notification (il exigerait de modifier les contraintes de la base) : sujet « synchronisation » existant
     public Task SecondServeurAsync(string objet, string detail, string sms, CancellationToken ct = default) =>
+        ProtegerAsync(TypeNotification.Synchronisation, objet, async () =>
+        {
+            var r = await depot.ReglagesAsync(ct);
+            return await notifications.MettreEnFileAsync(new ContenuNotification(TypeNotification.Synchronisation, objet, detail, null,
+                r.SmsSauvegarde ? sms : null), ct);
+        });
+
+    // Même sujet existant que les alertes techniques (aucun nouveau sujet : il exigerait de modifier les contraintes de la base)
+    public Task OffreAsync(string objet, string detail, string sms, CancellationToken ct = default) =>
         ProtegerAsync(TypeNotification.Synchronisation, objet, async () =>
         {
             var r = await depot.ReglagesAsync(ct);

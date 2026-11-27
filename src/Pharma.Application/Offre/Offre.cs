@@ -20,6 +20,14 @@ public interface IActivationsOffreDepot
     Task<bool> AjouterAsync(string code, DateTime emiseLeUtc, string source, long? saisiePar, Guid? ordreCentral, CancellationToken ct = default);
     /// <summary>Note une seule fois qu'une activation rangée ne passe plus le contrôle (refusee_le, motif) ; vrai si c'est la première fois.</summary>
     Task<bool> SignalerRefusAsync(long id, string motif, CancellationToken ct = default);
+    /// <summary>Rappel de fin d'offre (étape « 90j » … « 1j » ou « grace ») déjà noté au journal des actions pour cette date de fin.</summary>
+    Task<bool> RappelNoteAsync(string etape, DateOnly fin, CancellationToken ct = default);
+    /// <summary>
+    /// Note le rappel au journal des actions (offre_rappel), APRÈS sa mise en file : vrai s'il ne l'était pas encore. Noter d'abord
+    /// perdrait le rappel si l'API s'arrêtait entre les deux (revue de code du 2026-11-27) ; au pire, un arrêt entre la mise en file et la
+    /// note donne un rappel en double, jamais un rappel perdu.
+    /// </summary>
+    Task<bool> NoterRappelAsync(string etape, DateOnly fin, CancellationToken ct = default);
 }
 
 /// <summary>Limites de l'offre en vigueur, lues par les cas d'usage concernés (premier cas : le maximum de postes autorisés).</summary>
@@ -91,7 +99,11 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
 {
     /// <summary>Offre de base : 2 postes inclus (proposition du 2026-11-26, docs/offre-et-options.md).</summary>
     public const int PostesBase = 2;
-    public const int GraceJours = 15, RappelJours = 30, RappelProcheJours = 7;
+    public const int GraceJours = 15;
+    /// <summary>Rappels avant la fin (« go rappels » du 2026-11-27) : 3 mois, 2 mois, 1 mois, 15 jours, 7 jours, 1 jour ; le message de Mon offre
+    /// s'affiche dès le premier.</summary>
+    public static readonly IReadOnlyList<int> RappelsJours = [90, 60, 30, 15, 7, 1];
+    public static int RappelJours => RappelsJours[0];
 
     private readonly IReadOnlyList<byte[]> cles = clesPubliques ?? CleEditeur.Publiques;
 
@@ -162,6 +174,56 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
         }
         return new EtatOffre(EtatsOffre.Base, [], PostesBase, 0, null, false, null,
             refus ?? "Aucune activation : offre de base (2 postes). Saisissez le code d’activation fourni par l’éditeur.");
+    }
+}
+
+/// <summary>
+/// Rappels de fin d'offre au titulaire (décision Q5 du 2026-11-26, puis « go rappels » du 2026-11-27) : SMS ou e-mail à 90, 60, 30, 15, 7 et
+/// 1 jour(s) avant la fin, puis au début du délai de grâce, une seule fois chacun pour une date de fin donnée ; seule l'étape la plus proche
+/// est envoyée (une offre saisie à 10 jours de sa fin n'envoie que le rappel des 15 jours). L'écran Mon offre garde son message dès 90 jours.
+/// Appelé une fois par jour par la tâche des notifications.
+/// </summary>
+public sealed class RappelsOffre(OffreCourante offre, IActivationsOffreDepot depot, Notifications.IAlertesTitulaire alertes, IHorloge horloge)
+{
+    public const string EtapeGrace = "grace";
+
+    /// <summary>Nom de l'étape d'un rappel avant la fin (« 90j », « 60j » … « 1j »).</summary>
+    public static string EtapeAvant(int jours) => $"{jours}j";
+
+    /// <summary>
+    /// Étape due pour cette date de fin ce jour-là, ou null : le plus petit seuil (90, 60, 30, 15, 7, 1 jours) qui couvre les jours restants
+    /// (le dernier jour compte dans « 1j ») ; « grace » pendant le délai de grâce ; null au-delà de 90 jours ou après la grâce.
+    /// </summary>
+    public static string? Etape(DateOnly fin, DateOnly aujourdhui)
+    {
+        var restants = fin.DayNumber - aujourdhui.DayNumber;
+        if (restants < 0) return OffreCourante.JoursAvantFermeture(fin, aujourdhui) >= 0 ? EtapeGrace : null;
+        string? etape = null;
+        foreach (var seuil in OffreCourante.RappelsJours)
+            if (restants <= seuil) etape = EtapeAvant(seuil);
+        return etape;
+    }
+
+    /// <returns>Étape envoyée, ou null.</returns>
+    public async Task<string?> ExecuterAsync(CancellationToken ct = default)
+    {
+        var e = await offre.LireAsync(ct);
+        if (e.Fin is not { } fin || Etape(fin, horloge.Aujourdhui) is not { } etape) return null;
+        if (await depot.RappelNoteAsync(etape, fin, ct)) return null;
+        var quoi = e.Transition ? "La période de transition" : "Votre offre";
+        var (objet, detail, sms) = etape switch
+        {
+            EtapeGrace => ("Offre échue : délai de grâce",
+                $"{quoi} a pris fin le {fin:dd/MM/yyyy}. Délai de grâce jusqu’au {fin.AddDays(OffreCourante.GraceJours):dd/MM/yyyy}, puis retour à l’offre de base (2 postes, options fermées, aucune donnée effacée). Demandez un nouveau code à l’éditeur (Administration › Mon offre).",
+                $"Pharmacie : offre echue le {fin:dd/MM}, grace jusqu au {fin.AddDays(OffreCourante.GraceJours):dd/MM}. Demandez un code a l editeur."),
+            _ => ("Offre bientôt échue",
+                $"{quoi} prend fin le {fin:dd/MM/yyyy} ({fin.DayNumber - horloge.Aujourdhui.DayNumber} jour(s)). Demandez un nouveau code à l’éditeur (Administration › Mon offre) ; après la fin, {OffreCourante.GraceJours} jours de grâce puis retour à l’offre de base.",
+                $"Pharmacie : offre valable jusqu au {fin:dd/MM}. Demandez un code a l editeur.")
+        };
+        // Mise en file d'abord, note ensuite : un arrêt entre les deux donne au pire un rappel en double, jamais un rappel perdu
+        await alertes.OffreAsync(objet, detail, sms, ct);
+        await depot.NoterRappelAsync(etape, fin, ct);
+        return etape;
     }
 }
 

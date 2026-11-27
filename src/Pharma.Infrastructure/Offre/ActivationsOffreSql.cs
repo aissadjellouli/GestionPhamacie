@@ -45,6 +45,44 @@ public sealed class ActivationsOffreSql(NpgsqlDataSource db) : IActivationsOffre
         return await cmd.ExecuteNonQueryAsync(ct) == 1;
     }
 
+    private static string Jour(DateOnly d) => d.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+
+    public async Task<bool> RappelNoteAsync(string etape, DateOnly fin, CancellationToken ct = default)
+    {
+        await using var cmd = db.CreateCommand(
+            "SELECT EXISTS (SELECT 1 FROM journal_audit WHERE action = 'offre_rappel' AND details ->> 'etape' = $1 AND details ->> 'fin' = $2)");
+        cmd.Parameters.AddWithValue(etape);
+        cmd.Parameters.AddWithValue(Jour(fin));
+        return await cmd.ExecuteScalarAsync(ct) is true;
+    }
+
+    public async Task<bool> NoterRappelAsync(string etape, DateOnly fin, CancellationToken ct = default)
+    {
+        // Verrou de transaction : deux passages simultanés ne notent (et n'envoient) jamais deux fois la même étape
+        await using var cnx = await db.OpenConnectionAsync(ct);
+        await using var tx = await cnx.BeginTransactionAsync(ct);
+        await using (var verrou = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtext('offre_rappel'))", cnx, tx))
+            await verrou.ExecuteNonQueryAsync(ct);
+        await using (var deja = new NpgsqlCommand(
+            "SELECT EXISTS (SELECT 1 FROM journal_audit WHERE action = 'offre_rappel' AND details ->> 'etape' = $1 AND details ->> 'fin' = $2)", cnx, tx))
+        {
+            deja.Parameters.AddWithValue(etape);
+            deja.Parameters.AddWithValue(Jour(fin));
+            if (await deja.ExecuteScalarAsync(ct) is true) return false;
+        }
+        await using (var note = new NpgsqlCommand("""
+            INSERT INTO journal_audit (utilisateur_id, action, table_cible, details)
+            VALUES (NULL, 'offre_rappel', 'activation_offre', jsonb_build_object('etape', $1::text, 'fin', $2::text))
+            """, cnx, tx))
+        {
+            note.Parameters.AddWithValue(etape);
+            note.Parameters.AddWithValue(Jour(fin));
+            await note.ExecuteNonQueryAsync(ct);
+        }
+        await tx.CommitAsync(ct);
+        return true;
+    }
+
     /// <summary>Première constatation seulement : refusee_le et motif posés, puis une ligne au journal des actions (sans utilisateur).</summary>
     public async Task<bool> SignalerRefusAsync(long id, string motif, CancellationToken ct = default)
     {

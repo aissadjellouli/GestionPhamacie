@@ -2,7 +2,7 @@
 
 Ce manuel dit quoi faire, dans quel ordre, sur quel PC et avec quel compte. Il sert au technicien ou au titulaire. Suivre chaque parcours **de haut en bas**, sans sauter d'étape. Cocher chaque case au fur et à mesure.
 
-Mise à jour : 2026-11-16. Les points marqués **[À CONFIRMER]** ne sont pas tranchés ou pas vérifiables dans le dépôt : ne pas les deviner, demander la réponse au titulaire ou au développeur.
+Mise à jour : 2026-11-26. Les points marqués **[À CONFIRMER]** ne sont pas tranchés ou pas vérifiables dans le dépôt : ne pas les deviner, demander la réponse au titulaire ou au développeur.
 
 ## Sommaire
 
@@ -53,14 +53,17 @@ Concerne le **PC serveur** et le **2e serveur** (même configuration : en bascul
 concernés par le chiffrement ; leur minimum (application du poste et Chifa_Officine) n'est pas mesuré **[À VÉRIFIER]**. Un poste sous
 Windows 10 n'a plus de mises à jour de sécurité depuis octobre 2025 : sujet à traiter à part.
 
-**Version minimale de Windows** (exigée par le chiffrement résistant au quantique, [chiffrement-data.md](chiffrement-data.md) § 3 bis) :
+**Version minimale de Windows pour le chiffrement résistant au quantique** ([chiffrement-data.md](chiffrement-data.md) § 3 bis). Ce
+chiffrement relève du **lot 9, pas encore codé** (chiffrement-data.md, « Statut » et § 11 : « rien n'est lancé ») : ce tableau est le
+minimum **exigé le jour où le lot 9 sera mis en service**. Pour faire tourner le logiciel **aujourd'hui**, le minimum est celui de
+l'étape 1.2 du parcours A. Choisir dès maintenant un PC serveur qui passe en Windows 11 24H2 évite de le changer au lot 9.
 
 | Fonction | Windows 11 Pro | Windows Server | Source |
 | --- | --- | --- | --- |
 | ML-KEM et ML-DSA (.NET 10, chiffrement et signature) | **24H2** ou 25H2, mise à jour de novembre 2025 (KB5068861, build 26100.7171) ou plus | **2025**, même mise à jour | [Microsoft, novembre 2025](https://techcommunity.microsoft.com/t5/microsoft-security-community/post-quantum-cryptography-apis-now-generally-available-on/ba-p/4469093) |
 | Échange de clé hybride en HTTPS (Schannel, TLS 1.3, `X25519_MLKEM768`) | 24H2 et 25H2 : KB5089573 (builds 26100.8524 et 26200.8524) ; 26H1 : KB5095091 (build 28000.2340) | **2025** : KB5099536 (build 26100.33158, 14 juillet 2026) | [Microsoft, FAQ TLS 1.3 et post-quantique](https://techcommunity.microsoft.com/t5/post-quantum-crypto-tech-blog/windows-tls-1-3-and-post-quantum-crypto-faq/ba-p/4556389) |
 
-- Windows 10, Windows 11 23H2 et avant, Windows Server 2022 et avant : **non cités par Microsoft**, donc considérés comme non pris en charge.
+- Windows 10, Windows 11 23H2 et avant, Windows Server 2022 et avant : **non cités par Microsoft**, donc considérés comme non pris en charge **pour le chiffrement du lot 9** (pas pour le fonctionnement actuel, voir l'étape 1.2).
 - L'échange hybride est **désactivé par défaut** : l'activer sur chaque serveur, en PowerShell administrateur
   `Enable-TlsEccCurve -Name "X25519_MLKEM768" -Position 0`, **ou** par stratégie de groupe (pas les deux : la stratégie l'emporte).
   Il ne sert que si l'autre côté le gère aussi ; sinon la connexion se fait en échange classique, sans erreur. Central sous Linux :
@@ -84,7 +87,7 @@ chiffrement résistant au quantique.
 | Sauvegarde | Deux disques externes en rotation, dont un toujours hors de l'officine (**obligatoire** sans 2e serveur) | [ged-protection-a-decider.md](ged-protection-a-decider.md) |
 | Réseau | Ethernet gigabit, pas de Wi-Fi | Liaison stable avec les postes |
 | Onduleur | **Obligatoire** | Une coupure pendant une écriture peut abîmer la base |
-| Windows | Windows 11 Pro 24H2 ou plus, à jour | Tableau ci-dessus |
+| Windows | Windows 11 Pro 24H2 ou plus, à jour | Tableau ci-dessus : exigé pour le lot 9 (chiffrement, pas encore codé) ; conseillé dès maintenant |
 
 **Coût de la licence Windows par serveur** (estimation du 2026-11-17 ; prix en dollars relevés chez des revendeurs, taux **supposé**
 1 $ ≈ 132 DA, non vérifié ; au taux du marché parallèle, environ ×1,8 ; aucun prix officiel en dinars trouvé) :
@@ -148,7 +151,7 @@ chiffrement résistant au quantique.
 | `Jwt__Cle` | oui | 64 caractères minimum, aléatoire | Signature des connexions. Refus si absente ou trop courte |
 | `Chifa__DossierExport` | oui | `<dossier d'export de CHIFA-Officine sur ce PC>` | Par défaut `D:\CHIFA_OFFICINE\CNAS_SIGNED` : **à remplacer** |
 | `Ged__Dossier` | non | `C:\ProgramData\PharmaOfficine\GED` (défaut) | Dossier de tous les documents |
-| `Ged__RetentionSauvegardesJours` | non | `7` (défaut) | Conservation des copies de base dans `GED\Sauvegardes` |
+| `Ged__RetentionSauvegardesJours` | non | `7` (défaut) | Conservation (en jours) des copies de base dans `GED\Sauvegardes`, si le titulaire n'a pas fixé la sienne dans Administration, Sauvegardes. Distinct du nombre de sauvegardes gardées sur le disque externe (14 par défaut) |
 | `Ordonnances__Dossier` | non | défaut : `GED\Ordonnances` | Scans d'ordonnances |
 | `Journaux__Dossier`, `Journaux__Prefixe`, `Journaux__TailleMaxMo` (50), `Journaux__RetentionMois` (3), `Journaux__Niveau` (`Information` ou `Warning`) | non | | Journal du serveur. Valeurs écrites dans la section `Journaux` de `appsettings.json` (dossier, taille maximale d'un fichier, durée de conservation, niveau) ; les variables d'environnement les remplacent. Le dossier accepte `%VARIABLE%` |
 | `LimiteConnexions__ParMinute` | non | `20` (défaut) | Essais de connexion permis par minute et par adresse |
@@ -213,8 +216,9 @@ Calendrier type :
   | Machine | Minimum technique | Recommandé |
   | --- | --- | --- |
   | Poste de caisse | Windows 10 version 2004 (build 19041) | Windows 11 (22H2 ou plus), ou Windows 10 IoT Enterprise LTSC |
-  | PC serveur | Windows 10 ou Windows Server 2016 | Windows 11 Pro, ou Windows Server 2019, 2022 ou 2025 |
+  | PC serveur | Windows 10 ou Windows Server 2016 (fonctionnement actuel, sans le lot 9) | Windows 11 Pro 24H2 ou plus, ou Windows Server 2025 : **exigé** le jour où le chiffrement du lot 9 sera mis en service (voir « Matériel et Windows du PC serveur ») |
 
+  Le minimum « Windows 10 ou Windows Server 2016 » vaut pour le logiciel tel qu'il est aujourd'hui. Le chiffrement résistant au quantique (lot 9, pas encore codé) exigera Windows 11 24H2 ou Windows Server 2025 sur le PC serveur et le 2e serveur : un PC sous Windows 10 ou Server 2016 à 2022 devra alors être mis à niveau ou remplacé.
   Windows 10 22H2 n'est plus maintenu depuis le 14 octobre 2025, sauf éditions LTSC. Pour des données de santé, préférer Windows 11. Le logiciel n'a été essayé que sous Windows 11 : **faire un essai sur le système réel avant le jour J**.
   Les téléphones n'ont besoin que d'un navigateur récent.
 
@@ -290,14 +294,14 @@ Calendrier type :
 
 ### 3. Base de données : structure, référentiel, droits
 
-Un seul script enchaîne tout dans le bon ordre, avec des contrôles : `scripts\mep\creer_base_officine.ps1`. Référence complète (options, étapes internes, retour arrière) : [scripts-base-de-donnees.md](scripts-base-de-donnees.md). Lancer la commande **depuis le dossier du dépôt** (ou de la livraison).
+Un seul script enchaîne tout dans le bon ordre, avec des contrôles : `scripts\mep\creer_base_officine.ps1`. Référence complète (options, étapes internes, retour arrière) : [scripts-base-de-donnees.md](scripts-base-de-donnees.md). **Prérequis sur le PC serveur** : le script et les fichiers qu'il lit doivent y être. Faire donc **d'abord les étapes 4.1 (publication), 4.2 (copie de l'API, qui apporte `database\init` et les scripts numérotés) et 4.3 (copie du dossier `scripts`)**, puis revenir ici ; la suite de l'étape 4 (4.4 et après) se fait ensuite, dans l'ordre. Le script lit `<DossierDepot>\database\init` et `<DossierDepot>\database\migration`, ou à défaut les scripts numérotés à plat dans `<DossierDepot>\database` (cas du dossier publié de l'API) ; sans `-DossierDepot`, il prend le dossier parent de `scripts` (`creer_base_officine.ps1`, paramètre `DossierDepot`). Sur le PC serveur, lui donner donc le dossier de l'API.
 
-- [ ] **3.1** Créer la base, la structure, le référentiel et séparer les rôles. **Où** : PC serveur. **Compte** : superutilisateur `postgres` pour créer le compte et la base (mot de passe saisi à l'écran), puis `pharma_app` pour la structure (mot de passe saisi à l'écran, ou à définir si le compte n'existe pas encore). Aucun mot de passe n'est écrit dans une commande.
+- [ ] **3.1** Créer la base, la structure, le référentiel et séparer les rôles. **Où** : PC serveur, PowerShell ouvert dans le dossier parent du dossier `scripts` copié à l'étape 4.3. **Compte** : superutilisateur `postgres` pour créer le compte et la base (mot de passe saisi à l'écran), puis `pharma_app` pour la structure (mot de passe saisi à l'écran, ou à définir si le compte n'existe pas encore). Aucun mot de passe n'est écrit dans une commande.
   ```powershell
-  .\scripts\mep\creer_base_officine.ps1 -Base <base>
+  .\scripts\mep\creer_base_officine.ps1 -Base <base> -DossierDepot "C:\Program Files\PharmaOfficine\Api"
   ```
-  - `<base>` : exemple `pharmacie`. Pour voir le plan sans rien créer : ajouter `-WhatIf`.
-  - Le script : vérifie que l'init (`schema.sql`, `seed_referentiel.sql`) est à jour (« 001 à NNN » = dernier script) ; vérifie que PostgreSQL répond et que la base **n'existe pas** ; crée le compte `pharma_app` s'il manque (avec le droit `CREATEDB`) ; crée la base ; passe `schema.sql` (tous les scripts `001` à `NNN`, sauf le fuseau horaire), `083_fuseau_horaire.sql`, puis `seed_referentiel.sql` (identité par défaut, rôles, droits, organismes CNAS, CASNOS et MDN, substances surveillées, coffre, catégories, motifs, réglages de synchronisation désactivée, compte de départ `titulaire`) ; puis la séparation des rôles `111b` avec `postgres` (journaux inaltérables : `pharma_app` ne peut plus modifier ni supprimer les journaux, ni désactiver leurs déclencheurs) ; enfin ses vérifications (`objets_encore_a_pharma_app = 0`, comptages de référence, lecture et écriture par `pharma_app`).
+  - `<base>` : exemple `pharmacie`. Pour voir le plan sans rien créer : ajouter `-WhatIf`. Depuis le dépôt (PC des sources, essais), `-DossierDepot` est inutile.
+  - Le script : vérifie que l'init (`schema.sql`, `seed_referentiel.sql`) est à jour (« 001 à NNN » = dernier script) ; vérifie que PostgreSQL répond et que la base **n'existe pas** ; crée le compte `pharma_app` s'il manque (avec le droit `CREATEDB`) ; crée la base ; passe `schema.sql` (tous les scripts `001` à `NNN`, sauf le fuseau horaire), `083_fuseau_horaire.sql`, puis `seed_referentiel.sql` (identité par défaut, rôles, droits, organismes CNAS, CASNOS et MDN, substances surveillées, coffre, catégories, motifs, réglages de synchronisation désactivée, compte de départ `titulaire`) ; puis la séparation des rôles `111b` avec `postgres` (journaux inaltérables : `pharma_app` ne peut plus modifier ni supprimer les journaux, ni désactiver leurs déclencheurs) ; puis, toujours avec `postgres`, `163b` (droit de lire l'identifiant de la base, utile à la bascule du 2e serveur) et `166b` (droit de promouvoir la base : promotion automatique du 2e serveur), lancés même avec `-SansSeparationRoles` ; enfin ses vérifications (`objets_encore_a_pharma_app = 0`, comptages de référence, lecture et écriture par `pharma_app`).
   - **Attendu** : se termine par « Terminé », code de sortie 0 (`$LASTEXITCODE`), message « Référentiel chargé. Connexion : titulaire / Provisoire-2026 (à changer à la première connexion). »
   - **Interdit** : ne jamais lancer les fichiers `database\data\9xx_*.sql` (données fictives, réservées aux tests). Le script `101b` n'est jamais lancé par le script.
   - Option `-SansSeparationRoles` : **essais seulement**. Sans `111b`, `pharma_app` peut désactiver les déclencheurs qui protègent les journaux : la vérification nocturne détecte alors la falsification, mais ne l'empêche pas. Le script le signale en avertissement.
@@ -541,7 +545,7 @@ Faire cette étape **après** les postes et les téléphones (sinon ils n'ont pl
 
 Dans l'ordre. Chaque réglage est fait dans l'application, par le titulaire ou sous sa supervision.
 
-- [ ] **9.1** Administration, Langue et pharmacie : nom de la pharmacie, titulaire, adresse, téléphone, **RC, NIF, NIS, AI**, n° d'officine Chifa. Ces informations sont imprimées sur les tickets, factures et rapports.
+- [ ] **9.1** Administration › Langue et pharmacie (onglet « Pharmacie et langue ») : nom de la pharmacie, titulaire, adresse, téléphone, **RC, NIF, NIS, AI**, n° d'officine Chifa. Ces informations sont imprimées sur les tickets, factures et rapports.
 - [ ] **9.2** Même page, Organismes payeurs : ajouter les organismes conventionnés (militaires…), avec adresse et NIF.
 - [ ] **9.3** Administration, Utilisateurs et droits : créer **un compte par employé**, avec un identifiant et un mot de passe personnels, et le bon rôle (assistant, vendeur, stagiaire).
 - [ ] **9.4** Vérifier les droits de chaque rôle. Réservés par défaut au titulaire : trésorerie, factures, inventaire complet, organismes. Le titulaire les accorde ensuite à qui il veut.
@@ -575,7 +579,7 @@ Dans l'ordre. Chaque réglage est fait dans l'application, par le titulaire ou s
 ### 11. Sauvegardes (avant toute vraie donnée)
 
 - [ ] **11.1** **Un seul** mécanisme : **(a), la sauvegarde de l'application** (décision du titulaire du 2026-11-26 : historique, alertes au titulaire, rotation des disques, test de restauration et écran de suivi). L'option (b) reste un **dépannage**, seulement si l'API ne peut plus démarrer, et jamais en même temps que (a).
-  - (a) **Sauvegarde de l'application** : Administration, Sauvegardes. Elle copie la base sur le disque externe et dans `GED\Sauvegardes` (gardée 7 jours par défaut), et les documents de la GED sur le disque externe, dans son sous-dossier `GED` (nouveaux et modifiés seulement). Un disque absent n'empêche pas la copie dans la GED.
+  - (a) **Sauvegarde de l'application** : Administration, Sauvegardes. Elle copie la base sur le disque externe (les **14 dernières** gardées par défaut, réglage « conservation ») et dans `GED\Sauvegardes` (gardée **7 jours** par défaut, réglage distinct), et les documents de la GED sur le disque externe, dans son sous-dossier `GED` (nouveaux et modifiés seulement). Un disque absent n'empêche pas la copie dans la GED.
   - (b) **Script planifié** `scripts\sauvegarde_pharmacie.ps1`. Son en-tête indique : « Choisir ce script OU la sauvegarde automatique de l'application : pas les deux ».
   - Ne jamais garder les deux.
 - [ ] **11.2** Option (a) : Administration, Sauvegardes : régler le dossier (disque externe) et la rétention, puis lancer une **première sauvegarde**. **Où** : un poste ou le PC serveur. **Compte** : titulaire.
@@ -627,9 +631,9 @@ L'ancienne base n'est **jamais** modifiée : on travaille sur une copie. Préreq
 
 ### 13. Options
 
+- [ ] **13.0** **Offre (code d'activation)** : relever le code de l'officine et le NIF (Administration › Mon offre ; NIF saisi d'abord dans Administration › Langue et pharmacie), faire signer par l'éditeur un **code de transition** (durée fixée ce jour-là) ou le code de l'offre vendue, puis le saisir dans Mon offre **avec le compte du titulaire** (par le titulaire, ou par l'éditeur à ses côtés) : la saisie est réservée au titulaire. **Attendu** : « Offre activée » ou « Période de transition », nombre de postes de l'offre. Sans code : offre de base, 2 postes. Voir [offre-et-options.md](offre-et-options.md), « Mise en service ».
 - [ ] **13.1** Accès du titulaire hors de la pharmacie, par VPN : voir [acces-distant.md](acces-distant.md). Ne **jamais** ouvrir l'API sur internet. Si une adresse VPN est utilisée, relancer le script de l'étape 4.6 avec `-AdressesSupplementaires <adresse VPN>`.
 - [ ] **13.2** 2e serveur : parcours C (facultatif, fortement conseillé). À faire **après** la présente installation, sur un PC de l'officine.
-- [ ] **13.0** **Offre (code d'activation)** : relever le code de l'officine et le NIF (Administration › Mon offre ; NIF saisi d'abord dans Administration › Pharmacie), faire signer par l'éditeur un **code de transition** (durée fixée ce jour-là) ou le code de l'offre vendue, le saisir dans Mon offre. **Attendu** : « Offre activée » ou « Période de transition », nombre de postes de l'offre. Sans code : offre de base, 2 postes. Voir [offre-et-options.md](offre-et-options.md), « Mise en service ».
 - [ ] **13.3** Synchronisation avec le serveur central : parcours E. La synchronisation reste **désactivée** tant que le serveur central n'est pas prêt et que le titulaire ne l'a pas activée. Ne pas la toucher avant le jour J.
 
 ### 14. Vérifications avant ouverture (J-1)
@@ -652,7 +656,7 @@ L'ancienne base n'est **jamais** modifiée : on travaille sur une copie. Préreq
 
 Pour une officine **déjà en service**. Ordre : étapes 1 à 14. Ne jamais relancer `schema.sql` ni `clean.sql` sur une base en service.
 
-Les scripts `database\migration\NNN_*.sql` sont réexécutables sans dégât. Le script `scripts\mep\mettre_a_jour_base_officine.ps1` (étape 4) les lance un par un, **hors transaction**, avec `ON_ERROR_STOP`, après une sauvegarde obligatoire. Les scripts « b » (`101b`, `111b`) se lancent à part (étapes 6 et 8).
+Les scripts `database\migration\NNN_*.sql` sont réexécutables sans dégât. Le script `scripts\mep\mettre_a_jour_base_officine.ps1` (étape 4) les lance un par un, **hors transaction**, avec `ON_ERROR_STOP`, après une sauvegarde obligatoire. Les scripts « b » ne sont pas dans la suite numérotée : `111b` est lancé **par ce même script** avec l'option `-SeparerRoles` (étape 6), juste après le script `111` ; `163b` et `166b` sont lancés par ce script en fin de rejeu, avec `postgres` ; seul `101b` se lance **à part**, à la main (étape 8), et jamais par le script.
 
 Les publications étant autonomes (.NET inclus), Windows Update ne corrige **pas** .NET. À chaque correctif de sécurité .NET important, republier l'API et les postes avec le SDK à jour, même sans nouvelle fonction.
 
@@ -662,8 +666,8 @@ Les publications étant autonomes (.NET inclus), Windows Update ne corrige **pas
     dotnet publish src\Pharma.Api -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Api"
     dotnet publish src\Pharma.Desktop -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Poste"
     ```
-  - Copier `<dossier de livraison>` (avec son dossier `Api\database\migration`) et le dossier `scripts` du dépôt sur la clé USB. Les scripts d'administrateur (`111b`, `163b`, `166b`) sont dans `Api\database\init\` du dossier publié : rien à copier à part.
-  - **Attendu** : `Api\Pharma.Api.exe`, `Api\database\migration\148_sauvegarde_alerte_sans_disque_externe.sql` et `Poste\Pharma.Desktop.exe` sont présents sur la clé.
+  - Copier `<dossier de livraison>` (les scripts numérotés y sont **à plat** dans `Api\database\`, l'init dans `Api\database\init\` : `Pharma.Api.csproj`) et le dossier `scripts` du dépôt sur la clé USB. Les scripts d'administrateur (`111b`, `163b`, `166b`) sont dans `Api\database\init\` du dossier publié : rien à copier à part.
+  - **Attendu** : `Api\Pharma.Api.exe`, le **dernier script numéroté** dans `Api\database\` (`172_activation_offre.sql` à ce jour : le numéro le plus haut de `database\migration` du dépôt), `Api\database\init\111b_roles_integrite.sql` et `Poste\Pharma.Desktop.exe` sont présents sur la clé.
 - [ ] **2.** Si l'officine est synchronisée avec le serveur central : **mettre le serveur central à jour d'abord** (parcours E, étape 10), puis l'officine.
 - [ ] **3.** Arrêter le service. **Où** : PC serveur. **Compte** : administrateur Windows. Le script de l'étape 4 refuse de travailler si le service tourne.
   ```powershell
@@ -673,9 +677,9 @@ Les publications étant autonomes (.NET inclus), Windows Update ne corrige **pas
   - **Attendu** : `Status : Stopped`.
 - [ ] **4.** Lancer le script de mise à jour de la base : **sauvegarde, détection des rôles, contrôle Chifa, rejeu des scripts**. **Où** : PC serveur. **Compte** : `pharma_app` (mot de passe saisi à l'écran) ; si la séparation des rôles est déjà faite ou demandée : aussi le superutilisateur `postgres` (mot de passe saisi à l'écran). Aucun mot de passe n'est écrit dans une commande. Référence complète : [scripts-base-de-donnees.md](scripts-base-de-donnees.md).
   ```powershell
-  .\scripts\mep\mettre_a_jour_base_officine.ps1 -Base <base> -DossierSauvegarde "E:\Sauvegardes\Pharmacie" -DossierMigration "E:\<dossier de livraison>\Api\database\migration" -Script111b "E:\111b_roles_integrite.sql"
+  .\scripts\mep\mettre_a_jour_base_officine.ps1 -Base <base> -DossierSauvegarde "E:\Sauvegardes\Pharmacie" -DossierMigration "E:\<dossier de livraison>\Api\database"
   ```
-  - `-DossierMigration` et `-Script111b` : le dossier de livraison et le fichier copiés à l'étape 1 (depuis le dépôt, ces deux options sont inutiles). Ajouter `-SeparerRoles` si les rôles ne sont pas encore séparés et qu'on les sépare maintenant (étape 6). Pour voir le plan sans rien modifier : ajouter `-WhatIf`.
+  - `-DossierMigration` : le dossier `Api\database` de la livraison copiée à l'étape 1 (scripts numérotés à plat). Le script y cherche `111b`, `163b` et `166b` dans le sous-dossier `init` (`mettre_a_jour_base_officine.ps1`, valeurs par défaut de `-Script111b`, `-Script163b`, `-Script166b`) : `-Script111b` est donc inutile. Depuis le dépôt, ces options sont inutiles. Ajouter `-SeparerRoles` si les rôles ne sont pas encore séparés et qu'on les sépare maintenant (étape 6). Pour voir le plan sans rien modifier : ajouter `-WhatIf`.
   - Le script : vérifie que le service est arrêté ; lit l'état des rôles (`111b` fait ou non : rôle `pharma_proprietaire` présent, propriétaire de la base et des tables) ; fait la **sauvegarde** `pg_dump -Fc` (`<base>_avant_maj_<date>_<heure>.dump`) et la relit avec `pg_restore --list` (sans sauvegarde valide, rien n'est modifié) ; contrôle les n° de facture Chifa avant le script `101` (étape 5) ; rejoue les scripts numérotés dans l'ordre, un par un, hors transaction (le `033` ne peut pas être dans une transaction), toujours depuis le script `001` (toute la suite est rejouable sur une base à jour ; l'option `-ScriptDepart` est réservée aux incidents) ; passe par `pharma_app` avant `111b`, par `postgres` avec `SET ROLE pharma_proprietaire` après (méthode **[À VÉRIFIER]**, voir étape 7) ; affiche le résumé (scripts joués, durée, état des rôles). Le script `101b` n'est **jamais** lancé (étape 8).
   - Copier aussi `super-admin.dat` et `cle-integrite.dat` et la sauvegarde `.dump` hors du PC serveur (disque externe, déjà fait à l'étape 4.9 du parcours A : vérifier qu'elle est à jour).
   - **Attendu** : « Terminé », code de sortie 0 (`$LASTEXITCODE`), la sauvegarde existe, « N scripts rejoués sans erreur ».
@@ -693,7 +697,7 @@ Les publications étant autonomes (.NET inclus), Windows Update ne corrige **pas
   - **[À VÉRIFIER : cette méthode n'a pas encore été validée par un essai avec le compte `postgres`. À essayer sur une COPIE de la base (restaurée sous un autre nom) avant la production.]**
   - **Si échec** : « SET ROLE pharma_proprietaire n'a pas donné le rôle attendu » : ne pas continuer, voir le technicien.
 - [ ] **8.** Script `101b` (suppression de `num_facture_chifa`) : **jamais lancé par le script** de mise à jour. **Décision du titulaire du 2026-11-26 : le passer** sur toute officine déjà installée avant cette date, une fois, en suivant la procédure ci-dessous (une base créée depuis `database\init` n'a jamais la colonne : rien à faire). Depuis le 2026-11-26, rejouer la suite ne recrée plus la colonne (scripts 007 et 101 protégés). **Où** : PC serveur. **Compte** : voir ci-dessous.
-  - `num_facture_chifa` est **conservée** (obsolète) par `101`. Sa suppression est le script **`101b`** (`database/migration/101b_suppression_num_facture_chifa.sql`), passé le 2026-11-26 sur `pharmacie_dev` et `pharmacie_test` (aucune valeur perdue) : opération **destructive et irréversible** (sauf restauration), **à ne lancer qu'après la validation explicite du titulaire**. Il n'est pas dans le dossier des scripts publiés (comme `111b`) : le prendre dans le dépôt. Sans la décision du titulaire, **ne rien lancer** : la colonne reste, sans effet sur le logiciel.
+  - `num_facture_chifa` est **conservée** (obsolète) par `101`. Sa suppression est le script **`101b`** (`database/migration/101b_suppression_num_facture_chifa.sql`), passé le 2026-11-26 sur `pharmacie_dev` et `pharmacie_test` (aucune valeur perdue) : opération **destructive et irréversible** (sauf restauration), **à ne lancer qu'après la validation explicite du titulaire**. Il n'est **pas** dans le dossier publié (exclu par `Pharma.Api.csproj`, contrairement à `111b`, `163b` et `166b`, qui sont dans `Api\database\init`) : le prendre dans le dépôt. Sans la décision du titulaire, **ne rien lancer** : la colonne reste, sans effet sur le logiciel.
   - **Procédure `101b`** (dans cet ordre, seulement si le titulaire a dit « go ») :
     1. **Prérequis** : `101` exécuté, logiciel et API **arrêtés** (le script prend un verrou exclusif sur `vente`), aucune autre session ouverte sur la base.
     2. **Sauvegarde complète obligatoire** de la base (`pg_dump`, ou la sauvegarde de l'application), vérifiée lisible et copiée hors du PC serveur. Sans elle, ne pas continuer : l'opération est irréversible.
@@ -1042,7 +1046,7 @@ Option facultative. Le serveur central reçoit la copie des données des officin
 
 Règles : aucun secret dans un fichier du dépôt ni dans `appsettings*.json`. Tout passe par des variables d'environnement du compte de service. **Ne jamais copier le dossier `Synchronisation` d'un serveur d'officine à l'autre.**
 
-Les scripts de la base centrale sont dans `database\cloud\` (001 au dernier, 042 à ce jour). Ils ne se passent **jamais** sur la base d'une officine.
+Les scripts de la base centrale sont dans `database\cloud\` (001 au dernier, 044 à ce jour). Ils ne se passent **jamais** sur la base d'une officine.
 
 ### 1. Hébergement et prérequis
 
@@ -1052,12 +1056,12 @@ Les scripts de la base centrale sont dans `database\cloud\` (001 au dernier, 042
 
 ### 2. Base centrale
 
-- [ ] **2.1** Créer la base centrale et passer les scripts `database\cloud\001` à `028` (tous, **dans l'ordre**). **Où** : serveur central. **Compte** : superutilisateur `postgres` pour créer la base (mot de passe saisi à l'écran), puis le compte propriétaire `<propriétaire>` pour les scripts (mot de passe saisi à l'écran). Aucun mot de passe n'est écrit dans une commande. Référence : [scripts-base-de-donnees.md](scripts-base-de-donnees.md).
+- [ ] **2.1** Créer la base centrale et passer les scripts `database\cloud\001` au dernier (`044` à ce jour ; tous, **dans l'ordre**). **Où** : serveur central. **Compte** : superutilisateur `postgres` pour créer la base (mot de passe saisi à l'écran), puis le compte propriétaire `<propriétaire>` pour les scripts (mot de passe saisi à l'écran). Aucun mot de passe n'est écrit dans une commande. Référence : [scripts-base-de-donnees.md](scripts-base-de-donnees.md).
   ```powershell
   .\scripts\mep\creer_base_centrale.ps1 -Base <base centrale> -Proprietaire <propriétaire>
   ```
   - Le compte `<propriétaire>` doit exister (étape 1.3) ; le script ne le crée pas. Pour voir le plan sans rien créer : ajouter `-WhatIf`. Si le serveur est distant : `-Hote <hôte>`.
-  - Le script : vérifie la suite des scripts cloud (sans trou) ; refuse une base qui contient déjà des tables centrales (jamais de suppression) ; crée la base (propriétaire `<propriétaire>`, UTF8) si elle n'existe pas ; passe `001` à `029` (tous les scripts numérotés du dossier) ; vérifie les tables centrales, la sécurité au niveau des lignes sur les tables miroir, les rôles `pharma_cloud_api` et `pharma_cloud_etat`. Il n'y a pas de `schema.sql` central : les scripts `cloud` sont la seule source.
+  - Le script : vérifie la suite des scripts cloud (sans trou) ; refuse une base qui contient déjà des tables centrales (jamais de suppression) ; crée la base (propriétaire `<propriétaire>`, UTF8) si elle n'existe pas ; passe `001` au dernier (`044` à ce jour : tous les scripts numérotés du dossier) ; vérifie les tables centrales, la sécurité au niveau des lignes sur les tables miroir, les rôles `pharma_cloud_api` et `pharma_cloud_etat`. Il n'y a pas de `schema.sql` central : les scripts `cloud` sont la seule source.
   - `001` crée le rôle applicatif `pharma_cloud_api` **sans connexion** et non propriétaire des tables.
   - `029` crée le rôle de lecture technique `pharma_cloud_etat` **sans connexion** (lecture par colonnes de 7 tables techniques, jamais une table miroir, jamais le contenu d'un lot ni l'empreinte d'un code d'activation, aucune écriture). Il est prévu pour les écrans S7 ; **aucune connexion n'est créée en production** : elle sera décidée au déploiement de ces écrans (`GRANT pharma_cloud_etat TO <connexion>`). Comme `001`, il demande au propriétaire le droit `CREATEROLE` (ou un rôle `pharma_cloud_etat` déjà créé par le superutilisateur). `029` retire aussi à `PUBLIC` l'exécution des fonctions `SECURITY DEFINER` (accordée explicitement à `pharma_cloud_api` : droits de l'API inchangés).
   - **Attendu** : « Terminé », code de sortie 0 (`$LASTEXITCODE`).
@@ -1315,8 +1319,8 @@ Le serveur central peut proposer ou imposer aux officines la valeur de 11 régla
 ### 10. Mise à jour du serveur central
 
 - [ ] **10.1** Sauvegarder la base centrale. **Où** : serveur central. **Compte** : propriétaire.
-- [ ] **10.2** Repasser `002` (colonnes `sync_chargement`, `sync_absente_le`, etc.), puis `003` au dernier (036 à ce jour), **dans cet ordre** (`029` à `036` : rôles de lecture et des écrans, comptes distants, écrans de l'éditeur et du titulaire, ordres et réglages communs du titulaire, lignes absentes vues par les écrans — `036` pose aussi un index partiel par table miroir : le repasser après un `002` régénéré ; `026` à `028` : tables sans archive réglables, effacement d'une officine partie avec ses éléments techniques, effacement d'une famille nominative aussi dans les lignes archivées ; `027` et `028` demandent le `022` ; le `025` **avant** le script `152` des officines : n° de tickets réattribués signalés ; le `022` à `024` **avant** le script `151` des officines : tables des restaurations, route `POST /api/v1/epoque`, table miroir `integrite_prise_acte` du `002` régénéré, n° de ticket dans `/maximums` ; le `019` **avant** le script `147` des officines : sinon leurs lots sont refusés ; le `020` **avant** le script `149` des officines : route `GET /api/v1/maximums` et archive des lignes remplacées ; `020` et `021` demandent PostgreSQL 18 et le refusent clairement en tête sinon ; depuis le 2026-11-18 rejouer un ancien script ne ramène plus en arrière une fonction redéfinie par un script plus récent (gardes étendues le 2026-11-20 à `004`, `010`, `012`, `013` à `017`, `020`, `021`, `022`) ; `002` régénéré **avant** le script `148` des officines : colonnes d'alerte de `parametre_sauvegarde`), avec le compte propriétaire, un par un : `& $psql -h <hôte> -U <propriétaire> -d <base centrale> -v ON_ERROR_STOP=1 -q -f "database\cloud\<script>.sql"` (le script `creer_base_centrale.ps1` de l'étape 2.1 ne sert que pour une base neuve et refuse une base déjà installée). Scripts idempotents.
-- [ ] **10.3** Relancer les tests de l'étape 2.3 sur la copie.
+- [ ] **10.2** Repasser `002` (colonnes `sync_chargement`, `sync_absente_le`, etc.), puis `003` au dernier (`044` à ce jour), **dans cet ordre** (`029` à `036` : rôles de lecture et des écrans, comptes distants, écrans de l'éditeur et du titulaire, ordres et réglages communs du titulaire, lignes absentes vues par les écrans — `036` pose aussi un index partiel par table miroir : le repasser après un `002` régénéré ; `026` à `028` : tables sans archive réglables, effacement d'une officine partie avec ses éléments techniques, effacement d'une famille nominative aussi dans les lignes archivées ; `027` et `028` demandent le `022` ; le `025` **avant** le script `152` des officines : n° de tickets réattribués signalés ; le `022` à `024` **avant** le script `151` des officines : tables des restaurations, route `POST /api/v1/epoque`, table miroir `integrite_prise_acte` du `002` régénéré, n° de ticket dans `/maximums` ; le `019` **avant** le script `147` des officines : sinon leurs lots sont refusés ; le `020` **avant** le script `149` des officines : route `GET /api/v1/maximums` et archive des lignes remplacées ; `020` et `021` demandent PostgreSQL 18 et le refusent clairement en tête sinon ; depuis le 2026-11-18 rejouer un ancien script ne ramène plus en arrière une fonction redéfinie par un script plus récent (gardes étendues le 2026-11-20 à `004`, `010`, `012`, `013` à `017`, `020`, `021`, `022`) ; `002` régénéré **avant** le script `148` des officines : colonnes d'alerte de `parametre_sauvegarde`), avec le compte propriétaire, un par un : `& $psql -h <hôte> -U <propriétaire> -d <base centrale> -v ON_ERROR_STOP=1 -q -f "database\cloud\<script>.sql"` (le script `creer_base_centrale.ps1` de l'étape 2.1 ne sert que pour une base neuve et refuse une base déjà installée). Scripts idempotents.
+- [ ] **10.3** Relancer les tests de l'étape 2.2 sur la copie.
 - [ ] **10.4** Redémarrer le serveur central. **Avant** toute mise à jour des officines.
 
 ---
@@ -1329,7 +1333,7 @@ Chaque procédure se lit dans l'ordre, du haut vers le bas.
 
 Les sauvegardes utiles sont sur le **disque externe**. La copie de la base dans `GED\Sauvegardes` est sur le même PC : elle disparaît avec lui.
 
-- Base : `pharmacie_AAAAMMJJ_HHMMSS.dump` dans le dossier réglé dans Administration, Sauvegardes (les 14 dernières par défaut).
+- Base : `pharmacie_AAAAMMJJ_HHMMSS.dump` dans le dossier réglé dans Administration, Sauvegardes. Trois conservations **distinctes** : dans ce dossier, la sauvegarde de l'application garde les **N dernières** (réglage « conservation », **14 par défaut**, 1 à 365) ; sa copie dans `GED\Sauvegardes` est gardée un nombre de **jours** (réglage du titulaire, sinon `Ged__RetentionSauvegardesJours`, **7 par défaut**) ; le script planifié de l'option (b) supprime les fichiers `.dump` de **plus de 30 jours** (`$RetentionJours = 30`, à adapter dans la copie livrée).
 - GED : sous-dossier `GED` de ce même dossier.
 
 **Méthode 1 : depuis l'application** (super admin, étape 10). L'API doit tourner sur le PC serveur. La base peut être détruite : le compte du super admin et le dossier des sauvegardes sont hors de la base.
@@ -1380,8 +1384,9 @@ Prérequis : parcours D fait. La pharmacie repart à partir de la **dernière co
   ```
   - Le script prend la copie la plus récente (ou `-Fichier`), contrôle l'empreinte SHA-256 et la lisibilité, restaure dans une base neuve, **rejoue tous les scripts de la base** livrés avec l'API (le dernier rejoué est affiché : il doit être le dernier de la version installée), garde une base existante sous `<base>_avant_bascule_<date>` (jamais supprimée), démarre le service et affiche l'adresse à donner aux postes.
   - **Attendu** : le script se termine sans erreur et affiche l'adresse du PC de secours.
-- [ ] **4.** Sur **chaque poste** : bouton **« Basculer sur le 2e serveur »** du bandeau (il ne règle le poste que si l'API de secours répond déjà), ou rubrique Serveur et PC de secours. Puis fermer et rouvrir Tracodex Officine.
-  - **Fonctionnement constaté dans le code** : le bouton appelle `https://<adresse de secours>/api/healthcheck` (4 secondes). Le poste vérifie le certificat avec les autorités installées dans Windows (aucune exception) : la bascule ne marche que si l'autorité de la pharmacie est installée sur le poste (parcours A, étape 5.4) **et** si le nom ou l'IP saisi dans « PC de secours » figure dans le certificat du PC de secours (parcours C étape 8 et parcours D étape 6). Sinon, le poste n'est pas basculé et le bandeau distingue trois cas : **« Le 2e serveur ne répond pas… »** (PC éteint, service pas démarré, port 5443 fermé ou adresse erronée) ; **« Le certificat du 2e serveur est refusé par ce poste… »** (autorité absente du poste : installer l'autorité de la pharmacie, étape 5.4 ; ou adresse saisie absente du certificat : la corriger) ; **« Le 2e serveur est joignable mais n'est pas encore basculé… »** (lancer « Basculer sur le 2e serveur » sur le 2e serveur). Le poste ne contourne jamais la vérification du certificat. Le journal local du poste (`%LOCALAPPDATA%\PharmaOfficine\liaison.log`) note l'état à chaque changement (sans adresse ni donnée personnelle). Si le bandeau indique un certificat refusé, ouvrir `https://<adresse de secours>/api/healthcheck` dans un navigateur du poste : un avertissement de certificat en est la cause.
+- [ ] **4.** Sur **chaque poste** : bouton du bandeau **« Basculer sur le 2e serveur (<adresse de secours>) sur ce poste »** (il ne règle le poste que si l'API de secours répond déjà), ou rubrique Serveur et PC de secours. Puis fermer et rouvrir Tracodex Officine.
+  - **Libellés « 2e serveur » aussi pour le PC de secours** (constaté dans le code : le poste n'a qu'**une** adresse de secours, `BarreEtat.razor` l. 37-39, et les messages de `LiaisonServeur.cs` l. 40-48 parlent toujours du « 2e serveur ») : ici, lire « 2e serveur » comme « PC de secours ». Le message de fin de `basculer-pc-secours.ps1` cite un bouton « Utiliser le PC de secours », qui n'existe pas sur le poste : c'est bien le bouton ci-dessus.
+  - **Fonctionnement constaté dans le code** : le bouton appelle `https://<adresse de secours>/api/healthcheck` (4 secondes). Le poste vérifie le certificat avec les autorités installées dans Windows (aucune exception) : la bascule ne marche que si l'autorité de la pharmacie est installée sur le poste (parcours A, étape 5.4) **et** si le nom ou l'IP saisi dans « PC de secours » figure dans le certificat du PC de secours (parcours C étape 8 et parcours D étape 6). Sinon, le poste n'est pas basculé et le bandeau distingue trois cas : **« Le 2e serveur ne répond pas… »** (PC éteint, service pas démarré, port 5443 fermé ou adresse erronée) ; **« Le certificat du 2e serveur est refusé par ce poste… »** (autorité absente du poste : installer l'autorité de la pharmacie, étape 5.4 ; ou adresse saisie absente du certificat : la corriger) ; **« Le 2e serveur est joignable mais n'est pas encore basculé… »** (le message renvoie à `basculer-second-serveur.ps1` ; pour le PC de secours, c'est l'étape 3 ci-dessus, `basculer-pc-secours.ps1`, qui n'est pas terminée). Pour le PC de secours, le premier message (« il ne démarre qu'après la bascule ») est exact : son service est en démarrage manuel. Le poste ne contourne jamais la vérification du certificat. Le journal local du poste (`%LOCALAPPDATA%\PharmaOfficine\liaison.log`) note l'état à chaque changement (sans adresse ni donnée personnelle). Si le bandeau indique un certificat refusé, ouvrir `https://<adresse de secours>/api/healthcheck` dans un navigateur du poste : un avertissement de certificat en est la cause.
   - Aucune réinstallation d'autorité n'est nécessaire sur les postes : c'est la même autorité que celle du PC serveur.
 - [ ] **5.** GED : recopier le dossier `GED` du disque externe si besoin : `.\scripts\restaurer_pharmacie.ps1 -SansBase` (paramètre `-DossierGed` du PC de secours).
 - [ ] **6.** Ressaisir les opérations faites depuis la copie. Ressaisir le mot de passe des notifications.
@@ -1580,8 +1585,8 @@ La première version du script créait une autorité « `PharmaOfficine Autorite
 | Service `Running`, mais rien ne répond | Pare-feu ou mauvais port | `netstat -ano \| findstr :5443`, puis règle `PharmaOfficine API (https 5443)` |
 | Avertissement de certificat sur un poste | Autorité non installée, ou nom du serveur absent du certificat | Parcours A, étape 5.4 ; sur le PC serveur, relancer l'étape 4.6 avec `-NomsSupplementaires` / `-AdressesSupplementaires` ; sur le 2e serveur ou le PC de secours, regénérer le certificat (parcours C, étape 8) avec le nom ou l'IP utilisé par les postes |
 | Le poste n'arrive pas à basculer sur le PC de secours : bandeau « Le certificat du 2e serveur est refusé par ce poste… » | Autorité absente du poste, ou nom/IP de « PC de secours » absent du certificat du PC de secours | Installer l'autorité (étape 5.4) ou corriger l'adresse ; `https://<adresse de secours>/api/healthcheck` dans le navigateur du poste ; procédure F2, étape 4 |
-| Bandeau « Le 2e serveur ne répond pas… » | 2e serveur éteint, service pas démarré (il ne démarre qu'après la bascule), port 5443 fermé, adresse erronée | Vérifier le 2e serveur, le pare-feu, l'adresse saisie |
-| Bandeau « Le 2e serveur est joignable mais n'est pas encore basculé… » | API répond mais base pas encore promue | Lancer la bascule sur le 2e serveur (procédure F2) |
+| Bandeau « Le 2e serveur ne répond pas… » | 2e serveur éteint, service arrêté (sur le 2e serveur, l'API tourne **en veille en permanence**, démarrage automatique : un service arrêté est une anomalie ; sur un PC de secours, le service ne démarre qu'après la bascule F2), port 5443 fermé, adresse erronée. Le texte du bandeau dit encore « il ne démarre qu'après la bascule » : vrai pour le PC de secours seulement | Vérifier le 2e serveur (service `PharmaOfficine API` `Running`), le pare-feu, l'adresse saisie |
+| Bandeau « Le 2e serveur est joignable mais n'est pas encore basculé… » | API de veille qui répond, mais base pas encore promue (promotion automatique pas faite ou impossible) | 2e serveur : bascule manuelle, procédure **F3** ; PC de secours : procédure F2, étape 3 |
 | Bandeau « Le certificat du serveur est refusé par ce poste… » (serveur principal) | Autorité absente du poste ou adresse `PHARMA_API` absente du certificat | Étape 5.4 ; vérifier l'adresse (Administration, Imprimantes et étiquettes) |
 | `Première exécution : … Préciser -FichierSauvegardeAutorite` | L'autorité n'existe pas encore sur ce PC | Étape 4.6 (nouvelle pharmacie) ou procédure F2 bis (PC remplacé, PFX du coffre) |
 | Avertissement d'heure dans le journal au démarrage | Fuseau Windows incorrect | Parcours A, étape 2.3 |
@@ -1654,7 +1659,7 @@ Cocher tout avant le jour J.
 - [ ] Serveur central mis à jour d'abord (si l'officine est synchronisée)
 - [ ] Service arrêté puis redémarré, `http://localhost:5080/api/healthcheck` répond
 - [ ] Scripts `database\migration` appliqués dans l'ordre, sans erreur ; pas de `schema.sql` ni de `clean.sql`
-- [ ] Scripts 112 et suivants lancés avec le rôle propriétaire (`pharma_proprietaire`), jamais avec `pharma_app`
+- [ ] Toute la suite des scripts, depuis `001`, rejouée par `mettre_a_jour_base_officine.ps1` ; après `111b`, avec `postgres` et `SET ROLE pharma_proprietaire`, jamais avec `pharma_app`
 - [ ] API republiée et remplacée ; `appsettings.Https.json` toujours présent
 - [ ] Postes republiés ; chaque poste ouvre l'écran de connexion
 - [ ] Nomenclature réimportée si elle a changé
@@ -1665,8 +1670,15 @@ Cocher tout avant le jour J.
 
 ## Postes autorisés : autoriser chaque poste (depuis la version du 2026-11-24, script 167)
 
-Après la mise à jour, la liste est en mode **transition** : tout continue de fonctionner, avec un bandeau « Ce poste n'est pas encore
-autorisé » sur l'écran de connexion des postes.
+**Base neuve (parcours A)** : `seed_referentiel.sql` pose la ligne de réglage `parametre_postes` avec les valeurs par défaut du schéma
+(`INSERT INTO parametre_postes DEFAULT VALUES`) : mode **transition** (`schema.sql`, `mode DEFAULT 'transition'`), code valable
+15 minutes ; la liste `poste_autorise` est **vide** (aucun poste autorisé). Le **maximum de postes vient de l'offre** : sans code
+d'activation, offre de base, **2 postes** (`OffreCourante.PostesBase = 2`, `src\Pharma.Application\Offre\Offre.cs`) ; la colonne
+`parametre_postes.maximum_postes` (20 par défaut) n'est plus lue depuis le script 172. Saisir donc le code de l'offre (parcours A,
+étape 13.0) avant d'autoriser plus de 2 postes, puis suivre les étapes 1 à 4 ci-dessous.
+
+**Après la mise à jour** d'une officine déjà en service, la liste est aussi en mode **transition** : tout continue de fonctionner, avec
+un bandeau « Ce poste n'est pas encore autorisé » sur l'écran de connexion des postes.
 
 1. Premier poste (aucun titulaire connecté sur un poste autorisé) : sur le PC serveur, `Pharma.Api.exe --autoriser-poste "CAISSE-1"`
    (identifiant et mot de passe du titulaire) affiche un code ; sinon, Administration › Postes autorisés › « Autoriser un poste ».

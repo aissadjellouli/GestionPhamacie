@@ -8,7 +8,11 @@ Certaines fonctionnalités de l'application deviendront des **options vendues à
 
 - une **offre de base** (« basic ») est livrée à toutes les pharmacies, avec les fonctions de base ;
 - les **autres fonctionnalités** sont livrées à la demande et **facturées à part** ;
-- certaines limites sont **fixées par le super admin**. Premier cas : le **nombre maximum de postes autorisés**.
+- certaines limites sont **fixées par l'éditeur**. Premier cas : le **nombre maximum de postes autorisés**.
+
+> Vocabulaire (2026-11-26) : dans ce document, celui qui signe les offres et fixe les limites est **l'éditeur**. Le « super admin » est
+> seulement le compte de reprise de données et de restauration créé sur le PC serveur (rôle `super_admin`, voir
+> [mise-en-production.md](mise-en-production.md), parcours A, étape 10) : il ne signe rien et ne fixe aucune limite.
 
 Le partage entre offre de base et options **n'est pas encore décidé**. Il sera fait lors d'un tour complet des fonctionnalités, à partir de
 [fonctionnalites.md](fonctionnalites.md), qui liste toutes les fonctionnalités faites et en attente.
@@ -18,7 +22,7 @@ Le partage entre offre de base et options **n'est pas encore décidé**. Il sera
 Une option activée, ou une limite comme le maximum de postes, **ne doit pas pouvoir être changée en modifiant la base de données**.
 
 Constat (2026-11-26) : toute valeur rangée en clair dans la base peut être changée par quelqu'un qui a l'accès à PostgreSQL, et c'est le cas
-chez la pharmacie. Aujourd'hui, le maximum de postes est dans `parametre_postes.maximum_postes` (script 167) et le titulaire le règle à
+chez la pharmacie. Avant le lot O2 (voir « Mise en œuvre »), le maximum de postes est dans `parametre_postes.maximum_postes` (script 167) et le titulaire le règle à
 l'écran (Administration › Postes autorisés).
 
 Piste technique, **non validée** : les options et les limites d'une pharmacie sont **signées** avec une clé privée qui n'est jamais chez la
@@ -28,10 +32,10 @@ pharmacie. L'API vérifie cette signature avec la clé publique intégrée à so
 
 > Réponses du titulaire du 2026-11-26 : voir « Décisions » en fin de document (reste ouvert : durée de la transition, Q8).
 
-1. **Qui est le super admin** : l'éditeur du logiciel ou quelqu'un de la pharmacie ? Si la clé privée est chez la pharmacie, la signature
-   ne protège plus rien.
+1. **Qui signe les activations** (question posée alors sous le nom « super admin ») : l'éditeur du logiciel ou quelqu'un de la pharmacie ?
+   Si la clé privée est chez la pharmacie, la signature ne protège plus rien.
 2. **Comment l'activation arrive** :
-   - (a) un code signé, généré par un outil gardé chez l'éditeur et saisi par le super admin ;
+   - (a) un code signé, généré par un outil gardé chez l'éditeur et saisi sur place ;
    - (b) une activation signée envoyée par le serveur central ;
    - (c) autre chose.
 3. **Liée à une pharmacie précise ?** Sinon, une même activation pourrait être recopiée d'une pharmacie à l'autre.
@@ -88,7 +92,7 @@ Faite à partir des 275 fonctionnalités de [fonctionnalites.md](fonctionnalites
 
 ### Quotas et services
 
-- **Postes** : 2 inclus, puis par poste supplémentaire (fixé par le super admin, non modifiable dans la base : premier cas d'usage).
+- **Postes** : 2 inclus, puis par poste supplémentaire (fixé par l'éditeur, non modifiable dans la base : premier cas d'usage).
 - **Scanners mobiles** : nombre d'appareils (si le pack B est pris).
 - **Services facturés à part, hors logiciel** : reprise des données d'un ancien logiciel, installation, formation, installation du 2e serveur.
 
@@ -103,7 +107,7 @@ Faite à partir des 275 fonctionnalités de [fonctionnalites.md](fonctionnalites
 
 1. Tour des fonctionnalités avec le titulaire : classer chaque fonctionnalité en **base** ou **option**.
 2. Réponses aux questions ouvertes.
-3. Plan technique (mécanisme d'activation signé, écran du super admin, lecture seule pour le titulaire, contrôle par le serveur), validé
+3. Plan technique (mécanisme d'activation signé, outil de l'éditeur, lecture seule pour le titulaire, contrôle par le serveur), validé
    avant tout code. Premier cas d'usage : le maximum de postes autorisés.
 
 ## Mise en œuvre (2026-11-26, « go all lot »)
@@ -134,6 +138,14 @@ Faite à partir des 275 fonctionnalités de [fonctionnalites.md](fonctionnalites
 pas de bandeau dans l'onglet multi-grossistes des Achats ni sur l'ordonnance scannée de la caisse (le refus du serveur s'affiche) ; les
 boutons d'action ne sont pas grisés : le bandeau prévient, le serveur refuse.
 
+**Rappels de fin d'offre** (codés le 2026-11-26, `src/Pharma.Application/Offre/Offre.cs`, classe `RappelsOffre`, lancée par la tâche
+des notifications de l'API) : pour une offre ou une période de transition qui a une date de fin, le titulaire reçoit une alerte par SMS
+ou par e-mail (mêmes destinataires que les alertes techniques) **90, 60, 30, 15, 7 et 1 jour(s)** avant la fin (« go rappels » du
+2026-11-27), puis au **début du délai de grâce de 15 jours**. Chaque étape n'est envoyée **qu'une fois** pour une date de fin donnée (journal des actions, action `offre_rappel`) ; si
+plusieurs étapes sont dues le même jour, seule la plus proche de la fin est envoyée. L'écran Mon offre garde son message dès 90 jours. La vérification
+se fait une fois par jour ; l'alerte part avant d'être notée (au pire un rappel en double, jamais un rappel perdu). Une nouvelle date de fin
+(nouveau code) relance les sept étapes.
+
 ### Mise en service (à faire une fois par l'éditeur)
 
 > Procédure détaillée, pas à pas : [procedure-cle-editeur.md](procedure-cle-editeur.md). **Clés créées et intégrées le 2026-11-26.**
@@ -153,7 +165,8 @@ boutons d'action ne sont pas grisés : le bandeau prévient, le serveur refuse.
    principale de la liste à la version suivante (ses codes ne valent plus : nouveaux codes à signer pour les pharmacies concernées).
 3. **À chaque mise en place ou mise à jour d'une pharmacie** : relever son code d'officine et son NIF (Administration › Mon offre), signer un
    code de transition `signer --cle <cle-editeur.pem> --officine <code> --nif <NIF> --postes <n> --transition --fin AAAA-MM-JJ` (durée fixée
-   à ce moment-là), le saisir dans Mon offre (connecté en titulaire) ou l'envoyer par le central :
+   à ce moment-là), le saisir dans Mon offre avec le compte du titulaire (par le titulaire, ou par l'éditeur à ses côtés : la saisie est
+   réservée au titulaire) ou l'envoyer par le central :
    `Pharma.Cloud.Api.exe --ordre-activation --officine <code> --code <code> --auteur <nom>`.
 4. **Vente d'une option** : signer un nouveau code (packs `--packs A,D`, postes, scanners, `--fin` si abonnement) ; le plus récent l'emporte.
 
@@ -162,17 +175,17 @@ boutons d'action ne sont pas grisés : le bandeau prévient, le serveur refuse.
 | Date | Décision |
 |---|---|
 | 2026-11-26 | Des fonctionnalités deviendront des options vendues à part, activées à la demande ; une offre de base est livrée à toutes les pharmacies. |
-| 2026-11-26 | Le maximum de postes autorisés est fixé par le super admin, sans possibilité de le modifier dans la base. |
-| 2026-11-26 | Q1 : le super admin est **l'éditeur du logiciel** ; la clé privée qui signe les activations reste chez l'éditeur, jamais chez la pharmacie. |
+| 2026-11-26 | Le maximum de postes autorisés est fixé par l'éditeur (appelé alors « super admin »), sans possibilité de le modifier dans la base. |
+| 2026-11-26 | Q1 : celui qui signe les activations (appelé « super admin » dans la question) est **l'éditeur du logiciel** ; il est distinct du compte super admin de reprise et de restauration ; la clé privée qui signe les activations reste chez l'éditeur, jamais chez la pharmacie. |
 | 2026-11-26 | Q2 : pharmacie reliée au **serveur central** : c'est le central qui gère et transmet l'activation signée ; sinon, **code signé** saisi sur place (produit par un outil gardé chez l'éditeur). |
 | 2026-11-26 | Q3 : l'activation est **liée à une pharmacie précise** (son identifiant dans l'activation signée) : une activation recopiée ailleurs est refusée. |
 | 2026-11-26 | Q4 : signature absente ou fausse : **retour à l'offre de base** (options fermées, maximum de postes ramené à 2), titulaire prévenu, inscrit au journal ; une vente en cours n'est jamais interrompue. |
-| 2026-11-26 | Q5 : activation **définitive ou limitée dans le temps** (date de fin facultative dans l'activation) ; à l'échéance : titulaire prévenu 30 puis 7 jours avant, délai de grâce de 15 jours, puis option fermée (écran masqué ou en lecture seule), **aucune donnée effacée**. |
+| 2026-11-26 | Q5 : activation **définitive ou limitée dans le temps** (date de fin facultative dans l'activation) ; à l'échéance : titulaire prévenu 30 jours avant, 7 jours avant (étendu le 2026-11-27 : 90, 60, 30, 15, 7 et 1 jour(s) avant), puis au début du délai de grâce de 15 jours, puis option fermée (écran masqué ou en lecture seule), **aucune donnée effacée**. |
 | 2026-11-26 | Q6 : écran **« Mon offre »** en lecture seule pour le titulaire (packs, quotas, dates de fin), champ de saisie d'un code d'activation, coordonnées de l'éditeur pour demander une option. |
 | 2026-11-26 | Q7 : l'activation est rangée dans la base répliquée (valable sur le 2e serveur après une bascule) ; la signature est contrôlée sur chaque serveur ; le central **transmet** une activation signée par l'éditeur, il ne peut pas en créer. |
 | 2026-11-26 | Q8 : pharmacies déjà installées : **tout reste ouvert pendant une période de transition** (code « tout compris » limité dans le temps), puis passage à leur offre réelle. **Durée de la transition : à définir.** |
 | 2026-11-26 | Liaison (Q3 précisée) : l'activation contient le **code de l'officine** (`officine_id`) **et son NIF** ; le NIF doit être saisi avant l'activation. |
 | 2026-11-26 | Clé de l'éditeur : **fichier chiffré par un mot de passe**, hors de tout dépôt, sur le PC de l'éditeur, avec une copie sur une clé USB rangée à part ; l'outil demande le mot de passe à chaque signature. |
-| 2026-11-26 | Transition (Q8 précisée) : **code de transition** « tout compris » signé, saisi par l'éditeur lors de la mise en place ou de la mise à jour, avec une date de fin choisie à ce moment-là. **Sans aucune activation valable : offre de base, 2 postes** ; une activation effacée ramène à l'offre de base, jamais à tout ouvert. |
+| 2026-11-26 | Transition (Q8 précisée) : **code de transition** « tout compris » signé par l'éditeur, saisi dans Mon offre avec le compte du titulaire (par le titulaire, ou par l'éditeur à ses côtés) lors de la mise en place ou de la mise à jour, avec une date de fin choisie à ce moment-là. **Sans aucune activation valable : offre de base, 2 postes** ; une activation effacée ramène à l'offre de base, jamais à tout ouvert. |
 | 2026-11-26 | **Tour des packs : recommandations acceptées** (« prends tes recommandations ») : packs A à H confirmés, avec ces précisions. A : la **réception à l'aveugle avec double saisie** entre dans le pack A (la base garde la réception simple). B : l'**inventaire complet annuel** et le **blocage d'un lot rappelé** restent dans la base ; la liste des patients à contacter et son export vont dans B. C : bons de commande, réception, facture d'achat et retours restent dans la base. D : la **facture à un patient** reste dans la base ; sans D, la clôture de caisse ne verse rien en trésorerie ; les rapports simples restent dans la base. E : les **alertes de sécurité** par SMS ou e-mail (sauvegarde absente, rupture d'intégrité, poste ou serveur isolé) restent dans la base. F : sauvegarde quotidienne, rotation des disques et test de restauration restent dans la base. Quotas : 2 postes et **0 scanner mobile** dans la base. **Fermeture d'un pack** : packs avec données (A à D) en **lecture seule** (actions refusées « Option non incluse — voir Mon offre », rien d'effacé) ; packs sans données propres (E à H) **arrêtés** ; tâches automatiques du pack arrêtées ; le serveur refuse lui-même les routes d'un pack fermé. |
 | 2026-11-26 | Lot O6 (« 1 reco, 2 reco, 3 reco, go O6 ») : (1) sans le pack A, les anomalies sont **enregistrées en silence** et deviennent visibles, avec leur historique, dès l'achat du pack ; (2) pack F échu alors que les deux serveurs tournent : la paire **continue de fonctionner** (réplication, bascule), le titulaire est prévenu, aucune nouvelle installation, écrans de réglage du 2e serveur en lecture seule ; (3) pack G échu : la synchronisation s'arrête, mais les **résultats des ordres déjà reçus** sont encore envoyés. |
