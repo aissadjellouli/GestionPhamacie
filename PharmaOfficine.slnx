@@ -26,6 +26,7 @@
     <File Path="docs/mise-en-production.md" />
     <File Path="docs/manuel-mep.md" />
     <File Path="docs/ergonomie-2026-11-27.md" />
+    <File Path="docs/protection-du-code.md" />
     <File Path="docs/scripts-mep.md" />
     <File Path="docs/navigation.md" />
     <File Path="docs/notifications.md" />
@@ -470,6 +471,9 @@
   </Folder>
   <Folder Name="/scripts/mep/">
     <File Path="scripts/mep/outils_mep.ps1" />
+    <File Path="scripts/mep/NettoyageSql.cs" />
+    <File Path="scripts/mep/nettoyer_livraison.ps1" />
+    <File Path="scripts/mep/creer_livraison.ps1" />
     <File Path="scripts/mep/creer_base_officine.ps1" />
     <File Path="scripts/mep/mettre_a_jour_base_officine.ps1" />
     <File Path="scripts/mep/creer_base_centrale.ps1" />

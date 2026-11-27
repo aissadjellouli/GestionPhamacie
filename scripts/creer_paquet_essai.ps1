@@ -40,7 +40,7 @@ New-Item -ItemType Directory -Force $Sortie | Out-Null
 function Publier([string]$projet, [string]$dossier) {
     Write-Host "Publication de $projet..."
     & dotnet publish (Join-Path $racine "src\$projet\$projet.csproj") -c Release -r win-x64 --self-contained true `
-        -p:PublishSingleFile=false -o (Join-Path $Sortie $dossier) -nologo -v q
+        -p:PublishSingleFile=false -p:DebugType=none -p:DebugSymbols=false -o (Join-Path $Sortie $dossier) -nologo -v q
     if ($LASTEXITCODE -ne 0) { throw "Échec de la publication de $projet" }
 }
 Publier "Pharma.Api" "api"
@@ -65,6 +65,10 @@ Copy-Item (Join-Path $PSScriptRoot "paquet\*") $Sortie
 $adm = New-Item -ItemType Directory -Force (Join-Path $Sortie "scripts\second-serveur")
 Copy-Item (Join-Path $PSScriptRoot "second-serveur\*.ps1") $adm
 Copy-Item (Join-Path $PSScriptRoot "basculer-pc-secours.ps1") (Join-Path $Sortie "scripts")
+
+# Lot P1 de la protection du code (décision du titulaire du 2026-11-27) : la copie livrée est nettoyée (plus de .pdb ni de configuration
+# de développement, scripts SQL sans commentaires) ; le dépôt garde tout
+& (Join-Path $PSScriptRoot "mep\nettoyer_livraison.ps1") -Dossier $Sortie
 Write-Host "Paquet prêt : $Sortie"
 
 if ($Zip) {

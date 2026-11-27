@@ -2,6 +2,48 @@
 
 Point d'avancement du 2026-11-26 (soir) : lot 2 (scripts 168 à 171 : réception abandonnée, contenances, prêts, TVA réglable), miroir du central et essai bascule à deux postes **commités** (`dc82c32`) ; **32 commits à pousser** par l'utilisateur (`origin/develop..develop`). Aucune instance de l'assistant ne tourne (montage d'essai arrêté, aucun port d'essai ouvert). Scripts 168 à 171 passés sur `pharmacie_dev` et `pharmacie_test`, sauvegardes avant dans `C:\MesAtlassian\sauvegardes-bd`. **Bases à supprimer par l'utilisateur** : `pharmacie_cmp170`, `pharmacie_jetable_renommage_202611260005`, `pharmacie_essai_v28`. Détail : [a-faire.md](a-faire.md), [fonctionnalites.md](fonctionnalites.md) (inventaire complet), [second-serveur-local.md](second-serveur-local.md) (essais réels de la bascule, § 15 à 18), [diagrammes-sequence.md](diagrammes-sequence.md). À mettre à jour à chaque point d'avancement.
 
+**Protection du code contre la lecture et la copie (demande du titulaire du 2026-11-27, aucun code : en attente du go)** — objectif
+réaliste : rendre la copie ou la compréhension du logiciel plus coûteuse que sa réécriture, et pouvoir agir en justice ; aucune protection
+n'est absolue contre un administrateur du serveur de l'officine.
+- **Constat (paquet `scripts/creer_paquet_essai.ps1`)** : nos `.dll` .NET se décompilent presque en code source (risque élevé) ; les `.pdb`
+  sont livrés (inutiles en officine, ils aident la décompilation) ; les scripts SQL 001 à 174 sont livrés **avec leurs commentaires** (schéma,
+  fonctions et règles en clair) ; la base installée reste lisible par qui a accès à PostgreSQL sur le serveur (on ne peut pas cacher une
+  fonction SQL au propriétaire de la base) ; écrans (CSS, images) lisibles (faible) ; le serveur central n'est pas livré (aucun risque).
+  Déjà protégé : aucun secret dans le programme (seulement les clés publiques de l'éditeur), clés des serveurs et des postes dans le TPM.
+- **Signature des `.exe`** : ne protège pas de la lecture ; prouve l'éditeur et détecte un fichier modifié. Il faut un certificat de
+  signature de code (OV en général ; EV plus cher, avantage SmartScreen à vérifier), clé privée sur support matériel (clé USB sécurisée ou
+  coffre en ligne de l'autorité, obligatoire depuis 2023), `signtool.exe` (gratuit, SDK Windows) avec horodatage. À signer : nos `.exe`,
+  nos `.dll`, les `.ps1` de MEP. **Prix et accès depuis l'Algérie à vérifier** auprès des fournisseurs (titulaire). Aucune version payante
+  de Visual Studio n'est nécessaire pour produire le paquet (`dotnet publish`, SDK .NET gratuit ; licence Community à vérifier selon la taille
+  de la société).
+- **Lot P1 FAIT (2026-11-27)** : `scripts/mep/creer_livraison.ps1` + `nettoyer_livraison.ps1` (copie livrée sans `.pdb`, sans configuration de développement, scripts SQL sans commentaires ; base identique prouvée par test) ; manuel de MEP et mise en production passés à ce script. Proposition initiale : ne livrer que le nécessaire : plus de `.pdb` ; scripts SQL du paquet sans commentaires
+  (copie nettoyée, le dépôt garde les versions commentées) ; vérifier qu'aucune documentation ni fichier de développement n'est livré.
+- **Lot P2 (le gros du gain contre la lecture)** : obfuscation de nos `.dll` ; exclusions nécessaires (échanges JSON avec le poste et le
+  central, lecture des colonnes SQL, paramètres des composants des écrans) ; outil à choisir (gratuit ou payant ; compatibilité .NET 10,
+  maintenance et prix **non vérifiés**) ; validation : tous les tests sur le paquet obfusqué puis essai réel complet.
+- **Lot P3 (avec le certificat)** : signature des `.exe`, `.dll` et `.ps1` dans la fabrication du paquet, et contrôle au démarrage de l'API
+  (refus de démarrer si un de ses fichiers n'est pas signé par l'éditeur) ; option : règle Windows « seulement les programmes signés par
+  l'éditeur » (WDAC) sur les serveurs.
+- **Lot P4 (étude seulement)** : compilation de l'API en code machine (NativeAOT) ; favorable : 412 routes simples, aucun contrôleur ;
+  bibliothèques non vérifiées ; impossible pour le poste (WPF + WebView2).
+- **Volet juridique (titulaire, hors code)** : dépôt du logiciel pour dater la création (droit d'auteur ; organisme et démarche **à
+  confirmer avec un juriste**) ; contrat de licence signé par chaque officine (interdiction de copier, décompiler, céder) ; historique git et
+  codes d'activation signés comme preuves d'antériorité et d'usage.
+- **Étude P2 faite (2026-11-27)** : [protection-du-code.md](protection-du-code.md) : éléments à ne pas renommer dans notre code (composants
+  d'écran, JSON échangé ou enregistré, configuration), comparaison sourcée des outils (ConfuserEx à écarter : pas de .NET 10 ; Obfuscar
+  gratuit mais faible ; **.NET Reactor recommandé** : .NET 10 et Blazor annoncés, 199 USD perpétuel ; Dotfuscator Pro et Babel sur devis),
+  essai prévu sur une copie du paquet (Blazor Hybrid obfusqué non confirmé par les éditeurs), NativeAOT possible pour l'API seulement.
+- **Scripts PowerShell et SQL dans le livrable (remarque du titulaire du 2026-11-27)** : les `.sql` sont livrés sans commentaires (P1) mais
+  leur logique reste lisible ; le manuel fait copier tout le dossier `scripts\` du dépôt, dont des scripts inutiles en officine (`dev\`,
+  `initialiser_base_locale.ps1`, `creer_paquet_essai.ps1`). **Lot P1 bis proposé** : `creer_livraison.ps1` fabrique un `scripts\` de livraison
+  ne contenant que les scripts utiles (mep, second-serveur, bascule, sauvegarde, restauration, certificat HTTPS), commentaires retirés par
+  l'analyseur PowerShell (en gardant `#Requires` et l'aide `<# … #>`), puis signés (P3) ; le manuel ne copierait plus le dossier `scripts\`
+  du dépôt. **Zip/hash/chiffrement des scripts** : voir protection-du-code.md § 6 bis (hash = intégrité, pas secret ; chiffrement utile
+  seulement après P2 ; PostgreSQL exige du SQL en clair ; signature du paquet = meilleur gain).
+- **Licence .NET Reactor** (contrat lu le 2026-11-27) : nombre de logiciels illimité, sans redevance ; 199 USD = 1 développeur nommé, 2 machines ; 349 USD = toute la société (une entité juridique).
+- **Décisions attendues** : accord pour l'essai de .NET Reactor (version d'essai puis achat éventuel) ou autre outil ;
+  « go signature » quand le certificat sera disponible ; démarche juridique.
+
 **Point du 2026-11-27 (commité `6665f80` et `f5187e8` ; 40 commits à pousser par l'utilisateur)** — **Fait** :
 - **Ergonomie du poste** (revue du 2026-11-27, P1 + P2 + P3, 31 propositions) : caisse au clavier, raisons des boutons grisés, menus sans
   défilement, **rubriques repliables avec chevron à tout niveau**, bouton retour nommé, aide « ? », puces de période, tableaux compacts,

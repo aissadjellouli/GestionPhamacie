@@ -14,4 +14,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Pharma.Api\Pharma.Api.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Nettoyeur des scripts SQL livrés (lot P1 de la protection du code) : même source que scripts\mep\nettoyer_livraison.ps1 -->
+    <Compile Include="..\..\scripts\mep\NettoyageSql.cs" Link="Livraison\NettoyageSql.cs" />
+  </ItemGroup>
 </Project>

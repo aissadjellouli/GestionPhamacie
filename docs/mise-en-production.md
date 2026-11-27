@@ -326,8 +326,12 @@ Un seul script enchaîne tout dans le bon ordre, avec des contrôles : `scripts\
 
 - [ ] **4.1** Publier l'API. **Où** : PC des sources. **Compte** : administrateur Windows. Depuis le dossier du dépôt :
   ```powershell
-  dotnet publish src\Pharma.Api -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Api"
+  .\scripts\mep\creer_livraison.ps1 -Sortie "<dossier de livraison>"
   ```
+  - `creer_livraison.ps1` publie l'API (`Api\`) **et** le poste (`Poste\`), puis **nettoie la copie livrée** (protection du code, lot P1,
+    2026-11-27) : plus de fichiers `.pdb` ni de configuration de développement, scripts SQL **sans commentaires** (le dépôt garde les
+    versions commentées), en-têtes « 001 à NNN » gardés ; il s'arrête si un contrôle échoue. Dossier existant non vide : refusé (ou `-Remplacer`).
+    Détail : scripts-mep.md, protection-du-code.md.
   - `--self-contained true` : aucun runtime .NET à installer sur le PC serveur.
   - Le dossier publié contient `Pharma.Api.exe`, `database\` (scripts numérotés de la suite) et `database\init\` (tous les scripts de mise en production : `schema.sql`, `seed_referentiel.sql`, `fuseau_horaire.sql`, `111b`, `163b`, `166b` ; jamais `clean.sql` ni `101b`).
   - Contrepartie : les correctifs de sécurité de .NET n'arrivent qu'avec une nouvelle publication (parcours B).
@@ -482,9 +486,7 @@ Faire ces étapes **sur chaque poste**, une caisse après l'autre.
   - Supprimer ensuite le fichier du dossier temporaire.
 
 - [ ] **5.5** Installer le programme du poste. **Où** : chaque poste. **Compte** : administrateur Windows. Depuis le PC des sources :
-  ```powershell
-  dotnet publish src\Pharma.Desktop -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Poste"
-  ```
+  Déjà publié par `creer_livraison.ps1` (4.1) dans `<dossier de livraison>\Poste` (nettoyé) : rien à relancer.
   Copier le dossier obtenu sur chaque poste, par exemple dans `C:\Program Files\PharmaOfficine\Poste`. Créer sur le bureau un raccourci vers `Pharma.Desktop.exe`.
   - Aucun runtime .NET à installer (publication autonome).
   - Il n'existe pas encore d'installateur ni de mise à jour automatique des postes : la copie, les variables et le raccourci se font à la main.
@@ -672,9 +674,9 @@ Les publications étant autonomes (.NET inclus), Windows Update ne corrige **pas
 - [ ] **1.** Lire la note de version et choisir un créneau **sans caisse ouverte**. **Où** : PC serveur. **Compte** : aucun. Prévenir les employés.
   - **Préparer la livraison avant le créneau** (le service reste en marche pendant ce temps). **Où** : PC des sources. **Compte** : administrateur Windows.
     ```powershell
-    dotnet publish src\Pharma.Api -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Api"
-    dotnet publish src\Pharma.Desktop -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Poste"
+    .\scripts\mep\creer_livraison.ps1 -Sortie "<dossier de livraison>"
     ```
+    - Publication de l'API et du poste, et nettoyage de la copie livrée (voir 4.1).
   - Copier `<dossier de livraison>` (les scripts numérotés y sont **à plat** dans `Api\database\`, l'init dans `Api\database\init\` : `Pharma.Api.csproj`) et le dossier `scripts` du dépôt sur la clé USB. Les scripts d'administrateur (`111b`, `163b`, `166b`) sont dans `Api\database\init\` du dossier publié : rien à copier à part.
   - **Attendu** : `Api\Pharma.Api.exe`, le **dernier script numéroté** dans `Api\database\` (`174_postes_preuve_exigee.sql` à ce jour : le numéro le plus haut de `database\migration` du dépôt), `Api\database\init\111b_roles_integrite.sql` et `Poste\Pharma.Desktop.exe` sont présents sur la clé.
 - [ ] **2.** Si l'officine est synchronisée avec le serveur central : **mettre le serveur central à jour d'abord** (parcours E, étape 10), puis l'officine.

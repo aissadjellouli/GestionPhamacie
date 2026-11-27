@@ -25,7 +25,7 @@ public class InitEquivalentSuiteMigrationsTests
         WHERE a.attnum > 0 AND NOT a.attisdropped
         """;
 
-    private static readonly (string Rubrique, string Requete)[] Rubriques =
+    internal static readonly (string Rubrique, string Requete)[] Rubriques =
     [
         ("colonne", Colonnes),
         ("contrainte", """
@@ -192,7 +192,7 @@ public class InitEquivalentSuiteMigrationsTests
             if (nusDroite[Nu(g)].FirstOrDefault() is { } d) { gauche.Remove(g); droite.Remove(d); }
     }
 
-    private static HashSet<string> Lire(BaseJetableM4 base_, string requete)
+    internal static HashSet<string> Lire(BaseJetableM4 base_, string requete)
     {
         var lignes = new HashSet<string>(StringComparer.Ordinal);
         using var cx = new NpgsqlConnection(new NpgsqlConnectionStringBuilder(base_.Connexion.ConnectionString) { Database = base_.Nom, Pooling = false }.ConnectionString);
@@ -203,5 +203,5 @@ public class InitEquivalentSuiteMigrationsTests
         return lignes;
     }
 
-    private static string Court(string ligne) => (ligne.Length > 300 ? ligne[..300] + "…" : ligne).Replace("\n", " ⏎ ");
+    internal static string Court(string ligne) => (ligne.Length > 300 ? ligne[..300] + "…" : ligne).Replace("\n", " ⏎ ");
 }

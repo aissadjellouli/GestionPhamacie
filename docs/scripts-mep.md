@@ -21,6 +21,8 @@ exact, tenu à jour jusqu'au dernier script (le script de création refuse de d�
 | `database\init\163b_droit_identifiant_base.sql` | Oui (par le script) | Droit de lire l'identifiant de la base (2e serveur) |
 | `database\init\166b_droit_promotion_base.sql` | Oui (par le script) | Droit de promouvoir la base (2e serveur) |
 | `scripts\mep\outils_mep.ps1` | Oui (chargé par les scripts de `scripts\mep`) | Fonctions communes ; **jamais lancé seul** |
+| `scripts\mep\creer_livraison.ps1` | Oui, sur le **PC des sources** (installation et mise à jour) | Publie l'API et le poste dans le dossier de livraison, puis lance `nettoyer_livraison.ps1` (2026-11-27) |
+| `scripts\mep\nettoyer_livraison.ps1` | Oui (lancé par `creer_livraison.ps1` et `creer_paquet_essai.ps1`) | Nettoie la **copie livrée** : plus de `.pdb` ni de configuration de développement, scripts SQL sans commentaires (`NettoyageSql.cs`), contrôles ; refuse le dépôt des sources |
 | `scripts\certificat_https.ps1` | **Oui** | HTTPS de l'API sur le réseau, une seule autorité pour toute la pharmacie |
 | `scripts\sauvegarde_pharmacie.ps1` | Seulement en dépannage | Script planifié de secours ; la sauvegarde normale est faite par l'application |
 | `database\init\clean.sql` | **Jamais** | Remise à vierge : supprime tout |
@@ -417,6 +419,7 @@ non attribués (voulu : [base-de-donnees.md](base-de-donnees.md)).
 | `scripts/mep/creer_base_officine.ps1` | Installation neuve : **une fois**, crée la base (schema, fuseau, référentiel, 111b, 163b, 166b) |
 | `scripts/mep/mettre_a_jour_base_officine.ps1` | Mise à jour d'une officine en service : sauvegarde puis toute la suite depuis 001 |
 | `scripts/mep/outils_mep.ps1` | Chargé par les trois scripts de `scripts\mep` ; jamais lancé seul |
+| `scripts/mep/NettoyageSql.cs` | Chargé par `nettoyer_livraison.ps1` (et compilé dans les tests d'architecture) ; jamais lancé seul |
 | `scripts/paquet/demarrer.cmd` | Jamais en production : paquet d'essai |
 | `scripts/paquet/installer.ps1` | Jamais en production : paquet d'essai |
 | `scripts/restaurer_pharmacie.ps1` | Incident F1 : restauration de la base ou de la GED |

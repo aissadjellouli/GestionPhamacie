@@ -502,8 +502,12 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
 
 - [ ] **A18 — Publier l'API.** **Qui** : technicien. **Où** : PC des sources, administrateur Windows, depuis le dossier du dépôt.
   ```powershell
-  dotnet publish src\Pharma.Api -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Api"
+  .\scripts\mep\creer_livraison.ps1 -Sortie "<dossier de livraison>"
   ```
+  - `creer_livraison.ps1` publie l'API (`Api\`) **et** le poste (`Poste\`), puis **nettoie la copie livrée** (protection du code, lot P1,
+    2026-11-27) : plus de fichiers `.pdb` ni de configuration de développement, scripts SQL **sans commentaires** (le dépôt garde les
+    versions commentées), en-têtes « 001 à NNN » gardés ; il s'arrête si un contrôle échoue. Dossier existant non vide : refusé (ou `-Remplacer`).
+    Détail : scripts-mep.md, protection-du-code.md.
   - `--self-contained true` : aucun runtime .NET à installer sur le PC serveur. Contrepartie : les correctifs de sécurité .NET n'arrivent
     qu'avec une nouvelle publication (chapitre B).
   - Le dossier publié contient `Pharma.Api.exe`, `database\` (scripts numérotés, à plat) et `database\init\` (`schema.sql`, `seed_referentiel.sql`, `fuseau_horaire.sql`,
@@ -676,9 +680,7 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
   - Détail : MEP § A 5.4.
 
 - [ ] **A31 — Installer le programme du poste.** **Qui** : technicien. **Où** : PC des sources, puis chaque poste (administrateur Windows).
-  ```powershell
-  dotnet publish src\Pharma.Desktop -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Poste"
-  ```
+  Déjà publié par `creer_livraison.ps1` (A18) dans `<dossier de livraison>\Poste` (nettoyé) : rien à relancer.
   - Copier le dossier sur chaque poste, par exemple `C:\Program Files\PharmaOfficine\Poste` ; raccourci sur le bureau vers `Pharma.Desktop.exe`.
   - Aucun runtime .NET à installer. Pas encore d'installateur ni de mise à jour automatique des postes.
   - Détail : MEP § A 5.5.
@@ -1608,9 +1610,9 @@ Les scripts `database\migration\NNN_*.sql` sont réexécutables sans dégât ; `
 - [ ] **B-01 — Préparer.** **Qui** : technicien. Lire la note de version ; choisir un créneau **sans caisse ouverte** ; prévenir les employés.
   Avant le créneau, **sur le PC des sources** (administrateur Windows) :
   ```powershell
-  dotnet publish src\Pharma.Api -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Api"
-  dotnet publish src\Pharma.Desktop -c Release -r win-x64 --self-contained true -o "<dossier de livraison>\Poste"
+  .\scripts\mep\creer_livraison.ps1 -Sortie "<dossier de livraison>"
   ```
+  - Publication de l'API et du poste, et nettoyage de la copie livrée (voir A18).
   - Copier `<dossier de livraison>` (scripts numérotés **à plat** dans `Api\database\`, init dans `Api\database\init\` :
     `Pharma.Api.csproj`) et le dossier `scripts` sur la clé USB. `111b`, `163b`, `166b` sont dans `Api\database\init\` : rien à copier à part.
   - **Attendu** : `Api\Pharma.Api.exe`, le **dernier script numéroté** dans `Api\database\` (`174_postes_preuve_exigee.sql` à ce jour : le
