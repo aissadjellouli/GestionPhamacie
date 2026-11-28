@@ -173,6 +173,8 @@ public sealed class ActivationsOffreSql(NpgsqlDataSource db) : IActivationsOffre
         await using var cmd = db.CreateCommand("SELECT activation_offre_signaler_refus($1, $2)");
         cmd.Parameters.AddWithValue(id);
         cmd.Parameters.AddWithValue(motif.Length > 300 ? motif[..300] : motif);
-        return await cmd.ExecuteScalarAsync(ct) is true;
+        // Base en lecture seule (2e serveur en veille) : rien à noter ici, le serveur principal le fera ; l'offre se calcule quand même
+        try { return await cmd.ExecuteScalarAsync(ct) is true; }
+        catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.ReadOnlySqlTransaction) { return false; }
     }
 }

@@ -212,7 +212,7 @@ public partial class ScriptsMepTests
         Assert.Contains("ContinuerMalgreConflitsChifa", maj);
         var posDump = maj.IndexOf("\"-Fc\", \"-f\"", StringComparison.Ordinal);
         Assert.True(posDump > 0 && posDump < maj.IndexOf("Write-Etape \"Rejeu des scripts", StringComparison.Ordinal), "La sauvegarde précède le rejeu.");
-        Assert.True(maj.IndexOf("Get-ConflitsChifa -Base", StringComparison.Ordinal) < maj.IndexOf("[void](Invoke-Psql -Compte $CompteSuperUtilisateur -Base $Base -Role $RoleProprietaire", StringComparison.Ordinal));
+        Assert.True(maj.IndexOf("Get-ConflitsChifa -Base", StringComparison.Ordinal) < maj.IndexOf("$rejeu = Invoke-Psql -Compte $CompteSuperUtilisateur -Base $Base -Role $RoleProprietaire", StringComparison.Ordinal));
         Assert.Contains("SET ROLE", Mep("outils_mep.ps1"));
         Assert.Contains("[À VÉRIFIER]", maj);   // méthode SET ROLE non validée par un essai avec le superutilisateur
     }

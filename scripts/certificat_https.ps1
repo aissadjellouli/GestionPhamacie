@@ -1,4 +1,5 @@
 ﻿#Requires -Version 5.1
+
 <#
 .SYNOPSIS
     Met l'API de la pharmacie en HTTPS sur le réseau, avec UNE seule autorité de certification pour toute la pharmacie

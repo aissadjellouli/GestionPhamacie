@@ -2104,6 +2104,30 @@ Revue de code et audit de sécurité de la branche (`docs/taches/2026-11-15-revu
 - **(2026-11-15) Vente à crédit d'un patient aux droits Chifa expirés (tiers payant CNAS/CASNOS)** : avertissement renforcé au paiement « Droits expirés et vente à crédit : risque de non-paiement » ; vente non bloquée ; journal `droits_chifa_expires_credit` (vente, patient, date de fin, mode) en plus de `droits_chifa_expires`. — `src/Pharma.Application/Patients/DroitsChifa.cs`, `src/Pharma.Application/Caisse/Encaisser.cs`, `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
 - **(2026-11-15) Vente à crédit SANS tiers payant (Chifa) d'un patient aux droits expirés ou bientôt expirés** (décision du titulaire) : date de fin de droits dépassée, ou dans les N jours du seuil « bientôt expirés » (Administration › Caisse) → même avertissement renforcé au paiement « Droits expirés et vente à crédit : risque de non-paiement » ; **jamais de blocage** ; journal `droits_chifa_expires_credit` (vente, patient, date de fin, mode crédit, `tiers_payant` faux, `etat` expires ou bientot), sans `droits_chifa_expires`. Sans date de fin sur la fiche : rien. — `src/Pharma.Application/Patients/DroitsChifa.cs` (`JournaliserCreditSansTiersPayantAsync`), `src/Pharma.Shared/EtatDroitsChifa.cs` (`EtatCreditSansTiersPayant`), `src/Pharma.Application/Caisse/Encaisser.cs`, `src/Pharma.Desktop/Composants/Pages/Caisse.razor` (`AlerteCreditDroits`), `tests/Pharma.Application.Tests/ControleFinDroitsTests.cs`
 - **(2026-11-15) Patients › « Droits expirés ou bientôt expirés »** : patients CNAS/CASNOS dont la date de fin de droits est dépassée ou dans les N jours ; liste paginée par le serveur, filtrée par état (expirés / bientôt expirés), organisme (CNAS / CASNOS) et période de la date de fin ; colonnes nom, n° d'assuré, rang, organisme, date (pastille), dernière vente ; « Mettre à jour la date » (journal `patient_modifie`) ; droit de vendre ; écran fixe, seul le tableau défile. — `src/Pharma.Infrastructure/Patients/SuiviDroitsChifaSql.cs`, `src/Pharma.Api/Endpoints/PatientsEndpoints.cs`, `src/Pharma.Desktop/Composants/Pages/SuiviDroitsChifa.razor`, `src/Pharma.Desktop/Services/Domaines.cs`
+- **(2026-11-28) Constats secondaires de la revue de code** (« go secondaires », premier lot) :
+  - **Offre, ordre des codes** : les codes valables sont pris dans l'ordre de leur date d'émission **signée** (lue dans le code), plus
+    dans celui de la colonne `emise_le` (une date modifiée dans la table remettait devant un ancien code plus large). Un code effacé de
+    la table reste hors de portée de ce contrôle. — `OffreCourante.CalculerAsync`
+  - **Caches** : un calcul de l'offre ou une lecture de la clé d'un poste commencés avant une invalidation (saisie d'un code,
+    révocation) ne rangent plus leur résultat périmé après elle. — `CacheOffre.Generation`, `RegistrePostesAutorises.CleAsync`
+  - **Offre sur une base en lecture seule** (2e serveur en veille) : la constatation d'un refus n'y est pas notée, sans erreur.
+  - **Relais du 2e serveur** : une cible de requête en forme absolue (ou « //hôte ») n'est jamais relayée (400 « relais_cible_invalide »).
+  - **Création d'un patient** (Fichier des patients, Caisse) : un double clic ne crée qu'une fiche.
+  - **Scripts du 2e serveur** (`commun.ps1`) : les valeurs passées à psql ne sont plus sur la ligne de commande (« \set » sur l'entrée
+    standard) : un guillemet dans un mot de passe ne le modifie plus, il n'est plus visible dans la liste des processus ; les variables
+    d'environnement sont remises. Essai réel sous Windows PowerShell 5.1 (guillemet, apostrophe, accent, barre inverse).
+    `initialiser-second-serveur.ps1` : plus d'avertissement « pas en lecture seule » à tort.
+  - **Scripts de MEP** : la sortie d'erreur de psql ne se mêle plus à une valeur lue (`Get-Scalaire`) ; les avertissements des scripts
+    rejoués par `mettre_a_jour_base_officine.ps1` sont montrés (ex. 089, « index unique NON créé ») ; `nettoyer_livraison.ps1` refuse
+    une livraison qui contient une configuration d'environnement réel (`appsettings.Production.json`, `appsettings.Https.json`…).
+  - **Divers** : aide de `certificat_https.ps1` lisible par `Get-Help` ; `installer.ps1` du paquet d'essai avec signature UTF-8 ;
+    consigne du retour arrière 174 complétée.
+  - **Non traités, en attente d'une décision ou d'une conception** : horloge reculée sans serveur central (l'offre est prolongée
+    d'autant) ; certificat de synchronisation non renouvelé sans le pack G (décision du 2026-11-27 à revoir : à l'échéance, plus aucun
+    ordre ne descend) ; durée de déconnexion automatique du mode « Administration seulement » ; livraison précédente supprimée avant
+    les vérifications ; texte entre dollars relu comme du code et en-tête trop long gardé par `NettoyageSql.cs` ; remboursement
+    consommé caisse fermée et menu après clôture (`NavCaisse`) ; voie réduite de l'envoi et pack G lu une fois (`EnvoiLots`,
+    `OrdresCentraux`) ; menus repliés gardés d'un employé au suivant ; écarts aux conventions.
 - **(2026-11-28) Correctifs de la revue de code du 2026-11-28** (« go all points ») :
   - **Jeton d'employé sans poste limité à la page mobile** : un client qui ne s'annonce pas comme poste (ni en-tête `X-Pharma-Poste` ni
     preuve) reçoit un jeton sans poste ; ce jeton n'atteint que la liste fermée des routes de la page mobile (`/api/auth`, `/api/mobile`,
@@ -2123,8 +2147,8 @@ Revue de code et audit de sécurité de la branche (`docs/taches/2026-11-15-revu
     une mise en attente, le curseur revient dans la recherche produit. Limite connue : un code court (8 chiffres commençant par 0) passe
     sous la borne. — `Pharma.Shared.LimitesCaisse`, `Reglement.MontantEspecesMax`, `SessionCaisse.VerifierFond`, `Caisse.razor`
   - **Caisse, quantité « 3 * » et boîte identifiée** : une étiquette interne ou un Data Matrix désigne une seule boîte ; la quantité
-    tapée devant n'est pas appliquée et un message le dit (une boîte ajoutée, scanner les autres). **Choix fait par défaut, à confirmer
-    par le titulaire** (l'autre choix : prendre la quantité dans le lot de la boîte). — `Caisse.razor` (`TraiterCodeAsync`)
+    tapée devant n'est pas appliquée et un message le dit (une boîte ajoutée, scanner les autres). **Confirmé par le titulaire le 2026-11-28**
+    (« Message » ; l'autre choix, prendre la quantité dans le lot de la boîte, est écarté : chaque boîte vendue reste identifiée). — `Caisse.razor` (`TraiterCodeAsync`)
   - **Caisse, « + » et « − » après une prestation** : ils visent la prestation qui vient d'être ajoutée, plus le produit scanné avant.
   - **Contrôle interne, remises sur les médicaments** (script 175) : les comptages « remises » et « remises_patient » exigent et
     additionnent `montant_remise + montant_don` (la réduction sur un médicament est rangée dans `montant_don`) ; une vente à taux positif
@@ -2133,7 +2157,7 @@ Revue de code et audit de sécurité de la branche (`docs/taches/2026-11-15-revu
   - **Alertes de sécurité toujours envoyées, quels que soient les packs** : journal rompu ou vérification en échec, anomalie de
     numérotation des tickets, poste révoqué qui se présente, alertes de la clé d'un poste, code comptoir bloqué et autorisation par code
     bloquée après des codes faux. Elles passaient par l'alerte « contrôle interne » (pack A) et n'étaient plus envoyées sans ce pack.
-    **Classement des deux alertes de codes faux en « sécurité » : à confirmer par le titulaire.**
+    Classement des deux alertes de codes faux en « sécurité » : **confirmé par le titulaire le 2026-11-28** (« Toujours »).
     — `IAlertesTitulaire.SecuriteAsync`, `AlertesTitulaireSelonOffre`
   - **Offre, date du serveur central bornée** : une date du central plus de 2 jours au-delà de tout ce que le serveur connaît (sa date,
     la date centrale déjà mémorisée, le fichier) n'est retenue que si le central la confirme (deuxième réponse, datée par le central
@@ -2143,8 +2167,9 @@ Revue de code et audit de sécurité de la branche (`docs/taches/2026-11-15-revu
     fichier est recréé à la date du jour). — `DateCentraleOffre.Noter`
   - **Offre, grâce « serveur non déclaré »** : accordée une seule fois (celle du code le plus récent concerné), plus une par code plus
     ancien ; une première constatation datée de plus d'un jour dans le futur ne prolonge rien (grâce terminée).
-    **Reste à décider par le titulaire** : le sort d'un ancien code de version 1 (non lié aux serveurs) encore valable quand le code le
-    plus récent est refusé ; aujourd'hui il redevient actif jusqu'à sa date de fin. — `OffreCourante.CalculerAsync`
+    **Ancien code de version 1 ignoré** (décision du titulaire du 2026-11-28) : un code version 1 (non lié aux serveurs) plus ancien
+    qu'un code version 2 n'est plus pris, quel que soit le sort du code version 2 ; l'offre retombe à l'offre de base au lieu de
+    rouvrir l'ancien code (de transition, par exemple). Un code version 1 seul, ou plus récent, reste pris. — `OffreCourante.CalculerAsync`
   - **Port par défaut de l'API : 5080** (il était passé à 5081 dans `appsettings.json`) ; figé par un test.
   - **Scripts** : `autoriser-lecture-copie-ged.ps1` écrit `pg_hba.conf` et `pg_ident.conf` sans signature UTF-8 et remet les copies
     gardées si PostgreSQL refuse la configuration ; `basculer-pc-secours.ps1` et `restaurer_pharmacie.ps1` : résumé de la base lu par

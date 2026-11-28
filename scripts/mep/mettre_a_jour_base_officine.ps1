@@ -307,11 +307,13 @@ Invoke-Principal {
 
         try {
             if ($separee -or $separationFaiteIci) {
-                [void](Invoke-Psql -Compte $CompteSuperUtilisateur -Base $Base -Role $RoleProprietaire -Arguments @("-f", $s.FullName))
+                $rejeu = Invoke-Psql -Compte $CompteSuperUtilisateur -Base $Base -Role $RoleProprietaire -Arguments @("-f", $s.FullName)
             }
             else {
-                [void](Invoke-Psql -Compte $RoleApp -Base $Base -Arguments @("-f", $s.FullName))
+                $rejeu = Invoke-Psql -Compte $RoleApp -Base $Base -Arguments @("-f", $s.FullName)
             }
+            # Avertissements du script (ex. 089 : « index unique NON créé ») : montrés, jamais jetés
+            foreach ($m in $rejeu.Messages) { Write-Avert "$($s.Name) : $m" }
         }
         catch {
             throw "Arrêt sur $($s.Name) ($joues script(s) joué(s) avant). Corriger la cause puis relancer le même script, sans -ScriptDepart (toute la suite est rejouable ; -ScriptDepart $numero seulement en cas d'incident) ; sauvegarde : $fichierDump`n$($_.Exception.Message)"

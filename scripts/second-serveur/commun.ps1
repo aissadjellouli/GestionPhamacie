@@ -21,21 +21,30 @@ function Read-MotDePasse([string]$invite) {
     return [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($s))
 }
 
-# Requête psql (résultat brut, une ligne par enregistrement, colonnes séparées par « | »). Variables passées par -v (jamais
-# concaténées dans le SQL) : dans le SQL, :'nom' pour un texte.
+# Requête psql (résultat brut, une ligne par enregistrement, colonnes séparées par « | »). Variables jamais concaténées dans le SQL :
+# dans le SQL, :'nom' pour un texte. Elles sont posées par « \set » sur l'entrée standard, avant le SQL (correction du 2026-11-28) :
+# passées par « -v » sur la ligne de commande, un guillemet double dans une valeur la modifiait sous Windows PowerShell 5.1 (mot de
+# passe de réplication faux), et la valeur était visible dans la liste des processus.
 function Invoke-Psql {
     param([string]$PgBin, [string]$HostPg, [int]$Port, [string]$User, [string]$Db, [string]$Sql, [string]$MotDePasse,
           [hashtable]$Variables = @{})
+    $ancienMdp = $env:PGPASSWORD
+    $ancienEncodage = $env:PGCLIENTENCODING
     $env:PGPASSWORD = $MotDePasse
     $env:PGCLIENTENCODING = "UTF8"
     $arguments = @("-h", $HostPg, "-p", $Port, "-U", $User, "-d", $Db, "-v", "ON_ERROR_STOP=1", "-qtA", "-w")
-    foreach ($k in $Variables.Keys) { $arguments += @("-v", "$k=$($Variables[$k])") }
+    # « \set nom 'valeur' » : apostrophe doublée, barre oblique inverse doublée (psql interprète les barres entre apostrophes)
+    $poses = @(foreach ($k in $Variables.Keys) { "\set $k '" + ([string]$Variables[$k]).Replace('\', '\\').Replace("'", "''") + "'" })
+    $OutputEncoding = New-Object System.Text.UTF8Encoding $false   # entrée standard de psql en UTF-8 (accents des valeurs et du SQL)
     try {
         # -c n'interprète pas les variables psql : le SQL passe par l'entrée standard
-        $r = $Sql | & (Join-Path $PgBin "psql.exe") @arguments -f -
+        $r = ((@($poses) + $Sql) -join "`n") | & (Join-Path $PgBin "psql.exe") @arguments -f -
         if ($LASTEXITCODE -ne 0) { throw "Échec de psql sur $HostPg ($Db)." }
         return $r
-    } finally { Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue }
+    } finally {
+        if ($null -eq $ancienMdp) { Remove-Item Env:\PGPASSWORD -ErrorAction SilentlyContinue } else { $env:PGPASSWORD = $ancienMdp }
+        if ($null -eq $ancienEncodage) { Remove-Item Env:\PGCLIENTENCODING -ErrorAction SilentlyContinue } else { $env:PGCLIENTENCODING = $ancienEncodage }
+    }
 }
 
 function Test-Port([string]$Hote, [int]$Port, [int]$DelaiMs = 3000) {

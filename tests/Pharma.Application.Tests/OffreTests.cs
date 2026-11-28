@@ -496,6 +496,31 @@ public class OffreTests
         Assert.Equal((EtatsOffre.Base, 2), (futur.Etat, futur.Postes));
     }
 
+    [Fact]
+    public async Task Un_code_version_1_plus_ancien_qu_un_code_lie_aux_serveurs_n_est_plus_pris()
+    {
+        // Base restaurée sur un autre PC : code de transition version 1 « tout compris » (10 postes), puis code acheté lié à l'ancien serveur
+        var (d, _, g, _) = Banc();
+        await g.SaisirAsync(1, Code(postes: 10, packs: ["A", "B", "C", "D"], emise: new DateTime(2026, 10, 1, 8, 0, 0, DateTimeKind.Utc), transition: true,
+            fin: Aujourdhui.AddDays(200)));
+        await g.SaisirAsync(1, Code(postes: 5, packs: ["A", "D"], serveurs: [ServeurLocal.Empreinte]));
+        var autrePc = new CleServeurFactice();
+        var h = new HorlogeFixe(Aujourdhui);
+        var recent = d.Lignes.FindIndex(l => l.EmiseLeUtc == d.Lignes.Max(x => x.EmiseLeUtc));
+        d.Lignes[recent] = d.Lignes[recent] with { RefuseeLeUtc = Midi(Aujourdhui.AddDays(-16)) };   // grâce du code acheté passée
+        var apres = await new OffreCourante(d, h, [Publique], cleServeur: autrePc).LireAsync();
+        Assert.Equal((EtatsOffre.Base, 2), (apres.Etat, apres.Postes));                              // pas « tout compris, 10 postes »
+
+        // Sur le serveur déclaré, rien ne change : le code acheté est actif
+        var declare = await new OffreCourante(d, h, [Publique], cleServeur: ServeurLocal).LireAsync();
+        Assert.Equal((EtatsOffre.Active, 5), (declare.Etat, declare.Postes));
+
+        // Un code version 1 seul (aucun code lié plus récent) reste pris
+        var (d1, o1, g1, _) = Banc();
+        await g1.SaisirAsync(1, Code(postes: 8));
+        Assert.Equal(8, await o1.MaximumPostesAsync());
+    }
+
     private sealed class PlancherFactice : IDatePlancherFichier
     {
         public DateTime? Valeur { get; set; }

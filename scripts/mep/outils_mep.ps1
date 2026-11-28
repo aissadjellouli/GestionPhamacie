@@ -96,7 +96,10 @@ function Invoke-OutilPg {
         if ($null -eq $ancienOpts) { Remove-Item Env:\PGOPTIONS -ErrorAction SilentlyContinue }
     }
     $lignes = @($sortie | ForEach-Object { "$_" })
-    return [pscustomobject]@{ Code = $code; Lignes = $lignes; Texte = ($lignes -join "`n") }
+    # Sortie d'erreur de l'outil (avertissements du serveur compris) à part : elle ne se mêle pas à une valeur lue, et peut être montrée
+    $valeurs = @($sortie | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" })
+    $messages = @($sortie | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] } | ForEach-Object { "$_" } | Where-Object { $_.Trim() })
+    return [pscustomobject]@{ Code = $code; Lignes = $lignes; Texte = ($lignes -join "`n"); Valeurs = $valeurs; Messages = $messages }
 }
 
 # psql avec ON_ERROR_STOP. -Role : « SET ROLE » exécuté dans la même session, avant -c / -f.
@@ -118,7 +121,7 @@ function Invoke-Psql {
 function Get-Scalaire {
     param([string]$Compte, [string]$Base, [string]$Sql, [string]$Role)
     $r = Invoke-Psql -Compte $Compte -Base $Base -Role $Role -Arguments @("-tAc", $Sql)
-    return (($r.Lignes | Where-Object { $_ -ne "" }) -join "`n").Trim()
+    return (($r.Valeurs | Where-Object { $_ -ne "" }) -join "`n").Trim()
 }
 
 function Test-NomBase([string]$Nom) {

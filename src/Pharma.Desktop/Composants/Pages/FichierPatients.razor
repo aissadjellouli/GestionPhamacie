@@ -177,7 +177,7 @@
 
     private async Task CreerAsync()
     {
-        if (nouveau is not { } np) return;
+        if (nouveau is not { } np || enCreation) return;   // double clic : une seule création
         controleNouveau = true;
         if (NomManquant) { await champNom.FocusAsync(); return; }
         (enCreation, erreurNouveau, patientExistant) = (true, null, null);

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Installe Tracodex Officine pour un essai, sur ce PC : base de démonstration et configuration du serveur.
 

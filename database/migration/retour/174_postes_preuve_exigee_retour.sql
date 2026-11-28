@@ -3,6 +3,9 @@
 --   Remet la valeur par défaut de parametre_postes.mode à 'transition' (comme le script 167) et retire le commentaire de la colonne.
 --   La valeur de la ligne n'est PAS changée : elle reste 'exige' (repasser en « transition » est un choix du titulaire, à faire dans
 --   Administration › Postes autorisés avec une version de l'API d'avant 174). Aucune autre donnée touchée.
+--   ATTENTION : avec une API des versions 167 à 173, la valeur 'exige' est de nouveau LUE : les PC non autorisés restent refusés.
+--   Pour les laisser se connecter le temps de les autoriser, repasser la ligne en transition APRÈS ce script (compte propriétaire) :
+--     UPDATE parametre_postes SET mode = 'transition' WHERE id = 1;
 --   Rejouable sans erreur. A lancer seul, hors de la suite numérotée : ce dossier n'est jamais lu par les outils de mise à jour.
 -- =====================================================================
 

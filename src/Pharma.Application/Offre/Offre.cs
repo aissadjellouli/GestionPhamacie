@@ -91,9 +91,17 @@ public sealed class CacheOffre
         lock (verrou) return valeur is { } v && maintenantUtc - v.LeUtc < Duree && maintenantUtc >= v.LeUtc ? v.Etat : null;
     }
 
-    public void Ecrire(EtatOffre etat, DateTime maintenantUtc) { lock (verrou) valeur = (etat, maintenantUtc); }
+    private long generation;
 
-    public void Vider() { lock (verrou) valeur = null; }
+    /// <summary>Change à chaque <see cref="Vider"/> : un calcul commencé avant une saisie ne range pas son résultat périmé après elle.</summary>
+    public long Generation { get { lock (verrou) return generation; } }
+
+    public void Ecrire(EtatOffre etat, DateTime maintenantUtc, long? generationLue = null)
+    {
+        lock (verrou) { if (generationLue is null || generationLue == generation) valeur = (etat, maintenantUtc); }
+    }
+
+    public void Vider() { lock (verrou) { valeur = null; generation++; } }
 }
 
 /// <summary>Offre en vigueur.</summary>
@@ -202,8 +210,9 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
     public async Task<EtatOffre> LireAsync(CancellationToken ct = default)
     {
         if (cache?.Lire(horloge.MaintenantUtc) is { } garde) return garde;
+        var generation = cache?.Generation;
         var etat = await CalculerAsync(ct);
-        cache?.Ecrire(etat, horloge.MaintenantUtc);
+        cache?.Ecrire(etat, horloge.MaintenantUtc, generation);
         return etat;
     }
 
@@ -233,17 +242,31 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
         // Délai de grâce « serveur non déclaré » : un seul, celui du code le plus récent concerné (constat de revue du 2026-11-28 : il
         // se renouvelait pour chaque code plus ancien encore valable)
         var graceServeurEpuisee = false;
-        foreach (var e in await depot.ListerAsync(ct))
+        // Décision du titulaire du 2026-11-28 : un code version 1 (non lié aux serveurs) plus ancien qu'un code version 2 n'est plus pris.
+        // Sinon, sur une base restaurée sur un autre PC, l'ancien code (de transition, par exemple) redevenait actif une fois le code
+        // version 2 refusé.
+        var codeLieVu = false;
+        // Ordre des codes : la date d'émission SIGNÉE dans le code, jamais la colonne emise_le de la base (correction du 2026-11-28 : une
+        // date modifiée dans la table remettait devant un ancien code plus large). Un code effacé de la table reste hors de portée.
+        var valables = new List<(ActivationEnregistree E, ActivationOffre A)>();
+        foreach (var lu in await depot.ListerAsync(ct))
         {
-            ActivationOffre a;
-            try { a = Controler(e.Code, identite); }
+            try { valables.Add((lu, Controler(lu.Code, identite))); }
             catch (ActivationInvalideException x)
             {
                 // Q4 : signature absente ou fausse, ou autre pharmacie : offre de base, signalé au titulaire (noté une fois au journal)
-                await depot.SignalerRefusAsync(e.Id, x.Message, ct);
-                refus ??= $"Activation du {e.EmiseLeUtc:dd/MM/yyyy} refusée : {x.Message}";
+                await depot.SignalerRefusAsync(lu.Id, x.Message, ct);
+                refus ??= $"Activation du {lu.EmiseLeUtc:dd/MM/yyyy} refusée : {x.Message}";
+            }
+        }
+        foreach (var (e, a) in valables.OrderByDescending(v => v.A.EmiseLeUtc).ThenByDescending(v => v.E.Id))
+        {
+            if (!a.LieeAuxServeurs && codeLieVu)
+            {
+                refus ??= $"Activation du {e.EmiseLeUtc:dd/MM/yyyy} ignorée : un code plus récent, lié aux serveurs, la remplace.";
                 continue;
             }
+            if (a.LieeAuxServeurs) codeLieVu = true;
             if (a.Fin is { } fin && JoursAvantFermeture(fin, aujourdhui) < 0) continue;   // échue depuis plus de 15 jours
             string etat = EtatsOffre.Active;
             string? alerte = null;

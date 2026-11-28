@@ -114,7 +114,8 @@ $mdpSuper = Read-MotDePasse "Mot de passe du superutilisateur PostgreSQL (postgr
 $etat = Invoke-Psql -PgBin $PgBin -HostPg "localhost" -Port $Port -User "postgres" -Db "postgres" -MotDePasse $mdpSuper `
     -Sql "SELECT pg_is_in_recovery() || '|' || COALESCE((SELECT status FROM pg_stat_wal_receiver), 'aucune réception')"
 Write-Host "Base en lecture seule | réception : $etat"
-if ($etat -notlike "t|*") { Write-Warning "La base n'est pas en lecture seule : vérifiez standby.signal dans $DossierDonnees." }
+# Booléen concaténé à un texte : « true » (et non « t »)
+if ($etat -notlike "t*|*") { Write-Warning "La base n'est pas en lecture seule : vérifiez standby.signal dans $DossierDonnees." }
 
 # 6. Clé de scellement
 if ($FichierCle -and (Test-Path $exeApi)) {

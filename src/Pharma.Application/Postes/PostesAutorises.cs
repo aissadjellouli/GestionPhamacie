@@ -127,6 +127,7 @@ public sealed class RegistrePostesAutorises(IPostesAutorisesDepot depot, IHorlog
     private (ReglagesPostes Valeur, DateTime Lu)? reglages;
     private (IReadOnlySet<string> Valeur, DateTime Lu)? reserves;
     private readonly ConcurrentDictionary<long, (PosteCle? Cle, DateTime Lu)> cles = new();
+    private long oublis;   // compte les oublis du cache (révocation, remplacement, autorisation)
     private DateTime derniereErreur = DateTime.MinValue;
 
     public async Task<ReglagesPostes> ReglagesAsync(CancellationToken ct = default)
@@ -158,9 +159,11 @@ public sealed class RegistrePostesAutorises(IPostesAutorisesDepot depot, IHorlog
     {
         var maintenant = horloge.MaintenantUtc;
         if (cles.TryGetValue(id, out var c) && maintenant - c.Lu < DureeCache && maintenant >= c.Lu) return c.Cle;
+        var generation = Interlocked.Read(ref oublis);
         var lu = await depot.LireCleAsync(id, ct);
         if (cles.Count >= ClesMax) cles.Clear();
-        cles[id] = (lu, maintenant);
+        // Clé oubliée pendant la lecture (révocation, remplacement) : la valeur lue avant n'est pas rangée (elle resterait 30 secondes)
+        if (generation == Interlocked.Read(ref oublis)) cles[id] = (lu, maintenant);
         return lu;
     }
 
@@ -184,6 +187,7 @@ public sealed class RegistrePostesAutorises(IPostesAutorisesDepot depot, IHorlog
     public void Invalider(long? id = null)
     {
         reglages = null;
+        Interlocked.Increment(ref oublis);
         reserves = null;
         if (id is { } i) cles.TryRemove(i, out _);
         else cles.Clear();

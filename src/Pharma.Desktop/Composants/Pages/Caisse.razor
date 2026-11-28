@@ -2991,7 +2991,17 @@
         await ChoisirPatientAsync(p);
     }
 
+    private bool creationPatientEnCours;
+
     private async Task CreerPatientAsync()
+    {
+        if (creationPatientEnCours) return;   // double clic : une seule création (sinon une fiche en double)
+        creationPatientEnCours = true;
+        try { await CreerPatientUneFoisAsync(); }
+        finally { creationPatientEnCours = false; }
+    }
+
+    private async Task CreerPatientUneFoisAsync()
     {
         controlePatient = true;
         if (NomPatientManquant)

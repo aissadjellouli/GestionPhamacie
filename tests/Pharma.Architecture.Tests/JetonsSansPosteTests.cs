@@ -95,4 +95,13 @@ public class JetonsSansPosteTests
         Assert.False(Pharma.Shared.LimitesCaisse.Invraisemblable(null));
         Assert.Throws<Pharma.Domain.Commun.RegleMetierException>(() => Pharma.Domain.Caisse.SessionCaisse.VerifierFond(3400930000000m));
     }
+
+    /// <summary>Relais du 2e serveur : une cible en forme absolue ne part jamais vers un autre hôte que le serveur principal.</summary>
+    [Theory]
+    [InlineData("/api/ventes?q=1", true)]
+    [InlineData("http://autre-hote/api/ventes", false)]
+    [InlineData("//autre-hote/api/ventes", false)]
+    [InlineData(@"/\autre-hote/api", false)]
+    [InlineData("api/ventes", false)]
+    public void Le_relais_ne_suit_qu_une_cible_locale(string cible, bool attendu) => Assert.Equal(attendu, RelaisVeille.EstCibleLocale(cible));
 }

@@ -110,6 +110,12 @@ Write-Host "   Symboles de débogage (.pdb) supprimés : $($pdb.Count)"
 $dev = @(Get-ChildItem -LiteralPath $Dossier -Recurse -File -Filter "appsettings.Development.json")
 $dev | Remove-Item -Force
 Write-Host "   Configuration de développement supprimée : $($dev.Count)"
+# Une configuration d'environnement réel (appsettings.Production.json, appsettings.Https.json…) restée à côté des sources porterait son mot
+# de passe dans la livraison : refus (elle s'écrit sur le PC serveur, jamais sur le PC des sources)
+$reelles = @(Get-ChildItem -LiteralPath $Dossier -Recurse -File -Filter "appsettings.*.json")
+if ($reelles.Count -gt 0) {
+    throw "Configuration d'un environnement réel présente dans la livraison : $(($reelles | ForEach-Object { $_.FullName }) -join ', '). Retirez-la des sources publiées, puis refaites la livraison."
+}
 
 # 3. Commentaires des scripts SQL (UTF-8 sans BOM, comme dans le dépôt)
 $utf8 = New-Object System.Text.UTF8Encoding($false)

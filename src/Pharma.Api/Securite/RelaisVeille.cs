@@ -105,6 +105,13 @@ public sealed class RelaisVeille(IHttpClientFactory fabrique, SignatureInterServ
         situation.Relayee(poste);
         // Cible brute (telle que reçue) : la signature du poste porte sur elle, le serveur 1 la vérifie à l'identique
         var cible = InterServeursMiddleware.CibleBrute(ctx);
+        // Cible en forme absolue (« http://autre-hote/… ») ou « //hote » : jamais relayée, elle partirait vers un autre hôte que le serveur 1
+        if (!EstCibleLocale(cible))
+        {
+            journal.LogWarning("Relais : cible de requête refusée (forme absolue)");
+            await Probleme(ctx, StatusCodes.Status400BadRequest, "Requête refusée", "Cible de la requête invalide.", "relais_cible_invalide");
+            return true;
+        }
         using var message = new HttpRequestMessage(new HttpMethod(req.Method), new Uri(@base, cible));
         if (CorpsPresent(ctx))
         {
@@ -169,6 +176,9 @@ public sealed class RelaisVeille(IHttpClientFactory fabrique, SignatureInterServ
         }
         return true;
     }
+
+    /// <summary>Cible relayable : un chemin de ce serveur (« /api/… »), jamais une adresse complète ni « //hôte ».</summary>
+    public static bool EstCibleLocale(string cible) => cible.StartsWith('/') && !cible.StartsWith("//", StringComparison.Ordinal) && !cible.StartsWith("/\\", StringComparison.Ordinal);
 
     private static bool CorpsPresent(HttpContext ctx)
     {
