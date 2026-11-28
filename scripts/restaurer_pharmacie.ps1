@@ -123,10 +123,9 @@ if (-not $SansBase) {
 
         # 6. Contrôle : contenu restauré
         $env:PGPASSWORD = $superPwd
-        $resume = & $psql -h $HostPg -p $Port -U $SuperUser -d $Base -qtA -c @"
-SELECT 'Ventes : ' || (SELECT count(*) FROM vente) || ', dernière le ' || COALESCE(to_char((SELECT max(date_vente) FROM vente), 'DD/MM/YYYY HH24:MI'), '—')
-    || ' · produits : ' || (SELECT count(*) FROM produit) || ' · employés : ' || (SELECT count(*) FROM utilisateur)
-"@
+        # Requête sans accent (psql reçoit le texte de -c dans le code de page de Windows, pas en UTF-8) ; phrase composée ici
+        $v = @((& $psql -h $HostPg -p $Port -U $SuperUser -d $Base -qtA -c "SELECT (SELECT count(*) FROM vente), COALESCE(to_char((SELECT max(date_vente) FROM vente), 'DD/MM/YYYY HH24:MI'), '-'), (SELECT count(*) FROM produit), (SELECT count(*) FROM utilisateur)") -split '\|')
+        $resume = if ($LASTEXITCODE -eq 0 -and $v.Count -eq 4) { "Ventes : $($v[0]), dernière le $($v[1]) · produits : $($v[2]) · employés : $($v[3])" } else { "(résumé non lu)" }
         Write-Host "Base $Base restaurée. $resume"
         Write-Host "Les opérations faites après cette sauvegarde sont à ressaisir. Rejouer ensuite toute la suite database/migration depuis le script 001 (mettre_a_jour_base_officine.ps1), jamais un script isolé."
     }

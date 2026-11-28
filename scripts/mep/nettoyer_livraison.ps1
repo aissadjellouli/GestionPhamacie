@@ -26,10 +26,9 @@ param([Parameter(Mandatory)][string]$Dossier)
 
 $ErrorActionPreference = "Stop"
 if (-not (Test-Path -LiteralPath $Dossier -PathType Container)) { throw "Dossier de livraison introuvable : $Dossier" }
-$Dossier = (Resolve-Path -LiteralPath $Dossier).Path
-if ((Test-Path -LiteralPath (Join-Path $Dossier ".git")) -or (Test-Path -LiteralPath (Join-Path $Dossier "src"))) {
-    throw "Le dossier $Dossier ressemble au dépôt des sources (.git ou src\) : nettoyage refusé (seule la copie livrée se nettoie)."
-}
+# Seule la copie livrée se nettoie : jamais un dossier du dépôt des sources (ni le dépôt, ni l'un de ses sous-dossiers, ni un dossier qui le contient)
+. (Join-Path $PSScriptRoot "garde_livraison.ps1")
+$Dossier = Assert-DossierHorsDepot $Dossier (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent)
 if (-not ('PharmaOfficine.Livraison.NettoyageSql' -as [type])) {
     Add-Type -Path (Join-Path $PSScriptRoot "NettoyageSql.cs")
 }

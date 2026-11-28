@@ -388,8 +388,8 @@
     {
         controleSmtp = true;
         const string smtpIncomplet = "Renseignez à la fois le serveur SMTP et l’adresse de l’expéditeur, ou aucun des deux.";
-        if (ServeurManquant) { await champServeur.FocusAsync(); return smtpIncomplet; }
-        if (ExpediteurManquant) { await champExpediteur.FocusAsync(); return smtpIncomplet; }
+        if (ServeurManquant) { try { await champServeur.FocusAsync(); } catch (Exception ex) when (ex is InvalidOperationException or Microsoft.JSInterop.JSException) { } return smtpIncomplet; }
+        if (ExpediteurManquant) { try { await champExpediteur.FocusAsync(); } catch (Exception ex) when (ex is InvalidOperationException or Microsoft.JSInterop.JSException) { } return smtpIncomplet; }
         // Le titulaire ressaisit son mot de passe (vérifié par le serveur) ; les champs de l'écran restent saisis en cas de refus
         demandeMdp = new("Enregistrer les réglages des notifications", ExplicationReglages, async mdp =>
         {
@@ -440,10 +440,10 @@
     private async Task EnregistrerDestinataireAsync() => await Executer(async () =>
     {
         controleDest = true;
-        if (NomDestManquant) { await champNomDest.FocusAsync(); return "Le nom du destinataire est obligatoire."; }
+        if (NomDestManquant) { try { await champNomDest.FocusAsync(); } catch (Exception ex) when (ex is InvalidOperationException or Microsoft.JSInterop.JSException) { } return "Le nom du destinataire est obligatoire."; }
         if (CanalManquant) return "Choisissez au moins un canal : e-mail ou SMS.";
-        if (MailManquant) { await champMail.FocusAsync(); return "Indiquez l’adresse e-mail du destinataire."; }
-        if (TelManquant) { await champTel.FocusAsync(); return "Indiquez le numéro de mobile du destinataire."; }
+        if (MailManquant) { try { await champMail.FocusAsync(); } catch (Exception ex) when (ex is InvalidOperationException or Microsoft.JSInterop.JSException) { } return "Indiquez l’adresse e-mail du destinataire."; }
+        if (TelManquant) { try { await champTel.FocusAsync(); } catch (Exception ex) when (ex is InvalidOperationException or Microsoft.JSInterop.JSException) { } return "Indiquez le numéro de mobile du destinataire."; }
         if (TypesManquants) return "Choisissez au moins un type de message.";
         var (_, e) = await Api.EnregistrerDestinataireAsync(fiche.Id,
             new SaisieDestinataireDto(fiche.Nom, fiche.Email, fiche.Telephone, fiche.CanalEmail, fiche.CanalSms, fiche.Types.ToList(), fiche.Actif));

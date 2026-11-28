@@ -148,7 +148,7 @@ public sealed class VerificationCodeComptoir(ICodesComptoir codes, IVerificateur
                 new Dictionary<string, object?> { ["poste"] = poste, ["essais"] = essai, ["minutes"] = (int)d.TotalMinutes }, null, ct);
             // Au-delà du seuil : chaque blocage est signalé au titulaire (mis en file, jamais bloquant)
             if (essai >= CodeComptoir.SeuilAlerte && alertes is not null)
-                await alertes.SurveillanceAsync(
+                await alertes.SecuriteAsync(
                     $"Code comptoir de {compte.NomComplet} bloqué {Minutes(d)} après {essai} codes faux d’affilée (poste {poste ?? "inconnu"}).",
                     urgent: true, ct);
         }
@@ -176,7 +176,7 @@ public sealed class VerificationCodeComptoir(ICodesComptoir codes, IVerificateur
                     new Dictionary<string, object?> { ["poste"] = poste, ["essais"] = r.Essai, ["valideur"] = compte.NomComplet,
                         ["minutes"] = (int)EssaisCodeDemandeur.Blocage.TotalMinutes }, null, ct);
                 if (alertes is not null)
-                    await alertes.SurveillanceAsync(
+                    await alertes.SecuriteAsync(
                         $"Autorisation par code bloquée {Minutes(EssaisCodeDemandeur.Blocage)} pour l’employé n° {demandeurId} après {r.Essai} codes faux "
                         + $"(code de {compte.NomComplet}, poste {poste ?? "inconnu"}).", urgent: true, ct);
             }

@@ -4,7 +4,7 @@ namespace Pharma.Application.Notifications;
 
 /// <summary>
 /// Lot O6 (offre de base et options) : alertes au titulaire selon les packs de l'offre. Alertes de sécurité (sauvegarde, synchronisation,
-/// 2e serveur, réglages imposés) : toujours envoyées (décision du 2026-11-26). Alertes métier par SMS ou e-mail (écart de caisse, lot
+/// 2e serveur, réglages imposés, intégrité des journaux, postes, codes faux répétés : SecuriteAsync) : toujours envoyées (décision du 2026-11-26). Alertes métier par SMS ou e-mail (écart de caisse, lot
 /// bloqué, écarts d'inventaire, annulations) : pack E. Points du contrôle interne et ancien lot délaissé : pack A (enregistrés en silence
 /// sans lui). Une alerte non envoyée pour cette raison n'est pas une erreur : rien n'est signalé.
 /// </summary>
@@ -34,6 +34,7 @@ public sealed class AlertesTitulaireSelonOffre(IAlertesTitulaire alertes, IPacks
         SiAsync(PacksOffre.ControleFraude, () => alertes.SurveillanceAsync(message, urgent, ct), ct);
 
     // Sécurité : toujours
+    public Task SecuriteAsync(string message, bool urgent, CancellationToken ct = default) => alertes.SecuriteAsync(message, urgent, ct);
     public Task SauvegardeEnEchecAsync(bool disqueAbsent, string detail, CancellationToken ct = default) => alertes.SauvegardeEnEchecAsync(disqueAbsent, detail, ct);
     public Task SansSauvegardeDisqueAsync(int jours, string detail, CancellationToken ct = default) => alertes.SansSauvegardeDisqueAsync(jours, detail, ct);
     public Task SynchronisationAsync(string objet, string detail, string sms, CancellationToken ct = default) => alertes.SynchronisationAsync(objet, detail, sms, ct);

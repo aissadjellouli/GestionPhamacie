@@ -142,7 +142,7 @@ public sealed class EnrolerPoste(IPostesAutorisesDepot depot, RegistrePostesAuto
 
     private async Task AlerterAsync(string objet, string texte, CancellationToken ct)
     {
-        try { await alertes.SurveillanceAsync(objet + " : " + texte, true, ct); }
+        try { await alertes.SecuriteAsync(objet + " : " + texte, true, ct); }
         catch (Exception e) when (e is not OperationCanceledException) { trace?.Erreur("Postes autorisés : alerte non envoyée", e); }
     }
 

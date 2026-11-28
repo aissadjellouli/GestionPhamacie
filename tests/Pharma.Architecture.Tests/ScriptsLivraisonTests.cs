@@ -19,9 +19,11 @@ public class ScriptsLivraisonTests
         @"dev\preparer_central_vs.ps1",
         @"mep\creer_base_centrale.ps1",
         @"mep\creer_livraison.ps1",
+        @"mep\garde_livraison.ps1",
         @"mep\nettoyer_livraison.ps1",
         @"mep\obfusquer_livraison.ps1",
         @"mep\NettoyageSql.cs",
+        @"paquet\autoriser_poste.cmd",
         @"paquet\demarrer.cmd",
         @"paquet\installer.ps1",
         @"paquet\LISEZMOI.txt",
@@ -163,6 +165,60 @@ public class ScriptsLivraisonTests
     {
         var texte = File.ReadAllText(Path.Combine(DossierScripts, "mep", "nettoyer_livraison.ps1"));
         foreach (var extension in new[] { ".nrmap", ".license", ".v3lic" }) Assert.Contains($"\"{extension}\"", texte);
+    }
+
+    /// <summary>
+    /// Constat de revue du 2026-11-28 : une erreur de dossier ne doit jamais vider ni réécrire les sources. La garde commune refuse le dépôt,
+    /// ses sous-dossiers et tout dossier qui le contient ; un dossier existant n'est vidé que s'il est une livraison déjà fabriquée.
+    /// </summary>
+    [Fact]
+    public void Les_scripts_de_fabrication_refusent_tout_dossier_du_depot()
+    {
+        foreach (var fabrication in new[] { Path.Combine("mep", "creer_livraison.ps1"), Path.Combine("mep", "nettoyer_livraison.ps1"), "creer_paquet_essai.ps1" })
+        {
+            var f = File.ReadAllText(Path.Combine(DossierScripts, fabrication));
+            Assert.Contains("garde_livraison.ps1", f);
+            // La garde passe avant toute suppression
+            var garde = f.IndexOf("= Assert-DossierHorsDepot", StringComparison.Ordinal);
+            Assert.True(garde > 0, fabrication);
+            var suppression = f.IndexOf("Remove-Item", StringComparison.Ordinal);
+            Assert.True(suppression < 0 || garde < suppression, fabrication);
+        }
+        foreach (var fabrication in new[] { Path.Combine("mep", "creer_livraison.ps1"), "creer_paquet_essai.ps1" })
+            Assert.Contains("Assert-DossierLivraison $Sortie", File.ReadAllText(Path.Combine(DossierScripts, fabrication)));
+
+        var powershell = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
+        if (!OperatingSystem.IsWindows() || !File.Exists(powershell)) return;
+        var racine = BaseJetableM4.RacineDepot();
+        var horsDepot = Path.Combine(Path.GetTempPath(), $"pharma_garde_{Guid.NewGuid():N}");
+        var essai = Path.Combine(horsDepot, "essai.ps1");
+        Directory.CreateDirectory(Path.Combine(horsDepot, "autre"));
+        try
+        {
+            File.WriteAllText(Path.Combine(horsDepot, "autre", "fichier.txt"), "x");
+            string[] cas =
+            [
+                $"Assert-DossierHorsDepot '{racine}' '{racine}'",                                             // le dépôt
+                $"Assert-DossierHorsDepot '{Path.Combine(racine, "scripts")}' '{racine}'",                    // un de ses dossiers
+                $"Assert-DossierHorsDepot '{Path.Combine(racine, "src", "Pharma.Api")}' '{racine}'",
+                $"Assert-DossierHorsDepot '{Path.Combine(racine, "dossier-absent", "livraison")}' '{racine}'", // dossier à créer dans le dépôt
+                $"Assert-DossierHorsDepot '{Path.GetDirectoryName(racine)}' '{racine}'",                      // un dossier qui contient le dépôt
+                $"Assert-DossierHorsDepot '{Path.Combine(horsDepot, "livraison")}' '{racine}'",               // hors dépôt : accepté
+                $"Assert-DossierLivraison '{Path.Combine(horsDepot, "autre")}'",                              // non vide, pas une livraison
+                $"Assert-DossierLivraison '{Path.Combine(horsDepot, "absent")}'",                             // absent : accepté
+            ];
+            var lignes = new List<string> { $". '{Path.Combine(DossierScripts, "mep", "garde_livraison.ps1")}'" };
+            lignes.AddRange(cas.Select(c => "try { " + c + " | Out-Null; 'accepte' } catch { 'refuse' }"));
+            File.WriteAllLines(essai, lignes, new System.Text.UTF8Encoding(true));
+            var (code, sortie) = Lancer(powershell, essai, "");
+            Assert.True(code == 0, sortie);
+            Assert.Equal(["refuse", "refuse", "refuse", "refuse", "refuse", "accepte", "refuse", "accepte"],
+                sortie.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
+        finally
+        {
+            try { Directory.Delete(horsDepot, recursive: true); } catch (IOException) { }
+        }
     }
 
     private static bool Signature(byte[] octets) => octets.Length >= 3 && octets[0] == 0xEF && octets[1] == 0xBB && octets[2] == 0xBF;

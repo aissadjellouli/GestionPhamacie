@@ -328,13 +328,15 @@ public class OffreTests
             await alertes.EcartCaisseAsync("x", "p", 10, 5); await alertes.LotBloqueAsync("p", "l", 1, 1); await alertes.EcartsInventaireAsync("r", 1, 1, 1);
             await alertes.AnnulationsAsync("p", 3, 2); await alertes.LotDelaisseAsync("m", false); await alertes.SurveillanceAsync("m", false);
             await alertes.SauvegardeEnEchecAsync(true, "d"); await alertes.SynchronisationAsync("o", "d", "s"); await alertes.SecondServeurAsync("o", "d", "s");
+            await alertes.SecuriteAsync("journal rompu", true);
         }
         await Tout();
-        Assert.Equal(["sauvegarde", "synchronisation", "second_serveur"], espion.Envoyees);
+        // Sans aucun pack : la sécurité part toujours (journal rompu, poste révoqué, codes faux : même envoi qu'un point de contrôle)
+        Assert.Equal(["sauvegarde", "synchronisation", "second_serveur", "surveillance"], espion.Envoyees);
         espion.Envoyees.Clear();
         await g.SaisirAsync(1, Code(packs: ["A", "E"]));
         await Tout();
-        Assert.Equal(9, espion.Envoyees.Count);
+        Assert.Equal(10, espion.Envoyees.Count);
     }
 
     [Fact]
@@ -446,6 +448,53 @@ public class OffreTests
     }
 
     // ---- Point 5 du 2026-11-27 : horloge (date effective) ------------------------------------------------------------------------------
+
+    [Fact]
+    public void Une_date_du_central_dans_le_futur_n_est_retenue_que_si_le_central_la_confirme()
+    {
+        var t = Midi(Aujourdhui);
+        // Horloge du central qui saute d'un an pendant quelques minutes : rien n'est mémorisé, et la date juste reprend ensuite
+        var f = new PlancherFactice { Centrale = t };
+        Assert.False(DateCentraleOffre.Noter(f, t.AddDays(365), t.AddHours(1)));
+        Assert.False(DateCentraleOffre.Noter(f, t.AddDays(365).AddMinutes(30), t.AddHours(1)));   // pas encore une heure du central : toujours en attente
+        Assert.Equal(t.AddDays(365), DateCentraleOffre.SautEnAttente(f));
+        Assert.True(DateCentraleOffre.Noter(f, t.AddHours(2), t.AddHours(2)));                    // central corrigé : date juste mémorisée
+        Assert.Equal(((DateTime?)t.AddHours(2), (DateTime?)null), (f.Centrale, DateCentraleOffre.SautEnAttente(f)));
+
+        // Horloge de CE serveur reculée de 30 jours, aucun échange depuis : le central est cru à sa deuxième réponse, une heure plus tard
+        var recule = new PlancherFactice { Centrale = t.AddDays(-30) };
+        Assert.False(DateCentraleOffre.Noter(recule, t, t.AddDays(-30)));
+        Assert.True(DateCentraleOffre.Noter(recule, t.AddHours(1), t.AddDays(-30)));
+        Assert.Equal(t.AddHours(1), recule.Centrale);
+
+        // Deux jours d'écart au plus (serveur arrêté un week-end) : mémorisée tout de suite ; première mise en service (rien de connu) : aussi
+        var arrete = new PlancherFactice { Centrale = t.AddDays(-2) };
+        Assert.True(DateCentraleOffre.Noter(arrete, t, t.AddMinutes(-5)));
+        Assert.True(DateCentraleOffre.Noter(new PlancherFactice(), t.AddDays(365)));
+    }
+
+    [Fact]
+    public async Task La_grace_du_serveur_non_declare_n_est_accordee_qu_une_fois_et_jamais_depuis_une_date_future()
+    {
+        // Base restaurée sur un autre PC avec deux codes liés à l'ancien serveur : le plus récent (5 postes) et un plus ancien (10 postes)
+        var (d, _, g, _) = Banc();
+        await g.SaisirAsync(1, Code(postes: 10, packs: ["A", "B", "C"], emise: new DateTime(2026, 10, 1, 8, 0, 0, DateTimeKind.Utc), serveurs: [ServeurLocal.Empreinte]));
+        await g.SaisirAsync(1, Code(postes: 5, packs: ["A", "D"], serveurs: [ServeurLocal.Empreinte]));
+        var autrePc = new CleServeurFactice();
+        var h = new HorlogeFixe(Aujourdhui);
+        var recent = d.Lignes.FindIndex(l => l.EmiseLeUtc == d.Lignes.Max(x => x.EmiseLeUtc));
+        Assert.Equal((EtatsOffre.Grace, 5), (await new OffreCourante(d, h, [Publique], cleServeur: autrePc).LireAsync()) is var e ? (e.Etat, e.Postes) : default);
+
+        // Grâce du code le plus récent passée : offre de base, pas une seconde grâce sur le code plus ancien
+        d.Lignes[recent] = d.Lignes[recent] with { RefuseeLeUtc = Midi(Aujourdhui.AddDays(-16)) };
+        var apres = await new OffreCourante(d, h, [Publique], cleServeur: autrePc).LireAsync();
+        Assert.Equal((EtatsOffre.Base, 2), (apres.Etat, apres.Postes));
+
+        // Première constatation datée dans le futur (horloge avancée ce jour-là) : la grâce n'est pas prolongée d'autant
+        d.Lignes[recent] = d.Lignes[recent] with { RefuseeLeUtc = Midi(Aujourdhui.AddDays(365)) };
+        var futur = await new OffreCourante(d, h, [Publique], cleServeur: autrePc).LireAsync();
+        Assert.Equal((EtatsOffre.Base, 2), (futur.Etat, futur.Postes));
+    }
 
     private sealed class PlancherFactice : IDatePlancherFichier
     {
@@ -674,7 +723,7 @@ public class OffreTests
         var autre = new CleServeurFactice().Empreinte;
         var a = Program.Activation(Base("--serveur", EmpreinteServeur.Afficher(ServeurLocal.Empreinte).ToLowerInvariant(), "--serveur", autre), DateTime.UtcNow);
         Assert.Equal([ServeurLocal.Empreinte, autre], a.Serveurs);
-        Assert.Equal(a.Serveurs.Order(StringComparer.Ordinal), CodeActivation.Lire(Program.Signer(a, Cle), Publique).Serveurs!);
+        Assert.Equal(a.Serveurs!.Order(StringComparer.Ordinal), CodeActivation.Lire(Program.Signer(a, Cle), Publique).Serveurs!);
     }
 
     // ---- Corrections et compléments du point 5 (décisions du titulaire du 2026-11-27, points 3 et 4) -----------------------------------

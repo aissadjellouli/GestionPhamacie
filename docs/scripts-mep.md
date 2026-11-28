@@ -8,13 +8,13 @@ développement.
 
 ## 1. Installation neuve d'une officine (parcours A)
 
-**Les scripts numérotés `database\migration\001` à `174` ne sont PAS lancés un par un** : `database\init\schema.sql` en est l'équivalent
+**Les scripts numérotés `database\migration\001` à `175` ne sont PAS lancés un par un** : `database\init\schema.sql` en est l'équivalent
 exact, tenu à jour jusqu'au dernier script (le script de création refuse de démarrer si l'en-tête « 001 à NNN » est en retard).
 
 | Script | Utilisé ? | Rôle |
 |---|---|---|
 | `scripts\mep\creer_base_officine.ps1` | **Oui, une fois** | Lance à lui seul, dans l'ordre, les six fichiers ci-dessous, puis vérifie (rôles, comptages, droits des journaux) |
-| `database\init\schema.sql` | Oui (par le script) | Toute la structure, équivaut aux scripts 001 à 174 |
+| `database\init\schema.sql` | Oui (par le script) | Toute la structure, équivaut aux scripts 001 à 175 |
 | `database\init\fuseau_horaire.sql` | Oui (par le script) | Fuseau Africa/Algiers de la base (absent d'un dump de schéma) |
 | `database\init\seed_referentiel.sql` | Oui (par le script) | Référentiel de départ (wilayas, rôles, taux de TVA…) |
 | `database\init\111b_roles_integrite.sql` | Oui (par le script) | Séparation des rôles, journaux protégés |
@@ -355,6 +355,7 @@ non attribués (voulu : [base-de-donnees.md](base-de-donnees.md)).
 | `database/migration/172_activation_offre.sql` | Mise à jour : rejoué par `mettre_a_jour_base_officine.ps1` (pas à l'installation : inclus dans `schema.sql`) |
 | `database/migration/173_remise_nulle_hors_controle.sql` | Mise à jour : rejoué par `mettre_a_jour_base_officine.ps1` (pas à l'installation : inclus dans `schema.sql`) |
 | `database/migration/174_postes_preuve_exigee.sql` | Mise à jour : rejoué par `mettre_a_jour_base_officine.ps1` (pas à l'installation : inclus dans `schema.sql`) |
+| `database/migration/175_remise_medicament_au_controle.sql` | Mise à jour : rejoué par `mettre_a_jour_base_officine.ps1` (pas à l'installation : inclus dans `schema.sql`) |
 | `database/migration/retour/162_deconnexion_inactivite_defaut_15_minutes_retour.sql` | Jamais en production : retour arrière, seulement sur décision après un incident |
 | `database/migration/retour/163_serveur_ecarte_lecture_seule_retour.sql` | Jamais en production : retour arrière, seulement sur décision après un incident |
 | `database/migration/retour/163b_droit_identifiant_base_retour.sql` | Jamais en production : retour arrière, seulement sur décision après un incident |
@@ -370,6 +371,7 @@ non attribués (voulu : [base-de-donnees.md](base-de-donnees.md)).
 | `database/migration/retour/172_activation_offre_retour.sql` | Jamais en production : retour arrière, seulement sur décision après un incident |
 | `database/migration/retour/173_remise_nulle_hors_controle_retour.sql` | Jamais en production : retour arrière, seulement sur décision après un incident |
 | `database/migration/retour/174_postes_preuve_exigee_retour.sql` | Jamais en production : retour arrière, seulement sur décision après un incident |
+| `database/migration/retour/175_remise_medicament_au_controle_retour.sql` | Jamais en production : retour arrière, seulement sur décision après un incident |
 | `database/tests/101b_suppression_num_facture_chifa_tests.sql` | Jamais en production : test, sur une base d'essai |
 | `database/tests/111_integrite_hachage_tests.sql` | Jamais en production : test, sur une base d'essai |
 | `database/tests/117_registre_renforce_tests.sql` | Jamais en production : test, sur une base d'essai |
@@ -424,6 +426,7 @@ non attribués (voulu : [base-de-donnees.md](base-de-donnees.md)).
 | `database/tests/172_activation_offre_tests.sql` | Jamais en production : test, sur une base d'essai |
 | `database/tests/173_remise_nulle_hors_controle_tests.sql` | Jamais en production : test, sur une base d'essai |
 | `database/tests/174_postes_preuve_exigee_tests.sql` | Jamais en production : test, sur une base d'essai |
+| `database/tests/175_remise_medicament_au_controle_tests.sql` | Jamais en production : test, sur une base d'essai |
 | `database/tests/rejeu_complet.ps1` | Jamais en production : test, sur une base d'essai |
 | `deploy/demo/docker-compose.yml` | Jamais en production : démonstration cloud (Docker) |
 | `deploy/demo/init/10_base_officine.sh` | Jamais en production : démonstration cloud (Docker) |
@@ -439,6 +442,8 @@ non attribués (voulu : [base-de-donnees.md](base-de-donnees.md)).
 | `scripts/mep/mettre_a_jour_base_officine.ps1` | Mise à jour d'une officine en service : sauvegarde puis toute la suite depuis 001 |
 | `scripts/mep/outils_mep.ps1` | Chargé par les trois scripts de `scripts\mep` ; jamais lancé seul |
 | `scripts/mep/NettoyageSql.cs` | Chargé par `nettoyer_livraison.ps1` (et compilé dans les tests d'architecture) ; jamais lancé seul |
+| `scripts/mep/garde_livraison.ps1` | Chargé par `creer_livraison.ps1`, `creer_paquet_essai.ps1` et `nettoyer_livraison.ps1` (gardes de dossier : jamais un dossier du dépôt des sources, un dossier existant n'est vidé que s'il est une livraison déjà fabriquée) ; jamais lancé seul, non livré |
+| `scripts/paquet/autoriser_poste.cmd` | Paquet d'essai seulement : autorise le PC d'essai comme poste (affiche le code à saisir), une fois, après `installer.ps1` |
 | `scripts/paquet/demarrer.cmd` | Jamais en production : paquet d'essai |
 | `scripts/paquet/installer.ps1` | Jamais en production : paquet d'essai |
 | `scripts/restaurer_pharmacie.ps1` | Incident F1 : restauration de la base ou de la GED |

@@ -1,7 +1,7 @@
 -- =====================================================================
 -- Pharma Officine : CRÉATION COMPLÈTE DU SCHÉMA (installation neuve)
 --
--- Équivaut aux scripts database/migration/001 à 174 appliqués dans l'ordre (vérifié :
+-- Équivaut aux scripts database/migration/001 à 175 appliqués dans l'ordre (vérifié :
 -- même structure), puis au script 101b (colonne obsolète vente.num_facture_chifa absente :
 -- décision du titulaire du 2026-11-26 ; une base neuve n'a jamais besoin de 101b). Pour une base déjà installée, rejouer TOUTE la suite
 -- database/migration depuis le script 001 (mettre_a_jour_base_officine.ps1), jamais ce fichier ni un script isolé.
@@ -13,7 +13,7 @@
 --
 -- Puis : database/init/seed_referentiel.sql (référentiel de départ).
 -- Fichier produit par pg_dump --schema-only à partir d'une base construite
--- par les scripts 001 à 174 ; à régénérer à chaque nouveau script.
+-- par les scripts 001 à 175 ; à régénérer à chaque nouveau script.
 -- =====================================================================
 
 SELECT to_regclass('public.utilisateur') IS NOT NULL AS schema_deja_present \gset
@@ -3187,15 +3187,15 @@ CREATE FUNCTION public.surveillance_candidats(p_jour date) RETURNS TABLE(o_type 
         GROUP BY v.utilisateur_id
     ),
     remises AS (
-        SELECT v.utilisateur_id, count(*)::int AS n, sum(v.montant_remise) AS montant
-        FROM ventes v WHERE v.remise_pct > 0 AND v.montant_remise > 0 GROUP BY v.utilisateur_id
+        SELECT v.utilisateur_id, count(*)::int AS n, sum(v.montant_remise + v.montant_don) AS montant
+        FROM ventes v WHERE v.remise_pct > 0 AND v.montant_remise + v.montant_don > 0 GROUP BY v.utilisateur_id
     ),
     -- Remises au même patient sur les 30 jours qui précèdent (une anomalie par patient et par mois)
     remises_patient AS (
-        SELECT v.patient_id, count(*)::int AS n, sum(v.montant_remise) AS montant,
+        SELECT v.patient_id, count(*)::int AS n, sum(v.montant_remise + v.montant_don) AS montant,
                string_agg(DISTINCT u.nom_complet, ', ') AS vendeurs
         FROM vente v JOIN utilisateur u ON u.id = v.utilisateur_id
-        WHERE v.statut = 'validee' AND v.remise_pct > 0 AND v.montant_remise > 0 AND v.patient_id IS NOT NULL
+        WHERE v.statut = 'validee' AND v.remise_pct > 0 AND v.montant_remise + v.montant_don > 0 AND v.patient_id IS NOT NULL
           AND v.date_vente >= p_jour - 29 AND v.date_vente < p_jour + 1
         GROUP BY v.patient_id
     )

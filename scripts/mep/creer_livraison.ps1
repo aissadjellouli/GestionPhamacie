@@ -51,13 +51,14 @@ $racine = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 # L'outil d'obfuscation est cherché avant toute publication : pas de livraison fabriquée à moitié
 if (-not $SansObfuscation) { $Obfuscateur = & (Join-Path $PSScriptRoot "obfusquer_livraison.ps1") -ChercherOutil -Obfuscateur $Obfuscateur }
 
+# Le dossier de sortie n'est jamais dans le dépôt des sources, et un dossier existant n'est vidé que s'il est une livraison déjà fabriquée
+. (Join-Path $PSScriptRoot "garde_livraison.ps1")
+$Sortie = Assert-DossierHorsDepot $Sortie $racine
+
 if (Test-Path -LiteralPath $Sortie) {
     if (@(Get-ChildItem -LiteralPath $Sortie -Force).Count -gt 0) {
         if (-not $Remplacer) { throw "Le dossier $Sortie existe et n'est pas vide : choisissez un autre dossier ou ajoutez -Remplacer." }
-        $plein = (Resolve-Path -LiteralPath $Sortie).Path
-        if ($plein.TrimEnd('\') -ieq $racine.TrimEnd('\') -or $racine.StartsWith($plein.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
-            throw "Le dossier $Sortie contient le dépôt des sources : refusé."
-        }
+        Assert-DossierLivraison $Sortie
         Remove-Item -LiteralPath $Sortie -Recurse -Force
     }
 }

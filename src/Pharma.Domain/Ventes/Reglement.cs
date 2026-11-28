@@ -16,6 +16,12 @@ public enum ModePaiement
 /// </summary>
 public sealed record Reglement(ModePaiement Mode, decimal Montant, decimal? MontantRecu, decimal Avoir = 0)
 {
+    /// <summary>
+    /// Garde-fou de la caisse au clavier (2026-11-28) : un montant en espèces de 10 000 000 DA ou plus est un code-barres scanné dans un
+    /// champ de montant, pas une somme remise au comptoir. Même valeur que Pharma.Shared.LimitesCaisse (contrôle du poste).
+    /// </summary>
+    public const decimal MontantEspecesMax = 10_000_000m;
+
     /// <summary>Monnaie à rendre (espèces seulement).</summary>
     public decimal Rendu => Mode == ModePaiement.Especes && MontantRecu is { } recu ? recu - Montant : 0;
 
@@ -46,6 +52,8 @@ public sealed record Reglement(ModePaiement Mode, decimal Montant, decimal? Mont
             if (aPayer > 0) throw new RegleMetierException("Saisissez le montant reçu en espèces.", "montant_recu");
             return aPayer;
         }
+        if (recu >= MontantEspecesMax)
+            throw new RegleMetierException("Montant reçu invraisemblable (un code-barres scanné dans ce champ ?) : saisissez le montant remis par le client.", "montant_recu");
         if (recu < aPayer)
             throw new RegleMetierException($"Montant reçu insuffisant : {recu:N2} DA pour {aPayer:N2} DA à payer.", "montant_recu");
         return recu;

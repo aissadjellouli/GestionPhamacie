@@ -244,7 +244,7 @@ Détail : mise-en-production.md, « Variables d'environnement de l'API », A 4.5
 
 | Fichier | Rôle | Passé par |
 | --- | --- | --- |
-| `schema.sql` | Structure complète : équivaut aux scripts `001` à `174` (en-tête du fichier), sans la colonne supprimée par `101b` | `creer_base_officine.ps1` (compte `pharma_app`) |
+| `schema.sql` | Structure complète : équivaut aux scripts `001` à `175` (en-tête du fichier), sans la colonne supprimée par `101b` | `creer_base_officine.ps1` (compte `pharma_app`) |
 | `fuseau_horaire.sql` | Fuseau de la base `Africa/Algiers` (copie du script `083`) | `creer_base_officine.ps1` |
 | `seed_referentiel.sql` | Référentiel de départ (rôles, droits, organismes, taux de TVA 0 % et 19 %, compte `titulaire`…) | `creer_base_officine.ps1` |
 | `111b_roles_integrite.sql` | Séparation des rôles (journaux inaltérables) | `creer_base_officine.ps1`, compte `postgres` |
@@ -452,7 +452,7 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
   ```
   - `<base>` : exemple `pharmacie`. Pour voir le plan sans rien créer : ajouter `-WhatIf`. Depuis le dépôt (PC des sources, essais),
     `-DossierDepot` est inutile.
-  - Le script, dans l'ordre : vérifie que l'init est à jour (« 001 à NNN » = dernier script, aujourd'hui `174`) ; vérifie que PostgreSQL
+  - Le script, dans l'ordre : vérifie que l'init est à jour (« 001 à NNN » = dernier script, aujourd'hui `175`) ; vérifie que PostgreSQL
     répond et que la base **n'existe pas** ; crée `pharma_app` s'il manque (`LOGIN CREATEDB`) ; crée la base ; passe `schema.sql`,
     `fuseau_horaire.sql` (copie du `083`), `seed_referentiel.sql` ; puis, avec `postgres`, `111b` (journaux inaltérables), `163b` (lire
     l'identifiant de la base), `166b` (droit de promouvoir) ; enfin ses vérifications (`objets_encore_a_pharma_app = 0`, comptages de
@@ -1642,7 +1642,7 @@ Les scripts `database\migration\NNN_*.sql` sont réexécutables sans dégât ; `
   - Publication de l'API et du poste, et nettoyage de la copie livrée (voir A18).
   - Copier `<dossier de livraison>` (scripts numérotés **à plat** dans `Api\database\`, init dans `Api\database\init\` :
     `Pharma.Api.csproj`), dossier `scripts` de la livraison compris, sur la clé USB. `111b`, `163b`, `166b` sont dans `Api\database\init\` : rien à copier à part.
-  - **Attendu** : `Api\Pharma.Api.exe`, le **dernier script numéroté** dans `Api\database\` (`174_postes_preuve_exigee.sql` à ce jour : le
+  - **Attendu** : `Api\Pharma.Api.exe`, le **dernier script numéroté** dans `Api\database\` (`175_remise_medicament_au_controle.sql` à ce jour : le
     numéro le plus haut de `database\migration` du dépôt), `Api\database\init\111b_roles_integrite.sql` et `Poste\Pharma.Desktop.exe` sur la
     clé (écart n° 18 : corrigé).
   - Détail : MEP § B 1.
@@ -2040,7 +2040,7 @@ preuve tirée du code ou des scripts, ou « à confirmer » avec la raison.
 | 15 | Étape 3.1 lancée « depuis le dossier du dépôt » sur le PC serveur, alors que `scripts` n'y est copié qu'à l'étape 4.3 et l'API (avec `database\init`) à l'étape 4.2 | mise-en-production.md l. 293-297 contre l. 333-342 | **Corrigé le 2026-11-26** (mise-en-production.md § 3 et 3.1 ; ici A15) : faire 4.1 à 4.3 (A18 à A20) avant 3.1 (A15), puis `creer_base_officine.ps1 -Base <base> -DossierDepot "C:\Program Files\PharmaOfficine\Api"` : le script lit `<DossierDepot>\database\init` et, sans `database\migration`, les scripts à plat de `<DossierDepot>\database` (l. 91, 99-102). Le dossier de destination de `scripts` sur le PC serveur reste **à confirmer** (4.3 / A20, marqueur de la source) |
 | 16 | Nom du menu : « Administration, Langue et pharmacie » contre « Administration › Pharmacie » | mise-en-production.md l. 544 contre l. 632 et procedure-cle-editeur.md l. 75-76 | **Corrigé le 2026-11-26** : libellé réel « Langue et pharmacie » (`NavAdmin.razor` l. 130, route `admin/pharmacie` ; onglet « Pharmacie et langue », l. 147), partout : mise-en-production.md 9.1 et 13.0, procedure-cle-editeur.md § 3, fonctionnalites.md, ici A43 et A45.1 |
 | 17 | Checklist après mise à jour : « Scripts 112 et suivants lancés avec le rôle propriétaire » contre parcours B : toute la suite depuis `001` rejouée avec `SET ROLE` après `111b` | mise-en-production.md l. 1657 contre l. 679 et l. 692 | **Corrigé le 2026-11-26** (les deux checklists) : toute la suite depuis `001` (`mettre_a_jour_base_officine.ps1`, en-tête l. 8 et 18) |
-| 18 | Fichier attendu sur la clé `148_sauvegarde_alerte_sans_disque_externe.sql` : exemple daté, le dernier script est `174` | mise-en-production.md l. 666 ; en-tête de `schema.sql` | **Corrigé le 2026-11-26** (mise-en-production.md B 1 ; ici B-01) : « le dernier script numéroté, `172_activation_offre.sql` à ce jour », dans `Api\database\` (à plat) |
+| 18 | Fichier attendu sur la clé `148_sauvegarde_alerte_sans_disque_externe.sql` : exemple daté, le dernier script est `175` | mise-en-production.md l. 666 ; en-tête de `schema.sql` | **Corrigé le 2026-11-26** (mise-en-production.md B 1 ; ici B-01) : « le dernier script numéroté, `172_activation_offre.sql` à ce jour », dans `Api\database\` (à plat) |
 | 19 | Description du script de l'étape 3.1 sans `163b` ni `166b`, alors que l'en-tête de `creer_base_officine.ps1` (étapes 6 bis et 6 ter) et le parcours C les citent | mise-en-production.md l. 300 contre `scripts\mep\creer_base_officine.ps1` et l. 760 | **Corrigé le 2026-11-26** : `163b` et `166b` ajoutés à la description de 3.1, lancés avec `postgres` même avec `-SansSeparationRoles` (`creer_base_officine.ps1` l. 201-210) |
 | 20 | Code de transition « saisi par l'éditeur » contre saisie « connecté en titulaire » dans Mon offre | offre-et-options.md l. 176 contre procedure-cle-editeur.md l. 113 et mise-en-production.md l. 632 | **Corrigé le 2026-11-26** : « saisi dans Mon offre avec le compte du titulaire (par le titulaire, ou par l'éditeur à ses côtés) » dans offre-et-options.md, procedure-cle-editeur.md, regles-metier.md, mise-en-production.md 13.0 et ici A45.4 ; preuve : `.ExigerTitulaire()` sur `POST /offre/activation` (`ReglagesMutualisesEndpoints.cs` l. 107-112) |
 | 21 | En-tête de `basculer-second-serveur.ps1` : « Décidée par une personne, jamais automatique » (vrai pour ce script manuel, mais la promotion est automatique par ailleurs) | `scripts\second-serveur\basculer-second-serveur.ps1` l. 3 | **Corrigé le 2026-11-26** (commentaire d'en-tête seulement) : ce script est la bascule **manuelle** (F3) ; la promotion automatique existe par ailleurs (promotion-serveurs.md). Restent à revoir, hors de ce lot : l'écran `AdminSecondServeur.razor` l. 60 (« Bascule : jamais automatique », texte du code) et la règle datée du 2026-11-16 de regles-metier.md (« Bascule décidée par une personne, jamais automatique ») |

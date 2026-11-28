@@ -116,17 +116,46 @@ public interface IDatePlancherFichier
 /// Date du serveur central (décision du titulaire du 2026-11-27, point 4) : portée par chaque réponse de la voie descendante (échange léger,
 /// accusé d'un lot ; champ facultatif <c>DateCentrale</c>), elle fait foi et sert de date plancher supplémentaire. Mémorisée au plus une fois
 /// par heure et jamais vers le passé (un central restauré ou une réponse ancienne ne fait rien reculer). Sans central : rien ne change.
+/// <para>
+/// Saut borné (constat de revue du 2026-11-28) : une date du central plus de <see cref="DateEffectiveOffre.PasMax"/> au-delà de tout ce que
+/// ce serveur connaît (sa propre date, la date du central déjà mémorisée, la date plancher du fichier) n'est pas mémorisée tout de suite :
+/// une seule réponse datée par erreur dans le futur ferait juger échues les offres, sans retour possible. Elle n'est retenue que si le
+/// central la confirme : une réponse suivante, datée par le central d'au moins <see cref="Pas"/> après la première, est encore au-delà de
+/// la borne. Une horloge du central corrigée entre-temps n'y laisse rien ; une horloge de ce serveur reculée de plus de 2 jours est
+/// rattrapée par le central à la deuxième réponse (une heure plus tard). L'attente est gardée en mémoire (perdue au redémarrage : elle
+/// reprend à la réponse suivante).
+/// </para>
 /// </summary>
 public static class DateCentraleOffre
 {
     public static readonly TimeSpan Pas = TimeSpan.FromHours(1);
 
+    private sealed class Attente { public DateTime? PremiereUtc; }
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<IDatePlancherFichier, Attente> attentes = new();
+
+    /// <summary>Saut en attente de confirmation par le central (null : aucun) ; pour le diagnostic et les tests.</summary>
+    public static DateTime? SautEnAttente(IDatePlancherFichier fichier) => attentes.TryGetValue(fichier, out var a) ? a.PremiereUtc : null;
+
     /// <summary>Vrai si la date reçue a été mémorisée. Jamais bloquant (une erreur d'écriture est ignorée par le fichier).</summary>
-    public static bool Noter(IDatePlancherFichier? fichier, DateTime? centraleUtc)
+    /// <param name="serveurUtc">Date de ce serveur (borne du saut) ; null : seules la date centrale connue et le fichier bornent.</param>
+    public static bool Noter(IDatePlancherFichier? fichier, DateTime? centraleUtc, DateTime? serveurUtc = null)
     {
         if (fichier is null || centraleUtc is not { } c) return false;
         c = DateTime.SpecifyKind(c, DateTimeKind.Utc);
-        if (fichier.LireCentrale() is { } deja && c < deja + Pas) return false;
+        var deja = fichier.LireCentrale();
+        if (deja is { } d && c < d + Pas) return false;
+        var attente = attentes.GetOrCreateValue(fichier);
+        lock (attente)
+        {
+            DateTime? connue = new[] { serveurUtc, deja, fichier.Lire() }.Max();
+            if (connue is { } r && c - r > DateEffectiveOffre.PasMax)
+            {
+                // Saut : retenu seulement si le central le confirme (sa propre date a avancé d'au moins une heure depuis la première réponse)
+                if (attente.PremiereUtc is not { } premiere || c < premiere) { attente.PremiereUtc = c; return false; }
+                if (c - premiere < Pas) return false;
+            }
+            attente.PremiereUtc = null;
+        }
         fichier.NoterCentrale(c);
         return true;
     }

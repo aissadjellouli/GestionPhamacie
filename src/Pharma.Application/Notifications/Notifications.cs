@@ -370,6 +370,12 @@ public interface IAlertesTitulaire
     /// <summary>Point du contrôle interne (caisse, stock, réception, retours) : texte court, employé et chiffres, aucune donnée de patient.</summary>
     Task SurveillanceAsync(string message, bool urgent, CancellationToken ct = default);
     /// <summary>
+    /// Alerte de sécurité (journal rompu, numérotation des tickets, poste révoqué qui se présente, clé d'un poste, codes faux répétés) :
+    /// même envoi qu'un point du contrôle interne, mais toujours faite, quels que soient les packs de l'offre (constat de revue du
+    /// 2026-11-28 : sans le pack A, ces alertes n'étaient plus envoyées).
+    /// </summary>
+    Task SecuriteAsync(string message, bool urgent, CancellationToken ct = default) => SurveillanceAsync(message, urgent, ct);
+    /// <summary>
     /// Synchronisation avec le serveur central (retard, erreur persistante, certificat, quota) : texte sans donnée de patient ;
     /// <paramref name="sms"/> court, sans accents. Le SMS suit le réglage « SMS sauvegarde » (alertes techniques).
     /// </summary>

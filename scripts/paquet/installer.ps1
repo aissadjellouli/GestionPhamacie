@@ -121,4 +121,5 @@ finally {
 }
 
 Write-Host ""
-Write-Host "Installation terminée. Lancez demarrer.cmd, puis connectez-vous avec titulaire / demo."
+Write-Host "Installation terminée. Lancez autoriser_poste.cmd (une seule fois : il affiche le code de ce PC), puis demarrer.cmd :"
+Write-Host "tapez le code dans « Autoriser ce poste », puis connectez-vous avec titulaire / demo."

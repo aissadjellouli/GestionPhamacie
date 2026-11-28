@@ -278,7 +278,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
             req.Headers.Add("X-Nom-Fichier", Uri.EscapeDataString(nomFichier));
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Jeton);
             using var rep = await http.SendAsync(req);
-            if (rep.StatusCode == HttpStatusCode.Unauthorized) return (null, SessionExpiree());
+            if (rep.StatusCode == HttpStatusCode.Unauthorized) return (null, SessionExpiree(rep));
             if (!rep.IsSuccessStatusCode) return (null, await MessageAsync(rep));
             return ((await rep.Content.ReadFromJsonAsync<DocumentGedDto>())?.Chemin, null);
         }
@@ -511,7 +511,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
             using var req = new HttpRequestMessage(HttpMethod.Post, url);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Jeton);
             using var rep = await http.SendAsync(req);
-            if (rep.StatusCode == HttpStatusCode.Unauthorized) return (null, SessionExpiree());
+            if (rep.StatusCode == HttpStatusCode.Unauthorized) return (null, SessionExpiree(rep));
             if (!rep.IsSuccessStatusCode) return (null, await MessageAsync(rep));
             return (await rep.Content.ReadAsStringAsync(), null);
         }
@@ -608,7 +608,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
             req.Headers.Add("X-Nom-Fichier", Uri.EscapeDataString(Path.GetFileName(chemin)));
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Jeton);
             using var rep = await http.SendAsync(req);
-            if (rep.StatusCode == HttpStatusCode.Unauthorized) return (null, SessionExpiree());
+            if (rep.StatusCode == HttpStatusCode.Unauthorized) return (null, SessionExpiree(rep));
             if (!rep.IsSuccessStatusCode) return (null, await MessageAsync(rep));
             return (await rep.Content.ReadFromJsonAsync<VersionNomenclatureDto>(), null);
         }
@@ -705,7 +705,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         try
         {
             using var rep = await EnvoyerAsync($"api/caisse/sessions/{sessionId}/rapport");
-            if (rep.StatusCode == HttpStatusCode.Unauthorized) return (null, null, SessionExpiree());
+            if (rep.StatusCode == HttpStatusCode.Unauthorized) return (null, null, SessionExpiree(rep));
             if (!rep.IsSuccessStatusCode) return (null, null, await MessageAsync(rep));
             var nom = rep.Content.Headers.ContentDisposition?.FileNameStar
                       ?? rep.Content.Headers.ContentDisposition?.FileName?.Trim('"')
@@ -732,7 +732,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
             req.Content.Headers.ContentType = new MediaTypeHeaderValue(image.TypeMime);
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Jeton);
             using var rep = await http.SendAsync(req);
-            if (rep.StatusCode == HttpStatusCode.Unauthorized) return (null, SessionExpiree());
+            if (rep.StatusCode == HttpStatusCode.Unauthorized) return (null, SessionExpiree(rep));
             if (!rep.IsSuccessStatusCode) return (null, await MessageAsync(rep));
             return ((await rep.Content.ReadFromJsonAsync<ScanOrdonnanceDto>())!.Jeton, null);
         }
@@ -1259,7 +1259,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         {
             var exclus = string.Join("&", (lotsExclus ?? []).Select(id => $"exclure={id}"));
             using var rep = await EnvoyerAsync($"api/produits/{produitId}/lot-fefo{(exclus.Length > 0 ? "?" + exclus : "")}");
-            if (rep.StatusCode == HttpStatusCode.Unauthorized) return new(null, [], SessionExpiree());
+            if (rep.StatusCode == HttpStatusCode.Unauthorized) return new(null, [], SessionExpiree(rep));
             if (rep.StatusCode == HttpStatusCode.NotFound)
             {
                 var aucun = await rep.Content.ReadFromJsonAsync<AucunLotDto>();
@@ -1659,7 +1659,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         try
         {
             using var rep = await EnvoyerAutoriseAsync(() => new HttpRequestMessage(methode, url), proposer: methode != HttpMethod.Get);
-            if (rep.StatusCode == HttpStatusCode.Unauthorized) return (null, null, SessionExpiree());
+            if (rep.StatusCode == HttpStatusCode.Unauthorized) return (null, null, SessionExpiree(rep));
             if (!rep.IsSuccessStatusCode) return (null, null, await MessageAsync(rep));
             var nom = rep.Content.Headers.ContentDisposition?.FileNameStar
                       ?? rep.Content.Headers.ContentDisposition?.FileName?.Trim('"') ?? nomParDefaut;
@@ -1771,7 +1771,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         try
         {
             using var rep = await EnvoyerAsync(url);
-            if (rep.StatusCode == HttpStatusCode.Unauthorized) return (defaut, SessionExpiree());
+            if (rep.StatusCode == HttpStatusCode.Unauthorized) return (defaut, SessionExpiree(rep));
             if (!rep.IsSuccessStatusCode) return (defaut, await MessageAsync(rep));
             RetenirReglageCentral(rep);
             return ((await rep.Content.ReadFromJsonAsync<T>())!, null);
@@ -1791,7 +1791,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         try
         {
             using var rep = await EnvoyerAutoriseAsync(() => new HttpRequestMessage(methode, url) { Content = JsonContent.Create(corps) });
-            if (rep.StatusCode == HttpStatusCode.Unauthorized) return (default, SessionExpiree());
+            if (rep.StatusCode == HttpStatusCode.Unauthorized) return (default, SessionExpiree(rep));
             if (!rep.IsSuccessStatusCode) return (default, await MessageAsync(rep));
             if (rep.StatusCode == HttpStatusCode.NoContent) return (default, null);
             return (await rep.Content.ReadFromJsonAsync<TRep>(), null);
@@ -1870,10 +1870,19 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         catch (System.Text.Json.JsonException) { return ("Action non autorisée.", false, null, null); }
     }
 
-    private string SessionExpiree()
+    /// <summary>
+    /// Réponse 401. Sans session ouverte, rien n'est fermé : fermer relancerait l'écran de connexion, qui relit l'état du serveur, sans fin.
+    /// Super admin sur un PC dont la preuve de poste est refusée (refus en ProblemDetails ; un jeton refusé n'a pas de corps) : c'est le
+    /// poste qui est refusé, pas son jeton ; sa session reste ouverte (il doit pouvoir restaurer depuis n'importe quel PC).
+    /// </summary>
+    private string SessionExpiree(HttpResponseMessage rep)
     {
-        session.Fermer("Session expirée : reconnectez-vous.");
-        return "Session expirée : reconnectez-vous.";
+        const string expiree = "Session expirée : reconnectez-vous.";
+        if (session.Jeton is null) return expiree;
+        if (session.SuperAdmin && rep.Content.Headers.ContentType?.MediaType == "application/problem+json")
+            return "Ce PC n’est pas un poste autorisé : cette information n’est pas disponible ici.";
+        session.Fermer(expiree);
+        return expiree;
     }
 
     /// <summary>

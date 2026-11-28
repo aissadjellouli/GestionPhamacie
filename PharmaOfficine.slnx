@@ -290,6 +290,7 @@
     <File Path="database/migration/172_activation_offre.sql" />
     <File Path="database/migration/173_remise_nulle_hors_controle.sql" />
     <File Path="database/migration/174_postes_preuve_exigee.sql" />
+    <File Path="database/migration/175_remise_medicament_au_controle.sql" />
     <File Path="database/migration/retour/165_presence_postes_retour.sql" />
     <File Path="database/migration/retour/166_bascule_retrait_decision_retour.sql" />
     <File Path="database/migration/retour/167_postes_autorises_retour.sql" />
@@ -300,6 +301,7 @@
     <File Path="database/migration/retour/172_activation_offre_retour.sql" />
     <File Path="database/migration/retour/173_remise_nulle_hors_controle_retour.sql" />
     <File Path="database/migration/retour/174_postes_preuve_exigee_retour.sql" />
+    <File Path="database/migration/retour/175_remise_medicament_au_controle_retour.sql" />
   </Folder>
   <Folder Name="/database/tests/">
     <File Path="database/tests/111_integrite_hachage_tests.sql" />
@@ -354,6 +356,7 @@
     <File Path="database/tests/172_activation_offre_tests.sql" />
     <File Path="database/tests/173_remise_nulle_hors_controle_tests.sql" />
     <File Path="database/tests/174_postes_preuve_exigee_tests.sql" />
+    <File Path="database/tests/175_remise_medicament_au_controle_tests.sql" />
     <File Path="database/tests/117_registre_renforce_tests.sql" />
     <File Path="database/tests/101b_suppression_num_facture_chifa_tests.sql" />
     <File Path="database/tests/rejeu_complet.ps1" />
@@ -472,6 +475,7 @@
   <Folder Name="/scripts/mep/">
     <File Path="scripts/mep/outils_mep.ps1" />
     <File Path="scripts/mep/NettoyageSql.cs" />
+    <File Path="scripts/mep/garde_livraison.ps1" />
     <File Path="scripts/mep/nettoyer_livraison.ps1" />
     <File Path="scripts/mep/creer_livraison.ps1" />
     <File Path="scripts/mep/creer_dossier_journaux.ps1" />

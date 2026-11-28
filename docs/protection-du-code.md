@@ -15,7 +15,7 @@ logiciel coûte plus cher que de l'écrire**, et que l'éditeur **puisse agir en
 |---|---|---|
 | Nos `.dll` .NET (API, poste, règles) | Oui : un décompilateur gratuit restitue un C# presque identique | Élevé |
 | Fichiers `.pdb` (symboles) | Oui ; ils aident la décompilation | Inutiles en officine |
-| Scripts SQL 001 à 174, **avec commentaires** | Oui, en clair | Élevé (schéma, fonctions, règles expliquées) |
+| Scripts SQL 001 à 175, **avec commentaires** | Oui, en clair | Élevé (schéma, fonctions, règles expliquées) |
 | Base installée (tables, fonctions, déclencheurs) | Oui, pour qui a accès à PostgreSQL sur le serveur | Moyen ; ne peut pas être caché au propriétaire de la base |
 | Écrans (CSS, images) | Oui | Faible |
 | Serveur central, outil de l'éditeur | Non livrés | Aucun |

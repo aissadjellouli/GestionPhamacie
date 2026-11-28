@@ -230,6 +230,9 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
         var alerteCle = empreinte is not null ? (CleMaterielle() is false ? MessageCleLogicielle : null)
             : CleIllisible() ? MessageCleIllisible : null;
         string? refus = null, alerteServeur = null;
+        // Délai de grâce « serveur non déclaré » : un seul, celui du code le plus récent concerné (constat de revue du 2026-11-28 : il
+        // se renouvelait pour chaque code plus ancien encore valable)
+        var graceServeurEpuisee = false;
         foreach (var e in await depot.ListerAsync(ct))
         {
             ActivationOffre a;
@@ -252,8 +255,12 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
                 await depot.SignalerRefusAsync(e.Id, motif, ct);
                 var depuis = e.RefuseeLeUtc is { } r ? DateOnly.FromDateTime(r.ToLocalTime()) : aujourdhui;
                 var finGrace = depuis.AddDays(GraceJours);
-                if (aujourdhui > finGrace)
+                // Première constatation datée dans le futur (horloge avancée au moment de la constatation, ou date modifiée dans la base) :
+                // elle ne prolonge rien, la grâce est terminée (un jour d'écart toléré : horloges de l'API et de la base autour de minuit)
+                var debutFutur = depuis > aujourdhui.AddDays(1);
+                if (graceServeurEpuisee || debutFutur || aujourdhui > finGrace)
                 {
+                    graceServeurEpuisee = true;
                     refus ??= $"Activation du {e.EmiseLeUtc:dd/MM/yyyy} refusée : {motif}";
                     continue;
                 }

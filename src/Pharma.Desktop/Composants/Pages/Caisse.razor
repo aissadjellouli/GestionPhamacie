@@ -260,7 +260,7 @@
                             }
                             else
                             {
-                                <span class="touche-caisse" title="Tapez 3 * avant le scan ou la recherche : 3 boîtes du produit">3 *</span>
+                                <span class="touche-caisse" title="Tapez 3 * avant le code-barres du produit ou la recherche : 3 boîtes du produit. Une étiquette de boîte se scanne boîte par boîte.">3 *</span>
                                 <span class="touche-caisse" title="Champ vide : + ou − du pavé numérique change la quantité de la dernière ligne ajoutée">+ −</span>
                             }
                         </label>
@@ -2002,7 +2002,10 @@
     /// <summary>Entrée dans « Fond de caisse » : ouvre la caisse, comme le bouton.</summary>
     private async Task ToucheFondAsync(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter") await OuvrirAsync();
+        if (e.Key != "Enter") return;
+        // Code-barres scanné dans ce champ : jamais pris pour un fond de caisse
+        if (LimitesCaisse.Invraisemblable(fondCaisse)) { (fondCaisse, erreurOuverture) = (null, LimitesCaisse.MessageFond); return; }
+        await OuvrirAsync();
     }
 
     private async Task OuvrirAsync()
@@ -2191,7 +2194,16 @@
     /// <summary>Entrée dans « Montant reçu » : encaisse comme F12 (sinon le curseur va sur ce qui manque).</summary>
     private async Task ToucheRecuAsync(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter" && !e.CtrlKey && !e.AltKey) await SurF12();
+        if (e.Key != "Enter" || e.CtrlKey || e.AltKey) return;
+        // Code-barres scanné dans ce champ (le lecteur tape les chiffres puis Entrée) : jamais pris pour un montant. Panier vide, ou
+        // montant invraisemblable : le champ est vidé, rien n'est encaissé et le curseur revient dans la recherche.
+        if (lignes.Count == 0 || LimitesCaisse.Invraisemblable(montantRecu))
+        {
+            if (LimitesCaisse.Invraisemblable(montantRecu)) erreur = "Code-barres lu dans « Montant reçu » : rien n’a été encaissé. Scannez de nouveau la boîte, puis saisissez le montant.";
+            (montantRecu, focaliserScan) = (null, true);
+            return;
+        }
+        await SurF12();
     }
 
     /// <summary>Code lu (scan ou saisie suivie d'Entrée) : ne dépend ni de la saisie en cours ni des recherches de frappe.</summary>
@@ -2222,7 +2234,14 @@
         {
             var (boite, errBoite) = await Api.BoiteCaisseAsync(code);
             if (errBoite is not null) { (suggestions, erreur, bandeau) = ([], errBoite, null); return; }
-            if (boite is not null) { await AjouterBoiteAsync(boite, viderSaisie: false); return; }
+            if (boite is not null)
+            {
+                await AjouterBoiteAsync(boite, viderSaisie: false);
+                // Une étiquette ou un Data Matrix désigne une seule boîte : la quantité tapée devant ne s'y applique pas, et c'est dit
+                if (quantite > 1 && erreur is null)
+                    erreur = $"Quantité {quantite} non appliquée : ce code désigne une seule boîte. Une boîte ajoutée ; scannez chacune des autres.";
+                return;
+            }
         }
         // Premier produit trouvé, s'il est en stock ; en rupture, la liste reste ouverte avec son remplaçant
         if (code.Length < 2) { suggestions = []; return; }
@@ -2643,8 +2662,14 @@
         // Garde-fou (2026-11-15) : une prestation à 0 DA n'est jamais vendue ; la liste reste ouverte avec le message
         if (tp.Prix <= 0) { erreurPrestations = $"{tp.Libelle} : prix à fixer dans Administration › Prestations."; return; }
         prestationsOuvert = false;
-        if (lignes.FirstOrDefault(l => l.TypePrestationId == tp.Id) is { } deja) deja.Quantite++;
-        else lignes.Add(new LignePanier { ProduitId = 0, TypePrestationId = tp.Id, TauxTva = tp.TauxTva, Nom = tp.Libelle, Prix = tp.Prix });
+        if (lignes.FirstOrDefault(l => l.TypePrestationId == tp.Id) is not { } ligne)
+        {
+            ligne = new LignePanier { ProduitId = 0, TypePrestationId = tp.Id, TauxTva = tp.TauxTva, Nom = tp.Libelle, Prix = tp.Prix };
+            lignes.Add(ligne);
+        }
+        else ligne.Quantite++;
+        // « + » et « − » du clavier visent la dernière ligne ajoutée : la prestation, pas le produit scanné avant elle
+        (ligneAVoir, derniereAjoutee) = (ligne, ligne);
         await RecalculerAsync();
     }
 
@@ -3630,6 +3655,7 @@
         lignes.Clear();
         cleEncaissement = Guid.NewGuid();
         cleEnDoute = false;
+        focaliserScan = true;   // le curseur ne reste jamais dans « Montant reçu » : le scan du client suivant va dans la recherche
         (apercu, bandeau, erreur, montantRecu, remisePct, remiseAdditionnee) = (null, null, null, null, 0, false);
         erreurRemise = null;
         (patient, medecin, medecinTexte, numeroOrdonnance, tiersPayant, mode, resteSaisi) = (null, null, "", null, false, "especes", null);

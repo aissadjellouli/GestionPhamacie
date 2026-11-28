@@ -51,9 +51,23 @@
         await LireEtatAsync();
     }
 
+    /// <summary>
+    /// Refus passagers (2026-11-28) : la vérification était impossible (base qui redémarre) ou l'horloge du poste est décalée (le poste
+    /// corrige son décalage au premier refus d'une requête). Ils ne disent pas que le PC n'est pas autorisé : l'état est alors inconnu,
+    /// le formulaire de connexion reste montré.
+    /// </summary>
+    internal static bool RefusPassager(string? refus) => refus is PreuvePoste.PreuveIndisponible or PreuvePoste.PreuveHorloge;
+
+    private System.Threading.Timer? relecture;
+
     private async Task LireEtatAsync()
     {
-        etat = await Api.EtatAutorisationPosteAsync();
+        var lu = await Api.EtatAutorisationPosteAsync();
+        etat = lu is { Prouve: false } && RefusPassager(lu.Refus) ? null : lu;
+        // Tant que le poste n'est pas prouvé, l'état est relu : un refus passager ou une autorisation donnée entre-temps ne laisse pas
+        // l'écran bloqué jusqu'au redémarrage du logiciel
+        if (lu is { Prouve: true }) { relecture?.Dispose(); relecture = null; }
+        else relecture ??= new System.Threading.Timer(_ => { try { Relire(); } catch (ObjectDisposedException) { } }, null, TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(15));
         await EtatChange.InvokeAsync(etat?.Prouve);
     }
 
@@ -61,6 +75,7 @@
     {
         try
         {
+            if (enCours) return;   // autorisation en cours : elle relit l'état elle-même
             await LireEtatAsync();
             StateHasChanged();
         }
@@ -83,5 +98,9 @@
         finally { enCours = false; }
     }
 
-    public void Dispose() => Identite.Changee -= Relire;
+    public void Dispose()
+    {
+        Identite.Changee -= Relire;
+        relecture?.Dispose();
+    }
 }

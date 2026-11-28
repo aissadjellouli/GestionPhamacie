@@ -266,7 +266,7 @@ public sealed class VerifierIntegrite(IIntegriteDepot depot, IScelleurIntegrite 
             else
                 await depot.JournaliserRuptureSystemeAsync(r.Journal, details, ct);
             if (alertes is not null)
-                await alertes.SurveillanceAsync(r.Statut == Rupture
+                await alertes.SecuriteAsync(r.Statut == Rupture
                     ? $"Intégrité : le journal « {r.Libelle} » est rompu (ligne {r.RangRupture}, {r.Motif}). Ne rien corriger, prévenir l'éditeur."
                     : $"Intégrité : la vérification du journal « {r.Libelle} » a échoué.", urgent: true, ct);
         }

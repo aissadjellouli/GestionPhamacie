@@ -35,8 +35,10 @@
 
 ### Caisse
 - **Clavier** : F2 Espèces (curseur dans « Montant reçu »), F4 Carte, F9 Chèque, F11 Crédit (patient choisi) ; « 3 * » tapé avant le
-  scan = 3 boîtes ; + / − du pavé numérique (champ de recherche vide) = quantité de la dernière ligne ; Entrée dans « Montant reçu » =
-  encaisser (F12). Raccourcis affichés en petits cadres ; carte « Raccourcis clavier » dans l'aide de la caisse.
+  code-barres du produit ou la recherche = 3 boîtes (une étiquette de boîte ou un Data Matrix désigne une seule boîte : la quantité n'y
+  est pas appliquée, un message le dit ; correction du 2026-11-28) ; + / − du pavé numérique (champ de recherche vide) = quantité de la dernière ligne ; Entrée dans « Montant reçu » =
+  encaisser (F12), sauf panier vide ou montant de 10 000 000 DA ou plus (code-barres scanné dans ce champ : champ vidé, rien n'est
+  encaissé ; après une vente le curseur revient dans la recherche ; correction du 2026-11-28). Raccourcis affichés en petits cadres ; carte « Raccourcis clavier » dans l'aide de la caisse.
 - **« Encaisser » grisé** : la raison est écrite sous le bouton ; à F12, le curseur va sur le champ manquant.
 - **Ouverture de la caisse** : curseur dans le fond de caisse, Entrée = ouvrir, montant rappelé avec séparateur de milliers ; menu visible,
   actions impossibles grisées avec leur raison. Non fait : rappel du fond de la dernière clôture (le serveur ne le donne pas).

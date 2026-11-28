@@ -94,6 +94,8 @@ public class SessionCaisse
     {
         if (fond < 0)
             throw new RegleMetierException("Le fond de caisse ne peut pas être négatif.");
+        if (fond >= Ventes.Reglement.MontantEspecesMax)
+            throw new RegleMetierException("Fond de caisse invraisemblable (un code-barres scanné dans ce champ ?) : saisissez le montant compté.");
     }
 
     public ResultatCloture Cloturer(Comptage comptage, decimal ventesEspeces, decimal seuilEcart)

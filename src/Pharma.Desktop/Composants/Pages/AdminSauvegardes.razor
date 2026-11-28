@@ -254,7 +254,7 @@
     /// <summary>« Choisir le disque » du bandeau : curseur dans le dossier du disque externe.</summary>
     private async Task ChoisirDisqueAsync()
     {
-        await champDossier.FocusAsync();
+        try { await champDossier.FocusAsync(); } catch (Exception ex) when (ex is InvalidOperationException or Microsoft.JSInterop.JSException) { }
     }
 
     private async Task EnregistrerAsync()
@@ -263,7 +263,7 @@
         if (DossierManque)
         {
             (erreur, message) = ("Choisissez le dossier avant d’activer les sauvegardes.", null);
-            await champDossier.FocusAsync();
+            try { await champDossier.FocusAsync(); } catch (Exception ex) when (ex is InvalidOperationException or Microsoft.JSInterop.JSException) { }
             return;
         }
         await Executer(async () =>
@@ -284,7 +284,7 @@
         if (DossierManque)
         {
             (erreur, message) = ("Choisissez d’abord le dossier de sauvegarde (disque externe).", null);
-            await champDossier.FocusAsync();
+            try { await champDossier.FocusAsync(); } catch (Exception ex) when (ex is InvalidOperationException or Microsoft.JSInterop.JSException) { }
             return;
         }
         controleLancer = false;

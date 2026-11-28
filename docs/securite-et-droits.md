@@ -201,6 +201,13 @@ Plan : `docs/taches/2026-11-24-postes-autorises/plan.md` ; contrat : `contrat-ap
   5 échecs invalident tous les codes en attente et alertent le titulaire ; limite de débit des routes de connexion. Démarrage : commande
   `Pharma.Api.exe --autoriser-poste "<nom>"` sur le serveur (titulaire, mot de passe contrôlé), ou depuis le PC lui-même par la connexion du
   titulaire en Administration seulement (ci-dessous).
+- **Jeton d'employé sans poste : page mobile seulement** (décision du titulaire du 2026-11-28, « go all points ») : un client qui ne
+  s'annonce pas comme poste n'est pas contrôlé par la liste des postes ; son jeton (sans nom ni identifiant de poste) est limité à la liste
+  fermée `JetonsSansPoste` : `/api/auth`, `/api/mobile`, `/api/inventaires` (toutes méthodes), `/api/emplacements` et `/api/pilotage` (GET),
+  `PUT /api/produits/{id}/emplacement`. Hors liste : 403 `poste_requis` (ProblemDetails), session gardée. Un test vérifie que chaque appel
+  de `wwwroot/mobile/mobile.js` est couvert : **toute route ajoutée à la page mobile doit entrer dans cette liste**. Les outils qui
+  appelaient l'API sans poste (`scripts/dev/essai_cloud_officine.ps1`) s'annoncent maintenant par `X-Pharma-Poste` et passent par le jeton
+  « Administration seulement » du titulaire. `/api/demo` rejoint les routes ouvertes (preuve lue, jamais exigée).
 - **Titulaire sur un PC non autorisé : Administration seulement** (choix du jeton : marque dans le jeton EN PLUS du contrôle de la preuve à chaque requête, pour qu'un jeton ouvert sur ce PC reste limité partout, même rejoué sans en-tête de poste comme un client sans poste) (décision du titulaire du 2026-11-27, « le titulaire peut accéder à partir d'un
   poste non autorisé ») : depuis un PC non prouvé (sans preuve, ou preuve d'un poste révoqué, remplacé ou inconnu ; une horloge décalée reste
   refusée), seul le **pharmacien titulaire** se connecte (`/api/auth/connexion`) ; tout autre employé est refusé (403, « Ce PC n'est pas

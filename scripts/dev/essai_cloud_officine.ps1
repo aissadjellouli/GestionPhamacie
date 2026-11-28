@@ -511,14 +511,16 @@ function Invoke-Demarrer {
                     Write-Ok "Compte temporaire $IdentifiantEssai créé dans $BaseOfficine (mot de passe aléatoire, en mémoire seulement)."
                 }
                 $corps = @{ identifiant = $(if ($compteEssai) { $IdentifiantEssai } else { "titulaire" }); motDePasse = $mdpTit } | ConvertTo-Json
-                $jeton = (Invoke-RestMethod -Method Post -Uri "$base/api/auth/connexion" -ContentType "application/json" -Body $corps).jeton
+                # Ce script n'est pas un poste autorisé : il s'annonce comme un PC (en-tête X-Pharma-Poste), le titulaire y reçoit un jeton
+                # « Administration seulement », qui couvre /api/admin/synchronisation (un jeton sans poste est limité à la page mobile)
+                $jeton = (Invoke-RestMethod -Method Post -Uri "$base/api/auth/connexion" -Headers @{ "X-Pharma-Poste" = "ESSAI-CLOUD" } -ContentType "application/json" -Body $corps).jeton
             }
             catch {
                 if ($compteEssai -and $_.Exception.Message -like "Création du compte temporaire*") { throw $_.Exception.Message }
                 if ($compteEssai) { throw "Connexion avec le compte temporaire $IdentifiantEssai impossible : $($_.Exception.Message) Le reste de l'essai tourne ; relancer -Demarrer." }
                 throw "Connexion du compte titulaire de démonstration refusée : vérifier le mot de passe de PHARMA_ESSAI_MDP_TITULAIRE (docs\poste-de-developpement.md). Le reste de l'essai tourne ; relancer -Demarrer, sans la variable pour utiliser le compte temporaire."
             }
-            $entetes = @{ Authorization = "Bearer $jeton" }
+            $entetes = @{ Authorization = "Bearer $jeton"; "X-Pharma-Poste" = "ESSAI-CLOUD" }
             $etatSync = Invoke-RestMethod -Method Get -Uri "$base/api/admin/synchronisation" -Headers $entetes
             if ($etatSync.activee) { Write-Ok "Officine déjà activée (certificat en place)." }
             else {

@@ -96,23 +96,36 @@ else {
 
 # 2. Authentification Windows (SSPI) : ce rôle seul, boucle locale seulement, et seulement pour le compte Windows de la tâche
 $modifie = $false
+$copiesGardees = @{}   # fichier modifié -> copie gardée (remise si le rechargement signale une erreur)
 function Copier-Avant([string]$fichier) {
     $copie = "$fichier.avant-lecture-copie-ged-{0:yyyyMMdd-HHmmss}" -f (Get-Date)
     Copy-Item -LiteralPath $fichier -Destination $copie
+    $script:copiesGardees[$fichier] = $copie
     return $copie
+}
+# Fichiers de configuration de PostgreSQL : toujours écrits SANS signature UTF-8 (BOM). Sous Windows PowerShell 5.1,
+# « Set-Content -Encoding UTF8 » en écrit une, que PostgreSQL ne lit pas : la première ligne devient invalide et le fichier entier est refusé.
+function Ecrire-SansSignature([string]$fichier, [string[]]$lignesAEcrire) {
+    [IO.File]::WriteAllLines($fichier, $lignesAEcrire, (New-Object System.Text.UTF8Encoding $false))
+}
+function Remettre-Copies {
+    foreach ($f in $script:copiesGardees.Keys) {
+        Copy-Item -LiteralPath $script:copiesGardees[$f] -Destination $f -Force
+        Write-Warning "Copie gardée remise : $f"
+    }
 }
 function Normaliser-Ligne([string]$l) { (($l -split '#')[0] -replace '\s+', ' ').Trim() }
 
 # 2a. pg_ident.conf : correspondance « compte Windows de la tâche » -> pharma_ged_lecture
 $ident = Sql "SHOW ident_file"
 $ligneIdent = "$Carte    $identite    $Role    # compte Windows de la tâche de copie de la GED (copier-ged.ps1), ce PC seulement"
-$contenuIdent = if (Test-Path -LiteralPath $ident) { @(Get-Content -LiteralPath $ident -Encoding UTF8) } else { @() }
+$contenuIdent = @(if (Test-Path -LiteralPath $ident) { Get-Content -LiteralPath $ident -Encoding UTF8 })
 if ($contenuIdent | Where-Object { (Normaliser-Ligne $_) -eq (Normaliser-Ligne $ligneIdent) }) { Write-Host "pg_ident.conf : correspondance déjà présente ($identite)." }
 elseif ($Essai) { Write-Etape $mode "pg_ident.conf, ligne ajoutée : $ligneIdent" }
 else {
     $copie = if (Test-Path -LiteralPath $ident) { Copier-Avant $ident } else { "aucune (fichier absent)" }
     $bloc = @(("# ---- Lecture de la fréquence de copie de la GED ({0:dd/MM/yyyy}) ----" -f (Get-Date)), $ligneIdent)
-    Set-Content -LiteralPath $ident -Value ($contenuIdent + $bloc) -Encoding UTF8
+    Ecrire-SansSignature $ident (@($contenuIdent) + $bloc)
     Write-Host "pg_ident.conf complété : $identite -> $Role (copie gardée : $copie)."
     $modifie = $true
 }
@@ -123,7 +136,7 @@ $lignes = @(
     "host    $Base    $Role    127.0.0.1/32    sspi    map=$Carte    # lecture de la fréquence de copie de la GED (copier-ged.ps1), ce PC seulement",
     "host    $Base    $Role    ::1/128         sspi    map=$Carte    # idem, IPv6 local"
 )
-$contenu = if (Test-Path -LiteralPath $hba) { @(Get-Content -LiteralPath $hba -Encoding UTF8) } else { @() }
+$contenu = @(if (Test-Path -LiteralPath $hba) { Get-Content -LiteralPath $hba -Encoding UTF8 })
 $ancienTrust = "^\s*host\s+$Base\s+$Role\s+\S+\s+trust\b"
 $anciennes = @($contenu | Where-Object { $_ -match $ancienTrust })
 $manquantes = @($lignes | Where-Object { $l = Normaliser-Ligne $_; -not ($contenu | Where-Object { (Normaliser-Ligne $_) -eq $l }) })
@@ -139,21 +152,28 @@ else {
         $premiere = 0
         for ($i = 0; $i -lt $contenu.Count; $i++) { if ($contenu[$i].Trim() -and -not $contenu[$i].TrimStart().StartsWith('#')) { $premiere = $i; break } }
         $bloc = @("# ---- Lecture de la fréquence de copie de la GED, authentification Windows ({0:dd/MM/yyyy}) ----" -f (Get-Date)) + $manquantes + @("")
-        $avant = if ($premiere -gt 0) { @($contenu[0..($premiere - 1)]) } else { @() }
-        $apres = if ($contenu.Count -gt $premiere) { @($contenu[$premiere..($contenu.Count - 1)]) } else { @() }
-        $contenu = $avant + $bloc + $apres
+        $avant = @(if ($premiere -gt 0) { $contenu[0..($premiere - 1)] })
+        $apres = @(if ($contenu.Count -gt $premiere) { $contenu[$premiere..($contenu.Count - 1)] })
+        $contenu = @($avant) + $bloc + @($apres)
     }
-    Set-Content -LiteralPath $hba -Value $contenu -Encoding UTF8
+    Ecrire-SansSignature $hba $contenu
     if ($anciennes) { Write-Host ("pg_hba.conf : {0} ancienne(s) ligne(s) « trust » retirée(s)." -f $anciennes.Count) }
     Write-Host "pg_hba.conf complété (copie gardée : $copie)."
     $modifie = $true
 }
 if ($modifie) {
-    Sql "SELECT pg_reload_conf()" | Out-Null
-    $erreurs = Sql "SELECT count(*) FROM pg_hba_file_rules WHERE error IS NOT NULL"
-    if ($erreurs -ne "0") { Write-Warning "pg_hba.conf : $erreurs ligne(s) en erreur (vue pg_hba_file_rules) : remettre la copie gardée si besoin." }
-    $erreursIdent = Sql "SELECT count(*) FROM pg_ident_file_mappings WHERE error IS NOT NULL"
-    if ($erreursIdent -ne "0") { Write-Warning "pg_ident.conf : $erreursIdent ligne(s) en erreur (vue pg_ident_file_mappings) : remettre la copie gardée si besoin." }
+    # Un fichier en erreur n'est pas laissé en place (PostgreSQL ne redémarrerait plus) : les copies gardées sont remises, puis le script s'arrête
+    try {
+        Sql "SELECT pg_reload_conf()" | Out-Null
+        $erreurs = Sql "SELECT count(*) FROM pg_hba_file_rules WHERE error IS NOT NULL"
+        $erreursIdent = Sql "SELECT count(*) FROM pg_ident_file_mappings WHERE error IS NOT NULL"
+        if ($erreurs -ne "0" -or $erreursIdent -ne "0") { throw "pg_hba.conf : $erreurs ligne(s) en erreur ; pg_ident.conf : $erreursIdent ligne(s) en erreur (vues pg_hba_file_rules et pg_ident_file_mappings)." }
+    }
+    catch {
+        Remettre-Copies
+        try { Sql "SELECT pg_reload_conf()" | Out-Null } catch { Write-Warning "Rechargement après remise des copies impossible : vérifier le service PostgreSQL." }
+        throw "Configuration refusée par PostgreSQL, fichiers d'origine remis : $($_.Exception.Message)"
+    }
     Write-Host "Configuration rechargée (aucun redémarrage)."
 }
 if ($Essai) { Write-Host "$mode Simulation terminée : rien n'a été modifié." }

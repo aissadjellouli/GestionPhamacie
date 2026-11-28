@@ -222,7 +222,7 @@ public sealed class ControlerNumerotation(IJournalFiscalDepot depot, IIntegriteD
         if (premiere is not null && alertes is not null)
             try
             {
-                await alertes.SurveillanceAsync($"Journal des ventes : {anomalies.Count} anomalie(s) de numérotation des tickets ({premiere.Libelle}). Ne rien corriger, prévenir l’éditeur.",
+                await alertes.SecuriteAsync($"Journal des ventes : {anomalies.Count} anomalie(s) de numérotation des tickets ({premiere.Libelle}). Ne rien corriger, prévenir l’éditeur.",
                     urgent: true, ct);
             }
             catch (Exception e) when (e is not OperationCanceledException)

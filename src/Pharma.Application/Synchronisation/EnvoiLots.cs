@@ -256,9 +256,13 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
     private bool descendantsAAppliquer;
     public static readonly TimeSpan RenouvelerAvant = TimeSpan.FromDays(60);
 
+    /// <summary>Date de ce serveur au passage en cours : borne du saut de la date du central (DateCentraleOffre).</summary>
+    private DateTime? passageUtc;
+
     public async Task<ResultatEnvoi> ExecuterAsync(DateTime maintenantUtc, int maxLots = 20, CancellationToken ct = default)
     {
         if (!verrou.Prendre()) return new(0, ArretEnCours, null);
+        passageUtc = maintenantUtc;
         try { return await PasserAsync(maintenantUtc, maxLots, ct); }
         finally { verrou.Rendre(); }
     }
@@ -277,6 +281,7 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
     public async Task<ResultatEnvoi> ExecuterSansPackAsync(DateTime maintenantUtc, bool envoyerResultats, CancellationToken ct = default)
     {
         if (!verrou.Prendre()) return new(0, ArretEnCours, null);
+        passageUtc = maintenantUtc;
         try { return await PasserSansPackAsync(maintenantUtc, envoyerResultats, ct); }
         finally { verrou.Rendre(); }
     }
@@ -485,7 +490,7 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
     private async Task AppliquerDescendantsAsync(DescendantsRecus d, CancellationToken ct)
     {
         // Date du central (échange léger, accusé d'un lot) : date plancher de l'offre, mémorisée hors de la base ; jamais bloquant
-        Offre.DateCentraleOffre.Noter(datePlancher, d.DateCentraleUtc);
+        Offre.DateCentraleOffre.Noter(datePlancher, d.DateCentraleUtc, passageUtc);
         if (d.Ecartes > 0)
             erreurDescendante = $"{d.Ecartes} élément(s) descendant(s) écarté(s) à la réception (mal formés ou trop gros) : non appliqués, voir le journal du serveur.";
         if (d.Changements.Count == 0 && d.VersionEcarteeMax <= 0) return;

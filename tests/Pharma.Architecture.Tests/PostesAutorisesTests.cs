@@ -439,7 +439,7 @@ public partial class PostesAutorisesTests
         var (ctx, passer) = Requete(depot, horloge, "/api/caisse", enTetePoste: "COMPTOIR-3");
         Assert.False(await passer());
         Assert.Equal(403, ctx.Response.StatusCode);
-        foreach (var ouverte in new[] { "/api/healthcheck", "/api/postes/etat", "/api/postes/enrolement", "/api/vigie/rapport", "/api/inter-serveurs/etat",
+        foreach (var ouverte in new[] { "/api/healthcheck", "/api/demo", "/api/postes/etat", "/api/postes/enrolement", "/api/vigie/rapport", "/api/inter-serveurs/etat",
                      "/api/super-admin/connexion", "/api/super-admin/restauration/etat", "/api/admin/reprise/sessions" })
         {
             var (_, p) = Requete(depot, horloge, ouverte, enTetePoste: "COMPTOIR-3");

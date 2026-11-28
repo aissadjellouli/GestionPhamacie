@@ -193,7 +193,14 @@ try {
         Write-Host "Base précédente gardée sous le nom $ancienne"
     }
     Invoke-Super "ALTER DATABASE $neuve RENAME TO $Base" | Out-Null
-    $resume = Invoke-Super "SELECT 'Ventes : ' || (SELECT count(*) FROM vente) || ', dernière le ' || COALESCE(to_char((SELECT max(date_vente) FROM vente), 'DD/MM/YYYY HH24:MI'), '—') || ' · employés : ' || (SELECT count(*) FROM utilisateur)" $Base
+    # Résumé : requête sans accent (psql reçoit le texte de -c dans le code de page de Windows, pas en UTF-8), phrase composée ici ;
+    # il ne bloque jamais la suite (redémarrage du service, adresse à donner aux postes)
+    $resume = ""
+    try {
+        $v = @((Invoke-Super "SELECT (SELECT count(*) FROM vente), COALESCE(to_char((SELECT max(date_vente) FROM vente), 'DD/MM/YYYY HH24:MI'), '-'), (SELECT count(*) FROM utilisateur)" $Base) -split '\|')
+        if ($v.Count -eq 3) { $resume = "Ventes : $($v[0]), dernière le $($v[1]) · employés : $($v[2])" }
+    }
+    catch { Write-Warning "Résumé de la base non lu (la bascule continue) : $($_.Exception.Message)" }
     Write-Host "Base $Base prête. $resume"
 }
 finally {

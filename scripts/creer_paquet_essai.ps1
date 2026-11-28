@@ -41,6 +41,11 @@ if (-not $Sortie) { $Sortie = Join-Path (Split-Path $racine -Parent) "PharmaOffi
 $obfusquer = Join-Path $PSScriptRoot "mep\obfusquer_livraison.ps1"
 if (-not $SansObfuscation) { $Obfuscateur = & $obfusquer -ChercherOutil -Obfuscateur $Obfuscateur }
 
+# Le dossier de sortie n'est jamais dans le dépôt des sources, et un dossier existant n'est vidé que s'il est un paquet déjà fabriqué
+. (Join-Path $PSScriptRoot "mep\garde_livraison.ps1")
+$Sortie = Assert-DossierHorsDepot $Sortie $racine
+Assert-DossierLivraison $Sortie
+
 if (Test-Path $Sortie) {
     Write-Host "Le dossier $Sortie existe : il est vidé."
     Remove-Item $Sortie -Recurse -Force

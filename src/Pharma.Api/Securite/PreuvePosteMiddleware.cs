@@ -10,7 +10,7 @@ namespace Pharma.Api.Securite;
 /// 2026-11-27, script 174 : les modes « inactif » et « transition » ne s'appliquent plus). En-têtes de preuve présents → vérification (valide : poste
 /// prouvé posé dans HttpContext.Items ; révoqué, horloge, fausse ou inconnue : 401 ; vérification impossible : 503) ; sans preuve valide, un en-tête
 /// X-Pharma-Poste (un PC de caisse) → 403 « poste_non_autorise ». Clients sans poste (ni en-tête X-Pharma-Poste ni preuve : page mobile, pilotage
-/// mobile, outils) : inchangés. Routes ouvertes (§ 3 bis) et routes du super admin : jamais refusées (la preuve y est seulement lue).
+/// mobile) : non contrôlés ici, mais leur jeton est limité aux routes de la page mobile (JetonsSansPoste, décision du 2026-11-28). Routes ouvertes (§ 3 bis) et routes du super admin : jamais refusées (la preuve y est seulement lue).
 /// PC non prouvé (sans preuve, ou preuve d'un poste révoqué, remplacé ou inconnu) : le titulaire y garde l'Administration seulement (décision du
 /// 2026-11-27, <see cref="AccesAdministrationSeule"/>) ; le refus se décide alors après la lecture du jeton.
 /// </summary>
@@ -20,9 +20,12 @@ public sealed class PreuvePosteMiddleware(RequestDelegate suite, ILogger<PreuveP
     public const string ItemRefus = "Pharma.RefusPreuvePoste";
     private readonly ConcurrentDictionary<string, long> journalRefus = new(StringComparer.Ordinal);
 
-    /// <summary>Routes où la preuve est seulement lue, jamais exigée (contrat § 3 bis).</summary>
+    /// <summary>
+    /// Routes où la preuve est seulement lue, jamais exigée (contrat § 3 bis). « /api/demo » (anonyme, lue par la barre d'état avant toute
+    /// connexion) en fait partie depuis le 2026-11-28 : refusée, elle faisait boucler l'écran de connexion d'un PC à la preuve refusée.
+    /// </summary>
     public static bool RouteOuverte(PathString chemin) =>
-        !chemin.StartsWithSegments("/api") || chemin.StartsWithSegments("/api/healthcheck") || chemin.StartsWithSegments("/api/postes/etat")
+        !chemin.StartsWithSegments("/api") || chemin.StartsWithSegments("/api/healthcheck") || chemin.StartsWithSegments("/api/demo") || chemin.StartsWithSegments("/api/postes/etat")
         || chemin.StartsWithSegments("/api/postes/enrolement") || chemin.StartsWithSegments("/api/inter-serveurs") || chemin.StartsWithSegments("/api/vigie/rapport");
 
     /// <summary>
@@ -115,6 +118,7 @@ public sealed class PreuvePosteMiddleware(RequestDelegate suite, ILogger<PreuveP
                 "Ce poste n'est pas autorisé : le titulaire doit l'ajouter dans Administration › Postes et vous donner un code."),
             PreuvePoste.PreuveIndisponible => ("Vérification indisponible", "Vérification du poste momentanément impossible : réessayez."),
             AccesAdministrationSeule.Code => ("Administration seulement", AccesAdministrationSeule.Message),
+            JetonsSansPoste.Code => ("Poste requis", JetonsSansPoste.Message),
             _ => ("Poste non prouvé", "Ce poste n'a pas pu prouver son identité : reconnectez-vous ; si cela recommence, faites réautoriser le poste.")
         };
         return Results.Problem(title: titre, detail: detail, statusCode: statut, type: $"urn:pharmaofficine:erreur:{code}",
@@ -140,7 +144,7 @@ public sealed class PreuvePosteMiddleware(RequestDelegate suite, ILogger<PreuveP
                 try
                 {
                     using var portee = fabrique.CreateScope();
-                    await portee.ServiceProvider.GetRequiredService<IAlertesTitulaire>().SurveillanceAsync(
+                    await portee.ServiceProvider.GetRequiredService<IAlertesTitulaire>().SecuriteAsync(
                         $"Postes : un poste révoqué (n° {id}) s'est présenté au serveur depuis l'adresse {adresse}.", true);
                 }
                 catch (Exception e) { journal.LogWarning(e, "Postes : alerte « poste révoqué » non envoyée"); }
@@ -152,7 +156,7 @@ public sealed class PreuvePosteMiddleware(RequestDelegate suite, ILogger<PreuveP
 /// <summary>
 /// Contrôle du jeton face au poste prouvé (contrat § 3), après l'authentification ; remplace la règle « en-tête différent du claim ». Preuve toujours
 /// exigée (script 174) : claim « poste_id » = poste prouvé, sinon 401 ; jeton lié à un nom sans « poste_id » (ouvert sur un PC non autorisé) : 401.
-/// Jeton sans poste (page mobile, super admin) : inchangé. Routes ouvertes : jamais refusées. Jeton marqué « administration seulement » (titulaire
+/// Jeton sans poste : super admin inchangé ; employé (page mobile) limité aux routes de la page mobile (<see cref="JetonsSansPoste"/>). Routes ouvertes : jamais refusées. Jeton marqué « administration seulement » (titulaire
 /// connecté sur un PC non autorisé) : routes de l'Administration seulement, sur tout PC (<see cref="AccesAdministrationSeule"/>).
 /// </summary>
 public static class ControlePosteJeton
@@ -188,6 +192,12 @@ public static class ControlePosteJeton
         if (refus)
         {
             await PreuvePosteMiddleware.RefuserAsync(ctx, StatusCodes.Status401Unauthorized, PreuvePoste.PosteNonProuve);
+            return;
+        }
+        // Jeton d'employé sans poste (page mobile) : routes de la page mobile seulement (décision du 2026-11-28, JetonsSansPoste)
+        if (JetonsSansPoste.Concerne(ctx.User) && !JetonsSansPoste.RouteAutorisee(ctx.Request.Method, ctx.Request.Path))
+        {
+            await PreuvePosteMiddleware.RefuserAsync(ctx, StatusCodes.Status403Forbidden, JetonsSansPoste.Code);
             return;
         }
         await suite();
