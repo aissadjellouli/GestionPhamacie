@@ -221,7 +221,7 @@ public sealed class DatePlancherFichier(string fichier, ILogger<DatePlancherFich
 
     // Relu depuis un fichier JSON : noms gardés à l'obfuscation (docs/protection-du-code.md § 9.7)
     [System.Reflection.Obfuscation(Exclude = true, ApplyToMembers = true)]
-    private sealed record Contenu(DateTime? Utc, DateTime? Centrale = null);
+    private sealed record Contenu(DateTime? Utc, DateTime? Centrale = null, DateTime? Vue = null);
 
     public static string CheminParDefaut(string racineDonnees) => Path.Combine(racineDonnees, "Offre", FichierNom);
 
@@ -261,13 +261,23 @@ public sealed class DatePlancherFichier(string fichier, ILogger<DatePlancherFich
         lock (verrou) EcrireContenu((LireContenu() ?? new Contenu(null)) with { Centrale = DateTime.SpecifyKind(utc, DateTimeKind.Utc) });
     }
 
+    public DateTime? LireVue()
+    {
+        lock (verrou) return Utc(LireContenu()?.Vue);
+    }
+
+    public void NoterVue(DateTime utc)
+    {
+        lock (verrou) EcrireContenu((LireContenu() ?? new Contenu(null)) with { Vue = DateTime.SpecifyKind(utc, DateTimeKind.Utc) });
+    }
+
     private void EcrireContenu(Contenu c)
     {
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(fichier)!);
             var temporaire = fichier + ".partiel";
-            File.WriteAllText(temporaire, JsonSerializer.Serialize(c with { Utc = Utc(c.Utc), Centrale = Utc(c.Centrale) }));
+            File.WriteAllText(temporaire, JsonSerializer.Serialize(c with { Utc = Utc(c.Utc), Centrale = Utc(c.Centrale), Vue = Utc(c.Vue) }));
             FichiersProteges.Restreindre(temporaire);
             File.Move(temporaire, fichier, overwrite: true);
         }

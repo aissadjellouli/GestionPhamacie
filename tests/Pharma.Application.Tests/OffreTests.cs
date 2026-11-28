@@ -531,6 +531,72 @@ public class OffreTests
         public int EcrituresCentrale { get; private set; }
         public DateTime? LireCentrale() => Centrale;
         public void NoterCentrale(DateTime utc) { Centrale = utc; EcrituresCentrale++; }
+        public DateTime? Vue { get; set; }
+        public DateTime? LireVue() => Vue;
+        public void NoterVue(DateTime utc) => Vue = utc;
+    }
+
+    private sealed class HorlogeReglable(DateTime utc) : IHorloge
+    {
+        public DateTime MaintenantUtc { get; set; } = utc;
+        public DateOnly Aujourdhui => DateOnly.FromDateTime(MaintenantUtc.ToLocalTime());
+    }
+
+    [Fact]
+    public async Task Horloge_reculee_la_date_plancher_avance_du_temps_passe_et_l_offre_echoit_a_sa_vraie_date()
+    {
+        // Offre qui finit dans 10 jours ; l'horloge du serveur est reculée de 60 jours, sans serveur central
+        var (d, _, g, _) = Banc();
+        await g.SaisirAsync(1, Code(postes: 6, fin: Aujourdhui.AddDays(10)));
+        var vrai = Midi(Aujourdhui);
+        var fichier = new PlancherFactice { Valeur = vrai };
+        var h = new HorlogeReglable(vrai.AddDays(-60));
+        long tic = 1_000;
+        OffreCourante Offre() => new(d, h, [Publique], plancher: fichier, compteurMs: () => tic);
+
+        var debut = await Offre().LireAsync();
+        Assert.Equal((EtatsOffre.Active, Aujourdhui), (debut.Etat, debut.Jour));
+        Assert.NotNull(debut.AlerteHorloge);                                    // l'alerte « l'horloge retarde » reste
+
+        // 30 minutes plus tard : compté en mémoire, fichier pas encore écrit
+        (tic, h.MaintenantUtc) = (tic + 30 * 60_000, h.MaintenantUtc.AddMinutes(30));
+        Assert.Equal(vrai.AddMinutes(30), (await Offre().DateEffectiveAsync()).EffectiveUtc);
+        Assert.Equal(vrai, fichier.Valeur);
+
+        // 12 jours plus tard (horloge toujours 60 jours en arrière) : délai de grâce, comme à la vraie date
+        (tic, h.MaintenantUtc) = (tic + 12L * 24 * 3_600_000, h.MaintenantUtc.AddDays(12));
+        var grace = await Offre().LireAsync();
+        Assert.Equal(EtatsOffre.Grace, grace.Etat);
+        Assert.Equal(vrai.AddDays(12).AddMinutes(30), fichier.Valeur);          // écrit : plus d'une heure passée
+
+        // 30 jours de plus : offre de base
+        (tic, h.MaintenantUtc) = (tic + 30L * 24 * 3_600_000, h.MaintenantUtc.AddDays(30));
+        Assert.Equal((EtatsOffre.Base, 2), (await Offre().LireAsync()) is var b ? (b.Etat, b.Postes) : default);
+    }
+
+    [Fact]
+    public async Task Horloge_reculee_apres_un_redemarrage_le_temps_passe_est_repris_de_la_derniere_heure_vue()
+    {
+        var (d, _, _, _) = Banc();
+        var vrai = Midi(Aujourdhui);
+        var h = new HorlogeReglable(vrai.AddDays(-60));
+        // API redémarrée 6 heures après la dernière heure vue pendant le recul : 6 heures comptées
+        var fichier = new PlancherFactice { Valeur = vrai, Vue = h.MaintenantUtc.AddHours(-6) };
+        Assert.Equal(vrai.AddHours(6), (await new OffreCourante(d, h, [Publique], plancher: fichier, compteurMs: () => 5).DateEffectiveAsync()).EffectiveUtc);
+        Assert.Equal((vrai.AddHours(6), h.MaintenantUtc), (fichier.Valeur!.Value, fichier.Vue!.Value));
+
+        // Second recul (dernière heure vue après l'horloge), ou écart de plus de 2 jours : rien n'est compté, la mesure repart
+        foreach (var vue in new[] { h.MaintenantUtc.AddDays(3), h.MaintenantUtc.AddDays(-5) })
+        {
+            var f = new PlancherFactice { Valeur = vrai, Vue = vue };
+            Assert.Equal(vrai, (await new OffreCourante(d, h, [Publique], plancher: f, compteurMs: () => 5).DateEffectiveAsync()).EffectiveUtc);
+            Assert.Equal((vrai, h.MaintenantUtc), (f.Valeur!.Value, f.Vue!.Value));
+        }
+
+        // Horloge à l'heure : rien ne change, aucune heure vue notée
+        var normal = new PlancherFactice { Valeur = vrai.AddHours(-2) };
+        var e = await new OffreCourante(d, new HorlogeReglable(vrai), [Publique], plancher: normal, compteurMs: () => 5).DateEffectiveAsync();
+        Assert.Equal((vrai, false, (DateTime?)null), (e.EffectiveUtc, e.Reculee, normal.Vue));
     }
 
     private static DateTime Midi(DateOnly jour) => jour.ToDateTime(new TimeOnly(12, 0), DateTimeKind.Utc);

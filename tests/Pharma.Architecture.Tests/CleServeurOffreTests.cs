@@ -79,6 +79,12 @@ public sealed class CleServeurOffreTests
             var neuf = new DatePlancherFichier(Path.Combine(dossier, "autre", DatePlancherFichier.FichierNom));
             neuf.NoterCentrale(centrale);
             Assert.Equal(((DateTime?)null, (DateTime?)centrale), (neuf.Lire(), neuf.LireCentrale()));
+            // Dernière heure vue pendant un recul de l'horloge (2026-11-28) : même fichier, les autres dates gardées ; ancien fichier : null
+            Assert.Null(neuf.LireVue());
+            var vue = new DateTime(2026, 9, 1, 8, 0, 0, DateTimeKind.Utc);
+            neuf.NoterVue(vue);
+            var relu = new DatePlancherFichier(Path.Combine(dossier, "autre", DatePlancherFichier.FichierNom));
+            Assert.Equal(((DateTime?)vue, (DateTime?)centrale, DateTimeKind.Utc), (relu.LireVue(), relu.LireCentrale(), relu.LireVue()!.Value.Kind));
         }
         finally { if (Directory.Exists(dossier)) Directory.Delete(dossier, true); }
     }

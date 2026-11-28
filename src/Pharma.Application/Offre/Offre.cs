@@ -131,7 +131,7 @@ public static class EtatsOffre
 /// sinon il suit le chemin d'une activation refusée après un délai de grâce de 15 jours depuis la première constatation.
 /// </summary>
 public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge, IReadOnlyList<byte[]>? clesPubliques = null, CacheOffre? cache = null,
-    ICleServeur? cleServeur = null, IDatePlancherFichier? plancher = null)
+    ICleServeur? cleServeur = null, IDatePlancherFichier? plancher = null, Func<long>? compteurMs = null)
     : ILimitesOffre, IPacksOffre
 {
     public const string ActionHorlogeReculee = "offre_horloge_reculee", ActionHorlogeAvance = "offre_horloge_avance",
@@ -181,13 +181,19 @@ public sealed class OffreCourante(IActivationsOffreDepot depot, IHorloge horloge
     /// Date effective : la date du serveur, ou la date plancher si elle est plus récente (dernière date du journal fiscal des ventes, plus grande
     /// date déjà vue gardée dans le fichier du serveur, dernière date reçue du serveur central). Met le fichier à jour au plus une fois par
     /// jour, jamais d'un saut de plus de 2 jours (correction du 2026-11-27 : une horloge mise par erreur dans le futur n'y laisse rien) ;
-    /// jamais bloquant.
+    /// jamais bloquant. Pendant un recul de l'horloge, la date plancher avance du temps passé (correction du 2026-11-28).
     /// </summary>
     public async Task<DateEffectiveOffre> DateEffectiveAsync(CancellationToken ct = default)
     {
+        var maintenant = horloge.MaintenantUtc;
+        var fiscale = await depot.DerniereDateFiscaleAsync(ct);
         var fichier = plancher?.Lire();
-        var d = DateEffectiveOffre.Calculer(horloge.MaintenantUtc, horloge.Aujourdhui, await depot.DerniereDateFiscaleAsync(ct), fichier,
-            plancher?.LireCentrale());
+        var centrale = plancher?.LireCentrale();
+        // Horloge reculée : la date plancher avance du temps réellement passé (ReculHorlogeOffre), elle ne reste plus figée
+        if (plancher is not null)
+            fichier = ReculHorlogeOffre.Avancer(plancher, maintenant, new[] { fiscale, fichier, centrale }.Max(), fichier,
+                (compteurMs ?? (() => Environment.TickCount64))());
+        var d = DateEffectiveOffre.Calculer(maintenant, horloge.Aujourdhui, fiscale, fichier, centrale);
         if (plancher is not null && d.AEcrire(fichier) is { } nouvelle) plancher.Ecrire(nouvelle);
         return d;
     }

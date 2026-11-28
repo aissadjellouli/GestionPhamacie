@@ -110,6 +110,64 @@ public interface IDatePlancherFichier
     DateTime? LireCentrale();
     /// <summary>Mémorise la date du serveur central (même fichier ; la date plancher du fichier n'est pas touchée).</summary>
     void NoterCentrale(DateTime utc);
+
+    /// <summary>
+    /// Dernière heure de l'horloge du serveur vue pendant un recul (correction du 2026-11-28) ; null : jamais notée. Sert à compter le
+    /// temps passé pendant un recul quand l'API a redémarré entre-temps.
+    /// </summary>
+    DateTime? LireVue() => null;
+    /// <summary>Mémorise l'heure de l'horloge du serveur vue pendant un recul (même fichier, les autres dates ne sont pas touchées).</summary>
+    void NoterVue(DateTime utc) { }
+}
+
+/// <summary>
+/// Horloge du serveur reculée (constat de revue du 2026-11-28) : tant que l'horloge retarde sur la date plancher, celle-ci avance du temps
+/// réellement passé. Avant, elle restait figée : reculer l'horloge de 60 jours avant la fin de l'offre la prolongeait de 60 jours.
+/// <para>
+/// Mesure : pendant que l'API tourne, un compteur qui ne dépend pas de l'horloge de Windows (la changer ne trompe pas la mesure) ; après un
+/// redémarrage, l'écart entre l'horloge et la dernière heure vue, écrite dans le fichier (écart négatif, ou de plus de
+/// <see cref="DateEffectiveOffre.PasMax"/> : non compté). Le temps pendant lequel l'API est arrêtée et l'horloge reculée au redémarrage n'est
+/// donc compté que s'il est cohérent avec l'horloge (décision du 2026-11-28 : aucun forfait). Le fichier est écrit au plus une fois par
+/// <see cref="PasEcriture"/> pendant un recul ; entre deux écritures, le temps passé est compté en mémoire.
+/// </para>
+/// </summary>
+public static class ReculHorlogeOffre
+{
+    public static readonly TimeSpan PasEcriture = TimeSpan.FromHours(1);
+
+    private sealed class Suivi { public long? Tic; }
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<IDatePlancherFichier, Suivi> suivis = new();
+
+    /// <summary>
+    /// Date plancher du fichier à prendre pour ce calcul. Hors recul (aucune date plancher, ou horloge à l'heure) : la valeur du fichier,
+    /// inchangée. Pendant un recul : la date plancher avancée du temps passé (écrite dans le fichier au plus une fois par heure).
+    /// </summary>
+    /// <param name="plancherUtc">Plus grande des dates plancher (journal fiscal, fichier, serveur central) ; null : aucune.</param>
+    /// <param name="ticMs">Compteur monotone du processus, en millisecondes.</param>
+    public static DateTime? Avancer(IDatePlancherFichier fichier, DateTime serveurUtc, DateTime? plancherUtc, DateTime? fichierUtc, long ticMs)
+    {
+        var suivi = suivis.GetOrCreateValue(fichier);
+        lock (suivi)
+        {
+            if (plancherUtc is not { } p || serveurUtc >= p)
+            {
+                suivi.Tic = null;   // horloge à l'heure : rien à compter, la mesure repartira au prochain recul
+                return fichierUtc;
+            }
+            TimeSpan passe;
+            var premier = suivi.Tic is null;
+            if (suivi.Tic is { } t) passe = TimeSpan.FromMilliseconds(Math.Max(0, ticMs - t));
+            else passe = fichier.LireVue() is { } vue && serveurUtc > vue && serveurUtc - vue <= DateEffectiveOffre.PasMax ? serveurUtc - vue : TimeSpan.Zero;
+            var avancee = p + passe;
+            if (premier || passe >= PasEcriture)
+            {
+                if (passe > TimeSpan.Zero) fichier.Ecrire(avancee);
+                fichier.NoterVue(serveurUtc);
+                suivi.Tic = ticMs;
+            }
+            return avancee;
+        }
+    }
 }
 
 /// <summary>
