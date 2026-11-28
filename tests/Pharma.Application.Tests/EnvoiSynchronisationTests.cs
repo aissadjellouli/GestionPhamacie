@@ -876,4 +876,25 @@ public class EnvoiSynchronisationTests
         b.P = b.P with { Active = false };
         Assert.Equal(EnvoyerLotsSync.ArretDesactivee, (await envoi.ExecuterSansPackAsync(Maintenant, true)).Arret);
     }
+
+    [Fact]
+    public async Task Sans_le_pack_G_un_central_injoignable_n_est_pas_note_comme_un_passage_reussi()
+    {
+        // Correction du 2026-11-28 : l'échange léger est le seul appel de la voie réduite ; son échec doit laisser une erreur visible
+        // (Administration › Synchronisation, journal du serveur), puis disparaître au passage réussi suivant
+        var (b, c, s) = (new Base(), new Certificat(), new Central());
+        var envoi = Envoi(b, c, s);
+        s.Coupure = true;
+        var panne = await envoi.ExecuterSansPackAsync(Maintenant, envoyerResultats: false);
+        Assert.StartsWith("Serveur central injoignable", panne.Erreur);
+        Assert.False(panne.Bloquant);
+        Assert.StartsWith("Serveur central injoignable", b.Envois[^1]);
+        Assert.Empty(s.VersionsRecues);
+
+        s.Coupure = false;
+        var repris = await envoi.ExecuterSansPackAsync(Maintenant, envoyerResultats: false);
+        Assert.Null(repris.Erreur);
+        Assert.Null(b.Envois[^1]);
+        Assert.NotEmpty(s.VersionsRecues);
+    }
 }
