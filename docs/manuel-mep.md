@@ -588,7 +588,8 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
   que A21 (`SetEnvironmentVariable`, scope `Machine`) : `Ged__Dossier`, `Ged__RetentionSauvegardesJours`, `Ordonnances__Dossier`,
   `Journaux__Dossier`, `Journaux__TailleMaxMo`, `Journaux__RetentionMois`, `Journaux__Niveau`, `LimiteConnexions__ParMinute`,
   `Sauvegardes__PgDump` **[À CONFIRMER : comportement de l'API quand la valeur est vide.]**.
-  - **Ne pas** régler `AutoriserHttpReseau`. Ne pas modifier `Urls` dans `appsettings.json` : `appsettings.Https.json` (A23) prend le relais.
+  - **Ne pas** régler `AutoriserHttpReseau`. Ne pas modifier `Urls` dans `appsettings.json` (`http://0.0.0.0:5081`, port de développement) : `appsettings.Https.json` (A23) le
+    remplace avant le premier démarrage du service (A24) : HTTP sur `localhost:5080`, HTTPS sur `5443`. Ne jamais démarrer le service avant A23.
   - Détail : MEP § A 4.5.
 
 - [ ] **A23 — HTTPS : une seule autorité pour toute la pharmacie.** **Qui** : technicien. **Où** : PC serveur, administrateur Windows. Deux
@@ -879,15 +880,31 @@ Format de chaque étape : **Qui** · **Où** (PC, compte) · **Action** · comma
 ### Phase A10 — Compte super admin
 
 - [ ] **A59 — Créer le compte.** **Qui** : technicien (titulaire présent pour les codes). **Où** : PC serveur, PowerShell en administrateur,
-  **après** A21.
+  **après** A21 (variables), A23 (HTTPS) et A56 (modem GSM ou serveur e-mail réglés et essayés).
+  - **Prérequis vérifiés le 2026-11-28** : ouvrir une **nouvelle** fenêtre PowerShell en administrateur (une fenêtre ouverte avant A21 ne
+    voit pas les variables), et **se placer dans le dossier de l'API** : la console lit sa configuration dans le dossier courant ; lancée
+    d'ailleurs, elle ne trouve pas `appsettings.json` et s'arrête (« Jwt:Cle absente… ») ou, pire, range le compte ailleurs.
   ```powershell
-  & "C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" --super-admin
+  Set-Location "C:\Program Files\PharmaOfficine\Api"
+  & ".\Pharma.Api.exe" --super-admin
   ```
+  - **Première ligne affichée** : `Compte super admin : C:\ProgramData\PharmaOfficine\super-admin.dat`. C'est le fichier que le service lira :
+    si un autre chemin s'affiche, arrêter (Ctrl+C) et vérifier `SuperAdmin__Fichier` (A22 : ne pas la régler, sauf besoin).
   - Saisir : identifiant, mot de passe (12 caractères au moins), puis un **téléphone mobile** (SMS), une **adresse e-mail**, ou les deux.
     **Au moins un canal vérifié est obligatoire** ; les codes reçus se saisissent dans la console.
   - **Si aucun canal ne fonctionne, le compte n'est pas créé** : régler le modem GSM ou le serveur e-mail (A56), puis relancer.
-  - Le compte est chiffré pour ce PC (`super-admin.dat`) : il fonctionne même si la base est détruite, illisible sur un autre PC.
-  - **Attendu** : compte créé, l'invite revient.
+  - Le compte est chiffré pour ce PC (`super-admin.dat`, protection Windows de la machine) : il fonctionne même si la base est détruite,
+    illisible sur un autre PC. Le fichier n'est lisible que par le système (compte du service de l'API), les administrateurs et le compte
+    qui l'a créé.
+  - **Attendu** : « Compte super admin créé : <identifiant>, <canaux> », puis l'invite revient. **Aucun redémarrage du service** : le
+    fichier est relu à chaque connexion.
+  - **Contrôle** (titulaire présent) : sur un poste, « Connexion super admin », l'identifiant et le mot de passe : l'écran du super admin
+    s'ouvre ; le journal de l'API (`C:\Logs\PharmaOfficine\Api\pharma-api-<date>.log`) montre `Super admin <identifiant> connecté`.
+    Se déconnecter.
+  - **Si la connexion est refusée** (journal : `Super admin : connexion refusée`) : mot de passe faux, ou l'API ne lit pas le même fichier
+    (`SuperAdmin__Fichier` réglée pour le service mais pas dans la fenêtre de A59, ou l'inverse). Comparer le chemin affiché par la
+    console avec la valeur machine de `SuperAdmin__Fichier` ; après tout changement de variable, redémarrer le service.
+  - Le mot de passe et les canaux se notent au coffre (tableau des secrets) ; **le mot de passe ne se retrouve pas** : voir A61 et A62.
   - Détail : MEP § A 10.1.
 - [ ] **A60 — Sauvegarder `super-admin.dat`** sur le disque externe (`E:\Securite\`), comme `cle-integrite.dat` (A26). Détail : MEP § A 10.2.
 - [ ] **A61 — (Plus tard, si besoin) Changer mot de passe, téléphone ou e-mail** : relancer la même commande. Mot de passe actuel + code reçu

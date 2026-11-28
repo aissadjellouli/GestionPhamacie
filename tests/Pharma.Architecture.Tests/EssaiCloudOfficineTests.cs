@@ -44,7 +44,7 @@ public partial class EssaiCloudOfficineTests
     public void Les_ports_interdits_sont_refuses_et_les_ports_par_defaut_sont_ceux_demandes()
     {
         var code = Code();
-        Assert.Contains("$PortsInterdits = @(5080, 5180, 9333, 5186, 9446, 5432)", code);
+        Assert.Contains("$PortsInterdits = @(5080, 5081, 5180, 9333, 5186, 9446, 5432)", code);
         Assert.Contains("[int]$PortCentral = 5190", code);
         Assert.Contains("[int]$PortApi = 5191", code);
         Assert.Contains("function Test-PortInterdit", code);
@@ -63,7 +63,7 @@ public partial class EssaiCloudOfficineTests
         if (!OperatingSystem.IsWindows() || !File.Exists(powershell)) return;
         var dossierEssai = Path.Combine(Path.GetTempPath(), "pharma-essai-cloud");
         var existaitAvant = Directory.Exists(dossierEssai);
-        foreach (var port in new[] { 5080, 5180, 9333, 5186, 9446 })
+        foreach (var port in new[] { 5080, 5081, 5180, 9333, 5186, 9446 })
         {
             var (code, sortie) = Lancer(powershell, $"-Demarrer -PortCentral {port} -WhatIf");
             Assert.Equal(1, code);

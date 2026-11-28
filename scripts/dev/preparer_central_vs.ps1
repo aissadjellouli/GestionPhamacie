@@ -39,7 +39,7 @@
            seule fois) si 032 est passé sur pharmacie_cloud_dev, sinon avertissement (rien n'est fait). Rattacher une officine :
            code de la console --code-rattachement titulaire.dev <officine> --auteur <nom> (affiché une fois, 30 minutes).
 
-    -Activer   Visual Studio lancé (profil « API + Poste + Central ») : vérifie l'API (5080, /api/healthcheck) et le central (5090),
+    -Activer   Visual Studio lancé (profil « API + Poste + Central ») : vérifie l'API (5081, /api/healthcheck) et le central (5090),
                affiche la marche à suivre à l'écran Administration > Synchronisation et un code neuf si besoin, puis l'état.
     -Etat      lecture seule : variables (noms seulement), dossiers, rôles, officine au central, synchronisation de pharmacie_dev, ports
                (dont la page d'état 5092).
@@ -108,7 +108,7 @@ $PortEcrans = 5094                            # écrans du central (développeme
 $CompteEditeur = "editeur.dev"                # compte de test des écrans (mot de passe provisoire affiché une fois)
 $CompteTitulaire = "titulaire.dev"            # compte de test du titulaire (lot S7.2a, script central 032 ; mot de passe provisoire affiché une fois)
 $LibelleOfficine = "Développement (pharmacie_dev)"
-$PortApi = 5080                               # lu seulement (santé), jamais pris
+$PortApi = 5081                               # lu seulement (santé), jamais pris ; port de l'API de Visual Studio (2026-11-28)
 $PortCentral = 5090
 $AdresseLocale = "127.0.0.1"
 $PortPostgres = 5432

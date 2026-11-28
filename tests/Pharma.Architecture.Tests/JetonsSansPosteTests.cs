@@ -77,12 +77,19 @@ public class JetonsSansPosteTests
 
     // ---- Autres constats de la revue du 2026-11-28, figés ici ----
 
-    /// <summary>L'API écoute par défaut sur 5080 (adresse par défaut du poste, lanceurs, manuels) ; 5081 est l'instance de test, par --urls.</summary>
+    /// <summary>
+    /// Décision du titulaire du 2026-11-28 (« go port 5081 ») : l'API lancée sans autre réglage (Visual Studio, dotnet run) écoute sur 5081 ;
+    /// le profil de Visual Studio l'annonce aussi. En production, appsettings.Https.json (certificat_https.ps1) remplace Urls avant le premier
+    /// démarrage du service : HTTP sur localhost:5080, HTTPS sur 5443 ; le paquet d'essai écrit le sien (localhost:5080).
+    /// </summary>
     [Fact]
-    public void L_API_ecoute_par_defaut_sur_le_port_5080()
+    public void L_API_ecoute_par_defaut_sur_le_port_5081_et_le_profil_l_annonce()
     {
-        var reglages = File.ReadAllText(Path.Combine(BaseJetableM4.RacineDepot(), "src", "Pharma.Api", "appsettings.json"));
-        Assert.Contains("\"Urls\": \"http://0.0.0.0:5080\"", reglages);
+        var api = Path.Combine(BaseJetableM4.RacineDepot(), "src", "Pharma.Api");
+        Assert.Contains("\"Urls\": \"http://0.0.0.0:5081\"", File.ReadAllText(Path.Combine(api, "appsettings.json")));
+        Assert.Contains("\"applicationUrl\": \"http://localhost:5081\"", File.ReadAllText(Path.Combine(api, "Properties", "launchSettings.json")));
+        // Production : le fichier HTTPS fixe lui-même ses adresses (HTTP local 5080), il ne dépend pas de Urls
+        Assert.Contains("[int] $PortHttp = 5080", File.ReadAllText(Path.Combine(BaseJetableM4.RacineDepot(), "scripts", "certificat_https.ps1")));
     }
 
     /// <summary>Le poste et le serveur refusent le même montant en espèces invraisemblable (code-barres scanné dans un champ de montant).</summary>

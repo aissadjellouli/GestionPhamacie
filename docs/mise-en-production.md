@@ -386,7 +386,7 @@ Un seul script enchaîne tout dans le bon ordre, avec des contrôles : `scripts\
   - `LimiteConnexions__ParMinute` : défaut `20`.
   - **Ne pas** régler `AutoriserHttpReseau`.
   - `Sauvegardes__PgDump` : chemin de `pg_dump.exe` si l'API ne le trouve pas. **[À CONFIRMER : comportement de l'API quand la valeur est vide.]**
-  - Ne pas modifier `Urls` dans `appsettings.json` : c'est le fichier `appsettings.Https.json` (étape 4.6) qui prend le relais.
+  - Ne pas modifier `Urls` dans `appsettings.json` (`http://0.0.0.0:5081`, port de développement) : c'est le fichier `appsettings.Https.json` (étape 4.6) qui le remplace (HTTP sur `localhost:5080`, HTTPS sur `5443`), avant le premier démarrage du service.
 
 - [ ] **4.6** Chiffrer les échanges (HTTPS) : **une seule autorité pour toute la pharmacie**. **Où** : PC serveur. **Compte** : administrateur Windows. Deux clés USB : celle des **postes** (ici `E:\`, certificat public) et celle du **coffre** (ici `F:\`, clé privée de l'autorité).
   Le script crée l'autorité de la pharmacie (une seule fois, valable 10 ans) et sauvegarde sa clé **une fois** dans un fichier PFX protégé par une phrase de passe saisie à l'écran. Il crée ensuite le certificat du serveur (825 jours), écrit `appsettings.Https.json`, ouvre le port 5443 en réseau **privé** seulement, et exporte le certificat **public** de l'autorité et son empreinte sur la clé USB des postes. Cette autorité signera aussi les certificats du 2e serveur et du PC de secours : les postes l'installent **une seule fois** (étape 5.4).
@@ -578,15 +578,19 @@ Dans l'ordre. Chaque réglage est fait dans l'application, par le titulaire ou s
 
 ### 10. Compte super admin (reprise de données et restauration)
 
-- [ ] **10.1** Créer le compte. **Où** : PC serveur. **Compte** : administrateur Windows. Dans une fenêtre PowerShell en administrateur, **après** l'étape 4.4 (les variables sont lues par l'API) :
+- [ ] **10.1** Créer le compte. **Où** : PC serveur. **Compte** : administrateur Windows. Dans une **nouvelle** fenêtre PowerShell en administrateur, **après** l'étape 4.4 (variables), 4.6 (HTTPS) et 9.10 (modem GSM ou serveur e-mail réglés), **depuis le dossier de l'API** (la console lit sa configuration dans le dossier courant ; lancée d'ailleurs, elle s'arrête sur « Jwt:Cle absente… », constaté le 2026-11-28) :
   ```powershell
-  & "C:\Program Files\PharmaOfficine\Api\Pharma.Api.exe" --super-admin
+  Set-Location "C:\Program Files\PharmaOfficine\Api"
+  & ".\Pharma.Api.exe" --super-admin
   ```
+  - Première ligne : `Compte super admin : C:\ProgramData\PharmaOfficine\super-admin.dat`, le fichier que lira le service. Un autre chemin : arrêter et vérifier la variable `SuperAdmin__Fichier`.
   - Saisir : identifiant, mot de passe (12 caractères au moins), puis un **téléphone mobile** (SMS), une **adresse e-mail**, ou les deux. **Au moins un canal vérifié est obligatoire.** Avec les deux, le même code part sur les deux à chaque action.
   - Un code est envoyé par SMS au numéro saisi, pour le vérifier (modem GSM de l'étape 9.10), et un code est envoyé à l'adresse e-mail saisie, pour la vérifier (serveur e-mail de l'étape 9.10) : ils se saisissent dans la console. Un canal saisi mais non vérifié n'est pas enregistré, et la console le dit.
   - **Si aucun canal ne fonctionne, le compte n'est pas créé** : la console demande de régler le modem GSM ou le serveur e-mail (Administration › Notifications, étape 9.10), puis de relancer la commande. Il n'y a plus de création « sans vérification ».
-  - Le compte est chiffré pour ce PC (`super-admin.dat`). Il fonctionne même si la base est détruite, et il est illisible sur un autre PC.
-  - **Attendu** : le compte est créé, puis l'invite revient.
+  - Le compte est chiffré pour ce PC (`super-admin.dat`, protection Windows de la machine). Il fonctionne même si la base est détruite, et il est illisible sur un autre PC. Le fichier n'est lisible que par le système (compte du service), les administrateurs et le compte qui l'a créé.
+  - **Attendu** : « Compte super admin créé : … », puis l'invite revient. Aucun redémarrage du service : le fichier est relu à chaque connexion.
+  - **Contrôle** : sur un poste, « Connexion super admin » : l'écran du super admin s'ouvre, et le journal de l'API montre `Super admin <identifiant> connecté`. Refus (`Super admin : connexion refusée`) : mot de passe faux, ou la console et le service ne lisent pas le même fichier (variable `SuperAdmin__Fichier` différente ; redémarrer le service après tout changement de variable).
+  - Mot de passe et canaux notés au coffre : le mot de passe ne se retrouve pas (étapes 10.3 et 10.4).
 - [ ] **10.2** Sauvegarder `super-admin.dat` sur le disque externe (dossier `E:\Securite\`), comme `cle-integrite.dat` (étape 4.9).
 - [ ] **10.3** Pour changer le mot de passe, le téléphone ou l'e-mail : relancer la même commande. Il faut le mot de passe actuel et le code envoyé sur les canaux vérifiés du compte (un seul code, reçu par l'un ou l'autre), puis, si le numéro change, le code reçu par SMS sur le nouveau numéro ; si l'adresse change, le code reçu par e-mail à la nouvelle adresse. Pour une saisie, laisser vide garde la valeur actuelle et « - » retire le canal ; **le dernier canal vérifié ne peut pas être retiré**, et un nouveau canal non vérifié n'est pas enregistré (l'ancien reste).
 - [ ] **10.4** Téléphone et e-mail perdus : un administrateur du PC serveur supprime `super-admin.dat`, puis recrée le compte (étape 10.1). Ne jamais supprimer le compte sans cette procédure.

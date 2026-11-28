@@ -9,7 +9,7 @@
     docs\mise-en-production.md (parcours E).
 
     -Demarrer  (idempotent : le relancer ne casse rien, il reprend ce qui manque)
-        1. contrôles : psql, pg_dump, pg_restore, dotnet ; ports libres (refus de 5080, 5180, 9333, 5186, 9446, 5432 et de tout port occupé) ;
+        1. contrôles : psql, pg_dump, pg_restore, dotnet ; ports libres (refus de 5080, 5081, 5180, 9333, 5186, 9446, 5432 et de tout port occupé) ;
         2. dossier d'essai %TEMP%\pharma-essai-cloud (hors dépôt) : autorité, certificat HTTPS, journaux, PID, mots de passe d'essai
            tirés au hasard (jamais écrits ailleurs) ;
         3. compilation des deux serveurs dans ce dossier (le dépôt et les exécutables en service ne sont pas touchés) ;
@@ -28,7 +28,7 @@
 
     Garde-fous : adresses 127.0.0.1 / localhost seulement ; rien n'est envoyé sur Internet ; aucun magasin de certificats Windows
     touché ; aucun secret dans le dépôt ; le compte postgres n'est jamais utilisé (compte pharma_app, sans droit de superutilisateur) ;
-    pharmacie_dev n'est lue que par pg_dump ; pharmacie_test, pharmacie_cloud_dev, le port 5080 et C:\ProgramData\PharmaOfficine
+    pharmacie_dev n'est lue que par pg_dump ; pharmacie_test, pharmacie_cloud_dev, les ports 5080 et 5081 et C:\ProgramData\PharmaOfficine
     ne sont jamais touchés ; les seules bases supprimées sont pharmacie_cloud_essai et pharmacie_essai_officine.
 
     Mots de passe : jamais en paramètre. Le seul mot de passe demandé est celui de PostgreSQL pour pharma_app : variable PGPASSWORD
@@ -120,7 +120,7 @@ $BaseOfficine = "pharmacie_essai_officine"
 $BasesJetables = @($BaseCentrale, $BaseOfficine)
 $RoleCentral = "pharma_cloud_essai"
 $IdentifiantEssai = "essai_activation"      # compte titulaire temporaire, créé seulement dans la copie jetable $BaseOfficine
-$PortsInterdits = @(5080, 5180, 9333, 5186, 9446, 5432)
+$PortsInterdits = @(5080, 5081, 5180, 9333, 5186, 9446, 5432)
 $DossierEssai = Join-Path $env:TEMP "pharma-essai-cloud"
 $FichierEtat = Join-Path $DossierEssai "etat.json"
 $FichierSecrets = Join-Path $DossierEssai "secrets.json"
@@ -135,7 +135,7 @@ function Write-Etape2([string]$t) { Write-Host ""; Write-Host "== $t" -Foregroun
 # ------------------------------------------------------------------ outils
 function Test-PortInterdit([int]$Port) {
     if ($Port -lt 1024 -or $Port -gt 65535) { return "port $Port hors de 1024 à 65535" }
-    if ($PortsInterdits -contains $Port) { return "port $Port interdit (réservé : 5080, 5180, 9333, 5186, 9446 et PostgreSQL)" }
+    if ($PortsInterdits -contains $Port) { return "port $Port interdit (réservé : 5080, 5081, 5180, 9333, 5186, 9446 et PostgreSQL)" }
     return $null
 }
 

@@ -100,9 +100,15 @@ et le certificat **propres à chaque base** (une base reliée au central avec le
 | Variable (utilisateur) | `pharmacie_dev` | `pharmacie_test` |
 |---|---|---|
 | `ConnectionStrings__Pharmacie` | `…;Database=pharmacie_dev;…` | `…;Database=pharmacie_test;…` |
-| `PHARMA_API` (poste) | absente, ou `http://localhost:5080/` | `http://localhost:5081/` |
+| `PHARMA_API` (poste) | `http://localhost:5081/` | `http://localhost:5081/` |
 | `Synchronisation__Dossier` | `…\central-dev\sync-pharmacie_dev` | `…\central-dev\sync-pharmacie_test` |
-| Port de l'API (profil ou `--urls`) | 5080 | 5081 |
+| Port de l'API (Visual Studio, `dotnet run`) | 5081 | 5081 |
+
+**Port de l'API en développement : 5081** (décision du titulaire du 2026-11-28, « go port 5081 ») : `Urls` d'`appsettings.json` vaut
+`http://0.0.0.0:5081` et l'emporte sur `launchSettings.json` (qui annonce aussi 5081) et sur `ASPNETCORE_URLS`. Le poste, lui, prend
+`http://localhost:5080/` sans réglage : **`PHARMA_API` = `http://localhost:5081/`** est donc nécessaire, quelle que soit la base. Pour une
+seconde API en même temps, lui donner un autre port par la variable `Urls` de sa fenêtre (`$env:Urls = "http://localhost:5083"`), jamais
+5081. Production : sans effet, `appsettings.Https.json` (A23 du manuel de MEP) remplace `Urls` avant le premier démarrage du service.
 
 Passer sur `pharmacie_test`, dans **sa** fenêtre PowerShell (le mot de passe de la base est gardé tel quel, jamais affiché) :
 ```powershell
@@ -117,7 +123,7 @@ Revenir sur `pharmacie_dev` :
 ```powershell
 $v = [Environment]::GetEnvironmentVariable("ConnectionStrings__Pharmacie", "User")
 [Environment]::SetEnvironmentVariable("ConnectionStrings__Pharmacie", ($v -replace "Database=pharmacie_test", "Database=pharmacie_dev"), "User")
-[Environment]::SetEnvironmentVariable("PHARMA_API", $null, "User")
+[Environment]::SetEnvironmentVariable("PHARMA_API", "http://localhost:5081/", "User")
 $s = [Environment]::GetEnvironmentVariable("Synchronisation__Dossier", "User")
 [Environment]::SetEnvironmentVariable("Synchronisation__Dossier", ($s -replace "sync-pharmacie_test", "sync-pharmacie_dev"), "User")
 ```
@@ -132,7 +138,7 @@ Contrôle (sans le mot de passe) :
 **Ensuite, toujours** :
 1. Fermer Visual Studio, l'API, le poste et le central lancés depuis le dépôt, puis rouvrir Visual Studio : une variable n'est vue que par
    les programmes démarrés **après** son changement.
-2. Lancer l'API sur le bon port (5080 ou 5081) puis le poste. **Attendu** : barre d'état « Connecté », données de la bonne base.
+2. Lancer l'API (port 5081) puis le poste. **Attendu** : barre d'état « Connecté », données de la bonne base.
 3. Si le poste a une `AdresseApi` remplie dans `C:\ProgramData\PharmaOfficine\poste.json`, elle l'emporte sur `PHARMA_API` : la vider
    ou la changer aussi.
 
@@ -154,7 +160,8 @@ Contenu attendu avec les données fictives : 30 tables, 8 vues, extensions `pg_t
 
 1. Ouvrir `PharmaOfficine.slnx` (ou `PharmaOfficine.sln`).
 2. Dans la barre d’outils, liste à côté du bouton ▶ : choisir **« API + Poste client »**. Ce profil est défini dans `PharmaOfficine.slnLaunch` : il démarre `Pharma.Api` puis `Pharma.Desktop`.
-3. **F5**. L’API écoute sur http://localhost:5080 (contrôle : http://localhost:5080/api/healthcheck), puis la fenêtre du poste s’ouvre.
+3. **F5**. L’API écoute sur http://localhost:5081 (contrôle : http://localhost:5081/api/healthcheck), puis la fenêtre du poste s’ouvre
+   (variable `PHARMA_API` = `http://localhost:5081/`, voir « Basculer entre `pharmacie_dev` et `pharmacie_test` »).
 
 Sans ce profil : clic droit sur la solution > **Configurer les projets de démarrage** > **Plusieurs projets de démarrage** > `Pharma.Api` puis `Pharma.Desktop` sur **Démarrer**.
 
@@ -194,11 +201,11 @@ Ce que fait `-Preparer` :
 **2. Redémarrer Visual Studio** : fermer toutes ses fenêtres puis le rouvrir (il lit les variables d'utilisateur à son démarrage).
 
 **3. Profil « API + Poste + Central », F5.** Le central écoute sur `https://127.0.0.1:5090/` (réglages `Cloud:Adresse` et `Cloud:Port`
-de son `appsettings.json` ; son `launchSettings.json` n'a pas d'`applicationUrl`, elle serait ignorée), l'API sur http://localhost:5080.
+de son `appsettings.json` ; son `launchSettings.json` n'a pas d'`applicationUrl`, elle serait ignorée), l'API sur http://localhost:5081.
 
 **4. Activer par l'écran** (compte `titulaire`) :
 ```powershell
-.\scripts\dev\preparer_central_vs.ps1 -Activer      # vérifie 5080 et 5090, rappelle la marche à suivre, donne un code neuf si besoin
+.\scripts\dev\preparer_central_vs.ps1 -Activer      # vérifie 5081 et 5090, rappelle la marche à suivre, donne un code neuf si besoin
 ```
 Administration > Synchronisation > onglet **Réglages** : adresse du serveur central `https://127.0.0.1:5090/`, cocher
 **Synchronisation activée**, **Enregistrer** ; onglet **Activation** : coller le code, **Activer**. Le chargement complet part en
@@ -353,8 +360,9 @@ mot de passe.
 - **Compte d'essai** : identifiant `super.essai`, fichier `C:\MesAtlassian\smptp\super-admin.dat` (hors dépôt, à ne jamais supprimer).
   Mot de passe : dans `C:\MesAtlassian\smptp\super-admin-essai.txt`, jamais recopié ailleurs. Mode d'emploi :
   `C:\MesAtlassian\smptp\LISEZMOI-super-admin.txt`.
-- Le fichier est **chiffré pour ce PC et ce compte Windows** : il ne fonctionne ni copié sur un autre PC, ni avec une API lancée sous un
-  autre compte (service Windows, autre session).
+- Le fichier est **chiffré pour ce PC** (protection Windows de la machine) : il ne fonctionne pas copié sur un autre PC. Il n'est lisible
+  que par le système, les administrateurs et le compte Windows qui l'a créé : une API lancée sous un autre compte non administrateur ne
+  peut pas le lire.
 
 **Symptôme** : « Connexion super admin » refusée ; le journal de l'API (`C:\Logs\PharmaOfficine\Api\pharma-api-<date>.log`) montre
 `Super admin : connexion refusée` à chaque essai.
@@ -376,6 +384,8 @@ Pour vérifier le compte sans toucher à son API : lancer une API d'essai sur un
 PowerShell (`$env:SuperAdmin__Fichier = "C:\MesAtlassian\smptp\super-admin.dat"`, `$env:Urls = "http://localhost:5085"`), essayer la
 connexion, puis arrêter cette API.
 
+À la mise en production, le compte se crée sur le PC serveur : manuel de MEP, A59 (console lancée depuis le dossier de l'API).
+
 Ni le mot de passe du super admin ni ses codes ne se retrouvent par la base : un fichier perdu ou un mot de passe oublié se refait avec
 `Pharma.Api.exe --super-admin` (mot de passe actuel et code envoyé au téléphone ou à l'e-mail vérifié du compte ; le compte d'essai a
 un téléphone fictif, non vérifié).
@@ -384,7 +394,7 @@ un téléphone fictif, non vérifié).
 
 | Variable d’environnement | Rôle | Par défaut |
 | --- | --- | --- |
-| `PHARMA_API` | Adresse de l’API | `http://localhost:5080/` |
+| `PHARMA_API` | Adresse de l’API | `http://localhost:5080/` sans réglage ; en développement : `http://localhost:5081/` |
 | `PHARMA_PHARMACIE` | Nom de la pharmacie affiché dans l’en-tête | (aucun) |
 | `PHARMA_POSTE` | Nom du poste, ex. « Poste caisse 1 » | `Poste <nom du PC>` |
 | `PHARMA_IMPRIMANTE_ETIQUETTES` | Adresse IP de l'imprimante thermique d'étiquettes (ZPL, port 9100) ; sans elle, seule la planche PDF est produite | (aucune) |
@@ -472,6 +482,6 @@ ni rattachées à la solution. Seules les photos utiles sont gardées.
 | `Could not load file or assembly 'Microsoft.Windows.SDK.NET'` au lancement du poste | WebView2 a besoin de la projection du SDK Windows | Corrigé : le poste cible `net10.0-windows10.0.19041.0`. Si l’erreur revient : *Générer > Régénérer la solution* |
 | `MSB3027 … le fichier est verrouillé par Pharma.Api` | L’API tourne encore pendant un build | Arrêter le débogage (**Maj+F5**) avant de recompiler |
 | `NU1301 … VCFNugets … 401 (Unauthorized)` en ligne de commande | Le feed NuGet VCF de la configuration NuGet globale exige une authentification | Compiler avec `--source https://api.nuget.org/v3/index.json`. Les avertissements NU1507 et NU1900 dans Visual Studio viennent de la même configuration et ne bloquent pas |
-| « Serveur de la pharmacie injoignable » à la connexion | L’API n’est pas démarrée | Lancer le profil « API + Poste client » ou vérifier http://localhost:5080/api/healthcheck |
+| « Serveur de la pharmacie injoignable » à la connexion | L’API n’est pas démarrée, ou `PHARMA_API` absente (le poste appelle alors 5080) | Lancer le profil « API + Poste client », vérifier http://localhost:5081/api/healthcheck et `PHARMA_API` = `http://localhost:5081/` |
 | `HttpRequestException … l’ordinateur cible l’a expressément refusée (localhost:5081)` dans Visual Studio (2026-11-28) | Le poste suit la variable utilisateur `PHARMA_API` (ici `http://localhost:5081/`) alors que l’API écoute sur un autre port (`Urls` d’`appsettings.json` l’emporte sur `launchSettings.json`) | Aligner les deux : `Urls` d’`appsettings.json` et `PHARMA_API` sur le même port, ou retirer `PHARMA_API` (le poste prend alors `http://localhost:5080/`) ; puis redémarrer Visual Studio |
 | « Connexion super admin » refusée avec le bon mot de passe (2026-11-28) | L’API ne lit pas le fichier du compte : `SuperAdmin__Fichier` absente, ou posée après le démarrage de Visual Studio | Voir « Compte super admin d’essai : connexion et récupération » (§ 4) |
