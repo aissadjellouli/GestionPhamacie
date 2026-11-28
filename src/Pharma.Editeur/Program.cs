@@ -91,7 +91,7 @@ public static class Program
         using var ecdsa = Charger(Exiger(args, "--cle"), MotDePasse("Mot de passe de la clé"));
         var code = Signer(activation, ecdsa);
         Console.WriteLine($"Pharmacie {activation.Officine} · NIF {activation.Nif} · {activation.Postes} poste(s) · packs "
-                          + $"{(activation.Packs.Count == 0 ? "aucun" : string.Join(",", activation.Packs))} · scanners {activation.ScannersMobiles} · "
+                          + $"{PacksOffre.Afficher(activation.Packs)} · scanners {activation.ScannersMobiles} · "
                           + $"{(activation.Fin is { } f ? $"jusqu'au {f:dd/MM/yyyy}" : "définitive")}{(activation.Transition ? " · transition" : "")}");
         Console.WriteLine($"Serveurs autorisés : {string.Join(", ", activation.Serveurs!.Select(EmpreinteServeur.Afficher))}");
         Console.WriteLine(code);
@@ -152,7 +152,7 @@ public static class Program
         var a = clePublique is null ? CodeActivation.LireSansControle(code) : CodeActivation.Lire(code, Convert.FromBase64String(clePublique));
         Console.WriteLine($"Officine : {a.Officine}{Environment.NewLine}NIF : {a.Nif}{Environment.NewLine}Signé le : {a.EmiseLeUtc:yyyy-MM-dd HH:mm} UTC");
         Console.WriteLine($"Postes : {a.Postes}{Environment.NewLine}Scanners mobiles : {a.ScannersMobiles}");
-        Console.WriteLine($"Packs : {(a.Packs.Count == 0 ? "aucun" : string.Join(", ", a.Packs.Select(p => $"{p} {PacksOffre.Libelle(p)}")))}");
+        Console.WriteLine($"Packs : {PacksOffre.Afficher(a.Packs)}");
         Console.WriteLine($"Fin : {(a.Fin is { } f ? f.ToString("yyyy-MM-dd") : "définitive")}{(a.Transition ? " (transition)" : "")}");
         Console.WriteLine(a.Serveurs is { } s
             ? $"Serveurs autorisés (version 2) : {string.Join(", ", s.Select(EmpreinteServeur.Afficher))}"

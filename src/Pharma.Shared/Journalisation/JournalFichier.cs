@@ -211,8 +211,10 @@ public sealed class JournalFichierProvider : ILoggerProvider, IAsyncDisposable
     }
 
     /// <summary>
-    /// Fabrique de journaux qui ne connaît que IDisposable : l'attente (5 s au plus) se fait sur un fil du pool, jamais sur le contexte
-    /// de l'appelant, et un échec ou un dépassement n'empêche pas l'arrêt.
+    /// Arrêt synchrone, repli seulement : les trois serveurs inscrivent ce journal dans le conteneur, que l'hôte arrête par
+    /// <see cref="DisposeAsync"/> (convention du 2026-11-28 : plus d'attente bloquante à l'arrêt). Appelé quand même (code qui ne connaît
+    /// que IDisposable) : l'attente, bornée à 5 s, se fait sur un fil du pool, jamais sur le contexte de l'appelant ; seule exception
+    /// voulue à la règle « jamais .Wait() », faute d'arrêt asynchrone chez cet appelant.
     /// </summary>
     public void Dispose()
     {

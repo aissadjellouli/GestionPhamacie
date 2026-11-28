@@ -262,8 +262,11 @@ public class SupervisionSynchronisationTests
         // Décision du titulaire du 2026-11-27 : sans G, pas d'alerte « en retard » toutes les heures sans fin, pas de bandeau sur les postes
         var (depot, alertes, horloge) = (new Depot { Etat = UnEtat(attente: new AttenteSync(Maintenant.AddDays(-20), 500), erreurDepuis: Maintenant.AddDays(-2),
             nature: NaturesErreurSync.Autre) }, new Alertes(), new Horloge(Maintenant));
-        Assert.Empty(await new SurveillerSynchronisation(depot, new Certificat(Maintenant.AddDays(10)), alertes, horloge, packs: new SansPackG()).ExecuterAsync());
-        Assert.Empty(alertes.Envoyees);
+        // Certificat proche de l'échéance : signalé, lui, même sans G (décision du 2026-11-28 : il se renouvelle aussi sans G)
+        Assert.Equal([NaturesAlerteSync.Certificat],
+            await new SurveillerSynchronisation(depot, new Certificat(Maintenant.AddDays(10)), alertes, horloge, packs: new SansPackG()).ExecuterAsync());
+        Assert.Single(alertes.Envoyees);
+        Assert.Empty(await new SurveillerSynchronisation(depot, new Certificat(Maintenant.AddYears(2)), new Alertes(), horloge, packs: new SansPackG()).ExecuterAsync());
         var bandeau = await new ConsulterAttenteSync(depot, new MemoireSupervisionSync(horloge), new DroitsFactices { Titulaire = true }, horloge, packs: new SansPackG())
             .ExecuterAsync(7);
         Assert.False(bandeau.Affiche);

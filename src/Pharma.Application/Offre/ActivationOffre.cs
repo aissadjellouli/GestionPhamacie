@@ -38,12 +38,25 @@ public static class PacksOffre
         ("E", "Pilotage et notifications"),
         ("F", "Continuité de service"),
         ("G", "Multi-officines et accès à distance"),
-        ("H", "Confort du comptoir"),
+        ("H", "Comptoir assisté"),
     ];
 
     public static bool Connu(string code) => Tous.Any(p => p.Code == code);
 
     public static string Libelle(string code) => Tous.FirstOrDefault(p => p.Code == code).Libelle ?? code;
+
+    /// <summary>
+    /// Pack affiché à l'utilisateur : la lettre suivie de son nom, jamais la lettre seule (décision du titulaire du 2026-11-28 : « le code
+    /// n'est pas parlant »). Ex. « A Contrôle et anti-fraude ». Lettre inconnue : la lettre seule.
+    /// </summary>
+    public static string Afficher(string code) => Connu(code) ? $"{code} {Libelle(code)}" : code;
+
+    /// <summary>Liste de packs affichée : « A Contrôle et anti-fraude, D Gestion financière » ; vide : « aucun ».</summary>
+    public static string Afficher(IEnumerable<string> codes)
+    {
+        var liste = codes.Select(Afficher).ToList();
+        return liste.Count == 0 ? "aucun" : string.Join(", ", liste);
+    }
 }
 
 /// <summary>Contenu d'une activation signée par l'éditeur.</summary>

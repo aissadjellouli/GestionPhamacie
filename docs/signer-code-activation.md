@@ -53,7 +53,7 @@ Le mot de passe de la clé est demandé (rien ne s'affiche pendant la frappe).
 | `--transition` | Non | (sans valeur) | Code de transition : **les 8 packs** quel que soit `--packs` ; `--fin` obligatoire | `--transition` |
 
 **Packs** : A Contrôle et anti-fraude · B Inventaire et traçabilité · C Achats avancés · D Gestion financière · E Pilotage et notifications ·
-F Continuité de service · G Multi-officines et accès à distance · H Confort du comptoir. Détail : [offre-et-options.md](offre-et-options.md).
+F Continuité de service · G Multi-officines et accès à distance · H Comptoir assisté. Détail : [offre-et-options.md](offre-et-options.md).
 
 **Date de fin** : jusqu'au jour de fin inclus tout fonctionne ; le titulaire est prévenu par SMS ou e-mail **90, 60, 30, 15, 7 et 1 jour(s)
 avant**, puis au début des **15 jours de grâce** ; ensuite retour à l'offre de base (2 postes, packs fermés), **aucune donnée effacée**.

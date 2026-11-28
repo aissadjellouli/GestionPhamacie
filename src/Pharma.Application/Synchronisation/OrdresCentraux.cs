@@ -255,7 +255,7 @@ public sealed class ExecuterOrdreCentral(IUtilisateursAdmin admin, CreerUtilisat
             try
             {
                 var act = await (offre ?? throw new OrdreInapplicableException("Offre indisponible sur ce serveur.")).RecevoirDuCentralAsync(code, o.Id, ct);
-                return $"Offre activée : {act.Postes} poste(s), packs {(act.Packs.Count == 0 ? "aucun" : string.Join(", ", act.Packs))}"
+                return $"Offre activée : {act.Postes} poste(s), packs {Offre.PacksOffre.Afficher(act.Packs)}"
                        + (act.Fin is { } f ? $", jusqu’au {f:dd/MM/yyyy}." : ", définitive.");
             }
             catch (RegleMetierException x) { throw new OrdreInapplicableException(x.Message); }

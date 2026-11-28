@@ -44,7 +44,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-if ($Base -notmatch '^[a-z_][a-z0-9_]*$') { throw "Nom de base invalide : $Base (lettres minuscules, chiffres et _)." }
+# Noms de base et de rôles : contrôlés avant tout usage (ils entrent dans des commandes SQL comme identifiants, qui ne se passent pas en paramètre)
+foreach ($nom in @($Base, $AppUser, $RoleProprietaire)) {
+    if ($nom -notmatch '^[a-z_][a-z0-9_]*$') { throw "Nom invalide : $nom (lettres minuscules, chiffres et _)." }
+}
 $mode = if ($Essai) { "[ESSAI : rien n'est modifié] " } else { "" }
 
 # 0. Outils PostgreSQL
@@ -104,15 +107,21 @@ if ($Essai) {
 $env:PGCLIENTENCODING = "UTF8"
 $motDePasse = Read-Host "Mot de passe de $SuperUser" -AsSecureString
 $superPwd = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($motDePasse))
-function Invoke-Super([string]$sql, [string]$db = "postgres") {
+# Valeurs passées en variables psql (« \set » sur l'entrée standard, :'nom' dans le SQL), jamais collées dans le texte de la requête
+function Invoke-Super([string]$sql, [string]$db = "postgres", [hashtable]$Variables = @{}) {
     $env:PGPASSWORD = $superPwd
-    $r = & $psql -h $HostPg -p $Port -U $SuperUser -d $db -v ON_ERROR_STOP=1 -qtA -c $sql
+    if ($Variables.Count -gt 0) {
+        $poses = @(foreach ($k in $Variables.Keys) { "\set $k '" + ([string]$Variables[$k]).Replace('\', '\\').Replace("'", "''") + "'" })
+        $OutputEncoding = New-Object System.Text.UTF8Encoding $false
+        $r = ((@($poses) + $sql) -join "`n") | & $psql -h $HostPg -p $Port -U $SuperUser -d $db -v ON_ERROR_STOP=1 -qtA -f -
+    }
+    else { $r = & $psql -h $HostPg -p $Port -U $SuperUser -d $db -v ON_ERROR_STOP=1 -qtA -c $sql }
     if ($LASTEXITCODE -ne 0) { throw "Échec psql : $sql" }
     return $r
 }
 try {
     # Séparation des rôles (111b) : en place sur ce PC si le rôle pharma_proprietaire y existe (les rôles sont communs à tout le serveur PostgreSQL), ou si -SeparerRoles
-    $separee = $SeparerRoles.IsPresent -or [bool](Invoke-Super "SELECT 1 FROM pg_roles WHERE rolname = '$RoleProprietaire'")
+    $separee = $SeparerRoles.IsPresent -or [bool](Invoke-Super "SELECT 1 FROM pg_roles WHERE rolname = :'role'" -Variables @{ role = $RoleProprietaire })
     if ($separee) {
         if (-not $Script111b) {
             foreach ($c in @((Join-Path $dossierScripts "111b_roles_integrite.sql"), (Join-Path $DossierApi "database\init\111b_roles_integrite.sql"), (Join-Path $PSScriptRoot "..\database\init\111b_roles_integrite.sql"))) {
@@ -180,15 +189,15 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Script 166b en échec sur $neuve : base laissée telle quelle pour examen, $Base n'a pas été touchée." }
     Write-Host "Droit de promouvoir la base accordé à $AppUser (166b)."
     if ($separee) {
-        $restes = Invoke-Super "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tableowner = '$AppUser'" $neuve
+        $restes = Invoke-Super "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tableowner = :'proprio'" $neuve -Variables @{ proprio = $AppUser }
         if ($restes -ne "0") { throw "Séparation des rôles incomplète sur ${neuve} : $restes table(s) encore à $AppUser. Base laissée telle quelle pour examen, $Base n'a pas été touchée." }
     }
     Write-Host "Schéma à jour : dernier script rejoué $($scripts[-1].Name)."
 
     # Échange : la base existante est gardée, jamais supprimée
-    if (Invoke-Super "SELECT 1 FROM pg_database WHERE datname = '$Base'") {
+    if (Invoke-Super "SELECT 1 FROM pg_database WHERE datname = :'base'" -Variables @{ base = $Base }) {
         $ancienne = "{0}_avant_bascule_{1}" -f $Base, $horodatage
-        Invoke-Super "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '$Base' AND pid <> pg_backend_pid()" | Out-Null
+        Invoke-Super "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = :'base' AND pid <> pg_backend_pid()" -Variables @{ base = $Base } | Out-Null
         Invoke-Super "ALTER DATABASE $Base RENAME TO $ancienne" | Out-Null
         Write-Host "Base précédente gardée sous le nom $ancienne"
     }

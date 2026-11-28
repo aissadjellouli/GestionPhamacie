@@ -208,6 +208,8 @@ Plan : `docs/taches/2026-11-24-postes-autorises/plan.md` ; contrat : `contrat-ap
   de `wwwroot/mobile/mobile.js` est couvert : **toute route ajoutée à la page mobile doit entrer dans cette liste**. Les outils qui
   appelaient l'API sans poste (`scripts/dev/essai_cloud_officine.ps1`) s'annoncent maintenant par `X-Pharma-Poste` et passent par le jeton
   « Administration seulement » du titulaire. `/api/demo` rejoint les routes ouvertes (preuve lue, jamais exigée).
+- **Administration seulement : déconnexion après 15 minutes d'inactivité** (décision du titulaire du 2026-11-28 ; durée fixe, avant :
+  session ouverte jusqu'à la fin du jeton, 12 heures).
 - **Titulaire sur un PC non autorisé : Administration seulement** (choix du jeton : marque dans le jeton EN PLUS du contrôle de la preuve à chaque requête, pour qu'un jeton ouvert sur ce PC reste limité partout, même rejoué sans en-tête de poste comme un client sans poste) (décision du titulaire du 2026-11-27, « le titulaire peut accéder à partir d'un
   poste non autorisé ») : depuis un PC non prouvé (sans preuve, ou preuve d'un poste révoqué, remplacé ou inconnu ; une horloge décalée reste
   refusée), seul le **pharmacien titulaire** se connecte (`/api/auth/connexion`) ; tout autre employé est refusé (403, « Ce PC n'est pas

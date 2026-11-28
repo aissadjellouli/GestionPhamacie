@@ -43,8 +43,9 @@ public static class ServeurEcrans
     {
         var builder = WebApplication.CreateBuilder(args);
         // Journal en fichiers (section « Journaux » du appsettings.json : dossier, taille maximale, durée de conservation, niveau)
-        builder.Logging.AddProvider(new Pharma.Shared.Journalisation.JournalFichierProvider(
-            Pharma.Shared.Journalisation.OptionsJournalFichier.Lire(cle => builder.Configuration["Journaux:" + cle], "central-ecrans-")));
+        // Fourni par le conteneur : l'hôte l'arrête par DisposeAsync, sans attente bloquante (convention du 2026-11-28)
+        var optionsJournalEcrans = Pharma.Shared.Journalisation.OptionsJournalFichier.Lire(cle => builder.Configuration["Journaux:" + cle], "central-ecrans-");
+        builder.Services.AddSingleton<Microsoft.Extensions.Logging.ILoggerProvider>(_ => new Pharma.Shared.Journalisation.JournalFichierProvider(optionsJournalEcrans));
         var (reglages, refus) = ReglagesEcrans.Evaluer(builder.Environment.IsDevelopment(), builder.Configuration, Environment.GetEnvironmentVariable);
         if (reglages is null)
         {

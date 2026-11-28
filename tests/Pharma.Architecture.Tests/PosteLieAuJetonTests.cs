@@ -30,7 +30,7 @@ public class PosteLieAuJetonTests
     [Fact]
     public void Le_jeton_porte_le_poste_de_la_connexion()
     {
-        var jetons = new JetonService(Config(("Jwt:Cle", CleLongue), ("Jwt:Emetteur", "pharma")));
+        var jetons = new JetonService(JetonsEssai.Options(Config(("Jwt:Cle", CleLongue), ("Jwt:Emetteur", "pharma"))));
         var (avec, _) = jetons.Creer(5, "Vendeur", poste: "  Caisse 1 ");
         var (sans, _) = jetons.Creer(5, "Vendeur");
         var lu = new JsonWebTokenHandler().ReadJsonWebToken(avec);

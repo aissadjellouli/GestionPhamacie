@@ -7,12 +7,26 @@ using Pharma.Domain.Securite;
 
 namespace Pharma.Api.Securite;
 
-/// <summary>Jetons JWT signés avec la clé de configuration Jwt:Cle.</summary>
-/// <remarks>Liste des postes autorisés : avec un poste prouvé par la requête de connexion (même nom), le jeton reçoit aussi le claim « poste_id ».</remarks>
-public sealed class JetonService(IConfiguration config, IHttpContextAccessor? requeteCourante = null) : IGenerateurJeton
+/// <summary>Section « Jwt » de la configuration (lue par IOptions, convention du 2026-11-28).</summary>
+public sealed class ReglagesJwt
 {
-    public static SymmetricSecurityKey Cle(IConfiguration config) =>
-        new(Encoding.UTF8.GetBytes(config["Jwt:Cle"] ?? throw new InvalidOperationException("Jwt:Cle manquante")));
+    public string? Cle { get; set; }
+    public string? Emetteur { get; set; }
+    /// <summary>Durée d'un jeton d'employé, en heures (12 par défaut).</summary>
+    public int DureeHeures { get; set; } = 12;
+}
+
+/// <summary>Jetons JWT signés avec la clé de configuration Jwt:Cle.</summary>
+/// <remarks>Liste des postes autorisés : avec un poste prouvé par la requête de connexion (même nom), le jeton reçoit aussi le claim « poste_id ».
+/// Les méthodes statiques (contrôle de la clé, clé de validation) servent au démarrage, avant que les options existent.</remarks>
+public sealed class JetonService(Microsoft.Extensions.Options.IOptions<ReglagesJwt> reglages, IHttpContextAccessor? requeteCourante = null) : IGenerateurJeton
+{
+    private readonly ReglagesJwt jwt = reglages.Value;
+
+    private static SymmetricSecurityKey Cle(string? cle) =>
+        new(Encoding.UTF8.GetBytes(cle ?? throw new InvalidOperationException("Jwt:Cle manquante")));
+
+    public static SymmetricSecurityKey Cle(IConfiguration config) => Cle(config["Jwt:Cle"]);
 
     public const string PrefixeCleExemple = "A-REMPLACER";
     public const int LongueurMinCle = 64;
@@ -58,7 +72,7 @@ public sealed class JetonService(IConfiguration config, IHttpContextAccessor? re
     public (string Jeton, DateTime ExpireLe) Creer(long utilisateurId, string nomComplet, bool comptoir = false, bool motDePasseAChanger = false,
         string? poste = null)
     {
-        var expire = DateTime.UtcNow.AddHours(config.GetValue("Jwt:DureeHeures", 12));
+        var expire = DateTime.UtcNow.AddHours(jwt.DureeHeures);
         var revendications = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, utilisateurId.ToString()),
@@ -86,11 +100,11 @@ public sealed class JetonService(IConfiguration config, IHttpContextAccessor? re
     {
         var descripteur = new SecurityTokenDescriptor
         {
-            Issuer = config["Jwt:Emetteur"],
-            Audience = config["Jwt:Emetteur"],
+            Issuer = jwt.Emetteur,
+            Audience = jwt.Emetteur,
             Expires = expire,
             Subject = new ClaimsIdentity(revendications),
-            SigningCredentials = new SigningCredentials(Cle(config), SecurityAlgorithms.HmacSha256)
+            SigningCredentials = new SigningCredentials(Cle(jwt.Cle), SecurityAlgorithms.HmacSha256)
         };
         return (new JsonWebTokenHandler().CreateToken(descripteur), expire);
     }

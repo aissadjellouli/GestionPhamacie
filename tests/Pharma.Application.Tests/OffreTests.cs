@@ -296,7 +296,13 @@ public class OffreTests
         Assert.True(await o.InclusAsync(PacksOffre.Finances));
         Assert.False(await o.InclusAsync(PacksOffre.Comptoir));
         await Assert.ThrowsAsync<OptionNonIncluseException>(() => o.ExigerPackAsync(PacksOffre.Comptoir));
-        Assert.Contains("pack H, Confort du comptoir", new OptionNonIncluseException("H").Message);
+        Assert.Contains("pack H, Comptoir assisté", new OptionNonIncluseException("H").Message);
+        // Affichage (2026-11-28) : la lettre suivie de son nom, jamais la lettre seule
+        Assert.Equal("A Contrôle et anti-fraude, D Gestion financière", PacksOffre.Afficher(["A", "D"]));
+        Assert.Equal("aucun", PacksOffre.Afficher(Array.Empty<string>()));
+        Assert.Equal("Z", PacksOffre.Afficher("Z"));
+        Assert.Equal("Offre sans le pack G Multi-officines et accès à distance : réglage rendu à l'officine",
+            Pharma.Application.Reglages.AppliquerReglagesMutualises.AuteurSansPackG);
         // Consultables une fois fermés : B, C, D et les réglages du 2e serveur (F) ; A fermé entièrement (anomalies cachées, décision 1)
         Assert.Equal(["B", "C", "D", "F"], PacksOffre.Tous.Select(p => p.Code).Where(PacksOffre.LectureSeuleSiFerme));
     }

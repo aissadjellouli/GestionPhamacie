@@ -2104,6 +2104,35 @@ Revue de code et audit de sécurité de la branche (`docs/taches/2026-11-15-revu
 - **(2026-11-15) Vente à crédit d'un patient aux droits Chifa expirés (tiers payant CNAS/CASNOS)** : avertissement renforcé au paiement « Droits expirés et vente à crédit : risque de non-paiement » ; vente non bloquée ; journal `droits_chifa_expires_credit` (vente, patient, date de fin, mode) en plus de `droits_chifa_expires`. — `src/Pharma.Application/Patients/DroitsChifa.cs`, `src/Pharma.Application/Caisse/Encaisser.cs`, `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
 - **(2026-11-15) Vente à crédit SANS tiers payant (Chifa) d'un patient aux droits expirés ou bientôt expirés** (décision du titulaire) : date de fin de droits dépassée, ou dans les N jours du seuil « bientôt expirés » (Administration › Caisse) → même avertissement renforcé au paiement « Droits expirés et vente à crédit : risque de non-paiement » ; **jamais de blocage** ; journal `droits_chifa_expires_credit` (vente, patient, date de fin, mode crédit, `tiers_payant` faux, `etat` expires ou bientot), sans `droits_chifa_expires`. Sans date de fin sur la fiche : rien. — `src/Pharma.Application/Patients/DroitsChifa.cs` (`JournaliserCreditSansTiersPayantAsync`), `src/Pharma.Shared/EtatDroitsChifa.cs` (`EtatCreditSansTiersPayant`), `src/Pharma.Application/Caisse/Encaisser.cs`, `src/Pharma.Desktop/Composants/Pages/Caisse.razor` (`AlerteCreditDroits`), `tests/Pharma.Application.Tests/ControleFinDroitsTests.cs`
 - **(2026-11-15) Patients › « Droits expirés ou bientôt expirés »** : patients CNAS/CASNOS dont la date de fin de droits est dépassée ou dans les N jours ; liste paginée par le serveur, filtrée par état (expirés / bientôt expirés), organisme (CNAS / CASNOS) et période de la date de fin ; colonnes nom, n° d'assuré, rang, organisme, date (pastille), dernière vente ; « Mettre à jour la date » (journal `patient_modifie`) ; droit de vendre ; écran fixe, seul le tableau défile. — `src/Pharma.Infrastructure/Patients/SuiviDroitsChifaSql.cs`, `src/Pharma.Api/Endpoints/PatientsEndpoints.cs`, `src/Pharma.Desktop/Composants/Pages/SuiviDroitsChifa.razor`, `src/Pharma.Desktop/Services/Domaines.cs`
+- **(2026-11-28) Packs affichés avec leur nom** (« go noms packs affichage ») : partout où un pack est montré à l'utilisateur, la
+  lettre est suivie de son nom (« A Contrôle et anti-fraude, D Gestion financière » ; liste vide : « aucun »), jamais la lettre seule :
+  résumé de l'ordre « activation de l'offre » reçu du central, auteur noté quand un réglage imposé est rendu à l'officine sans le pack G
+  (« Offre sans le pack G Multi-officines et accès à distance… » ; les lignes déjà enregistrées gardent l'ancien texte), outil de
+  l'éditeur (`signer` et `lire`). Déjà ainsi : Mon offre, bandeau et refus « option non incluse ». Le journal des actions garde les
+  lettres (`packs = "A,D"`) : donnée, pas affichage. Nom du pack H : **Comptoir assisté** (était Confort du comptoir).
+  — `PacksOffre.Afficher`
+- **(2026-11-28) Conventions de code (constat 26 de la revue, « go conventions 1 3 4 »)** :
+  - **SQL paramétré** dans `basculer-pc-secours.ps1` : noms de base et de rôles contrôlés (lettres minuscules, chiffres, `_`) avant
+    tout usage ; valeurs passées en variables psql (`:'nom'`, posées par `\set` sur l'entrée standard), plus jamais collées dans le
+    texte d'une requête. Fonction essayée sous Windows PowerShell 5.1 (apostrophe, barre inverse) ; bascule complète non rejouée.
+  - **Options** : la section `Jwt` est lue par `IOptions<ReglagesJwt>` (clé, émetteur, durée) ; les contrôles du démarrage gardent la
+    lecture directe de la configuration (avant que les options existent).
+  - **Arrêt du journal en fichiers** : fourni par le conteneur des trois serveurs (API, central, écrans du central), il est arrêté par
+    `DisposeAsync`, sans attente bloquante. Le `Dispose` synchrone reste un repli (attente bornée à 5 s sur un fil du pool), seule
+    exception voulue à la règle « jamais `.Wait()` ».
+  - **Erreurs métier en `ErreurDto`, pas en ProblemDetails** : écart **accepté par le titulaire le 2026-11-28** (« ok point 2 ») : 33 refus de l'API, le poste et la page mobile lisent ce format ; les refus de sécurité sont déjà en ProblemDetails.
+- **(2026-11-28) Décisions du titulaire sur les constats 5, 6 et 25 de la revue** (« 5 oui, 6 15 min, 25 par employé, go ») :
+  - **Certificat de synchronisation renouvelé même sans le pack G** : la voie réduite (relevé des ordres du central) renouvelle le
+    certificat dans les 60 jours de son échéance, comme la voie complète ; un échec n'est qu'une note, nouvel essai au passage suivant.
+    Sans le pack G, l'alerte « certificat proche de l'échéance ou échu » est envoyée au titulaire (avec l'intégrité et le retour en
+    arrière, seules alertes de synchronisation sans G). Sans cela, à l'échéance (3 ans), plus aucun code d'offre ne descendait par le
+    central. — `EnvoyerLotsSync.PasserSansPackAsync`, `SurveillerSynchronisation.ExecuterAsync`
+  - **Mode « Administration seulement » : déconnexion après 15 minutes d'inactivité** (titulaire sur un PC non autorisé ; durée fixe,
+    le réglage de la caisse n'y est pas lu). Avant : session ouverte jusqu'à la fin du jeton (12 heures).
+    — `ApiClient.DeconnexionAdministrationSeuleMinutes`
+  - **Menus repliés gardés par employé** : les rubriques repliées ou dépliées du menu de gauche sont gardées pour chaque employé (le
+    super admin à part), tant que le poste est ouvert ; l'employé suivant sur le même poste retrouve ses propres choix, ou l'état par
+    défaut. Rien n'est écrit sur le disque. — `EtatMenus` ; test `EtatMenusTests`
 - **(2026-11-28) Offre : horloge du serveur reculée, le temps continue de s'écouler** (« go horloge code », constat secondaire n° 2) :
   tant que l'horloge du serveur retarde sur la date plancher (journal fiscal, fichier, serveur central), la date plancher avance du
   temps réellement passé ; elle ne reste plus figée (reculer l'horloge de 60 jours avant la fin de l'offre la prolongeait de 60 jours).

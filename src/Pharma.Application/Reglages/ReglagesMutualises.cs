@@ -166,7 +166,7 @@ public sealed class AppliquerReglagesMutualises(IReglagesMutualisesDepot depot, 
     ITraceErreurs? trace = null, Offre.IPacksOffre? packs = null)
 {
     /// <summary>Auteur noté au journal quand une imposition est suspendue faute du pack G.</summary>
-    public const string AuteurSansPackG = "Offre sans le pack G : réglage rendu à l'officine";
+    public static readonly string AuteurSansPackG = $"Offre sans le pack {Offre.PacksOffre.Afficher(Offre.PacksOffre.MultiOfficines)} : réglage rendu à l'officine";
 
     public async Task<BilanReglages> ExecuterAsync(CancellationToken ct = default)
     {

@@ -49,7 +49,8 @@ if (builder.Configuration["Journaux:Dossier"] is not { } reglageJournal || (regl
         Pharma.Shared.Journalisation.DossiersJournaux.Windows(Pharma.Shared.Journalisation.DossiersJournaux.Api), ancienDossierJournal);
 else
     dossierDecisions = optionsJournal.Dossier;   // dossier réglé par l'officine : inchangé, décisions de bascule comprises
-builder.Logging.AddProvider(new Pharma.Shared.Journalisation.JournalFichierProvider(optionsJournal));
+// Fourni par le conteneur (et non par AddProvider) : l'hôte l'arrête par DisposeAsync, sans attente bloquante (convention du 2026-11-28)
+builder.Services.AddSingleton<ILoggerProvider>(_ => new Pharma.Shared.Journalisation.JournalFichierProvider(optionsJournal));
 
 // GED : un dossier du serveur pour tous les documents (réglage Ged:Dossier). Les ordonnances y vont par défaut, et celles de
 // l'ancien dossier par défaut y sont déplacées au démarrage (sans rien écraser). Chifa : les fichiers sont lus dans le dossier
@@ -130,6 +131,7 @@ builder.Services.AddInfrastructure(new InfrastructureOptions(
     builder.Configuration["CopieSecours:Fichier"],
     // Démonstration : e-mails, SMS et export Chifa factices, filigrane « DÉMONSTRATION » sur les PDF
     demo.Actif));
+builder.Services.Configure<Pharma.Api.Securite.ReglagesJwt>(builder.Configuration.GetSection("Jwt"));
 builder.Services.AddSingleton<JetonService>();
 builder.Services.AddSingleton<IGenerateurJeton>(sp => sp.GetRequiredService<JetonService>());
 // Liste des postes autorisés (script 167) : vérification des preuves (nonces en mémoire de ce serveur) et enrôlement par code

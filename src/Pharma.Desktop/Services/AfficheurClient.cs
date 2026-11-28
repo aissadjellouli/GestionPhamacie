@@ -93,7 +93,7 @@ public sealed class AfficheurClient(ReglagesPoste reglages, ConfigurationPoste p
 
     public static string[] Ports() => SerialPort.GetPortNames().OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray();
 
-    /// <summary>Lot O6 : l'afficheur client fait partie du pack H (confort du comptoir) ; sans lui (ou offre pas encore lue), rien n'est affiché.</summary>
+    /// <summary>Lot O6 : l'afficheur client fait partie du pack H (Comptoir assisté) ; sans lui (ou offre pas encore lue), rien n'est affiché.</summary>
     private bool PackComptoir => offre is null || offre.Inclus("H");
 
     // ---- Écran secondaire ----------------------------------------------------------------

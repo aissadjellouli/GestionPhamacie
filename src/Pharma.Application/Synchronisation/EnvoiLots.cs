@@ -275,7 +275,8 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
     /// les éléments descendants (échange léger : ordres du central, dont l'activation de l'offre ; réglages rangés dans la base sans être appliqués)
     /// et, si <paramref name="envoyerResultats"/>, envoie les résultats d'ordres SEULS (lots formés des seules lignes « sync_ordre_resultat » ; les
     /// autres lignes restent en file pour le jour où le pack G revient). Aucun chargement complet, aucune déclaration d'époque, aucun contrôle de
-    /// retour en arrière (rien n'est posé qui suspendrait l'encaissement), aucun renouvellement du certificat. Un lot refusé est une erreur simple,
+    /// retour en arrière (rien n'est posé qui suspendrait l'encaissement). Le certificat est renouvelé dans les 60 jours de son échéance, comme sur la
+    /// voie complète (décision du titulaire du 2026-11-28 : sans lui, plus aucun code d'offre ne descendrait par le central). Un lot refusé est une erreur simple,
     /// reprise au passage suivant. Un lot déjà formé avant la fin du pack (données autorisées alors) part avant, dans l'ordre des n°.
     /// </summary>
     public async Task<ResultatEnvoi> ExecuterSansPackAsync(DateTime maintenantUtc, bool envoyerResultats, CancellationToken ct = default)
@@ -316,7 +317,10 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
                     accuses++;
                 }
             }
-            await depot.NoterEnvoiAsync(erreurDescendante, ct);
+            // Certificat renouvelé même sans le pack G (décision du 2026-11-28) ; un échec n'est qu'une note, nouvel essai au passage suivant
+            var renouvellement = cert.EcheanceUtc - maintenantUtc < RenouvelerAvant ? await EssayerRenouvelerAsync(p.Adresse, cert.EcheanceUtc, ct) : null;
+            var note = string.Join(" ", new[] { erreurDescendante, renouvellement }.Where(m => m is not null));
+            await depot.NoterEnvoiAsync(note.Length > 0 ? note : null, ct);
             await depot.NoterPassageAsync(null, ct);
             return new(accuses, null, null);
         }

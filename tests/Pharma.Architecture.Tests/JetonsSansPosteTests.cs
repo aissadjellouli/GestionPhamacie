@@ -111,4 +111,39 @@ public class JetonsSansPosteTests
     [InlineData(@"/\autre-hote/api", false)]
     [InlineData("api/ventes", false)]
     public void Le_relais_ne_suit_qu_une_cible_locale(string cible, bool attendu) => Assert.Equal(attendu, RelaisVeille.EstCibleLocale(cible));
+
+    // ---- Conventions (constat 26 de la revue du 2026-11-28) ----
+
+    /// <summary>Journal en fichiers fourni par le conteneur dans les trois serveurs : l'hôte l'arrête par DisposeAsync, sans attente bloquante.</summary>
+    [Fact]
+    public void Le_journal_en_fichiers_est_fourni_par_le_conteneur_des_trois_serveurs()
+    {
+        var src = Path.Combine(BaseJetableM4.RacineDepot(), "src");
+        foreach (var f in new[] { Path.Combine("Pharma.Api", "Program.cs"), Path.Combine("Pharma.Cloud.Api", "Program.cs"), Path.Combine("Pharma.Cloud.Web", "ServeurEcrans.cs") })
+        {
+            var texte = File.ReadAllText(Path.Combine(src, f));
+            Assert.DoesNotContain("AddProvider(new Pharma.Shared.Journalisation.JournalFichierProvider", texte);
+            Assert.Contains("ILoggerProvider>(_ => new Pharma.Shared.Journalisation.JournalFichierProvider(", texte);
+        }
+    }
+
+    /// <summary>Bascule sur le PC de secours : aucune valeur collée entre apostrophes dans une requête, noms de base et de rôles contrôlés.</summary>
+    [Fact]
+    public void La_bascule_passe_les_valeurs_en_variables_psql_et_controle_les_noms()
+    {
+        var texte = File.ReadAllText(Path.Combine(BaseJetableM4.RacineDepot(), "scripts", "basculer-pc-secours.ps1"));
+        Assert.DoesNotMatch(@"'\$(AppUser|RoleProprietaire|Base)'", texte);
+        Assert.Contains("foreach ($nom in @($Base, $AppUser, $RoleProprietaire))", texte);
+        Assert.Contains("rolname = :'role'", texte);
+        Assert.Contains("tableowner = :'proprio'", texte);
+    }
+
+    /// <summary>Jetons : la section Jwt est lue par IOptions (durée réglée prise en compte).</summary>
+    [Fact]
+    public void La_duree_des_jetons_vient_des_options()
+    {
+        var options = Microsoft.Extensions.Options.Options.Create(new ReglagesJwt { Cle = new string('k', 64), Emetteur = "pharma", DureeHeures = 3 });
+        var (_, expire) = new JetonService(options).Creer(1, "Essai");
+        Assert.InRange(expire - DateTime.UtcNow, TimeSpan.FromHours(2.9), TimeSpan.FromHours(3.1));
+    }
 }

@@ -628,6 +628,12 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
     public async Task<string?> DefinirAffichageAsync(string affichage) =>
         (await EnvoyerCorpsAsync<AffichageDto, object>(HttpMethod.Put, "api/auth/affichage", new(affichage))).Item2;
 
+    /// <summary>
+    /// Mode « Administration seulement » (titulaire sur un PC non autorisé) : déconnexion après 15 minutes d'inactivité (décision du titulaire
+    /// du 2026-11-28 ; sans elle, la session restait ouverte jusqu'à la fin du jeton, 12 heures). Fixe : la caisse et son réglage n'y sont pas lus.
+    /// </summary>
+    public const int DeconnexionAdministrationSeuleMinutes = 15;
+
     /// <summary>Droits de l'employé et réglage de déconnexion automatique, juste après la connexion.</summary>
     public async Task ChargerDroitsAsync()
     {
@@ -635,7 +641,7 @@ public sealed class ApiClient(HttpClient http, SessionPoste session, DemandesAut
         var (affichage, _) = await GetAsync<AffichageDto?>("api/auth/affichage", null);
         session.DefinirAffichage(affichage?.Affichage ?? "auto");
         var (droits, _) = await GetAsync<List<string>>("api/auth/permissions", []);
-        var deconnexion = 0;
+        var deconnexion = session.AdministrationSeule ? DeconnexionAdministrationSeuleMinutes : 0;
         // PC non autorisé (titulaire, Administration seulement) : ni caisse ni tâches laissées, le serveur les refuserait
         if (!session.AdministrationSeule && droits.Contains("caisse.vendre") && (await EtatCaisseAsync()).Item1 is { } etat)
             deconnexion = etat.DeconnexionMinutes;

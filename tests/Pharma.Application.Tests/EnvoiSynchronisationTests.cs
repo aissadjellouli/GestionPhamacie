@@ -878,6 +878,27 @@ public class EnvoiSynchronisationTests
     }
 
     [Fact]
+    public async Task Sans_le_pack_G_le_certificat_est_renouvele_dans_les_60_jours_de_son_echeance()
+    {
+        // Décision du titulaire du 2026-11-28 : sans renouvellement, plus aucun code d'offre ne descendrait par le central à l'échéance
+        var (b, c, s) = (new Base(), new Certificat(), new Central());
+        var envoi = Envoi(b, c, s);
+        Assert.Null((await envoi.ExecuterSansPackAsync(Maintenant, envoyerResultats: false)).Erreur);
+        Assert.Equal(0, s.Renouvellements);                             // échéance lointaine : rien
+
+        c.Info = c.Info! with { EcheanceUtc = Maintenant.AddDays(30) };
+        Assert.Null((await envoi.ExecuterSansPackAsync(Maintenant, envoyerResultats: false)).Erreur);
+        Assert.Equal((1, "CERT"), (s.Renouvellements, c.Installe?[..4]));
+
+        // Refus : une note, jamais une erreur du passage
+        c.Info = c.Info! with { EcheanceUtc = Maintenant.AddDays(30) };
+        s.RefusRenouvellement = new ServeurCentralException("refusé par le serveur central", 422);
+        var refuse = await envoi.ExecuterSansPackAsync(Maintenant, envoyerResultats: false);
+        Assert.Null(refuse.Erreur);
+        Assert.Contains("non renouvelé", b.Envois[^1]);
+    }
+
+    [Fact]
     public async Task Sans_le_pack_G_un_central_injoignable_n_est_pas_note_comme_un_passage_reussi()
     {
         // Correction du 2026-11-28 : l'échange léger est le seul appel de la voie réduite ; son échec doit laisser une erreur visible

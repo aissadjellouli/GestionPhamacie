@@ -163,18 +163,18 @@ public partial class PostesAutorisesTests
         var lecteur = new JsonWebTokenHandler();
         var nonProuve = new DefaultHttpContext();
         nonProuve.Items[AccesAdministrationSeule.ItemPcNonProuve] = true;
-        var marque = lecteur.ReadJsonWebToken(new JetonService(config, new HttpContextAccessor { HttpContext = nonProuve }).Creer(1, "Titulaire", poste: "COMPTOIR-3").Jeton);
+        var marque = lecteur.ReadJsonWebToken(new JetonService(JetonsEssai.Options(config), new HttpContextAccessor { HttpContext = nonProuve }).Creer(1, "Titulaire", poste: "COMPTOIR-3").Jeton);
         Assert.Equal(AccesAdministrationSeule.Valeur, marque.Claims.Single(c => c.Type == AccesAdministrationSeule.Revendication).Value);
         Assert.DoesNotContain(marque.Claims, c => c.Type is PorteeConnexion.RevendicationPoste or PorteeConnexion.RevendicationPosteId);
         // Un jeton marqué n'engendre que des jetons marqués (changement du mot de passe), même sur un poste prouvé
         var connecte = new DefaultHttpContext { User = TitulaireAdministrationSeule() };
         connecte.Items[PorteeConnexion.ItemPosteProuve] = new PosteProuve(7, "CAISSE-1");
-        var suite = lecteur.ReadJsonWebToken(new JetonService(config, new HttpContextAccessor { HttpContext = connecte }).Creer(1, "Titulaire", poste: "CAISSE-1").Jeton);
+        var suite = lecteur.ReadJsonWebToken(new JetonService(JetonsEssai.Options(config), new HttpContextAccessor { HttpContext = connecte }).Creer(1, "Titulaire", poste: "CAISSE-1").Jeton);
         Assert.Contains(suite.Claims, c => c.Type == AccesAdministrationSeule.Revendication);
         // Poste prouvé, jeton ordinaire : aucune marque
         var prouve = new DefaultHttpContext();
         prouve.Items[PorteeConnexion.ItemPosteProuve] = new PosteProuve(7, "CAISSE-1");
-        var ordinaire = lecteur.ReadJsonWebToken(new JetonService(config, new HttpContextAccessor { HttpContext = prouve }).Creer(5, "Vendeur", poste: "CAISSE-1").Jeton);
+        var ordinaire = lecteur.ReadJsonWebToken(new JetonService(JetonsEssai.Options(config), new HttpContextAccessor { HttpContext = prouve }).Creer(5, "Vendeur", poste: "CAISSE-1").Jeton);
         Assert.DoesNotContain(ordinaire.Claims, c => c.Type == AccesAdministrationSeule.Revendication);
         Assert.Contains(ordinaire.Claims, c => c.Type == PorteeConnexion.RevendicationPosteId);
     }

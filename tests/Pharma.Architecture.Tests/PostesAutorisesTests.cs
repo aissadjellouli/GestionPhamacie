@@ -517,7 +517,7 @@ public partial class PostesAutorisesTests
         var config = new ConfigurationBuilder().AddInMemoryCollection([new("Jwt:Cle", new string('k', 80)), new("Jwt:Emetteur", "pharma")]).Build();
         var http = new DefaultHttpContext();
         http.Items[PorteeConnexion.ItemPosteProuve] = new PosteProuve(7, "CAISSE-1");
-        var jetons = new JetonService(config, new HttpContextAccessor { HttpContext = http });
+        var jetons = new JetonService(JetonsEssai.Options(config), new HttpContextAccessor { HttpContext = http });
         var avec = new JsonWebTokenHandler().ReadJsonWebToken(jetons.Creer(5, "Vendeur", poste: "CAISSE-1").Jeton);
         Assert.Equal("7", avec.Claims.Single(c => c.Type == PorteeConnexion.RevendicationPosteId).Value);
         var autreNom = new JsonWebTokenHandler().ReadJsonWebToken(jetons.Creer(5, "Vendeur", poste: "CAISSE-2").Jeton);

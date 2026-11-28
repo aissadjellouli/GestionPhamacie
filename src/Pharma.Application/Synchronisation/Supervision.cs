@@ -150,7 +150,9 @@ public sealed class SurveillerSynchronisation(ISupervisionSyncDepot depot, ICert
         var avecPackG = packs is null || await packs.InclusAsync(Offre.PacksOffre.MultiOfficines, ct);
         foreach (var (nature, objet, detail, sms) in Constater(e, LireCertificat(), maintenant))
         {
-            if (!avecPackG && nature is not (NaturesAlerteSync.Integrite or NaturesAlerteSync.RetourArriere)) continue;
+            // Sans le pack G : intégrité, retour en arrière et certificat (décision du 2026-11-28 : le certificat se renouvelle aussi sans G ;
+            // un renouvellement qui échoue doit être signalé, sinon plus aucun code d'offre ne descend à son échéance)
+            if (!avecPackG && nature is not (NaturesAlerteSync.Integrite or NaturesAlerteSync.RetourArriere or NaturesAlerteSync.Certificat)) continue;
             if (nature == NaturesAlerteSync.Integrite)
                 // Une alerte par nouvelle anomalie du serveur central : la dernière signalée est notée AVANT l'envoi
                 await depot.NoterIntegriteSignaleeAsync(e.Integrite!.DerniereAnomalieId, ct);

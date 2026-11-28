@@ -3,7 +3,7 @@
 
 @* Rubrique repliable d'un menu de gauche (décision du titulaire du 2026-11-27 : toute rubrique qui a des sous-rubriques se replie et
    se déplie, avec son chevron « › » replié, « ⌄ » déplié ; même comportement que les thèmes de l'Administration). Le titre est un
-   bouton (Entrée et Espace, focus visible) ; l'état reste tant que le poste est ouvert (EtatMenus). Repliées, les sous-rubriques
+   bouton (Entrée et Espace, focus visible) ; l'état reste tant que le poste est ouvert, pour chaque employé (EtatMenus). Repliées, les sous-rubriques
    restent dans la page, masquées (hidden) : un raccourci clavier qui vise l'une d'elles (F8 « Ouvrir le tiroir ») fonctionne toujours.
    Le cadre des sous-rubriques ne crée pas de boîte (display: contents, app.css) : le menu garde ses écarts et ses hauteurs. *@
 <button type="button" id="@idTitre" class="groupe-menu-titre @ClasseVariante @(ContientActif ? "groupe-actif" : null)"
