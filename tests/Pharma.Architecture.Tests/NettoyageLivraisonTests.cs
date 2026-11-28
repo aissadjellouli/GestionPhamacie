@@ -22,6 +22,14 @@ public class NettoyageLivraisonTests
     [InlineData("\\set ON_ERROR_STOP on -- psql\nSELECT 1;", "\\set ON_ERROR_STOP on -- psql\nSELECT 1;")]
     [InlineData("-- Init : scripts 001 à 174\nSELECT 1;", "-- Init : scripts 001 à 174\nSELECT 1;")]
     [InlineData("SELECT $1 + a$b; -- x", "SELECT $1 + a$b;")]
+    // Texte entre dollars : une donnée est gardée telle quelle, un corps de code (AS, DO, EXECUTE) est nettoyé
+    [InlineData("INSERT INTO t VALUES ($$a -- reste$$); -- x", "INSERT INTO t VALUES ($$a -- reste$$);")]
+    [InlineData("COMMENT ON TABLE t IS $c$note /* reste */ -- aussi$c$;", "COMMENT ON TABLE t IS $c$note /* reste */ -- aussi$c$;")]
+    [InlineData("DO $$ BEGIN -- parti\nNULL; END $$;", "DO $$ BEGIN\nNULL; END $$;")]
+    [InlineData("DO LANGUAGE plpgsql $$ BEGIN -- parti\nNULL; END $$;", "DO LANGUAGE plpgsql $$ BEGIN\nNULL; END $$;")]
+    [InlineData("DO $$ BEGIN EXECUTE $q$SELECT 1 -- parti\n$q$; END $$;", "DO $$ BEGIN EXECUTE $q$SELECT 1\n$q$; END $$;")]
+    // En-tête « 001 à NNN » : gardé, réduit à cette mention
+    [InlineData("-- Valeurs des scripts 001 à 175 (175 : notes de conception)\nSELECT 1;", "-- Valeurs des scripts 001 à 175\nSELECT 1;")]
     [InlineData("SELECT 1;\r\n-- commentaire\r\nSELECT 2; -- fin\r\n", "SELECT 1;\r\nSELECT 2;\r\n")]
     public void Commentaires_retires_textes_et_commandes_intacts(string avant, string apres) =>
         Assert.Equal(apres, NettoyageSql.Nettoyer(avant));

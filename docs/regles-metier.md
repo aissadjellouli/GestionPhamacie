@@ -2104,6 +2104,21 @@ Revue de code et audit de sécurité de la branche (`docs/taches/2026-11-15-revu
 - **(2026-11-15) Vente à crédit d'un patient aux droits Chifa expirés (tiers payant CNAS/CASNOS)** : avertissement renforcé au paiement « Droits expirés et vente à crédit : risque de non-paiement » ; vente non bloquée ; journal `droits_chifa_expires_credit` (vente, patient, date de fin, mode) en plus de `droits_chifa_expires`. — `src/Pharma.Application/Patients/DroitsChifa.cs`, `src/Pharma.Application/Caisse/Encaisser.cs`, `src/Pharma.Desktop/Composants/Pages/Caisse.razor`
 - **(2026-11-15) Vente à crédit SANS tiers payant (Chifa) d'un patient aux droits expirés ou bientôt expirés** (décision du titulaire) : date de fin de droits dépassée, ou dans les N jours du seuil « bientôt expirés » (Administration › Caisse) → même avertissement renforcé au paiement « Droits expirés et vente à crédit : risque de non-paiement » ; **jamais de blocage** ; journal `droits_chifa_expires_credit` (vente, patient, date de fin, mode crédit, `tiers_payant` faux, `etat` expires ou bientot), sans `droits_chifa_expires`. Sans date de fin sur la fiche : rien. — `src/Pharma.Application/Patients/DroitsChifa.cs` (`JournaliserCreditSansTiersPayantAsync`), `src/Pharma.Shared/EtatDroitsChifa.cs` (`EtatCreditSansTiersPayant`), `src/Pharma.Application/Caisse/Encaisser.cs`, `src/Pharma.Desktop/Composants/Pages/Caisse.razor` (`AlerteCreditDroits`), `tests/Pharma.Application.Tests/ControleFinDroitsTests.cs`
 - **(2026-11-15) Patients › « Droits expirés ou bientôt expirés »** : patients CNAS/CASNOS dont la date de fin de droits est dépassée ou dans les N jours ; liste paginée par le serveur, filtrée par état (expirés / bientôt expirés), organisme (CNAS / CASNOS) et période de la date de fin ; colonnes nom, n° d'assuré, rang, organisme, date (pastille), dernière vente ; « Mettre à jour la date » (journal `patient_modifie`) ; droit de vendre ; écran fixe, seul le tableau défile. — `src/Pharma.Infrastructure/Patients/SuiviDroitsChifaSql.cs`, `src/Pharma.Api/Endpoints/PatientsEndpoints.cs`, `src/Pharma.Desktop/Composants/Pages/SuiviDroitsChifa.razor`, `src/Pharma.Desktop/Services/Domaines.cs`
+- **(2026-11-28) Constats secondaires de la revue de code, second lot** (« go livraison sûre », « go caisse et envoi ») :
+  - **Livraison fabriquée dans un dossier provisoire** (`<Sortie>.en-cours`) : la livraison précédente n'est remplacée qu'une fois la
+    nouvelle entièrement fabriquée et contrôlée ; une fabrication interrompue ne laisse rien et ne touche pas la précédente. Essai
+    réel : fabrication complète, échec provoqué en cours d'obfuscation (précédente intacte), dossier qui n'est pas une livraison refusé.
+    — `scripts/mep/creer_livraison.ps1`
+  - **Nettoyage des scripts SQL livrés** : un texte entre dollars n'est nettoyé que s'il est du code (après `AS`, `DO`, `EXECUTE`) ;
+    tout autre texte entre dollars est une donnée, recopiée telle quelle (un « -- » n'y est plus coupé). L'en-tête « 001 à NNN » est
+    gardé, réduit à cette mention (les notes qui suivaient sur la même ligne ne partent plus en officine). Sortie comparée avant et
+    après sur les 345 scripts : seuls les en-têtes changent. — `scripts/mep/NettoyageSql.cs`
+  - **Menu de la caisse après une clôture** : le menu passe en « caisse fermée » dès la clôture faite (son résultat reste affiché) ;
+    fermé, il ne prend plus un remboursement en attente. Une relève ou un état intermédiaire laissent la caisse ouverte.
+    — `src/Pharma.Desktop/Composants/Pages/Cloture.razor`
+  - **Synchronisation sans le pack G** : un échange impossible avec le serveur central n'est plus noté comme un passage réussi.
+    Ordres du central : le pack G est relu pour chaque ordre (un ordre d'activation appliqué juste avant peut l'avoir ouvert).
+    — `EnvoiLots.PasserSansPackAsync`, `AppliquerOrdresCentraux.ExecuterAsync`
 - **(2026-11-28) Constats secondaires de la revue de code** (« go secondaires », premier lot) :
   - **Offre, ordre des codes** : les codes valables sont pris dans l'ordre de leur date d'émission **signée** (lue dans le code), plus
     dans celui de la colonne `emise_le` (une date modifiée dans la table remettait devant un ancien code plus large). Un code effacé de

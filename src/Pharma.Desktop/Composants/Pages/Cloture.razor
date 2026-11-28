@@ -5,7 +5,7 @@
 
 <div class="page avec-menu">
     <NavCaisse Actif="@(Intermediaire ? "caisse/etat" : Releve ? "cloture?releve=true" : "cloture")"
-               OuverteLe="etat?.OuverteLe" OuvertePar="@etat?.OuvertePar" Fond="etat?.FondCaisse" Poste="@etat?.Poste" CaisseOuverte="@(!SansCaisse)" />
+               OuverteLe="etat?.OuverteLe" OuvertePar="@etat?.OuvertePar" Fond="etat?.FondCaisse" Poste="@etat?.Poste" CaisseOuverte="@(!CaisseFermee)" />
     <div class="contenu-rubrique">
     <div class="titre-page">
         <div>
@@ -208,6 +208,9 @@
     private decimal TotalCompte => Coupures.Sum(c => saisies[c.Code] * c.Valeur);
     /// <summary>Le poste n'a pas de caisse ouverte (et aucun résultat de comptage à montrer) : état vide neutre.</summary>
     private bool SansCaisse => etat is { SessionId: null } && resultat is null;
+    /// <summary>Menu de la caisse : fermée sans caisse ouverte, et aussi une fois la clôture faite (son résultat reste affiché ; une relève ou
+    /// un état intermédiaire laissent la caisse ouverte). Fermée, aucun remboursement en attente n'est pris par le menu.</summary>
+    private bool CaisseFermee => etat is { SessionId: null } || (resultat is not null && !Releve && !Intermediaire);
 
     // Relève ou clôture affichée : Blazor garde l'écran quand seule l'adresse change (?releve=true ou non) ;
     // on repart alors d'un comptage vierge et de l'état de caisse à jour (sinon le résultat précédent restait affiché)

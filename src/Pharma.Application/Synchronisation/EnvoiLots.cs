@@ -300,6 +300,8 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
         {
             (versionDescendante, erreurDescendante) = (p.DescendantVersion, null);
             await EchangerDescendantsAsync(p.Adresse, ct);
+            // Central injoignable : le passage n'est pas noté comme réussi (correction du 2026-11-28 ; sans lot à envoyer, rien d'autre ne le signalait)
+            if (echecEchange is { } echec) return await ErreurAsync(0, echec, false, ct);
             if (envoyerResultats)
             {
                 interdites = (await depot.ParametresAsync(ct)).ColonnesInterdites ?? [];
@@ -474,11 +476,25 @@ public sealed class EnvoyerLotsSync(IEnvoiSyncDepot depot, ConstitutionLotsSync 
     }
 
     /// <summary>Échange léger : éléments descendants plus récents que la version appliquée ; échec : rien ne change ici.</summary>
+    /// <summary>Échec du dernier échange léger avec le central (null : réussi).</summary>
+    private string? echecEchange;
+
     private async Task EchangerDescendantsAsync(string adresse, CancellationToken ct)
     {
         DescendantsRecus d;
+        echecEchange = null;
         try { d = await client.EchangerAsync(adresse, versionDescendante, ct); }
-        catch (Exception e) when (e is ServeurCentralException or HttpRequestException || (e is TaskCanceledException && !ct.IsCancellationRequested)) { return; }
+        catch (Exception e) when (e is ServeurCentralException or HttpRequestException || (e is TaskCanceledException && !ct.IsCancellationRequested))
+        {
+            // Voie complète : l'envoi des lots qui suit signalera la panne. Voie réduite (sans le pack G) : c'est le seul échange, l'échec est gardé
+            echecEchange = e switch
+            {
+                HttpRequestException => "Serveur central injoignable : " + e.Message,
+                TaskCanceledException => "Serveur central injoignable (délai dépassé).",
+                _ => e.Message
+            };
+            return;
+        }
         await AppliquerDescendantsAsync(d, ct);
     }
 

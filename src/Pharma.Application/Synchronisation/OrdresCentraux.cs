@@ -500,14 +500,14 @@ public sealed class AppliquerOrdresCentraux(IOrdresCentrauxDepot depot, Executer
     public async Task<int> ExecuterAsync(CancellationToken ct = default)
     {
         if (await depot.BaseEnLectureSeuleAsync(ct)) return 0;
-        var avecPackG = packs is null || await packs.InclusAsync(Offre.PacksOffre.MultiOfficines, ct);
         var n = 0;
         foreach (var lu in await depot.EnCoursAsync(ct))
         {
             // Un ordre à la fois, relu sous le verrou : confirmé ou refusé entre-temps par le titulaire, il n'est plus touché ici
             using var _ = await verrou.PrendreAsync(ct);
             if (await depot.LireAsync(lu.Id, ct) is not { } o || o.Statut is not (StatutsOrdre.AConfirmer or StatutsOrdre.AAppliquer)) continue;
-            var horsOffre = !avecPackG && o.Type != TypesOrdre.ActivationOffre;
+            // Pack G relu pour chaque ordre (correction du 2026-11-28) : un ordre d'activation appliqué juste avant peut l'avoir ouvert
+            var horsOffre = o.Type != TypesOrdre.ActivationOffre && packs is not null && !await packs.InclusAsync(Offre.PacksOffre.MultiOfficines, ct);
             if (horloge.MaintenantUtc >= o.ExpireLeUtc)
             {
                 const string motifExpire = "non traité avant sa date limite (horloge de l’officine)";

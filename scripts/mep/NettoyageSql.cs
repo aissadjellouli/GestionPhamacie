@@ -43,7 +43,10 @@ namespace PharmaOfficine.Livraison
                     string commentaire = sql.Substring(i, fin - i);
                     if (!dansCorps && EnteteInit.IsMatch(commentaire))
                     {
-                        sortie.Append(commentaire.TrimEnd('\r'));   // en-tête « 001 à NNN » gardé
+                        // En-tête « 001 à NNN » gardé (lu par les outils de mise à jour), réduit à cette mention : la suite de la ligne
+                        // (notes de conception) ne part pas en officine
+                        Match m = EnteteInit.Match(commentaire);
+                        sortie.Append(commentaire.Substring(0, m.Index + m.Length));
                         i = fin;
                         continue;
                     }
@@ -92,7 +95,10 @@ namespace PharmaOfficine.Livraison
                         int finCorps = sql.IndexOf(etiquette, debutCorps, StringComparison.Ordinal);
                         if (finCorps < 0) throw new FormatException("Corps " + etiquette + " non fermé à la position " + i);
                         sortie.Append(etiquette);
-                        sortie.Append(Lire(sql.Substring(debutCorps, finCorps - debutCorps), true));
+                        // Corps de fonction ou de bloc DO (« AS $$ », « DO $$ ») ou SQL dynamique (« EXECUTE $$ ») : du code, nettoyé à son tour. Tout autre texte entre
+                        // dollars est une donnée (valeur insérée, texte passé à une fonction) : recopié tel quel, un « -- » n'y est pas un commentaire.
+                        if (CorpsDeCode(sql, i)) sortie.Append(Lire(sql.Substring(debutCorps, finCorps - debutCorps), true));
+                        else sortie.Append(sql, debutCorps, finCorps - debutCorps);
                         sortie.Append(etiquette);
                         i = finCorps + etiquette.Length;
                         continue;
@@ -164,6 +170,26 @@ namespace PharmaOfficine.Livraison
                 j++;
             }
             throw new FormatException("Texte " + guillemet + " non fermé à la position " + i);
+        }
+
+        /// <summary>Le texte entre dollars qui commence en <paramref name="i"/> suit-il « AS », « DO », « EXECUTE » ou « DO LANGUAGE nom » ?</summary>
+        private static bool CorpsDeCode(string sql, int i)
+        {
+            string mot = MotAvant(sql, ref i);
+            if (mot.Equals("AS", StringComparison.OrdinalIgnoreCase) || mot.Equals("DO", StringComparison.OrdinalIgnoreCase)
+                || mot.Equals("EXECUTE", StringComparison.OrdinalIgnoreCase)) return true;   // EXECUTE : SQL dynamique, du code aussi
+            return MotAvant(sql, ref i).Equals("LANGUAGE", StringComparison.OrdinalIgnoreCase) && MotAvant(sql, ref i).Equals("DO", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>Mot (lettres, chiffres, _) qui précède la position, blancs sautés ; la position recule devant ce mot. Vide si autre chose précède.</summary>
+        private static string MotAvant(string sql, ref int i)
+        {
+            int fin = i;
+            while (fin > 0 && char.IsWhiteSpace(sql[fin - 1])) fin--;
+            int debut = fin;
+            while (debut > 0 && CaractereIdentifiant(sql[debut - 1])) debut--;
+            i = debut;
+            return sql.Substring(debut, fin - debut);
         }
 
         /// <summary>« $$ » ou « $etiquette$ » commençant en i ; chaîne vide sinon (ex. $1, paramètre positionnel).</summary>

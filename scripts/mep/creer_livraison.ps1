@@ -59,10 +59,16 @@ if (Test-Path -LiteralPath $Sortie) {
     if (@(Get-ChildItem -LiteralPath $Sortie -Force).Count -gt 0) {
         if (-not $Remplacer) { throw "Le dossier $Sortie existe et n'est pas vide : choisissez un autre dossier ou ajoutez -Remplacer." }
         Assert-DossierLivraison $Sortie
-        Remove-Item -LiteralPath $Sortie -Recurse -Force
     }
 }
+# Fabrication dans un dossier provisoire, à côté : la livraison précédente n'est remplacée qu'une fois la nouvelle entièrement fabriquée
+# et contrôlée (correction du 2026-11-28 : elle était supprimée avant toute vérification, et une livraison refusée restait à sa place).
+$Finale = $Sortie
+$Sortie = "$Finale.en-cours"
+if (-not $Correspondances) { $Correspondances = "$Finale-correspondances" }
+if (Test-Path -LiteralPath $Sortie) { Remove-Item -LiteralPath $Sortie -Recurse -Force }
 New-Item -ItemType Directory -Force $Sortie | Out-Null
+try {
 
 function Publier([string]$Projet, [string]$Dossier) {
     Write-Host "== Publication de $Projet vers $Dossier" -ForegroundColor Cyan
@@ -124,5 +130,13 @@ if ($enTrop.Count -gt 0 -or $presents.Count -ne $scriptsLivres.Count) { throw "L
 
 $dernier = @(Get-ChildItem -LiteralPath (Join-Path $Sortie "Api\database") -File -Filter "*.sql" | Where-Object { $_.Name -match '^\d{3}_' } |
     Sort-Object Name)[-1].Name
+}
+catch {
+    Remove-Item -LiteralPath $Sortie -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Warning "Fabrication interrompue : rien n'a été livré, le dossier $Finale n'a pas été touché."
+    throw
+}
+if (Test-Path -LiteralPath $Finale) { Remove-Item -LiteralPath $Finale -Recurse -Force }
+Move-Item -LiteralPath $Sortie -Destination $Finale
 Write-Host ""
-Write-Host "Livraison prête dans $Sortie (dernier script : $dernier)." -ForegroundColor Green
+Write-Host "Livraison prête dans $Finale (dernier script : $dernier)." -ForegroundColor Green
