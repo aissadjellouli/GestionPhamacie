@@ -340,6 +340,46 @@ base (l'officine reste au central, les réglages de synchronisation restent dans
 | `assistant` | `demo` | Pharmacien assistant |
 | `vendeur` | `demo` | Vendeur |
 
+Sur un PC dont le poste n'est pas encore autorisé pour la base, seul `titulaire` se connecte, par le lien « Connexion du titulaire
+(Administration seulement) », le temps de générer le code du poste (Administration › Postes autorisés).
+
+### Compte super admin d'essai : connexion et récupération (2026-11-28)
+
+Le super admin (restauration, reprise de données) n'est **pas** dans la base : son compte est un fichier chiffré, lu par l'API au
+chemin réglé par `SuperAdmin:Fichier` (variable `SuperAdmin__Fichier`). Sans réglage, l'API cherche
+`C:\ProgramData\PharmaOfficine\super-admin.dat`, absent sur ce PC : **toute connexion super admin est alors refusée**, même avec le bon
+mot de passe.
+
+- **Compte d'essai** : identifiant `super.essai`, fichier `C:\MesAtlassian\smptp\super-admin.dat` (hors dépôt, à ne jamais supprimer).
+  Mot de passe : dans `C:\MesAtlassian\smptp\super-admin-essai.txt`, jamais recopié ailleurs. Mode d'emploi :
+  `C:\MesAtlassian\smptp\LISEZMOI-super-admin.txt`.
+- Le fichier est **chiffré pour ce PC et ce compte Windows** : il ne fonctionne ni copié sur un autre PC, ni avec une API lancée sous un
+  autre compte (service Windows, autre session).
+
+**Symptôme** : « Connexion super admin » refusée ; le journal de l'API (`C:\Logs\PharmaOfficine\Api\pharma-api-<date>.log`) montre
+`Super admin : connexion refusée` à chaque essai.
+
+**Récupération** (constatée le 2026-11-28) :
+
+1. Vérifier que le fichier existe : `Test-Path C:\MesAtlassian\smptp\super-admin.dat`.
+2. Poser la variable pour le compte Windows, une fois pour toutes :
+   ```powershell
+   [Environment]::SetEnvironmentVariable("SuperAdmin__Fichier", "C:\MesAtlassian\smptp\super-admin.dat", "User")
+   ```
+3. **Fermer toutes les fenêtres de Visual Studio** (vérifier qu'aucun `devenv.exe` ne reste dans le gestionnaire des tâches), le rouvrir,
+   relancer l'API. Relancer seulement l'API ne suffit pas : elle hérite des variables de Visual Studio, qui ne lit les variables Windows
+   qu'à son démarrage.
+4. Se connecter par « Connexion super admin » avec `super.essai`.
+5. Contrôle : le journal de l'API montre `Super admin super.essai connecté`.
+
+Pour vérifier le compte sans toucher à son API : lancer une API d'essai sur un autre port avec la variable posée dans la fenêtre
+PowerShell (`$env:SuperAdmin__Fichier = "C:\MesAtlassian\smptp\super-admin.dat"`, `$env:Urls = "http://localhost:5085"`), essayer la
+connexion, puis arrêter cette API.
+
+Ni le mot de passe du super admin ni ses codes ne se retrouvent par la base : un fichier perdu ou un mot de passe oublié se refait avec
+`Pharma.Api.exe --super-admin` (mot de passe actuel et code envoyé au téléphone ou à l'e-mail vérifié du compte ; le compte d'essai a
+un téléphone fictif, non vérifié).
+
 ### Réglages du poste (facultatifs)
 
 | Variable d’environnement | Rôle | Par défaut |
@@ -433,3 +473,5 @@ ni rattachées à la solution. Seules les photos utiles sont gardées.
 | `MSB3027 … le fichier est verrouillé par Pharma.Api` | L’API tourne encore pendant un build | Arrêter le débogage (**Maj+F5**) avant de recompiler |
 | `NU1301 … VCFNugets … 401 (Unauthorized)` en ligne de commande | Le feed NuGet VCF de la configuration NuGet globale exige une authentification | Compiler avec `--source https://api.nuget.org/v3/index.json`. Les avertissements NU1507 et NU1900 dans Visual Studio viennent de la même configuration et ne bloquent pas |
 | « Serveur de la pharmacie injoignable » à la connexion | L’API n’est pas démarrée | Lancer le profil « API + Poste client » ou vérifier http://localhost:5080/api/healthcheck |
+| `HttpRequestException … l’ordinateur cible l’a expressément refusée (localhost:5081)` dans Visual Studio (2026-11-28) | Le poste suit la variable utilisateur `PHARMA_API` (ici `http://localhost:5081/`) alors que l’API écoute sur un autre port (`Urls` d’`appsettings.json` l’emporte sur `launchSettings.json`) | Aligner les deux : `Urls` d’`appsettings.json` et `PHARMA_API` sur le même port, ou retirer `PHARMA_API` (le poste prend alors `http://localhost:5080/`) ; puis redémarrer Visual Studio |
+| « Connexion super admin » refusée avec le bon mot de passe (2026-11-28) | L’API ne lit pas le fichier du compte : `SuperAdmin__Fichier` absente, ou posée après le démarrage de Visual Studio | Voir « Compte super admin d’essai : connexion et récupération » (§ 4) |
